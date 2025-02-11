@@ -216,23 +216,50 @@ class FileSystemData {
       });
 
       final books = <Book>[];
+
+      Map<String, String> pdfFiles = {};
+      if (hebrewBooksPath != null) {
+        final pdfDir = Directory(hebrewBooksPath);
+        if (pdfDir.existsSync()) {
+          for (var entity in pdfDir.listSync()) {
+            if (entity is File) {
+              // Lowercase the file name to handle case-insensitive matches.
+              final fileName =
+                  entity.path.split(Platform.pathSeparator).last.toLowerCase();
+              pdfFiles[fileName] = entity.path;
+            }
+          }
+        }
+      }
+
       for (final row in table.skip(1)) {
         try {
           if (row[0] == null || row[0].toString().isEmpty) continue;
 
-          // Check if the ID is numeric
+          // Check if the ID is numeric.
           final bookId = row[0].toString().trim();
           if (!RegExp(r'^\d+$').hasMatch(bookId)) continue;
 
-          final localPath = hebrewBooksPath != null
-              ? '$hebrewBooksPath${Platform.pathSeparator}Hebrewbooks_org_$bookId.pdf'
-              : null;
+          String? foundLocalPath;
+          if (hebrewBooksPath != null) {
+            // Define candidate filenames (using lowercase for matching)
+            final candidatePrefixed =
+                'hebrewbooks_org_$bookId.pdf'.toLowerCase();
+            // it might be a simple filename with the id -> like 1234.pdf
+            final candidateSimple = '$bookId.pdf'.toLowerCase();
 
-          if (localPath != null && File(localPath).existsSync()) {
-            // If local file exists, add as PdfBook
+            if (pdfFiles.containsKey(candidatePrefixed)) {
+              foundLocalPath = pdfFiles[candidatePrefixed];
+            } else if (pdfFiles.containsKey(candidateSimple)) {
+              foundLocalPath = pdfFiles[candidateSimple];
+            }
+          }
+
+          if (foundLocalPath != null) {
+            // If a matching local file exists, add as PdfBook.
             books.add(PdfBook(
               title: row[1].toString(),
-              path: localPath,
+              path: foundLocalPath,
               author: row[2].toString(),
               pubPlace: row[3].toString(),
               pubDate: row[4].toString(),
@@ -240,7 +267,7 @@ class FileSystemData {
               heShortDesc: row[13].toString(),
             ));
           } else {
-            // If no local file, add as ExternalBook
+            // If no matching local file, add as ExternalBook.
             books.add(ExternalBook(
               title: row[1].toString(),
               id: int.parse(bookId),
