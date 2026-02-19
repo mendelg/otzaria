@@ -91,3 +91,4 @@ macos/Flutter/GeneratedPluginRegistrant.swift
 isolate.pdf
 
 sentry.properties
+.sentry-native/*
