@@ -138,7 +138,7 @@ class FileSystemLibraryProvider implements LibraryProvider {
     final dirName = dir.path.split(Platform.pathSeparator).last;
 
     // Skip special directories (except in debug mode)
-    if (!kDebugMode && dirName == 'אודות התוכנה') return;
+    if (!kDebugMode && dirName == 'ספרים מספריות חיצוניות') return;
 
     await for (FileSystemEntity entity in dir.list()) {
       try {
