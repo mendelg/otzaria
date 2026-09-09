@@ -359,6 +359,21 @@ class UserImportParser {
       return ParseResult(rows, errors);
     }
 
+    // ⚠️ native בשם גנרי: ספר הבסיס נגזר משם הקובץ, ובלי הודעה ייעודית
+    // המשתמש היה מקבל "מספר שורת מקור לא חוקי" על כל שורה.
+    if (decoded.isNotEmpty &&
+        decoded.first is Map &&
+        (decoded.first as Map).containsKey('line_index_1')) {
+      errors.add(
+        const ImportRowError(
+          0,
+          'זהו קובץ בפורמט של אוצריא — שנה את שמו ל-"<שם הספר>_links.json" '
+          'כדי שספר הבסיס יזוהה',
+        ),
+      );
+      return ParseResult(rows, errors);
+    }
+
     for (var i = 0; i < decoded.length; i++) {
       final item = decoded[i];
       final n = i + 1;
@@ -455,13 +470,33 @@ class UserImportParser {
         errors.add(ImportRowError(n, 'חסר path_2'));
         continue;
       }
+      final targetRef = _str(item['heRef_2']);
+      final anchorStart = _toInt(item['start']);
+      var anchorEnd = _toInt(item['end']);
+      final sourceLineEnd = _toInt(item['line_index_1_end']);
+      final targetLineEnd = _toInt(item['line_index_2_end']);
+      if (anchorStart != null && anchorStart < 0) {
+        errors.add(ImportRowError(n, 'start לא חוקי'));
+        continue;
+      }
+      // ⚠️ מנמיכים ולא פוסלים: end<=start הוא עוגן-נקודה, והייבוא אטומי —
+      // פסילה הייתה מפילה את כל הקבצים שנבחרו.
+      if (anchorStart == null ||
+          anchorEnd != null && anchorEnd <= anchorStart) {
+        anchorEnd = null;
+      }
+      if (sourceLineEnd != null && sourceLineEnd < sourceLine) {
+        errors.add(ImportRowError(n, 'line_index_1_end לא חוקי'));
+        continue;
+      }
+      if (targetLineEnd != null && targetLineEnd < targetLine) {
+        errors.add(ImportRowError(n, 'line_index_2_end לא חוקי'));
+        continue;
+      }
       final type = _nativeConnectionType(item['Conection Type']);
       if (type == null) {
         errors.add(
-          ImportRowError(
-            n,
-            'סוג קישור לא מוכר: "${item['Conection Type']}"',
-          ),
+          ImportRowError(n, 'סוג קישור לא מוכר: "${item['Conection Type']}"'),
         );
         continue;
       }
@@ -471,7 +506,13 @@ class UserImportParser {
           // path_2 הוא נתיב — חילוץ כותרת בדיוק כמו בשאר הקוד (Link.path2).
           targetTitle: getTitleFromPath(targetTitle).trim(),
           targetLineNumber: targetLine,
-          targetRef: _str(item['heRef_2']),
+          targetRef: targetRef,
+          anchorStart: anchorStart,
+          anchorEnd: anchorEnd,
+          anchorLabel: _anchorLabelFromRef(targetRef),
+          sourceLineNumberEnd: sourceLineEnd,
+          targetLineNumberEnd: targetLineEnd,
+          targetRefEnd: _str(item['heRef_2_end']),
           connectionType: type,
         ),
       );
@@ -488,11 +529,14 @@ class UserImportParser {
     return null;
   }
 
+  /// ⚠️ גם `"3.0"`, כמו ב-[Link.fromJson]: כלים שמייצאים דרך pandas כותבים
+  /// עמודות מספריות כ-float, ולפעמים כמחרוזת.
   static int? _toInt(Object? v) {
     if (v == null) return null;
     if (v is int) return v;
     if (v is num) return v.toInt();
-    return int.tryParse(v.toString().trim());
+    final text = v.toString().trim();
+    return int.tryParse(text) ?? int.tryParse(text.split('.').first);
   }
 
   static bool _toBool(Object? v) {
@@ -516,15 +560,33 @@ class UserImportParser {
     return null;
   }
 
-  /// מחזיר שם connection_type לפי תווית עברית או שם אנגלי ישיר.
+  /// תווית עברית ([kHebrewConnectionTypes]) או שם אנגלי בכל רישיות
+  /// (`super commentary` = `SUPER_COMMENTARY`). null = סוג שאינו קיים ב-DB.
   static String? _connectionType(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
-    final hebrew = LinkTypes.hebrewConnectionTypes[trimmed];
-    if (hebrew != null) return hebrew;
-    final upper = trimmed.toUpperCase();
-    if (LinkTypes.hebrewConnectionTypes.values.contains(upper)) return upper;
-    return null;
+    final type =
+        kHebrewConnectionTypes[trimmed] ?? LinkTypes.normalize(trimmed);
+    // LINKER (גם בתווית "אוטומטי") נשמר כמפרש, אחרת לא היה מופיע בפאנל
+    // המפרשים של ספר הבסיס.
+    if (type == LinkTypes.linker) return LinkTypes.commentary;
+    return kImportableConnectionTypes.contains(type) ? type : null;
+  }
+
+  /// אות הסימון שבסוף ה-heRef ("...אות ג" → "ג"). הגרשיים נתפסים עם האות,
+  /// אחרת `אות י"א` היה נקטע ל-"י".
+  static final RegExp _anchorLabelRegex = RegExp(
+    '(?:^|[,\\s])אות\\s+([א-ת][א-ת$_gershayim]*)',
+  );
+
+  static const String _gershayim = '\'"׳״';
+
+  static String? _anchorLabelFromRef(String? ref) {
+    if (ref == null) return null;
+    final raw = _anchorLabelRegex.firstMatch(ref)?.group(1);
+    if (raw == null) return null;
+    final trimmed = raw.replaceAll(RegExp('[$_gershayim]+\$'), '');
+    return trimmed.isEmpty ? null : trimmed;
   }
 
   /// סוג native מוכר (ריק → reference, כמו [Link.fromJson]); לא מוכר → null.

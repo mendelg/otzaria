@@ -121,6 +121,54 @@ void main() {
       expect(row['targetLineIndex'], 4);
     });
 
+    test(
+      'user_link חוצת-DB בלי עמודות העוגן מקבלת אותן ושומרת שורות',
+      () async {
+        final setupDb = sqlite3.sqlite3.open(dbPath);
+        setupDb.execute('''
+        CREATE TABLE user_link (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sourceTitle TEXT NOT NULL,
+          sourceCategoryId INTEGER,
+          sourceIsUserBook INTEGER NOT NULL DEFAULT 0,
+          sourceLineIndex INTEGER NOT NULL,
+          targetTitle TEXT NOT NULL,
+          targetCategoryId INTEGER,
+          targetIsUserBook INTEGER NOT NULL DEFAULT 0,
+          targetRef TEXT,
+          targetLineIndex INTEGER,
+          connectionType TEXT NOT NULL
+        );
+      ''');
+        setupDb.execute(
+          'INSERT INTO user_link (sourceTitle, sourceLineIndex, targetTitle, '
+          'targetLineIndex, connectionType) VALUES (?, 11, ?, 4, ?)',
+          ['ביאורי יוסף', 'ברכות', 'COMMENTARY'],
+        );
+        setupDb.close();
+
+        final db = await database.database;
+        final cols = db
+            .select('PRAGMA table_info(user_link)')
+            .map((r) => r['name'] as String)
+            .toSet();
+        expect(
+          cols,
+          containsAll([
+            'anchorStart',
+            'anchorEnd',
+            'anchorLabel',
+            'sourceLineIndexEnd',
+            'targetLineIndexEnd',
+            'targetRefEnd',
+          ]),
+        );
+        final row = db.select('SELECT * FROM user_link').single;
+        expect(row['sourceTitle'], 'ביאורי יוסף');
+        expect(row['anchorStart'], isNull);
+      },
+    );
+
     test('book_generation מצטרפת ל-generation ומחזירה את שם הדור', () async {
       final db = await database.database;
       db.execute('PRAGMA foreign_keys = OFF');

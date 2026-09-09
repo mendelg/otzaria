@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/services/user_import_parser.dart';
 
 void main() {
@@ -93,14 +94,69 @@ void main() {
       expect(result.rows.single.connectionType, 'TARGUM');
     });
 
-    test('סוגי ה-native המורחבים אינם נקלטים ב-CSV (רק חמש התוויות)', () {
-      const csv =
-          'מקור,ספר_יעד,סוג\n'
-          '5,ברכות,midrash\n'
-          '6,ברכות,\n';
-      final result = UserImportParser.parseLinks(csv);
-      expect(result.rows, isEmpty);
-      expect(result.errors.length, 2);
+    // הדרישה: מה שה-DB יודע לאחסן — הייבוא יודע לקלוט. הטסט רץ על הרשימה
+    // עצמה ולכן סוג חדש ב-LinkTypes מפיל אותו עד שייתמך גם כאן.
+    test('כל סוג קישור שה-DB מכיר נקלט בשמו האנגלי', () {
+      for (final type in kImportableConnectionTypes) {
+        final result = UserImportParser.parseLinks(
+          'מקור,ספר_יעד,סוג\n5,ברכות,$type\n',
+        );
+        expect(result.errors, isEmpty, reason: type);
+        // LINKER נשמר כמפרש — הוא פלט אוטומטי ולא סיווג שהמשתמש בחר.
+        expect(
+          result.rows.single.connectionType,
+          type == LinkTypes.linker ? LinkTypes.commentary : type,
+          reason: type,
+        );
+      }
+    });
+
+    test('"אוטומטי" נשמר כמפרש, כמו LINKER באנגלית', () {
+      final result = UserImportParser.parseLinks(
+        'מקור,ספר_יעד,סוג\n5,ברכות,${LinkTypes.hebrewLabels[LinkTypes.linker]}\n',
+      );
+      expect(result.errors, isEmpty);
+      expect(result.rows.single.connectionType, LinkTypes.commentary);
+    });
+
+    test('כל סוג קישור נקלט גם בתווית העברית שהאפליקציה מציגה', () {
+      for (final type in kImportableConnectionTypes.difference({
+        LinkTypes.linker,
+      })) {
+        final label = LinkTypes.hebrewLabels[type]!;
+        final result = UserImportParser.parseLinks(
+          'מקור,ספר_יעד,סוג\n5,ברכות,$label\n',
+        );
+        expect(result.errors, isEmpty, reason: '$type ($label)');
+        // תווית משותפת נפתרת לסוג הקנוני, ולכן משווים לפי התווית ולא לפי הסוג.
+        expect(
+          LinkTypes.hebrewLabels[result.rows.single.connectionType],
+          label,
+          reason: '$type ($label)',
+        );
+      }
+    });
+
+    test('רישיות ומפרידים בשם האנגלי אינם משנים', () {
+      for (final raw in const [
+        'super commentary',
+        'Super-Commentary',
+        'super_commentary',
+      ]) {
+        final result = UserImportParser.parseLinks(
+          'מקור,ספר_יעד,סוג\n5,ברכות,$raw\n',
+        );
+        expect(result.rows.single.connectionType, LinkTypes.superCommentary);
+      }
+    });
+
+    test('כינויים עבריים היסטוריים ממשיכים להיקלט', () {
+      kLegacyHebrewConnectionTypes.forEach((label, type) {
+        final result = UserImportParser.parseLinks(
+          'מקור,ספר_יעד,סוג\n5,ברכות,$label\n',
+        );
+        expect(result.rows.single.connectionType, type, reason: label);
+      });
     });
 
     test('מספר שורה לא חוקי / סוג לא מוכר → שגיאות', () {
@@ -329,12 +385,120 @@ void main() {
       expect(result.errors.single.message, contains('no such type'));
     });
 
+    test('אינדקסי שורה כמספר עשרוני או כמחרוזת, כמו הקורא של הספרייה', () {
+      // כלי ייצוא דרך pandas כותב כל עמודה מספרית כ-float, ולפעמים כמחרוזת.
+      const row = {
+        'heRef_2': 'ספר א',
+        'line_index_1': '3.0',
+        'line_index_2': 5.0,
+        'path_2': 'ספר.txt',
+        'Conection Type': 'commentary',
+        'start': '7.0',
+      };
+      final canonical = Link.fromJson(row);
+      expect(canonical.index1, 3);
+      expect(canonical.index2, 5);
+
+      final result = UserImportParser.parseNativeLinksJson(jsonEncode([row]));
+      expect(result.errors, isEmpty);
+      expect(result.rows.single.sourceLineNumber, canonical.index1);
+      expect(result.rows.single.targetLineNumber, canonical.index2);
+      expect(result.rows.single.anchorStart, 7);
+    });
+
     test('path_2 עם רכיבי-נתיב → הכותרת היא שם הקובץ בלבד', () {
       const json =
           '[{"line_index_1": 1, "line_index_2": 2, '
           '"path_2": "מפרשים/הכי גרסינן מגילה.txt"}]';
       final result = UserImportParser.parseNativeLinksJson(json);
       expect(result.rows.single.targetTitle, 'הכי גרסינן מגילה');
+    });
+
+    test('native linker שומר את הסוג, העוגן והטווח', () {
+      const json =
+          '[{"line_index_1": 5, "line_index_1_end": 5, '
+          '"line_index_2": 6, "line_index_2_end": 8, '
+          '"heRef_2": "המאיר לארץ, סימן א, סעיף א אות א", '
+          '"heRef_2_end": "המאיר לארץ, סימן א, סעיף א אות ג", '
+          '"path_2": "המאיר לארץ.txt", "Conection Type": "linker", '
+          '"start": 11, "end": 18}]';
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.errors, isEmpty);
+      final row = result.rows.single;
+      expect(row.connectionType, LinkTypes.linker);
+      expect(row.anchorStart, 11);
+      expect(row.anchorEnd, 18);
+      expect(row.anchorLabel, 'א');
+      expect(row.sourceLineNumberEnd, 5);
+      expect(row.targetLineNumberEnd, 8);
+      expect(row.targetRefEnd, contains('אות ג'));
+    });
+
+    test('end<=start מתפרש כעוגן-נקודה ולא כשגיאה', () {
+      const json =
+          '[{"line_index_1": 1, "line_index_2": 2, "path_2": "מפרש.txt", '
+          '"start": 7, "end": 7}, '
+          '{"line_index_1": 3, "line_index_2": 4, "path_2": "מפרש.txt", '
+          '"start": 9, "end": 2}]';
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.errors, isEmpty);
+      expect(result.rows.map((r) => r.anchorStart), [7, 9]);
+      expect(result.rows.every((r) => r.anchorEnd == null), isTrue);
+    });
+
+    test('end בלי start → נזרק, והשורה נקלטת', () {
+      // הקורא של הספרייה סלחני לזה, והייבוא אטומי — פסילה כאן הייתה מפילה
+      // את כל הקבצים שנבחרו בגלל שדה שאינו שמיש ממילא.
+      const json =
+          '[{"line_index_1": 1, "line_index_2": 2, "path_2": "מפרש.txt", '
+          '"end": 7}]';
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.errors, isEmpty);
+      expect(result.rows.single.anchorStart, isNull);
+      expect(result.rows.single.anchorEnd, isNull);
+    });
+
+    test('סוג קישור שאינו מוכר נפסל בייבוא native', () {
+      const json =
+          '[{"line_index_1": 1, "line_index_2": 2, "path_2": "מפרש.txt", '
+          '"Conection Type": "some new type"}]';
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.rows, isEmpty);
+      expect(result.errors.single.message, contains('some new type'));
+    });
+
+    test('בקובץ CSV סוג לא מוכר עדיין נפסל (שם זו שגיאת הקלדה)', () {
+      final result = UserImportParser.parseLinks(
+        'מקור,ספר_יעד,סוג\n5,ברכות,סוג מומצא\n',
+      );
+      expect(result.rows, isEmpty);
+      expect(result.errors, isNotEmpty);
+    });
+
+    test('קובץ בפורמט native בשם גנרי מקבל הודעה שמסבירה מה לעשות', () {
+      const json =
+          '[{"line_index_1": 3, "line_index_2": 5, "path_2": "מפרש.txt"}]';
+      final result = UserImportParser.parseLinksJson(json);
+      expect(result.rows, isEmpty);
+      expect(result.errors.single.message, contains('_links.json'));
+    });
+
+    test('אות עוגן בגימטריה דו-אותית נשמרת שלמה', () {
+      String labelOf(String heRef) {
+        final json =
+            '[{"line_index_1": 1, "line_index_2": 2, '
+            '"path_2": "מפרש.txt", "start": 0, '
+            '"heRef_2": ${jsonEncode(heRef)}}]';
+        return UserImportParser.parseNativeLinksJson(
+          json,
+        ).rows.single.anchorLabel!;
+      }
+
+      expect(labelOf('מפרש, סימן א, אות א'), 'א');
+      expect(labelOf('מפרש, סימן א, אות י"א'), 'י"א');
+      expect(labelOf('מפרש, סימן א, אות י״א'), 'י״א');
+      // גרש-סיום אינו חלק מהאות ולכן נגזם.
+      expect(labelOf('מפרש, סימן א, אות ט׳'), 'ט');
     });
 
     test('line_index חסר/לא חוקי → שגיאה, שורות תקינות נקלטות', () {

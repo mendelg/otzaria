@@ -401,7 +401,35 @@ void main() {
         expect(link.targetIsUserBook, isTrue);
         expect(link.targetLineIndex, 4);
         expect(link.targetRef, 'הכי גרסינן מגילה ב., א');
-        expect(link.connectionType, 'COMMENTARY');
+        expect(link.connectionType, LinkTypes.commentary);
+      });
+
+      test('native linker שומר עוגן וקצה טווח במסד', () async {
+        final f = writeCsv(
+          'מגילה_links.json',
+          '[{"line_index_1": 3, "line_index_2": 5, '
+              '"line_index_2_end": 7, "start": 4, "end": 9, '
+              '"heRef_2": "הכי גרסינן מגילה ב., א אות א", '
+              '"heRef_2_end": "הכי גרסינן מגילה ב., ג", '
+              '"path_2": "הכי גרסינן מגילה.txt", '
+              '"Conection Type": "linker"}]',
+        );
+        final result = await UserContentImporter.importFiles(
+          [f],
+          db,
+          locateBook: fakeLocator,
+        );
+        expect(result.errors, isEmpty);
+        final link = (await repo.forwardUserLinks(
+          'מגילה',
+          sourceIsUserBook: false,
+        )).single;
+        expect(link.connectionType, LinkTypes.linker);
+        expect(link.anchorStart, 4);
+        expect(link.anchorEnd, 9);
+        expect(link.anchorLabel, 'א');
+        expect(link.targetLineIndexEnd, 6);
+        expect(link.targetRefEnd, contains('ג'));
       });
 
       test('צמד דו-כיווני מתלכד לרשומה אחת עם ה-ref נשמר', () async {
@@ -468,6 +496,114 @@ void main() {
         );
         expect(kept.single.connectionType, LinkTypes.law);
         expect(kept.single.targetTitle, 'מגילה');
+      });
+
+      test('כמה עוגנים באותו צמד-שורות נשמרים כרשומות נפרדות', () async {
+        final f = writeCsv(
+          'מגילה_links.json',
+          '[{"line_index_1": 3, "line_index_2": 5, "start": 4, '
+              '"heRef_2": "הכי גרסינן מגילה ב., א אות א", '
+              '"path_2": "הכי גרסינן מגילה.txt"}, '
+              '{"line_index_1": 3, "line_index_2": 5, "start": 20, '
+              '"heRef_2": "הכי גרסינן מגילה ב., א אות ב", '
+              '"path_2": "הכי גרסינן מגילה.txt"}]',
+        );
+        final result = await UserContentImporter.importFiles(
+          [f],
+          db,
+          locateBook: fakeLocator,
+        );
+        expect(result.errors, isEmpty);
+        expect(result.linksApplied, 2);
+        final stored = await repo.forwardUserLinks(
+          'מגילה',
+          sourceIsUserBook: false,
+        );
+        expect(stored.map((l) => l.anchorStart), [4, 20]);
+        expect(stored.map((l) => l.anchorLabel), ['א', 'ב']);
+      });
+
+      test('ייבוא חוזר של צמד-שורות מעוגן אינו מכפיל', () async {
+        final f = writeCsv(
+          'מגילה_links.json',
+          '[{"line_index_1": 3, "line_index_2": 5, "start": 4, '
+              '"path_2": "הכי גרסינן מגילה.txt"}, '
+              '{"line_index_1": 3, "line_index_2": 5, "start": 20, '
+              '"path_2": "הכי גרסינן מגילה.txt"}]',
+        );
+        for (var i = 0; i < 2; i++) {
+          final result = await UserContentImporter.importFiles(
+            [f],
+            db,
+            locateBook: fakeLocator,
+          );
+          expect(result.errors, isEmpty);
+        }
+        final stored = await repo.forwardUserLinks(
+          'מגילה',
+          sourceIsUserBook: false,
+        );
+        expect(stored.map((l) => l.anchorStart), [4, 20]);
+      });
+
+      test('קישור-טווח נטען גם בכיוון ההפוך כשהחלון מתחיל באמצעו', () async {
+        final f = writeCsv(
+          'מגילה_links.json',
+          '[{"line_index_1": 2, "line_index_2": 5, "line_index_2_end": 9, '
+              '"path_2": "הכי גרסינן מגילה.txt"}]',
+        );
+        final result = await UserContentImporter.importFiles(
+          [f],
+          db,
+          locateBook: fakeLocator,
+        );
+        expect(result.errors, isEmpty);
+        // הקישור מצביע על שורות 4..8 (0-based) במפרש; החלון 6..7 באמצעו.
+        final inWindow = await repo.inverseUserLinks(
+          'הכי גרסינן מגילה',
+          targetIsUserBook: true,
+          startLineIndex: 6,
+          endLineIndex: 7,
+        );
+        expect(inWindow, hasLength(1));
+        expect(
+          await repo.inverseUserLinks(
+            'הכי גרסינן מגילה',
+            targetIsUserBook: true,
+            startLineIndex: 20,
+            endLineIndex: 30,
+          ),
+          isEmpty,
+        );
+      });
+
+      test('קישור-טווח נטען גם כשהחלון מתחיל באמצעו', () async {
+        final f = writeCsv(
+          'מגילה_links.json',
+          '[{"line_index_1": 2, "line_index_1_end": 9, "line_index_2": 5, '
+              '"path_2": "הכי גרסינן מגילה.txt"}]',
+        );
+        final result = await UserContentImporter.importFiles(
+          [f],
+          db,
+          locateBook: fakeLocator,
+        );
+        expect(result.errors, isEmpty);
+        // הקישור מתחיל בשורה 1 (0-based) ונמשך עד 8; החלון 4..6 באמצעו.
+        final inWindow = await repo.forwardUserLinks(
+          'מגילה',
+          sourceIsUserBook: false,
+          startLineIndex: 4,
+          endLineIndex: 6,
+        );
+        expect(inWindow, hasLength(1));
+        final afterRange = await repo.forwardUserLinks(
+          'מגילה',
+          sourceIsUserBook: false,
+          startLineIndex: 20,
+          endLineIndex: 30,
+        );
+        expect(afterRange, isEmpty);
       });
 
       test('שורה מעבר ל-totalLines → שגיאה, אין כתיבה', () async {
@@ -634,6 +770,69 @@ void main() {
       expect(cat10.length, 2);
       final all = await repo.inverseUserLinks('משותף', targetIsUserBook: false);
       expect(all.length, 3);
+    });
+  });
+
+  group('mergeUserLinks', () {
+    UserLinkRecord link({
+      int sourceLineIndex = 1,
+      int? targetLineIndex = 5,
+      int? anchorStart,
+      String? targetRef,
+      String? anchorLabel,
+    }) => UserLinkRecord(
+      sourceTitle: 'מגילה',
+      sourceIsUserBook: false,
+      sourceLineIndex: sourceLineIndex,
+      targetTitle: 'מפרש',
+      targetIsUserBook: true,
+      targetLineIndex: targetLineIndex,
+      targetRef: targetRef,
+      anchorStart: anchorStart,
+      anchorLabel: anchorLabel,
+      connectionType: 'COMMENTARY',
+    );
+
+    test('רשומות זהות לגמרי מתמזגות לאחת', () {
+      expect(mergeUserLinks([link(), link()]), hasLength(1));
+    });
+
+    test('העשירה בשדות תצוגה מנצחת', () {
+      final merged = mergeUserLinks([
+        link(),
+        link(targetRef: 'מפרש א, ב'),
+      ]);
+      expect(merged.single.targetRef, 'מפרש א, ב');
+    });
+
+    test('עוגנים שונים באותו צמד-שורות נשמרים וממוינים', () {
+      final merged = mergeUserLinks([
+        link(anchorStart: 30, anchorLabel: 'ב'),
+        link(anchorStart: 4, anchorLabel: 'א'),
+      ]);
+      expect(merged.map((l) => l.anchorStart), [4, 30]);
+    });
+
+    test('רשומה חסרת-עוגן נבלעת במעוגנת ומשלימה לה את ה-heRef', () {
+      // הצד ההפוך של צמד דו-כיווני מגיע בלי עוגן; הוא אותו קישור ולכן אינו
+      // שורה נוספת, אבל ה-heRef שיש רק בו נשמר.
+      final merged = mergeUserLinks([
+        link(targetRef: 'מפרש א, ב'),
+        link(anchorStart: 4, anchorLabel: 'א'),
+      ]);
+      expect(merged, hasLength(1));
+      expect(merged.single.anchorStart, 4);
+      expect(merged.single.targetRef, 'מפרש א, ב');
+    });
+
+    test('צמדי-שורות שונים אינם מתמזגים', () {
+      final merged = mergeUserLinks([
+        link(sourceLineIndex: 1),
+        link(sourceLineIndex: 2),
+        link(targetLineIndex: 6),
+        link(targetLineIndex: null),
+      ]);
+      expect(merged, hasLength(4));
     });
   });
 }

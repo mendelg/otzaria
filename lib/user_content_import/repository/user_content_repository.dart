@@ -1,3 +1,4 @@
+import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
@@ -275,8 +276,36 @@ class UserContentRepository {
   /// הוא תצוגה בלבד ואינו חלק מהזהות. כך ייבוא חוזר מצטבר ואינו מכפיל.
   Future<void> upsertUserLink(UserLinkRecord link) async {
     final db = await _db.database;
-    // השוואת השדות ב-IS (ולא =) כדי ש-NULL ישווה ל-NULL — אחרת קישור עם
-    // targetLineIndex ריק לא היה נדרס בייבוא חוזר.
+    _deleteUserLinksAt(db, link);
+    _insertUserLink(db, link);
+  }
+
+  /// כל צמד-שורות נמחק *פעם אחת* ואז נכתבות כל רשומותיו. ב-[upsertUserLink]
+  /// לבדו, הרשומה השנייה של צמד רב-עוגנים הייתה מוחקת את הראשונה.
+  Future<void> replaceUserLinks(Iterable<UserLinkRecord> links) async {
+    final db = await _db.database;
+    final cleared = <String>{};
+    for (final link in links) {
+      final key = [
+        link.sourceTitle,
+        link.sourceIsUserBook,
+        link.sourceCategoryId,
+        link.sourceLineIndex,
+        link.targetTitle,
+        link.targetIsUserBook,
+        link.targetCategoryId,
+        link.targetLineIndex,
+      ].join('|');
+      if (cleared.add(key)) _deleteUserLinksAt(db, link);
+      _insertUserLink(db, link);
+    }
+  }
+
+  /// מוחק את כל הקישורים שבאותו צמד-שורות כמו [link].
+  ///
+  /// השוואת השדות ב-IS (ולא =) כדי ש-NULL ישווה ל-NULL — אחרת קישור עם
+  /// targetLineIndex ריק לא היה נדרס בייבוא חוזר.
+  void _deleteUserLinksAt(sqlite3.Database db, UserLinkRecord link) {
     db.execute(
       'DELETE FROM user_link WHERE sourceTitle = ? AND sourceIsUserBook = ? '
       'AND sourceCategoryId IS ? AND sourceLineIndex = ? '
@@ -293,11 +322,15 @@ class UserContentRepository {
         link.targetLineIndex,
       ],
     );
+  }
+
+  void _insertUserLink(sqlite3.Database db, UserLinkRecord link) {
     db.execute(
       'INSERT INTO user_link (sourceTitle, sourceCategoryId, sourceIsUserBook, '
       'sourceLineIndex, targetTitle, targetCategoryId, targetIsUserBook, '
-      'targetRef, targetLineIndex, connectionType) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'targetRef, targetLineIndex, anchorStart, anchorEnd, anchorLabel, '
+      'sourceLineIndexEnd, targetLineIndexEnd, targetRefEnd, connectionType) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         link.sourceTitle,
         link.sourceCategoryId,
@@ -308,6 +341,12 @@ class UserContentRepository {
         link.targetIsUserBook ? 1 : 0,
         link.targetRef,
         link.targetLineIndex,
+        link.anchorStart,
+        link.anchorEnd,
+        link.anchorLabel,
+        link.sourceLineIndexEnd,
+        link.targetLineIndexEnd,
+        link.targetRefEnd,
         link.connectionType,
       ],
     );
@@ -315,6 +354,9 @@ class UserContentRepository {
 
   /// קישורי-משתמש *יוצאים* מספר מקור (לפי כותרת+דגל), בטווח שורות (0-based,
   /// כולל). כשידועה קטגוריית המקור מסננים גם לפיה; שורות בלי קטגוריה עוברות.
+  ///
+  /// קישור-טווח נכלל גם כששורת הפתיחה שלו לפני החלון והטווח נמשך לתוכו —
+  /// אחרת גלילה לאמצע טווח הייתה מאבדת את הקישור.
   Future<List<UserLinkRecord>> forwardUserLinks(
     String sourceTitle, {
     required bool sourceIsUserBook,
@@ -327,7 +369,10 @@ class UserContentRepository {
         ? 'AND (sourceCategoryId IS NULL OR sourceCategoryId = ?)'
         : '';
     final hasRange = startLineIndex != null && endLineIndex != null;
-    final rangeClause = hasRange ? 'AND sourceLineIndex BETWEEN ? AND ?' : '';
+    final rangeClause = hasRange
+        ? 'AND sourceLineIndex <= ? '
+              'AND COALESCE(sourceLineIndexEnd, sourceLineIndex) >= ?'
+        : '';
     final rows = db.select(
       'SELECT * FROM user_link WHERE sourceTitle = ? AND sourceIsUserBook = ? '
       '$categoryClause $rangeClause ORDER BY sourceLineIndex',
@@ -335,7 +380,7 @@ class UserContentRepository {
         sourceTitle,
         sourceIsUserBook ? 1 : 0,
         ?sourceCategoryId,
-        if (hasRange) ...[startLineIndex, endLineIndex],
+        if (hasRange) ...[endLineIndex, startLineIndex],
       ],
     );
     return rows.map(_fromRow).toList();
@@ -343,6 +388,8 @@ class UserContentRepository {
 
   /// קישורי-משתמש *נכנסים* אל ספר יעד (לפי כותרת) — לתצוגה הפוכה. למשל
   /// מפרש-משתמש על ספר רשמי מופיע כשפותחים את הספר הרשמי.
+  ///
+  /// כמו ב-[forwardUserLinks], קישור-טווח נכלל גם כשהחלון מתחיל באמצעו.
   Future<List<UserLinkRecord>> inverseUserLinks(
     String targetTitle, {
     required bool targetIsUserBook,
@@ -358,7 +405,8 @@ class UserContentRepository {
         : '';
     final hasRange = startLineIndex != null && endLineIndex != null;
     final rangeClause = hasRange
-        ? 'AND ul.targetLineIndex BETWEEN ? AND ?'
+        ? 'AND ul.targetLineIndex <= ? '
+              'AND COALESCE(ul.targetLineIndexEnd, ul.targetLineIndex) >= ?'
         : '';
     final rows = db.select(
       'SELECT ul.* FROM user_link ul '
@@ -369,7 +417,7 @@ class UserContentRepository {
         targetTitle,
         targetIsUserBook ? 1 : 0,
         ?targetCategoryId,
-        if (hasRange) ...[startLineIndex, endLineIndex],
+        if (hasRange) ...[endLineIndex, startLineIndex],
       ],
     );
     return rows.map(_fromRow).toList();
@@ -410,6 +458,12 @@ class UserContentRepository {
     targetIsUserBook: (row['targetIsUserBook'] as int? ?? 0) == 1,
     targetRef: row['targetRef'] as String?,
     targetLineIndex: row['targetLineIndex'] as int?,
+    anchorStart: row['anchorStart'] as int?,
+    anchorEnd: row['anchorEnd'] as int?,
+    anchorLabel: row['anchorLabel'] as String?,
+    sourceLineIndexEnd: row['sourceLineIndexEnd'] as int?,
+    targetLineIndexEnd: row['targetLineIndexEnd'] as int?,
+    targetRefEnd: row['targetRefEnd'] as String?,
     connectionType: row['connectionType'] as String,
   );
 }

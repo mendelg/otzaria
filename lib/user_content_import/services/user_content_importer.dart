@@ -199,36 +199,16 @@ class UserContentImporter {
       );
     }
     // איחוד רשומות זהות מכל הקבצים (למשל שני צדי צמד דו-כיווני שנורמלו
-    // לאותו כיוון) — עדיפות לרשומה עם targetRef להצגה.
-    final unique = <String, UserLinkRecord>{};
-    for (final link in links) {
-      final key = [
-        link.sourceIsUserBook,
-        link.sourceCategoryId,
-        link.sourceTitle,
-        link.sourceLineIndex,
-        link.targetIsUserBook,
-        link.targetCategoryId,
-        link.targetTitle,
-        link.targetLineIndex,
-        link.connectionType,
-      ].join('|');
-      final existing = unique[key];
-      if (existing == null ||
-          (existing.targetRef == null && link.targetRef != null)) {
-        unique[key] = link;
-      }
-    }
-    for (final link in unique.values) {
-      await repo.upsertUserLink(link);
-    }
+    // לאותו כיוון), תוך שמירת עוגנים נפרדים באותו צמד-שורות.
+    final unique = mergeUserLinks(links);
+    await repo.replaceUserLinks(unique);
 
     return UserImportResult(
       generationsApplied: generationByBook.length,
       linksApplied: unique.length,
       headingsApplied: headingsByBook.length,
       versionsApplied: versions.length,
-      booksWithLinks: unique.values
+      booksWithLinks: unique
           .map(
             (l) =>
                 '${l.sourceIsUserBook}|${l.sourceCategoryId}|'
@@ -518,6 +498,24 @@ class UserContentImporter {
         );
         continue;
       }
+      if (source.totalLines > 0 &&
+          row.sourceLineNumberEnd != null &&
+          row.sourceLineNumberEnd! > source.totalLines) {
+        errors.add(
+          '$fileName: שורת-סיום ${row.sourceLineNumberEnd} חורגת מגבולות '
+          '"$baseTitle" (${source.totalLines} שורות)',
+        );
+        continue;
+      }
+      if (target.totalLines > 0 &&
+          row.targetLineNumberEnd != null &&
+          row.targetLineNumberEnd! > target.totalLines) {
+        errors.add(
+          '$fileName: שורת-סיום ${row.targetLineNumberEnd} חורגת מגבולות '
+          '"${row.targetTitle}" (${target.totalLines} שורות)',
+        );
+        continue;
+      }
       // צמד קבצים דו-כיווני של הכלי מייצר גם רשומת מפרש→בסיס; מנרמלים אותה
       // לכיוון הקנוני (בסיס→מפרש) כך שהיא מתלכדת עם הרשומה מהקובץ של הבסיס.
       final flip =
@@ -535,6 +533,12 @@ class UserContentImporter {
                 targetCategoryId: source.categoryId,
                 targetIsUserBook: source.isUserBook,
                 targetLineIndex: row.sourceLineNumber - 1,
+                sourceLineIndexEnd: row.targetLineNumberEnd == null
+                    ? null
+                    : row.targetLineNumberEnd! - 1,
+                targetLineIndexEnd: row.sourceLineNumberEnd == null
+                    ? null
+                    : row.sourceLineNumberEnd! - 1,
                 connectionType: row.connectionType,
               )
             : UserLinkRecord(
@@ -547,6 +551,16 @@ class UserContentImporter {
                 targetIsUserBook: target.isUserBook,
                 targetRef: row.targetRef,
                 targetLineIndex: row.targetLineNumber - 1,
+                anchorStart: row.anchorStart,
+                anchorEnd: row.anchorEnd,
+                anchorLabel: row.anchorLabel,
+                sourceLineIndexEnd: row.sourceLineNumberEnd == null
+                    ? null
+                    : row.sourceLineNumberEnd! - 1,
+                targetLineIndexEnd: row.targetLineNumberEnd == null
+                    ? null
+                    : row.targetLineNumberEnd! - 1,
+                targetRefEnd: row.targetRefEnd,
                 connectionType: row.connectionType,
               ),
       );
@@ -625,6 +639,65 @@ class UserContentImporter {
   static String _baseName(String path) =>
       path.replaceAll('\\', '/').split('/').last;
 }
+
+/// בצמד-שורות, כל `anchorStart` שונה הוא רשומה נפרדת; רשומה חסרת-עוגן (הצד
+/// ההפוך של צמד דו-כיווני) נבלעת במעוגנת ומשלימה לה heRef.
+@visibleForTesting
+List<UserLinkRecord> mergeUserLinks(List<UserLinkRecord> links) {
+  final groups = <String, List<UserLinkRecord>>{};
+  for (final link in links) {
+    final key = [
+      link.sourceIsUserBook,
+      link.sourceCategoryId,
+      link.sourceTitle,
+      link.sourceLineIndex,
+      link.targetIsUserBook,
+      link.targetCategoryId,
+      link.targetTitle,
+      link.targetLineIndex,
+      link.connectionType,
+    ].join('|');
+    (groups[key] ??= []).add(link);
+  }
+  return [for (final group in groups.values) ..._mergeLinkGroup(group)];
+}
+
+List<UserLinkRecord> _mergeLinkGroup(List<UserLinkRecord> group) {
+  if (group.length == 1) return group;
+  final anchored = <int, UserLinkRecord>{};
+  UserLinkRecord? plain;
+  for (final link in group) {
+    final start = link.anchorStart;
+    if (start == null) {
+      if (plain == null || _linkRichness(link) > _linkRichness(plain)) {
+        plain = link;
+      }
+    } else if (anchored[start] == null ||
+        _linkRichness(link) > _linkRichness(anchored[start]!)) {
+      anchored[start] = link;
+    }
+  }
+  if (anchored.isEmpty) return [plain!];
+  final starts = anchored.keys.toList()..sort();
+  return [
+    for (final start in starts)
+      // מה שיש ברשומה חסרת-העוגן ואין במעוגנת (heRef, קצות טווח) שווה
+      // לתצוגה גם בה, ואובד אילו היא הייתה פשוט נזרקת.
+      plain == null
+          ? anchored[start]!
+          : anchored[start]!.fillMissingFrom(plain),
+  ];
+}
+
+/// כמה שדות-תצוגה אופציונליים הרשומה נושאת — מכריע בין שתי רשומות שקולות.
+int _linkRichness(UserLinkRecord link) => [
+  link.targetRef,
+  link.anchorEnd,
+  link.anchorLabel,
+  link.sourceLineIndexEnd,
+  link.targetLineIndexEnd,
+  link.targetRefEnd,
+].where((value) => value != null).length;
 
 /// עטיפה בטוחה לייבוא קבצים נבחרים — לעולם לא זורקת, רק מדווחת.
 Future<UserImportResult> importUserFilesSafe(

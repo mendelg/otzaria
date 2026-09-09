@@ -292,12 +292,50 @@ class MyDatabase {
   /// חוצה-DB (מקור לפי כותרת+דגל). מריצים לפני יצירת האינדקסים החדשים כי הם
   /// מתייחסים לעמודות החדשות. שורות קיימות נשמרות כמקור אישי (הסמנטיקה הישנה).
   void _ensureUserLinkSchema(sqlite3.Database db) {
-    final columns = db
+    var columns = db
         .select('PRAGMA table_info(user_link)')
         .map((row) => row['name'] as String)
         .toSet();
-    if (columns.contains('sourceTitle')) return;
+    if (!columns.contains('sourceTitle')) {
+      // ⚠️ טרנזקציה אחת: קריסה בין DROP ל-RENAME הייתה משאירה טבלה ריקה
+      // שכבר יש בה sourceTitle — השדרוג מדלג, והקישורים אבודים בשקט.
+      db.execute('SAVEPOINT upgrade_user_link');
+      try {
+        _rebuildUserLinkTable(db);
+        db.execute('RELEASE upgrade_user_link');
+      } catch (_) {
+        db.execute('ROLLBACK TO upgrade_user_link');
+        db.execute('RELEASE upgrade_user_link');
+        rethrow;
+      }
+      columns = db
+          .select('PRAGMA table_info(user_link)')
+          .map((row) => row['name'] as String)
+          .toSet();
+    }
 
+    const additions = {
+      'anchorStart': 'INTEGER',
+      'anchorEnd': 'INTEGER',
+      'anchorLabel': 'TEXT',
+      'sourceLineIndexEnd': 'INTEGER',
+      'targetLineIndexEnd': 'INTEGER',
+      'targetRefEnd': 'TEXT',
+    };
+    for (final entry in additions.entries) {
+      if (!columns.contains(entry.key)) {
+        db.execute(
+          'ALTER TABLE user_link ADD COLUMN ${entry.key} ${entry.value}',
+        );
+      }
+    }
+  }
+
+  /// בונה את user_link מהסכמה הישנה (מקור = FK לספר אישי) לחדשה (מקור לפי
+  /// כותרת+דגל). נקרא רק מתוך טרנזקציה — ראה [_ensureUserLinkSchema].
+  void _rebuildUserLinkTable(sqlite3.Database db) {
+    // שארית מריצה קודמת שנקטעה, אחרת ה-CREATE שאחריה נכשל.
+    db.execute('DROP TABLE IF EXISTS user_link_new');
     db.execute('''
       CREATE TABLE user_link_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,6 +348,12 @@ class MyDatabase {
           targetIsUserBook INTEGER NOT NULL DEFAULT 0,
           targetRef TEXT,
           targetLineIndex INTEGER,
+          anchorStart INTEGER,
+          anchorEnd INTEGER,
+          anchorLabel TEXT,
+          sourceLineIndexEnd INTEGER,
+          targetLineIndexEnd INTEGER,
+          targetRefEnd TEXT,
           connectionType TEXT NOT NULL
       );
     ''');
@@ -887,6 +931,12 @@ class MyDatabase {
           targetIsUserBook INTEGER NOT NULL DEFAULT 0,
           targetRef TEXT,
           targetLineIndex INTEGER,
+          anchorStart INTEGER,
+          anchorEnd INTEGER,
+          anchorLabel TEXT,
+          sourceLineIndexEnd INTEGER,
+          targetLineIndexEnd INTEGER,
+          targetRefEnd TEXT,
           connectionType TEXT NOT NULL
       );
       ''',
