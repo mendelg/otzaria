@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/text_book/utils/link_anchor_markers.dart';
+import 'package:otzaria/text_book/utils/link_anchor_variants.dart';
 
 Link _anchorLink({
   required String heRef,
@@ -111,6 +112,33 @@ void main() {
       expect(between.replaceAll(RegExp(r'<[^>]*>'), ''), isEmpty);
     });
 
+    test('אופסט גולמי (anchorOffsetsAreRaw) מוזרק כמו האופסט הגלוי שלו', () {
+      // "עולם": גולמי 20 (תגים ו-&amp; נספרים), גלוי 9 (entity ו-'&' בודד = תו).
+      const line = '<b>שלום</b> &amp; & עולם';
+      String inject(int start, {required bool raw}) => injectLinkAnchorMarkers(
+        rawLine: line,
+        anchorLinks: [
+          Link(
+            heRef: 'מפרש א, ג',
+            index1: 1,
+            path2: 'מפרש',
+            index2: 1,
+            connectionType: 'commentary',
+            anchorStart: start,
+            anchorOffsetsAreRaw: raw,
+            anchorLabel: 'ג',
+          ),
+        ],
+        styleIndexByCommentator: const {'מפרש': 0},
+      );
+      final fromRaw = inject(20, raw: true);
+      expect(fromRaw, inject(9, raw: false));
+      expect(
+        fromRaw,
+        endsWith('<span class="link-anchor link-anchor-0">(ג)</span>עולם'),
+      );
+    });
+
     test('עם lineIndex הסמן נפלט כ-<a> עם href של line_index', () {
       final bhg = _anchorLink(
         heRef: 'באר הגולה על שולחן ערוך אורח חיים א, א',
@@ -141,6 +169,42 @@ void main() {
       );
       expect(result, contains('href="otzaria://anchor?ref=7_1"'));
       expect(result, isNot(contains('<span class="link-anchor')));
+    });
+
+    test('הסוגריים נקבעים בווריאנט של המפרש ולא בשם הספר', () {
+      // אותו מפרש בדיוק, בשני אינדקסי-וריאנט — הסוגריים משתנים איתו.
+      String markerFor(int styleIndex) => injectLinkAnchorMarkers(
+        rawLine: 'לפני טקסט',
+        anchorLinks: [
+          _anchorLink(
+            heRef: 'מפרש, סימן א, סעיף א אות א',
+            path2: 'מפרש',
+            anchorStart: 5,
+            anchorLabel: 'א',
+          ),
+        ],
+        styleIndexByCommentator: {'מפרש': styleIndex},
+      );
+
+      for (var index = 0; index < kLinkAnchorVariants.length; index++) {
+        final delimiter = kLinkAnchorVariants[index].delimiter;
+        expect(
+          markerFor(index),
+          contains(
+            '<span class="link-anchor link-anchor-$index">'
+            '${delimiter.open}א${delimiter.close}</span>',
+          ),
+          reason: 'אינדקס $index',
+        );
+      }
+    });
+
+    test('כל שלושת סוגי הסוגריים נפלטים בפועל', () {
+      final emitted = <String>{};
+      for (var index = 0; index < kLinkAnchorVariants.length; index++) {
+        emitted.add(kLinkAnchorVariants[index].delimiter.wrap('א'));
+      }
+      expect(emitted, containsAll(const ['(א)', '[א]', '{א}']));
     });
 
     test('עוגן-טווח עם lineIndex נפלט כ-<a> עם range=1 (לחיצה מנווטת)', () {
@@ -223,14 +287,16 @@ void main() {
         anchorLinks: [bhg, baerHetev],
         styleIndexByCommentator: styles,
       );
-      expect(result, contains('link-anchor-${styles[bhg.path2]}">(א)</span>'));
-      expect(
-        result,
-        contains('link-anchor-${styles[baerHetev.path2]}">(א)</span>'),
-      );
+      String markerOf(String path2) {
+        final index = styles[path2]!;
+        return '<span class="link-anchor link-anchor-$index">'
+            '${wrapLinkAnchorLetter('א', index)}</span>';
+      }
+
+      expect(result, contains(markerOf(bhg.path2)));
+      expect(result, contains(markerOf(baerHetev.path2)));
       // העוגן של באר היטב (41) יושב אחרי "יתגבר " — לפני "כארי".
-      final hetevMarker =
-          '<span class="link-anchor link-anchor-${styles[baerHetev.path2]}">(א)</span>';
+      final hetevMarker = markerOf(baerHetev.path2);
       expect(result.indexOf(hetevMarker), lessThan(result.indexOf('כארי')));
       expect(result.indexOf(hetevMarker), greaterThan(result.indexOf('יתגבר')));
     });

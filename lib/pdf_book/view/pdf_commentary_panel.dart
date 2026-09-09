@@ -2261,9 +2261,9 @@ class _CollapsibleCommentaryGroupState
                         // קישור עם עוגן-מילה: אות הסימון שמופיעה בגוף הטקסט
                         // מוצגת גם לפני כותרת ההערה.
                         if (link.anchorStart != null) {
-                          final markerLetter = anchorMarkerLetter(link);
-                          if (markerLetter != null) {
-                            displayTitle = '($markerLetter) $displayTitle';
+                          final markerText = anchorMarkerText(link);
+                          if (markerText != null) {
+                            displayTitle = '$markerText $displayTitle';
                           }
                         }
                         if (widget.settingsState.replaceHolyNames) {

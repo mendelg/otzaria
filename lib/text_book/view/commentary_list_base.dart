@@ -2695,10 +2695,10 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                         widget.shouldShowItemTitle?.call(displayTitle) ?? true;
                     // קישור עם עוגן-מילה: אות הסימון שמופיעה בגוף הטקסט
                     // נשמרת גם כשהכותרת מוסתרת — היא הקישור הוויזואלי להערה.
-                    final markerLetter = link.anchorStart != null
-                        ? anchorMarkerLetter(link)
+                    final markerText = link.anchorStart != null
+                        ? anchorMarkerText(link)
                         : null;
-                    if (!showTitle && markerLetter == null) {
+                    if (!showTitle && markerText == null) {
                       // דיווח ריק דורס כותרת שדווחה קודם — לשחזור העתקה נכון.
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (!mounted) return;
@@ -2707,9 +2707,9 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                       return const SizedBox.shrink();
                     }
                     if (!showTitle) {
-                      displayTitle = '($markerLetter)';
-                    } else if (markerLetter != null) {
-                      displayTitle = '($markerLetter) $displayTitle';
+                      displayTitle = markerText!;
+                    } else if (markerText != null) {
+                      displayTitle = '$markerText $displayTitle';
                     }
                     if (settingsState.replaceHolyNames) {
                       displayTitle = utils.replaceHolyNames(

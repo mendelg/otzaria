@@ -8,29 +8,49 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter/painting.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 
+/// הסוגריים שבהם נתונה האות המודפסת בסמן — ההבדל הראשון שהעין תופסת בין
+/// שני מפרשים על אותו דף, לפני הבדלי המשקל והנטייה.
+enum LinkAnchorDelimiter {
+  parentheses('(', ')'),
+  brackets('[', ']'),
+  braces('{', '}');
+
+  const LinkAnchorDelimiter(this.open, this.close);
+
+  final String open;
+  final String close;
+
+  /// האות עטופה בסוגריים האלה, למשל "[א]".
+  String wrap(String letter) => '$open$letter$close';
+}
+
 /// גופן כתב רש"י של הווריאנטים.
 const String kLinkAnchorRashiFont = 'NotoRashiHebrew';
 
 /// יחס ההקטנה של סמן-האות ביחס לטקסט הסובב.
 const double kLinkAnchorMarkerScale = 0.7;
 
-/// תיאור ניטרלי-לרינדור של וריאנט טיפוגרפי בודד.
+/// וריאנט טיפוגרפי בודד. [delimiter] נכתב לתוך טקסט ה-HTML ולא ל-CSS, ולכן שני
+/// מסלולי הרינדור מקבלים אותו מהתוכן; את השאר כל מסלול מחיל בדרכו.
 @immutable
 class LinkAnchorVariant {
   final bool bold;
   final bool italic;
   final bool rashiScript;
   final bool underline;
+  final LinkAnchorDelimiter delimiter;
 
   const LinkAnchorVariant({
     this.bold = false,
     this.italic = false,
     this.rashiScript = false,
     this.underline = false,
+    this.delimiter = LinkAnchorDelimiter.parentheses,
   });
 }
 
-/// הווריאנטים לפי סדר האינדקס במחלקה `link-anchor-<index>`.
+/// הווריאנטים לפי האינדקס במחלקה `link-anchor-<index>`: מכפלת שלושת סוגי
+/// הסוגריים בארבע ההדגשות, כדי שמפרשים על אותו דף יתנגשו לעתים רחוקות.
 const List<LinkAnchorVariant> kLinkAnchorVariants = [
   LinkAnchorVariant(bold: true),
   LinkAnchorVariant(italic: true),
@@ -38,7 +58,25 @@ const List<LinkAnchorVariant> kLinkAnchorVariants = [
   LinkAnchorVariant(rashiScript: true),
   LinkAnchorVariant(rashiScript: true, bold: true),
   LinkAnchorVariant(underline: true),
+  LinkAnchorVariant(bold: true, delimiter: LinkAnchorDelimiter.brackets),
+  LinkAnchorVariant(italic: true, delimiter: LinkAnchorDelimiter.brackets),
+  LinkAnchorVariant(underline: true, delimiter: LinkAnchorDelimiter.brackets),
+  LinkAnchorVariant(rashiScript: true, delimiter: LinkAnchorDelimiter.brackets),
+  LinkAnchorVariant(bold: true, delimiter: LinkAnchorDelimiter.braces),
+  LinkAnchorVariant(italic: true, delimiter: LinkAnchorDelimiter.braces),
+  LinkAnchorVariant(underline: true, delimiter: LinkAnchorDelimiter.braces),
+  LinkAnchorVariant(rashiScript: true, delimiter: LinkAnchorDelimiter.braces),
 ];
+
+/// האות עטופה בסוגריים של הווריאנט שבאינדקס [variantIndex]. אינדקס שאינו
+/// ברשימה נופל לסוגריים העגולים — ברירת המחדל ההיסטורית.
+String wrapLinkAnchorLetter(String letter, int variantIndex) {
+  final delimiter =
+      variantIndex >= 0 && variantIndex < kLinkAnchorVariants.length
+      ? kLinkAnchorVariants[variantIndex].delimiter
+      : LinkAnchorDelimiter.parentheses;
+  return delimiter.wrap(letter);
+}
 
 /// מספר הווריאנטים הזמינים (ראו [anchorStyleIndexByCommentator]).
 final int kLinkAnchorStyleCount = kLinkAnchorVariants.length;

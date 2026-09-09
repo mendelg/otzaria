@@ -90,13 +90,15 @@ class Link {
   /// The end character position of the link in the text (optional, for character-based links).
   final int? end;
 
-  /// עוגן-מילה מטבלת link_anchor שבמסד: אופסט בתווים *גלויים* (תגי HTML לא
-  /// נספרים, entity = תו אחד — מוסכמת line.charCount) בשורת המקור שבה יושבת
-  /// ההערה. null כשאין לקישור עוגן-מילה.
+  /// עוגן-מילה בשורת המקור, בתווים *גלויים* (מוסכמת line.charCount) — אלא אם
+  /// [anchorOffsetsAreRaw]. null כשאין לקישור עוגן-מילה.
   final int? anchorStart;
 
   /// סוף טווח העוגן (אקסקלוסיבי), באותה מוסכמה. null לעוגן-נקודה.
   final int? anchorEnd;
+
+  /// האם אופסט העוגן הגיע מ-native JSON ועדיין כולל תגי HTML גולמיים.
+  final bool anchorOffsetsAreRaw;
 
   /// אות הסימון המודפסת (למשל "א") כשהמקור סיפק אותה.
   final String? anchorLabel;
@@ -137,6 +139,7 @@ class Link {
     this.end,
     this.anchorStart,
     this.anchorEnd,
+    this.anchorOffsetsAreRaw = false,
     this.anchorLabel,
     this.linkedAnchorStart,
     this.linkedAnchorEnd,
@@ -411,6 +414,7 @@ class Link {
       // עוגני-מילה מגיעים רק ממסד הנתונים (link_anchor), לא מקבצי JSON.
       anchorStart = null,
       anchorEnd = null,
+      anchorOffsetsAreRaw = false,
       anchorLabel = null,
       linkedAnchorStart = null,
       linkedAnchorEnd = null,

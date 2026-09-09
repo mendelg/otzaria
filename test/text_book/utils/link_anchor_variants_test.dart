@@ -65,6 +65,8 @@ void main() {
     });
 
     test('כל הווריאנטים נבדלים זה מזה ויזואלית', () {
+      // הסוגריים הם חלק מהחתימה: שני וריאנטים יכולים לחלוק סגנון-טקסט ועדיין
+      // להיראות שונה, כי האות עצמה עטופה אחרת.
       final signatures = kLinkAnchorVariants
           .map(
             (variant) => (
@@ -72,10 +74,34 @@ void main() {
               variant.italic,
               variant.rashiScript,
               variant.underline,
+              variant.delimiter,
             ),
           )
           .toSet();
       expect(signatures.length, kLinkAnchorVariants.length);
+    });
+
+    test('שלושת סוגי הסוגריים מיוצגים במאגר', () {
+      expect(
+        kLinkAnchorVariants.map((v) => v.delimiter).toSet(),
+        LinkAnchorDelimiter.values.toSet(),
+      );
+    });
+
+    test('wrapLinkAnchorLetter עוטף לפי הווריאנט', () {
+      for (var index = 0; index < kLinkAnchorVariants.length; index++) {
+        final delimiter = kLinkAnchorVariants[index].delimiter;
+        expect(
+          wrapLinkAnchorLetter('א', index),
+          '${delimiter.open}א${delimiter.close}',
+          reason: 'אינדקס $index',
+        );
+      }
+    });
+
+    test('אינדקס מחוץ לתחום נופל לסוגריים עגולים', () {
+      expect(wrapLinkAnchorLetter('א', -1), '(א)');
+      expect(wrapLinkAnchorLetter('א', kLinkAnchorVariants.length), '(א)');
     });
 
     test('אף וריאנט אינו "ריק" — לכל אחד יש סימן מבחין', () {

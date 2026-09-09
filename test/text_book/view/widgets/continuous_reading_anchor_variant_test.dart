@@ -18,7 +18,8 @@ void main() {
 
   String marker(int variantIndex, String letter) =>
       'לפני <a class="link-anchor link-anchor-$variantIndex" '
-      'href="otzaria://anchor?ref=3_0">($letter)</a> אחרי';
+      'href="otzaria://anchor?ref=3_0">'
+      '${wrapLinkAnchorLetter(letter, variantIndex)}</a> אחרי';
 
   // הייצור מריץ processText על השורה לפני הפירסור בשני המסלולים; בלעדיו
   // עיצוב הסוגריים (<small> סביב "(א)") היה חסר כאן ומקלקל את ההשוואה.
@@ -56,16 +57,28 @@ void main() {
       expect(style.fontWeight ?? FontWeight.normal, FontWeight.normal);
     });
 
-    test('כל ששת הווריאנטים נבדלים זה מזה בפועל', () {
+    test('כל הווריאנטים נבדלים זה מזה בפועל', () {
+      // הסוגריים נכתבים לתוך הטקסט ולא ל-TextStyle, ולכן הם חלק מהחתימה:
+      // שני וריאנטים באותו סגנון נבדלים בעטיפת האות בלבד.
       final signatures =
-          <(String?, FontWeight?, FontStyle?, TextDecoration?)>{};
+          <
+            (
+              String?,
+              FontWeight?,
+              FontStyle?,
+              TextDecoration?,
+              LinkAnchorDelimiter,
+            )
+          >{};
       for (var index = 0; index < kLinkAnchorVariants.length; index++) {
-        final style = continuousStyleOf(marker(index, 'א'), '(א)');
+        final letter = wrapLinkAnchorLetter('א', index);
+        final style = continuousStyleOf(marker(index, 'א'), letter);
         signatures.add((
           style.fontFamily,
           style.fontWeight,
           style.fontStyle,
           style.decoration,
+          kLinkAnchorVariants[index].delimiter,
         ));
       }
       expect(signatures.length, kLinkAnchorVariants.length);
@@ -165,8 +178,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final htmlStyle = _findWidgetStyle(tester, '(א)')!;
-        final continuousStyle = continuousStyleOf(html, '(א)');
+        final letter = wrapLinkAnchorLetter('א', index);
+        final htmlStyle = _findWidgetStyle(tester, letter)!;
+        final continuousStyle = continuousStyleOf(html, letter);
 
         expect(
           continuousStyle.fontFamily,

@@ -38,6 +38,57 @@ void main() {
       expect(result.single.heRef, 'הכי גרסינן מגילה ב., א');
     });
 
+    // ⚠️ הליבה של עוגני-המילה: שתי מילים בשורת הבסיס שמפנות לאותה שורת מפרש
+    // הן שני סמנים. מפתח בלי anchorStart היה משאיר אחד מהם.
+    test('עוגנים שונים באותו צמד-שורות נשמרים כשניים', () {
+      Link anchored(int start) => Link(
+        heRef: 'מפרש א, ב',
+        index1: 3,
+        path2: 'מפרש',
+        index2: 5,
+        connectionType: 'COMMENTARY',
+        anchorStart: start,
+      );
+
+      final result = dedupeUserLinks([anchored(5), anchored(40)]);
+      expect(result.map((l) => l.anchorStart), [5, 40]);
+    });
+
+    test('אותו עוגן בדיוק עדיין ממוזג לאחד', () {
+      Link anchored() => Link(
+        heRef: 'מפרש א, ב',
+        index1: 3,
+        path2: 'מפרש',
+        index2: 5,
+        connectionType: 'COMMENTARY',
+        anchorStart: 5,
+      );
+
+      expect(dedupeUserLinks([anchored(), anchored()]), hasLength(1));
+    });
+
+    test('הצד ההפוך (בלי עוגן) נבלע ברשומה המעוגנת ואינו מוצג פעמיים', () {
+      final forward = Link(
+        heRef: 'מפרש א, ב',
+        index1: 3,
+        path2: 'מפרש',
+        index2: 5,
+        connectionType: 'COMMENTARY',
+        anchorStart: 5,
+      );
+      final inverse = Link(
+        heRef: 'מפרש',
+        index1: 3,
+        path2: 'מפרש',
+        index2: 5,
+        connectionType: 'COMMENTARY',
+      );
+
+      final result = dedupeUserLinks([forward, inverse]);
+      expect(result, hasLength(1));
+      expect(result.single.anchorStart, 5);
+    });
+
     test('אותה כותרת אך ספר אישי/רשמי או קטגוריה שונה — לא ממוזגים', () {
       Link toBook(int i1, {required bool isUser, int? categoryId}) => Link(
         heRef: 'ref',
