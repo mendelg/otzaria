@@ -28,6 +28,72 @@ class UserContentRepository {
     await forgetSidecar(manualImportSource);
   }
 
+  /// מה ש-[clearAllUserContent] מוחק, לפי טבלה, בסדר שמכבד את התלויות.
+  static const Map<String, String> _manualContentFilters = {
+    'book_generation': '1',
+    'author': '1',
+    'book_author': '1',
+    'user_link': '1',
+    'user_alt_toc_structure': "source = '$manualImportSource'",
+    'user_alt_toc_entry':
+        'structureId IN (SELECT id FROM user_alt_toc_structure '
+        "WHERE source = '$manualImportSource')",
+    'user_book_version': "source = '$manualImportSource'",
+  };
+
+  static String _baselineTable(String table) => 'import_baseline_$table';
+
+  /// שומר את הנתונים הידניים הקיימים כבסיס שכל בנייה מחדש משחזרת. כך ייבוא
+  /// מגרסה שקדמה לספריית הקבצים אינו נמחק כשנוסף אליה הקובץ הראשון.
+  Future<void> captureManualBaseline() async {
+    final db = await _db.database;
+    for (final MapEntry(key: table, value: filter)
+        in _manualContentFilters.entries) {
+      final baseline = _baselineTable(table);
+      db.execute('DROP TABLE IF EXISTS $baseline');
+      db.execute(
+        'CREATE TABLE $baseline AS SELECT * FROM $table WHERE $filter',
+      );
+    }
+  }
+
+  /// מחזיר את הבסיס שנשמר ב-[captureManualBaseline], אם נשמר. ⚠️ OR IGNORE:
+  /// קובץ תיקייה שכתב מאז את אותו ספר מנצח, אחרת השחזור נופל על מפתח ייחודי.
+  Future<void> restoreManualBaseline() async {
+    final db = await _db.database;
+    for (final table in _manualContentFilters.keys) {
+      final baseline = _baselineTable(table);
+      final baselineColumns = _columns(db, baseline);
+      if (baselineColumns.isEmpty) continue;
+      // רק העמודות המשותפות: שדרוג סכמה אחרי השמירה מוסיף עמודות ליעד.
+      final columns = _columns(
+        db,
+        table,
+      ).where(baselineColumns.contains).join(', ');
+      // ערכים רק של מבנים שהוחזרו בפועל, אחרת נשארים יתומים.
+      final where = table == 'user_alt_toc_entry'
+          ? ' WHERE structureId IN (SELECT id FROM user_alt_toc_structure '
+                "WHERE source = '$manualImportSource')"
+          : '';
+      db.execute(
+        'INSERT OR IGNORE INTO $table ($columns) '
+        'SELECT $columns FROM $baseline$where',
+      );
+    }
+  }
+
+  Future<void> dropManualBaseline() async {
+    final db = await _db.database;
+    for (final table in _manualContentFilters.keys) {
+      db.execute('DROP TABLE IF EXISTS ${_baselineTable(table)}');
+    }
+  }
+
+  static List<String> _columns(sqlite3.Database db, String table) => [
+    for (final row in db.select('PRAGMA table_info($table)'))
+      row['name'] as String,
+  ];
+
   // ---- דורות ----
 
   /// מוסיף את שמות הדורות הקנוניים (idempotent). מבוצע פעם אחת לכל instance —

@@ -998,6 +998,22 @@ class MyDatabase {
           signature TEXT NOT NULL
       );
       ''',
+
+      // [content] הוא הקובץ כפי שנקרא: ממנו מייצאים ובונים מחדש, ולכן השהיה
+      // ומחיקה אינן דורשות מעקב פר-שורה בטבלאות התוכן.
+      '''
+      CREATE TABLE IF NOT EXISTS user_import_file (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          originPath TEXT,
+          kind TEXT NOT NULL,
+          content TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          importedAt INTEGER NOT NULL,
+          UNIQUE (name, originPath)
+      );
+      ''',
+      'CREATE INDEX IF NOT EXISTS idx_user_import_file_kind ON user_import_file(kind);',
     ];
   }
 }

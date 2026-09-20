@@ -13,6 +13,7 @@ import 'package:otzaria/settings/services/custom_folders/custom_folder.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/settings/engine/settings_engine_exports.dart';
 import 'package:otzaria/settings/l10n/settings_text.dart';
+import 'package:otzaria/settings/panels/user_import_files_dialog.dart';
 import 'package:otzaria/settings/services/custom_folders/bloc/custom_folders_bloc.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/core/messages/settings_messages.dart';
@@ -708,6 +709,13 @@ class UserContentImportTile extends StatelessWidget {
             ActionButton.warning(
               text: context.settingsText('נקה הכל'),
               onPressed: isSyncing ? null : () => _clear(context),
+            ),
+            ActionButton.neutral(
+              text: context.settingsText('ניהול קבצים'),
+              icon: OtzariaIcons.document_bullet_list_24_regular,
+              onPressed: isSyncing
+                  ? null
+                  : () => UserImportFilesDialog.show(context),
             ),
             ActionButton.recommended(
               text: context.settingsText('ייבוא נתונים'),

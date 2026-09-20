@@ -7,6 +7,19 @@ library;
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/link_types.dart';
 
+/// קובץ ייבוא אחרי שתוכנו נקרא. הייבוא עובד על הצורה הזו ולא על [File], כדי
+/// שאותו מסלול ישרת גם קובץ שנבחר עכשיו וגם קובץ ששמור בספריית הייבוא.
+class ImportedFile {
+  /// שם הקובץ בלבד (בלי נתיב) — הוא שקובע את סוג התוכן.
+  final String name;
+  final String content;
+
+  const ImportedFile({required this.name, required this.content});
+}
+
+/// סוג התוכן שקובץ ייבוא נושא, לפי שמו. משמש להצגה ולקיבוץ בהגדרות.
+enum UserImportKind { links, generations, headings, versions }
+
 /// שמות הדורות הקנוניים שמותר להזין בקובץ הדורות.
 ///
 /// "שאר מפרשים" אינו ברשימה — הוא משמעו "בלי דור" ואין טעם לייבא אותו.

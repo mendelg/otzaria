@@ -15,8 +15,7 @@ import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/services/target_line_links_service.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/settings/services/custom_folders/custom_folder.dart';
-import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
-import 'package:otzaria/user_content_import/services/user_content_importer.dart';
+import 'package:otzaria/user_content_import/services/user_import_library.dart';
 
 part 'custom_folders_event.dart';
 part 'custom_folders_state.dart';
@@ -59,6 +58,9 @@ class CustomFoldersBloc extends Bloc<CustomFoldersEvent, CustomFoldersState> {
     on<RescanCustomFolders>(_onRescan);
     on<ImportUserContentFiles>(_onImportUserFiles);
     on<ClearUserContent>(_onClearUserContent);
+    on<LoadUserImportFiles>(_onLoadUserImportFiles);
+    on<SetUserImportFileEnabled>(_onSetUserImportFileEnabled);
+    on<RemoveUserImportFile>(_onRemoveUserImportFile);
   }
 
   void _onLoad(LoadCustomFolders event, Emitter<CustomFoldersState> emit) {
@@ -367,29 +369,29 @@ class CustomFoldersBloc extends Bloc<CustomFoldersEvent, CustomFoldersState> {
     try {
       final userDb =
           (await UserBooksDatabaseHolder.instance.repository).database;
-      final r = await importUserFilesSafe(event.paths, userDb);
-      if (r.generationsApplied > 0 ||
-          r.linksApplied > 0 ||
-          r.headingsApplied > 0 ||
-          r.versionsApplied > 0) {
-        GenerationCache.instance.clear();
-        CommentaryService.clearEraCache();
-        TargetLineLinksService.instance.clearCache();
-        _addLibraryEvent(RefreshLibrary());
-      }
+      final library = UserImportLibrary(userDb);
+      // הקבצים נשמרים בספרייה ואז הנתונים נבנים מחדש מכל הפעילים, כדי
+      // שהמשתמש יוכל לנהל אותם אחר כך (השהיה/ייצוא/מחיקה).
+      final outcome = await library.addFiles(event.paths);
+      final r = outcome.rebuild;
+      final importFiles = await library.list();
+      // ⚠️ תמיד, גם כשיובא אפס: הבנייה מחדש כתבה את הטבלאות, ומטמון ישן היה
+      // מציג דורות ומפרשים שכבר אינם במסד.
+      _invalidateUserContentCaches();
       final imp = (
         generations: r.generationsApplied,
         links: r.linksApplied,
         headings: r.headingsApplied,
         versions: r.versionsApplied,
-        errors: r.errors,
+        errors: outcome.allErrors,
       );
       emit(
         state.copyWith(
           isSyncing: false,
+          importFiles: importFiles,
           message:
               _importSummary(imp) ??
-              (r.errors.isEmpty
+              (imp.errors.isEmpty
                   ? 'לא נמצאו נתונים לייבוא בקבצים שנבחרו.'
                   : null),
           error: _importErrorText(imp),
@@ -400,29 +402,100 @@ class CustomFoldersBloc extends Bloc<CustomFoldersEvent, CustomFoldersState> {
     }
   }
 
-  /// מוחק את כל הדורות והקישורים המיובאים ומנקה את מטמוני הדור.
-  Future<void> _onClearUserContent(
-    ClearUserContent event,
+  /// טוען את רשימת קובצי הייבוא השמורים, לתצוגה במסך ההגדרות.
+  Future<void> _onLoadUserImportFiles(
+    LoadUserImportFiles event,
     Emitter<CustomFoldersState> emit,
   ) async {
+    try {
+      final userDb =
+          (await UserBooksDatabaseHolder.instance.repository).database;
+      emit(state.copyWith(importFiles: await UserImportLibrary(userDb).list()));
+    } catch (e) {
+      emit(state.copyWith(error: 'טעינת רשימת קובצי הייבוא נכשלה: $e'));
+    }
+  }
+
+  /// תוכן קובץ ייבוא לייצוא. שאילתה ולא אירוע: התוצאה נכתבת לקובץ שהמשתמש
+  /// בוחר, ואינה חלק ממצב המסך.
+  Future<String?> importFileContent(int id) async {
+    final userDb = (await UserBooksDatabaseHolder.instance.repository).database;
+    return UserImportLibrary(userDb).contentOf(id);
+  }
+
+  /// משהה/מחזיר קובץ ייבוא ובונה מחדש את נתוני-המשתמש.
+  Future<void> _onSetUserImportFileEnabled(
+    SetUserImportFileEnabled event,
+    Emitter<CustomFoldersState> emit,
+  ) => _applyLibraryChange(
+    emit,
+    (library) => library.setEnabled(event.id, event.enabled),
+    successMessage: event.enabled
+        ? 'הקובץ הוחזר לשימוש.'
+        : 'הקובץ הושהה — הנתונים שלו אינם מוצגים כעת.',
+    failurePrefix: event.enabled ? 'החזרת הקובץ נכשלה' : 'השהיית הקובץ נכשלה',
+  );
+
+  /// מסיר קובץ ייבוא בודד ובונה מחדש בלעדיו.
+  Future<void> _onRemoveUserImportFile(
+    RemoveUserImportFile event,
+    Emitter<CustomFoldersState> emit,
+  ) => _applyLibraryChange(
+    emit,
+    (library) => library.remove(event.id),
+    successMessage: 'הקובץ והנתונים שהגיעו ממנו נמחקו.',
+    failurePrefix: 'מחיקת הקובץ נכשלה',
+  );
+
+  /// המסלול המשותף לכל שינוי בספרייה: מפעיל את הפעולה, מרענן את הרשימה
+  /// ומנקה את המטמונים כדי שהתצוגה תתעדכן מיד.
+  Future<void> _applyLibraryChange(
+    Emitter<CustomFoldersState> emit,
+    Future<UserImportLibraryResult> Function(UserImportLibrary) action, {
+    required String successMessage,
+    required String failurePrefix,
+  }) async {
     emit(state.copyWith(isSyncing: true, message: null, error: null));
     try {
       final userDb =
           (await UserBooksDatabaseHolder.instance.repository).database;
-      await UserContentRepository(userDb).clearAllUserContent();
-      GenerationCache.instance.clear();
-      CommentaryService.clearEraCache();
-      _addLibraryEvent(RefreshLibrary());
+      final library = UserImportLibrary(userDb);
+      final outcome = await action(library);
+      _invalidateUserContentCaches();
       emit(
         state.copyWith(
           isSyncing: false,
-          message: 'הנתונים המיובאים נמחקו.',
+          importFiles: await library.list(),
+          message: outcome.ok ? successMessage : null,
+          error: outcome.ok
+              ? null
+              : '$failurePrefix:\n${outcome.allErrors.take(10).join('\n')}',
         ),
       );
     } catch (e) {
-      emit(state.copyWith(isSyncing: false, error: 'שגיאה במחיקת הנתונים: $e'));
+      emit(state.copyWith(isSyncing: false, error: '$failurePrefix: $e'));
     }
   }
+
+  /// נתוני-המשתמש מוזנים לכמה מטמונים; בנייה מחדש מחייבת לפנות את כולם.
+  void _invalidateUserContentCaches() {
+    GenerationCache.instance.clear();
+    CommentaryService.clearEraCache();
+    TargetLineLinksService.instance.clearCache();
+    _addLibraryEvent(RefreshLibrary());
+  }
+
+  /// מוחק את כל הדורות והקישורים המיובאים ומנקה את מטמוני הדור. מרוקן גם את
+  /// ספריית הקבצים — אחרת הקבצים היו נשארים ומחזירים את הנתונים בבנייה הבאה.
+  Future<void> _onClearUserContent(
+    ClearUserContent event,
+    Emitter<CustomFoldersState> emit,
+  ) => _applyLibraryChange(
+    emit,
+    (library) => library.removeAll(),
+    successMessage: 'הנתונים המיובאים נמחקו.',
+    failurePrefix: 'שגיאה במחיקת הנתונים',
+  );
 
   /// תקציר ייבוא להודעה, או null אם לא יובא דבר.
   String? _importSummary(
