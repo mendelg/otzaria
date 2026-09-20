@@ -161,11 +161,13 @@ void main() {
             'sourceLineIndexEnd',
             'targetLineIndexEnd',
             'targetRefEnd',
+            'source',
           ]),
         );
         final row = db.select('SELECT * FROM user_link').single;
         expect(row['sourceTitle'], 'ביאורי יוסף');
         expect(row['anchorStart'], isNull);
+        expect(row['source'], isNull);
       },
     );
 

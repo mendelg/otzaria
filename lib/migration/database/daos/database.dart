@@ -321,6 +321,9 @@ class MyDatabase {
       'sourceLineIndexEnd': 'INTEGER',
       'targetLineIndexEnd': 'INTEGER',
       'targetRefEnd': 'TEXT',
+      // נתיב קובץ הקישורים שבתיקיית הספרים שממנו הגיעה השורה; NULL = ייבוא
+      // ידני מההגדרות. מפריד בין השניים כדי שכל אחד יימחק בנפרד.
+      'source': 'TEXT',
     };
     for (final entry in additions.entries) {
       if (!columns.contains(entry.key)) {
@@ -937,10 +940,12 @@ class MyDatabase {
           sourceLineIndexEnd INTEGER,
           targetLineIndexEnd INTEGER,
           targetRefEnd TEXT,
-          connectionType TEXT NOT NULL
+          connectionType TEXT NOT NULL,
+          source TEXT
       );
       ''',
       'CREATE INDEX IF NOT EXISTS idx_user_link_source ON user_link(sourceTitle, sourceIsUserBook);',
+      'CREATE INDEX IF NOT EXISTS idx_user_link_origin ON user_link(source);',
       'CREATE INDEX IF NOT EXISTS idx_user_link_target ON user_link(targetTitle, targetIsUserBook);',
 
       // כותרות חלופיות ('כותרות') לספרים אישיים. נפרדות מ-alt_toc_*: לספר אישי

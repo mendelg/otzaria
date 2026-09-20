@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
+import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
 import 'package:otzaria/user_content_import/services/user_content_importer.dart';
 import 'package:otzaria/user_content_import/services/user_sidecar_sync.dart';
@@ -225,6 +226,103 @@ void main() {
 
     await UserContentRepository(db).clearAllUserContent();
     expect(await headingRows(primary), isEmpty);
+  });
+
+  group('קובצי קישורים בתיקייה', () {
+    /// קובץ קישורים בפורמט ה-native של אוצריא, כפי שהוא יושב בתיקיית links.
+    void writeNativeLinks(String baseTitle, String commentator, int line) =>
+        writeSidecar(
+          '${baseTitle}_links.json',
+          '[{"line_index_1": $line, "line_index_2": 1, '
+              '"heRef_2": "$commentator א", '
+              '"path_2": "$commentator.txt", '
+              '"Conection Type": "linker"}]',
+        );
+
+    Future<List<UserLinkRecord>> linksOf(String title) =>
+        UserContentRepository(db).forwardUserLinks(
+          title,
+          sourceIsUserBook: true,
+        );
+
+    test('קובץ _links.json בתיקייה נקלט אוטומטית בסריקה', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+
+      final errors = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(errors, isEmpty);
+
+      final stored = await linksOf('מגילה');
+      expect(stored.single.targetTitle, 'מפרש');
+      expect(stored.single.sourceLineIndex, 1);
+      // LINKER נשמר כמפרש, כך שהוא מופיע בפאנל המפרשים של הבסיס.
+      expect(stored.single.connectionType, 'COMMENTARY');
+    });
+
+    test('הסרת הקובץ מהתיקייה מורידה את קישוריו', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      final file = writeSidecar(
+        'מגילה_links.json',
+        '[{"line_index_1": 2, "line_index_2": 1, '
+            '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+      );
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+      expect(await linksOf('מגילה'), hasLength(1));
+
+      file.deleteSync();
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+      expect(await linksOf('מגילה'), isEmpty);
+    });
+
+    test('עריכת הקובץ מחליפה את קישוריו ולא מוסיפה עליהם', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      writeNativeLinks('מגילה', 'מפרש', 3);
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      final stored = await linksOf('מגילה');
+      expect(stored, hasLength(1));
+      expect(stored.single.sourceLineIndex, 2);
+    });
+
+    test('"נקה הכל" אינו מוחק קישורים שמקורם בתיקייה', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      // הם חוזרים עם התיקייה ואינם חלק ממה שהמשתמש ייבא מההגדרות.
+      await UserContentRepository(db).clearAllUserContent();
+      expect(await linksOf('מגילה'), hasLength(1));
+    });
+
+    test('קובץ שנכשל נקלט שוב בסריקה הבאה', () async {
+      // ספר היעד עדיין לא נסרק — הקליטה נכשלת ואין לרשום "לא השתנה".
+      await addBook('מגילה.txt', 'א\nב\nג');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+      final first = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(first, isNotEmpty);
+      expect(await linksOf('מגילה'), isEmpty);
+
+      await addBook('מפרש.txt', 'פירוש');
+      final second = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(second, isEmpty);
+      expect(await linksOf('מגילה'), hasLength(1));
+    });
   });
 
   test('מחיקת ספר מוחקת את כותרותיו ואת רשומות הגרסאות שלו', () async {

@@ -21,7 +21,9 @@ class UserContentRepository {
   Future<void> clearAllUserContent() async {
     final db = await _db.database;
     db.execute('DELETE FROM book_generation');
-    db.execute('DELETE FROM user_link');
+    // רק ייבוא ידני: קישורים עם source שייכים לתיקיית הספרים, ומחיקתם כאן
+    // הייתה מעלימה אותם עד הסריקה הבאה.
+    db.execute('DELETE FROM user_link WHERE source IS NULL');
     db.execute('DELETE FROM book_author');
     db.execute('DELETE FROM author');
     // כותרות וגרסאות מקובצי התיקייה אינן "מיובאות" — הן חוזרות בסריקה הבאה.
@@ -33,7 +35,7 @@ class UserContentRepository {
     'book_generation': '1',
     'author': '1',
     'book_author': '1',
-    'user_link': '1',
+    'user_link': 'source IS NULL',
     'user_alt_toc_structure': "source = '$manualImportSource'",
     'user_alt_toc_entry':
         'structureId IN (SELECT id FROM user_alt_toc_structure '
@@ -245,7 +247,8 @@ class UserContentRepository {
     }
   }
 
-  /// מוחק את כל מה שנקלט מקובץ [source] (כותרות וגרסאות), ואת רישום המעקב שלו.
+  /// מוחק את כל מה שנקלט מקובץ [source] (כותרות, גרסאות וקישורים), ואת רישום
+  /// המעקב שלו.
   Future<void> forgetSidecar(String source) async {
     final db = await _db.database;
     db.execute(
@@ -255,6 +258,7 @@ class UserContentRepository {
     );
     db.execute('DELETE FROM user_alt_toc_structure WHERE source = ?', [source]);
     db.execute('DELETE FROM user_book_version WHERE source = ?', [source]);
+    db.execute('DELETE FROM user_link WHERE source = ?', [source]);
     db.execute('DELETE FROM user_sidecar_file WHERE path = ?', [source]);
   }
 
@@ -279,7 +283,8 @@ class UserContentRepository {
   /// נתיבי הקבצים הנלווים שכבר יושמו ויושבים תחת [folderPath].
   Future<List<String>> trackedSidecarsUnder(String folderPath) async {
     final db = await _db.database;
-    // בלי המפריד, '/x/ספרים' תופס גם את '/x/ספרים חדשים'.
+    // ⚠️ בלי המפריד "C:\ספרים" תופס גם את "C:\ספרים2", וסריקת האחת הייתה
+    // שוכחת — ומוחקת את קישוריהם של — הקבצים הנלווים של השנייה.
     final prefix = folderPath.endsWith('/') || folderPath.endsWith('\\')
         ? folderPath
         : '$folderPath${p.separator}';
@@ -340,18 +345,31 @@ class UserContentRepository {
   /// מוסיף קישור-משתמש, או דורס קישור זהה אם כבר קיים. שני קישורים נחשבים
   /// "זהים" כשכל שדות הזיהוי שווים (מקור, שורת-מקור, יעד ומיקומו) — targetRef
   /// הוא תצוגה בלבד ואינו חלק מהזהות. כך ייבוא חוזר מצטבר ואינו מכפיל.
-  Future<void> upsertUserLink(UserLinkRecord link) async {
+  Future<void> upsertUserLink(UserLinkRecord link, {String? source}) async {
     final db = await _db.database;
-    _deleteUserLinksAt(db, link);
-    _insertUserLink(db, link);
+    _deleteUserLinksAt(db, link, source);
+    _insertUserLink(db, link, source);
   }
 
   /// כל צמד-שורות נמחק *פעם אחת* ואז נכתבות כל רשומותיו. ב-[upsertUserLink]
   /// לבדו, הרשומה השנייה של צמד רב-עוגנים הייתה מוחקת את הראשונה.
-  Future<void> replaceUserLinks(Iterable<UserLinkRecord> links) async {
+  Future<void> replaceUserLinks(
+    Iterable<UserLinkRecord> links, {
+    String? source,
+  }) async {
     final db = await _db.database;
+    // קובץ תיקייה מגדיר את קישוריו במלואם: כל מה שהיה ממנו יורד, ואז נכתב
+    // מה שיש בו עכשיו. בייבוא ידני (source == null) הכתיבה נשארת מצטברת.
+    if (source != null) {
+      db.execute('DELETE FROM user_link WHERE source = ?', [source]);
+    }
+    // כשהמקור כבר נמחק במלואו, אין צמד לנקות.
     final cleared = <String>{};
     for (final link in links) {
+      if (source != null) {
+        _insertUserLink(db, link, source);
+        continue;
+      }
       final key = [
         link.sourceTitle,
         link.sourceIsUserBook,
@@ -362,21 +380,23 @@ class UserContentRepository {
         link.targetCategoryId,
         link.targetLineIndex,
       ].join('|');
-      if (cleared.add(key)) _deleteUserLinksAt(db, link);
-      _insertUserLink(db, link);
+      if (cleared.add(key)) _deleteUserLinksAt(db, link, source);
+      _insertUserLink(db, link, source);
     }
   }
 
-  /// מוחק את כל הקישורים שבאותו צמד-שורות כמו [link].
-  ///
-  /// השוואת השדות ב-IS (ולא =) כדי ש-NULL ישווה ל-NULL — אחרת קישור עם
-  /// targetLineIndex ריק לא היה נדרס בייבוא חוזר.
-  void _deleteUserLinksAt(sqlite3.Database db, UserLinkRecord link) {
+  /// מוחק את קישורי הצמד של [link] *מאותו [source]*. IS ולא =, כדי ש-NULL
+  /// ישווה ל-NULL; כפילות בין מקורות מתמזגת בתצוגה ב-`dedupeUserLinks`.
+  void _deleteUserLinksAt(
+    sqlite3.Database db,
+    UserLinkRecord link,
+    String? source,
+  ) {
     db.execute(
       'DELETE FROM user_link WHERE sourceTitle = ? AND sourceIsUserBook = ? '
       'AND sourceCategoryId IS ? AND sourceLineIndex = ? '
       'AND targetTitle = ? AND targetIsUserBook = ? AND targetCategoryId IS ? '
-      'AND targetLineIndex IS ?',
+      'AND targetLineIndex IS ? AND source IS ?',
       [
         link.sourceTitle,
         link.sourceIsUserBook ? 1 : 0,
@@ -386,17 +406,23 @@ class UserContentRepository {
         link.targetIsUserBook ? 1 : 0,
         link.targetCategoryId,
         link.targetLineIndex,
+        source,
       ],
     );
   }
 
-  void _insertUserLink(sqlite3.Database db, UserLinkRecord link) {
+  void _insertUserLink(
+    sqlite3.Database db,
+    UserLinkRecord link,
+    String? source,
+  ) {
     db.execute(
       'INSERT INTO user_link (sourceTitle, sourceCategoryId, sourceIsUserBook, '
       'sourceLineIndex, targetTitle, targetCategoryId, targetIsUserBook, '
       'targetRef, targetLineIndex, anchorStart, anchorEnd, anchorLabel, '
-      'sourceLineIndexEnd, targetLineIndexEnd, targetRefEnd, connectionType) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'sourceLineIndexEnd, targetLineIndexEnd, targetRefEnd, connectionType, '
+      'source) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         link.sourceTitle,
         link.sourceCategoryId,
@@ -414,6 +440,7 @@ class UserContentRepository {
         link.targetLineIndexEnd,
         link.targetRefEnd,
         link.connectionType,
+        source,
       ],
     );
   }

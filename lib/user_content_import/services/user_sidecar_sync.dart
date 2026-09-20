@@ -4,8 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
+import 'package:otzaria/user_content_import/services/user_content_importer.dart';
 import 'package:otzaria/user_content_import/services/user_headings_builder.dart';
 import 'package:otzaria/user_content_import/services/user_import_parser.dart';
+import 'package:otzaria/user_content_import/services/user_link_ref_resolver.dart';
 import 'package:otzaria/utils/file/document_converter.dart';
 import 'package:otzaria/utils/file/document_format.dart';
 import 'package:otzaria/utils/file/text_encoding.dart';
@@ -44,7 +46,7 @@ class UserSidecarSync {
           if (kind == null) continue;
           seen.add(entity.path);
           try {
-            await _applyFile(repo, entity, kind, errors);
+            await _applyFile(repo, userDb, entity, kind, errors);
           } catch (e) {
             errors.add('$name: הקליטה נכשלה ($e)');
           }
@@ -74,16 +76,26 @@ class UserSidecarSync {
         return _SidecarKind.bookHeadings;
       }
     }
+    // קובץ קישורים שיושב בתיקיית הספרים (בעיקר תיקיית links של אוצריא) —
+    // נקלט אוטומטית, בדיוק כמו כותרות וגרסאות.
+    if (UserContentImporter.kindOf(fileName) == UserImportKind.links) {
+      return _SidecarKind.links;
+    }
     return null;
   }
 
   static Future<void> _applyFile(
     UserContentRepository repo,
+    MyDatabase userDb,
     File file,
     _SidecarKind kind,
     List<String> errors,
   ) async {
     final name = p.basename(file.path);
+    if (kind == _SidecarKind.links) {
+      await _applyLinks(userDb, file, name, errors);
+      return;
+    }
     final content = await readTextFileSmart(file);
 
     if (kind == _SidecarKind.versions) {
@@ -200,6 +212,36 @@ class UserSidecarSync {
       );
     }
     await repo.setSidecarSignature(file.path, signature.toString());
+  }
+
+  /// קולט קובץ קישורים מהתיקייה עם נתיבו כ-source. ⚠️ חתימה רק כשאין שגיאות:
+  /// קובץ שנכשל כי ספריו טרם נסרקו חייב להיקלט שוב בסריקה הבאה.
+  static Future<void> _applyLinks(
+    MyDatabase userDb,
+    File file,
+    String name,
+    List<String> errors,
+  ) async {
+    final repo = UserContentRepository(userDb);
+    final signature = await _fileStamp(file);
+    // לפני הקריאה: תיקיית links יכולה להכיל אלפי קבצים שלא השתנו.
+    if (await _isUnchanged(repo, file.path, signature)) return;
+    final content = await readTextFileSmart(file);
+
+    final resolvers = userLinkResolversFor(userDb);
+    final result = await UserContentImporter.importContents(
+      [ImportedFile(name: name, content: content)],
+      userDb,
+      resolveRef: resolvers.resolveRef,
+      sourceExists: resolvers.sourceExists,
+      locateBook: resolvers.locateBook,
+      source: file.path,
+    );
+    if (result.errors.isNotEmpty) {
+      errors.addAll(result.errors);
+      return;
+    }
+    await repo.setSidecarSignature(file.path, signature);
   }
 
   /// שורות הספר באותה המרה שבה הסורק מפרסר את תוכן העניינים — כך מספרי
@@ -326,7 +368,7 @@ class UserSidecarSync {
   }
 }
 
-enum _SidecarKind { bookHeadings, folderHeadings, versions }
+enum _SidecarKind { bookHeadings, folderHeadings, versions, links }
 
 class _UserBookFile {
   final int id;

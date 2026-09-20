@@ -129,18 +129,15 @@ class UserContentImporter {
     );
   }
 
-  /// אותו ייבוא, על תוכן שכבר נקרא. זו הצורה שבה הוא נבנה מחדש מספריית
-  /// הייבוא ([UserImportLibrary]) — שם התוכן שמור במסד ואין קובץ לקרוא.
-  ///
-  /// [beforeApply] — פעולה שרצה **אחרי** שכל הקבצים פוענחו בהצלחה ולפני
-  /// הכתיבה הראשונה. זה המקום היחיד שבו מותר לנקות נתונים קיימים: ניקוי
-  /// מוקדם יותר היה נמחק גם כשהייבוא נכשל, בניגוד להבטחת האטומיות.
+  /// אותו ייבוא על תוכן שכבר נקרא. [source] = נתיב הקובץ בתיקיית הספרים (null = ידני).
+  /// [beforeApply] רץ אחרי פענוח מוצלח ולפני הכתיבה — המקום היחיד שבו מותר לנקות.
   static Future<UserImportResult> importContents(
     Iterable<ImportedFile> files,
     MyDatabase userDb, {
     UserLinkRefResolver resolveRef = resolveUserLinkTargetLine,
     UserLinkSourceChecker sourceExists = userLinkSourceBookExists,
     UserLinkBookLocator locateBook = locateUserLinkBook,
+    String? source,
     Future<void> Function()? beforeApply,
   }) async {
     final repo = UserContentRepository(userDb);
@@ -245,23 +242,21 @@ class UserContentImporter {
     for (final entry in authorByBook.entries) {
       await repo.setBookAuthor(entry.key, entry.value);
     }
+    final contentSource = source ?? UserContentRepository.manualImportSource;
     for (final entry in headingsByBook.entries) {
       await repo.replaceBookHeadings(
         entry.key,
         entry.value,
-        source: UserContentRepository.manualImportSource,
+        source: contentSource,
       );
     }
     if (versions.isNotEmpty) {
-      await repo.replaceVersions(
-        versions,
-        source: UserContentRepository.manualImportSource,
-      );
+      await repo.replaceVersions(versions, source: contentSource);
     }
     // איחוד רשומות זהות מכל הקבצים (למשל שני צדי צמד דו-כיווני שנורמלו
     // לאותו כיוון), תוך שמירת עוגנים נפרדים באותו צמד-שורות.
     final unique = mergeUserLinks(links);
-    await repo.replaceUserLinks(unique);
+    await repo.replaceUserLinks(unique, source: source);
 
     return UserImportResult(
       generationsApplied: generationByBook.length,

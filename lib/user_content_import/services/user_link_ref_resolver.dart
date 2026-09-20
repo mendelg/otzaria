@@ -1,5 +1,6 @@
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
+import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart';
 
@@ -22,8 +23,19 @@ Future<int?> resolveUserLinkTargetLine({
   required int? targetCategoryId,
   required bool targetIsUserBook,
   required String ref,
+}) async => _resolveTargetLine(
+  repo: await _repositoryFor(targetIsUserBook),
+  targetTitle: targetTitle,
+  targetCategoryId: targetCategoryId,
+  ref: ref,
+);
+
+Future<int?> _resolveTargetLine({
+  required SeforimRepository? repo,
+  required String targetTitle,
+  required int? targetCategoryId,
+  required String ref,
 }) async {
-  final repo = await _repositoryFor(targetIsUserBook);
   if (repo == null) return null;
 
   final book = targetCategoryId != null
@@ -67,8 +79,13 @@ Future<bool> userLinkSourceBookExists({
   required String title,
   required int? categoryId,
   required bool isUserBook,
-}) async {
-  final repo = await _repositoryFor(isUserBook);
+}) async => _bookExists(await _repositoryFor(isUserBook), title, categoryId);
+
+Future<bool> _bookExists(
+  SeforimRepository? repo,
+  String title,
+  int? categoryId,
+) async {
   if (repo == null) return false;
   final book = categoryId != null
       ? await repo.getBookByTitleAndCategory(title, categoryId)
@@ -85,9 +102,14 @@ typedef UserLinkBookLocator =
 
 /// המימוש האמיתי של [UserLinkBookLocator].
 Future<({bool isUserBook, int? categoryId, int totalLines})?>
-locateUserLinkBook(String title) async {
+locateUserLinkBook(String title) => _locateIn(_repositoryFor, title);
+
+Future<({bool isUserBook, int? categoryId, int totalLines})?> _locateIn(
+  Future<SeforimRepository?> Function(bool isUserBook) repositoryFor,
+  String title,
+) async {
   for (final isUserBook in const [true, false]) {
-    final repo = await _repositoryFor(isUserBook);
+    final repo = await repositoryFor(isUserBook);
     final book = await repo?.getBookByTitle(title);
     if (book != null) {
       return (
@@ -100,12 +122,50 @@ locateUserLinkBook(String title) async {
   return null;
 }
 
+/// שלושת הפותרים מול [userDb] *הנתון* ולא ההולדר הגלובלי (סריקת תיקייה).
+({
+  UserLinkRefResolver resolveRef,
+  UserLinkSourceChecker sourceExists,
+  UserLinkBookLocator locateBook,
+})
+userLinkResolversFor(MyDatabase userDb) {
+  final userRepo = SeforimRepository(userDb);
+  Future<SeforimRepository?> repositoryFor(bool isUserBook) async =>
+      isUserBook ? userRepo : await _officialRepository();
+  return (
+    resolveRef:
+        ({
+          required targetTitle,
+          required targetCategoryId,
+          required targetIsUserBook,
+          required ref,
+        }) async => _resolveTargetLine(
+          repo: await repositoryFor(targetIsUserBook),
+          targetTitle: targetTitle,
+          targetCategoryId: targetCategoryId,
+          ref: ref,
+        ),
+    sourceExists:
+        ({
+          required title,
+          required categoryId,
+          required isUserBook,
+        }) async =>
+            _bookExists(await repositoryFor(isUserBook), title, categoryId),
+    locateBook: (title) => _locateIn(repositoryFor, title),
+  );
+}
+
 /// המסד שבו נמצא ספר היעד — אישי (user_books.db) או רשמי (seforim.db).
 Future<SeforimRepository?> _repositoryFor(bool isUserBook) async {
   if (isUserBook) {
     return UserBooksDatabaseHolder.instance.repositoryIfInitialized ??
         await UserBooksDatabaseHolder.instance.repository;
   }
+  return _officialRepository();
+}
+
+Future<SeforimRepository?> _officialRepository() async {
   final provider = SqliteDataProvider.instance;
   if (!provider.isInitialized) await provider.initialize();
   return provider.repository;
