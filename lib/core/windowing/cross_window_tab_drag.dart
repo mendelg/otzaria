@@ -71,6 +71,17 @@ class CrossWindowTabDrag {
   /// מוק חייב להישלח לפני המסירה; הנייטיב אינו מעדכנו בתוך גרירת מערכת.
   bool _snapshotSent = false;
 
+  /// פעימות ולא שעון: המסירה מוכרעת בתוך [_poll], והספירה דטרמיניסטית גם בזמן מזויף.
+  int _pollsSinceStart = 0;
+
+  /// ⚠️ חסום ולא אינסופי: צילום שנכשל לא יגיע לעולם, וגרירה שלא נמסרת גרועה
+  /// ממוק בגודל השרטוט. ~360ms מכסים שני צילומים ומיזוג.
+  static const int _snapshotGracePolls = 6;
+
+  /// האם עוד כדאי להמתין למוק לפני מסירת הגרירה למערכת.
+  bool get _awaitingSnapshot =>
+      !_snapshotSent && _pollsSinceStart <= _snapshotGracePolls;
+
   /// מיקום ההכנסה שהחלון היעד דיווח עליו, לשימוש בשחרור.
   int? _remoteDropIndex;
 
@@ -108,6 +119,7 @@ class CrossWindowTabDrag {
     // פעם אחת לכל גרירה — ראו [_transferable].
     _transferable = MultiWindowService.canTransfer(tab);
     _snapshotSent = false;
+    _pollsSinceStart = 0;
     // דוגם לפני פעימת המעקב הראשונה.
     unawaited(_captureDragOrigin(_dragGeneration));
     final title = tab.title;
@@ -241,6 +253,7 @@ class CrossWindowTabDrag {
     final generation = _dragGeneration;
     final title = _draggedTitle;
     if (title == null || _handedOff) return;
+    _pollsSinceStart++;
     final target = await _service.windowAtCursor();
     // ⚠️ כשל בירור אינו "שולחן העבודה" — פשוט מדלגים על הפעימה.
     if (target == null) return;
@@ -283,13 +296,12 @@ class CrossWindowTabDrag {
       return;
     }
 
-    // ⚠️ ברגע שהסמן יצא מחלון המקור — הגרירה נמסרת ל-Windows.
-    //
-    // **מיד, ובלי השהיה.** גרסה קודמת השהתה 480ms כי המסירה כללה פתיחת
-    // חלון, ופתיחה מוקדמת מדי הייתה שוברת העברה מחלון לחלון. עכשיו
-    // המסירה אינה פותחת דבר — היא רק מעבירה למערכת חלון שכבר קיים —
-    // וההחלטה לאן הכרטיסיה הולכת נופלת **בשחרור**, לפי מה שתחת הסמן.
-    // כלומר אין יותר מה לשמור עליו בהשהיה.
+    // ⚠️ מוק שמגיע אחרי תחילת לולאת ההזזה נדחה (`SetImage` מדלג על `Compose`),
+    // ולכן מדלגים על הפעימה עד שנשלח — לכל היותר [_snapshotGracePolls].
+    if (_awaitingSnapshot) return;
+
+    // מעבר לכך — מיד: המסירה אינה פותחת חלון, והיעד מוכרע בשחרור לפי מה
+    // שתחת הסמן.
     await _handOffToSystem();
   }
 
