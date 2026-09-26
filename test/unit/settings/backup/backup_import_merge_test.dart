@@ -22,9 +22,12 @@ void main() {
 
   group('סימניות', () {
     test('סימניה זהה אינה מוכפלת, וחדשה מתווספת בסוף', () {
-      final local = [bookmark(ref: 'בראשית א'), bookmark(ref: 'בראשית ב')];
+      final local = [
+        bookmark(ref: 'בראשית א'),
+        bookmark(ref: 'בראשית ב', index: 1),
+      ];
       final incoming = [
-        bookmark(ref: 'בראשית ב'),
+        bookmark(ref: 'בראשית ב', index: 1),
         bookmark(ref: 'שמות א', title: 'ספר ב'),
       ];
 
@@ -54,26 +57,27 @@ void main() {
       expect(result.added, 1);
     });
 
-    test('סימניית חיפוש מזוהה לפי טקסט החיפוש', () {
-      final result = BackupImportMerge.mergeBookmarks(
-        [bookmark(ref: 'רש"י', isSearch: true)],
-        [
-          bookmark(ref: 'רש"י', isSearch: true),
-          bookmark(ref: 'רמב"ן', isSearch: true),
-        ],
-      );
+    test(
+      'סימניה שנבדלת רק ב-ref אינה מתווספת (issue: סריקת באגים 8,9,10)',
+      () {
+        final result = BackupImportMerge.mergeBookmarks(
+          [bookmark(ref: 'בראשית א')],
+          [bookmark(ref: 'בראשית א, א')],
+        );
 
-      expect(result.added, 1);
-    });
+        expect(result.added, 0);
+        expect(result.merged.single.ref, 'בראשית א');
+      },
+    );
   });
 
   group('היסטוריה', () {
     test('המיובאות מפנות את הרשומות המקומיות הישנות בתקרה', () {
       final local = List.generate(
         BackupImportMerge.maxHistory,
-        (i) => bookmark(ref: 'מקומי $i'),
+        (i) => bookmark(ref: 'מקומי $i', title: 'מקומי $i'),
       );
-      final incoming = [bookmark(ref: 'מיובא')];
+      final incoming = [bookmark(ref: 'מיובא', title: 'מיובא')];
 
       final result = BackupImportMerge.mergeHistory(local, incoming);
 
@@ -84,10 +88,35 @@ void main() {
       expect(result.merged.any((item) => item.ref == 'מקומי 199'), isFalse);
     });
 
+    test('סימניית חיפוש מזוהה לפי טקסט החיפוש', () {
+      final result = BackupImportMerge.mergeHistory(
+        [bookmark(ref: 'רש"י', isSearch: true)],
+        [
+          bookmark(ref: 'רש"י', isSearch: true),
+          bookmark(ref: 'רמב"ן', isSearch: true),
+        ],
+      );
+
+      expect(result.added, 1);
+    });
+
+    test(
+      'רשומה אחת לכל ספר — המקומית מנצחת (issue: סריקת באגים 8,9,10)',
+      () {
+        final result = BackupImportMerge.mergeHistory(
+          [bookmark(ref: 'בראשית א', index: 0)],
+          [bookmark(ref: 'בראשית ה', index: 40)],
+        );
+
+        expect(result.added, 0);
+        expect(result.merged.single.ref, 'בראשית א');
+      },
+    );
+
     test('מתחת לתקרה — המיובאות נוספות', () {
       final result = BackupImportMerge.mergeHistory(
-        [bookmark(ref: 'מקומי')],
-        [bookmark(ref: 'מיובא')],
+        [bookmark(ref: 'מקומי', title: 'מקומי')],
+        [bookmark(ref: 'מיובא', title: 'מיובא')],
       );
 
       expect(result.added, 1);

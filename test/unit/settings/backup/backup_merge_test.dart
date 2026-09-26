@@ -130,6 +130,53 @@ void main() {
     });
   });
 
+  group('מפתח הספר בארכיון (issue: סריקת באגים 8,9,10)', () {
+    test('ספר PDF וספר טקסט עם אותו id אינם מתמזגים', () {
+      Map<String, dynamic> entry(String type) => {
+        ...bookmark('דף ב'),
+        'book': {'id': 7, 'title': 'ספר', 'type': type},
+      };
+      final merged = merge(
+        {
+          'bookmarks': [entry('TextBook')],
+          'history': [entry('TextBook')],
+        },
+        {
+          'bookmarks': [entry('PdfBook')],
+          'history': [entry('PdfBook')],
+        },
+      );
+
+      expect(merged['bookmarks'] as List, hasLength(2));
+      expect(merged['history'] as List, hasLength(2));
+    });
+
+    test('מהדורות שונות של אותו ספר אינן מתמזגות', () {
+      Map<String, dynamic> entry(String? version) => {
+        ...bookmark('דף ב'),
+        'book': {
+          'id': 7,
+          'title': 'ספר',
+          'type': 'TextBook',
+          'versionTitle': version,
+        },
+      };
+      final merged = merge(
+        {
+          'bookmarks': [entry(null)],
+          'history': [entry(null)],
+        },
+        {
+          'bookmarks': [entry('Warsaw 1861')],
+          'history': [entry('Warsaw 1861')],
+        },
+      );
+
+      expect(merged['bookmarks'] as List, hasLength(2));
+      expect(merged['history'] as List, hasLength(2));
+    });
+  });
+
   group('הגדרות', () {
     test('החדש מנצח תמיד — ללא איחוד ערכים ישנים', () {
       final merged = merge(
