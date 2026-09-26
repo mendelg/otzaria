@@ -312,6 +312,9 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.ensureVisible(find.text('הוסף קיצור'));
+      // בוויופורט של slivers מיקום הילדים מתעדכן רק בפריסה הבאה, ובלי הפריים
+      // הזה ההקשה נופלת על המיקום הישן שמחוץ למסך.
+      await tester.pumpAndSettle();
       await tester.tap(find.text('הוסף קיצור'));
       await tester.pumpAndSettle();
 
