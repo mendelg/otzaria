@@ -153,6 +153,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
           results: [],
           totalResults: 0,
           totalGroups: null,
+          isLoading: false,
           facetCounts: const {},
         ),
       );
@@ -273,6 +274,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
             bookByIndexedFilePath ??= _booksByIndexedFilePathFor(
               await DataRepository.instance.library,
             );
+            if (requestId != _searchRequestId) return;
             aggregated = FacetHelper.buildFacetCountsFromBookCounts(
               bookCounts,
               bookByIndexedFilePath,
@@ -1196,6 +1198,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
       return;
     }
 
+    final requestId = _searchRequestId;
     emit(state.copyWith(isLoading: true));
 
     try {
@@ -1223,6 +1226,8 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
         wordMatchMode: state.wordMatchMode,
         wordMatchCount: state.wordMatchCount,
       );
+      // חיפוש חדש החליף את התוצאות ומנהל את isLoading בעצמו.
+      if (requestId != _searchRequestId) return;
 
       final combined = [...state.results, ...nextResults];
       final exhausted = nextResults.isEmpty;
@@ -1243,6 +1248,7 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
         ),
       );
     } catch (e, stackTrace) {
+      if (requestId != _searchRequestId) return;
       debugPrint('❌ Load more results failed: $e\n$stackTrace');
       UiSnack.showError(LibraryMessages.loadMoreResultsError);
       emit(state.copyWith(isLoading: false));
