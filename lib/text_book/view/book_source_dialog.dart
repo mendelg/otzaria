@@ -65,6 +65,7 @@ const _sourceMappings = {
     url: '',
     logo: '',
   ),
+  'ksk': (text: 'קובץ שיטות קמאי', url: '', logo: ''),
   'unknown': (text: 'מקור לא ידוע', url: '', logo: ''),
 };
 

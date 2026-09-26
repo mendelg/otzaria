@@ -122,6 +122,10 @@ void main() {
         ExportRestrictionService.isRestricted('הערות על שמירת שבת כהלכתה - א'),
         isTrue,
       );
+      expect(
+        ExportRestrictionService.isRestricted('השלמה על עבודה זרה'),
+        isTrue,
+      );
       expect(ExportRestrictionService.isRestricted('משנה ברורה'), isFalse);
     });
   });

@@ -61,6 +61,14 @@ void main() {
       },
     );
 
+    test('should resolve the KSK source as stored in DB', () {
+      final info = getSourceDisplayInfo('KSK');
+
+      expect(info.text, equals('קובץ שיטות קמאי'));
+      expect(info.url, isEmpty);
+      expect(info.logo, isEmpty);
+    });
+
     test('unknown sources fall back to the raw name without a logo', () {
       final info = getSourceDisplayInfo('SomeNewSourceToOtzaria');
 
