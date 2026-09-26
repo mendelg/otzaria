@@ -108,6 +108,44 @@ void main() {
     expect(await headingRows(bookId), isEmpty);
   });
 
+  test(
+    'סריקת תיקייה אינה מוחקת כותרות של תיקייה אחות ששמה מתחיל כמותה',
+    () async {
+      final sibling = Directory(p.join(tempDir.path, 'ספרים חדשים'))
+        ..createSync();
+      final bookPath = p.join(sibling.path, 'ספר.txt');
+      File(bookPath).writeAsStringSync('א\nב');
+      final raw = await db.database;
+      raw.execute(
+        'INSERT INTO book (categoryId, sourceId, title, filePath, fileType, lastModified) '
+        "VALUES (1, 1, 'ספר', ?, 'txt', 1)",
+        [bookPath],
+      );
+      final bookId = raw.lastInsertRowId;
+      File(
+        p.join(sibling.path, 'ספר.כותרות.csv'),
+      ).writeAsStringSync('כותרת,שורה\nפרק,1\n');
+      await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: sibling.path,
+      );
+
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      expect((await headingRows(bookId)).single['text'], 'פרק');
+    },
+  );
+
+  test('קבצים נלווים נמצאים גם כשנתיב התיקייה מסתיים במפריד', () async {
+    final repo = UserContentRepository(db);
+    final inside = p.join(folder.path, 'כותרות.csv');
+    await repo.setSidecarSignature(inside, 'x');
+
+    expect(await repo.trackedSidecarsUnder('${folder.path}${p.separator}'), [
+      inside,
+    ]);
+  });
+
   test('שגיאה בקובץ מדווחת עם שם הקובץ', () async {
     await addBook('ספר.txt', 'שורה אחת');
     writeSidecar('ספר.כותרות.csv', 'כותרת,שורה\nרחוקה,50\n');
