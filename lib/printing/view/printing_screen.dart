@@ -801,11 +801,6 @@ class _PrintingScreenState extends State<PrintingScreen> {
       _ => 120.0,
     };
     final rasterPages = <Uint8List>[];
-    final generation = _renderGeneration;
-
-    // אם נרשם render חדש יותר, דלג כדי לא לבזבז עבודה מיושנת.
-    if (generation != _renderGeneration || !mounted) return sourcePdf;
-
     final doc = await _openPdfInMemory(sourcePdf, 'nup');
 
     // Update total page count on first open and clamp page range
@@ -826,10 +821,6 @@ class _PrintingScreenState extends State<PrintingScreen> {
         min((endPage ?? doc.pages.length) - 1, doc.pages.length - 1),
       );
       for (var i = firstIdx; i <= lastIdx; i++) {
-        // אם המשתמש שינה פרמטר באמצע ה-render, זרוק את המסמך מוקדם.
-        if (generation != _renderGeneration || !mounted) {
-          return sourcePdf;
-        }
         final page = doc.pages[i];
         final pdfImage = await page.render(
           fullWidth: page.width * scale,
