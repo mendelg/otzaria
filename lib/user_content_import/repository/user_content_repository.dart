@@ -2,6 +2,7 @@ import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/services/user_headings_builder.dart';
+import 'package:path/path.dart' as p;
 
 /// גישת כתיבה/קריאה לנתוני-המשתמש ב-user_books.db: דור הספר (book_generation)
 /// וקישורי-משתמש מיובאים (user_link).
@@ -211,10 +212,14 @@ class UserContentRepository {
   /// נתיבי הקבצים הנלווים שכבר יושמו ויושבים תחת [folderPath].
   Future<List<String>> trackedSidecarsUnder(String folderPath) async {
     final db = await _db.database;
+    // בלי המפריד, '/x/ספרים' תופס גם את '/x/ספרים חדשים'.
+    final prefix = folderPath.endsWith('/') || folderPath.endsWith('\\')
+        ? folderPath
+        : '$folderPath${p.separator}';
     final rows = db.select(
       "SELECT path FROM user_sidecar_file WHERE path LIKE ? ESCAPE '\\'",
       [
-        '${folderPath.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%',
+        '${prefix.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%',
       ],
     );
     return [for (final row in rows) row['path'] as String];
