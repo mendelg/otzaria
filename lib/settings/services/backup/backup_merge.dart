@@ -212,19 +212,24 @@ class BackupMerge {
     return raw.cast<String, dynamic>();
   }
 
+  /// כמו `bookIdentity`: PDF של מסכת חולק id עם מהדורת הטקסט, ומהדורה
+  /// חלופית חולקת id עם הנוסח הממוזג.
   static String _bookTitleOf(Map<String, dynamic> m) {
     final book = m['book'];
     if (book is! Map) return '';
     final id = book['id'];
     final title = book['title'] ?? '';
     final source = BookSource.fromJson(book).identitySuffix;
-    return id != null ? 'id:$id$source' : 'title:$title$source';
+    final pdf = book['type'] == 'PdfBook' ? '|pdf' : '';
+    final version = book['versionTitle'];
+    final base = id != null ? 'id:$id$pdf$source' : 'title:$title$pdf$source';
+    return version == null ? base : '$base|version:$version';
   }
 
   static String _bookmarkKey(Map<String, dynamic> m) =>
       '${m['targetKind']}|${m['ref']}|${m['index']}|${m['isSearch']}|${_bookTitleOf(m)}';
 
-  /// זהות רשומת היסטוריה: אחת לכל ספר (כמו historyKey באפליקציה),
+  /// זהות רשומת היסטוריה: אחת לכל ספר וסוג יעד,
   /// כך שמיזוג משמר את מיקום הקריאה האחרון פר-ספר ולא כל ביקור.
   static String _historyKey(Map<String, dynamic> m) {
     if (m['isSearch'] == true) return 'search:${m['ref']}';

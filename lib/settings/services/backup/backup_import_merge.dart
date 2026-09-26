@@ -42,31 +42,20 @@ class BackupImportMerge {
   /// שם שולחן עבודה שיובא ושמו כבר תפוס.
   static const String _importedSuffix = 'ממכשיר אחר';
 
-  /// סימניות: פריט מהגיבוי נוסף רק אם אין לו זהה מקומי
-  /// (ראה [Bookmark.dedupeKey]). הסדר המקומי נשמר, והמיובאות בסופו.
+  /// סימניות: פריט מהגיבוי נוסף רק אם אין מקומית סימניה באותה
+  /// [Bookmark.bookmarkIdentity]. הסדר המקומי נשמר, והמיובאות בסופו.
   static ({List<Bookmark> merged, int added}) mergeBookmarks(
     List<Bookmark> local,
     List<Bookmark> incoming,
-  ) {
-    final merged = [...local];
-    final keys = local.map((b) => b.dedupeKey).toSet();
-    var added = 0;
-    for (final bookmark in incoming) {
-      if (!keys.add(bookmark.dedupeKey)) continue;
-      merged.add(bookmark);
-      added++;
-    }
-    return (merged: merged, added: added);
-  }
+  ) => _mergeByKey(local, incoming, (b) => b.bookmarkIdentity);
 
-  /// היסטוריה: כמו הסימניות, עם גזירה ל-[maxHistory]. הרשומות המקומיות
-  /// קודמות, אבל מפנים בסוף הרשימה מקום לרשומות המיובאות כדי שייבוא ממכשיר
-  /// אחר לא יהפוך ללא-פעולה כשההיסטוריה המקומית כבר מלאה.
+  /// היסטוריה: רשומה אחת לכל [Bookmark.historyKey], גזורה ל-[maxHistory].
+  /// המקומיות קודמות, אך בתקרה מפנות מקום למיובאות — אחרת הייבוא לא-פעולה.
   static ({List<Bookmark> merged, int added}) mergeHistory(
     List<Bookmark> local,
     List<Bookmark> incoming,
   ) {
-    final result = mergeBookmarks(local, incoming);
+    final result = _mergeByKey(local, incoming, (b) => b.historyKey);
     if (result.merged.length <= maxHistory) return result;
 
     final imported = result.merged.skip(local.length).take(maxHistory).toList();
@@ -75,6 +64,22 @@ class BackupImportMerge {
       merged: [...local.take(localCapacity), ...imported],
       added: imported.length,
     );
+  }
+
+  static ({List<Bookmark> merged, int added}) _mergeByKey(
+    List<Bookmark> local,
+    List<Bookmark> incoming,
+    String Function(Bookmark) keyOf,
+  ) {
+    final merged = [...local];
+    final keys = local.map(keyOf).toSet();
+    var added = 0;
+    for (final bookmark in incoming) {
+      if (!keys.add(keyOf(bookmark))) continue;
+      merged.add(bookmark);
+      added++;
+    }
+    return (merged: merged, added: added);
   }
 
   /// שמור-וזכור: מחזירה את המפתחות שיש לכתוב בפועל.
