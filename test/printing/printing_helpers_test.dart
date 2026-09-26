@@ -221,6 +221,36 @@ void main() {
     });
   });
 
+  group('headerSectionEndLine — סוף סעיף הכותרת כולל את תתי-הכותרות', () {
+    // רשימה שטוחה בסדר המסמך, כמו שמסך ההדפסה בונה מעץ תוכן העניינים.
+    List<TocEntry> flat(List<(int line, int level)> entries) => [
+      for (final (line, level) in entries)
+        TocEntry(text: 'h$line', index: line, level: level),
+    ];
+
+    test('שורש שם הספר (רמה 0 מהמסד) מכסה את כל הספר', () {
+      final h = flat([(0, 0), (1, 1), (16, 1), (36, 1)]);
+      expect(headerSectionEndLine(h, 0, 2875), 2875);
+    });
+
+    test('פרק עם דפים מסתיים בפרק הבא, לא בדף הראשון שלו', () {
+      final h = flat([(1, 1), (2, 2), (10, 2), (30, 1), (31, 2)]);
+      expect(headerSectionEndLine(h, 0, 50), 30);
+    });
+
+    test('כותרת עלה מסתיימת בכותרת הבאה', () {
+      final h = flat([(1, 1), (2, 2), (10, 2), (30, 1), (31, 2)]);
+      expect(headerSectionEndLine(h, 1, 50), 10);
+      expect(headerSectionEndLine(h, 2, 50), 30);
+    });
+
+    test('הכותרת האחרונה מסתיימת בסוף הספר', () {
+      final h = flat([(1, 1), (30, 1), (31, 2)]);
+      expect(headerSectionEndLine(h, 2, 50), 50);
+      expect(headerSectionEndLine(h, 1, 50), 50);
+    });
+  });
+
   group('hasPdfPageRange', () {
     test('startPage=1 ו-endPage=null → אין טווח', () {
       expect(hasPdfPageRange(startPage: 1, endPage: null), isFalse);
