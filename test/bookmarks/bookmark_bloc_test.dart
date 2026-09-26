@@ -606,7 +606,7 @@ void main() {
       );
       expect(
         Bookmark(ref: 'טור א', book: official, index: 1).historyKey,
-        'book:טור',
+        'book:id:7',
       );
     });
 
@@ -678,7 +678,7 @@ void main() {
 
     test('historyKey כולל targetKind לסימנייה רגילה', () {
       final bm = _bookmark(bookTitle: 'בראשית');
-      expect(bm.historyKey, 'book:בראשית');
+      expect(bm.historyKey, 'book:filePath:/fake/בראשית.txt');
     });
 
     test('historyKey כולל targetKind לסימניית מפרשים', () {
@@ -688,7 +688,7 @@ void main() {
         index: 42,
         targetKind: BookmarkTargetKind.commentators,
       );
-      expect(bm.historyKey, 'commentators:בראשית');
+      expect(bm.historyKey, 'commentators:filePath:/fake/בראשית.txt');
     });
 
     test('historyKey הוא ref לסימנייה חיפוש', () {
