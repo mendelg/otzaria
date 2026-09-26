@@ -353,7 +353,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     }
   }
 
-  /// שורת הסיום (בלעדית) של עוגן: כותרת → תחילת הכותרת הבאה (או סוף הספר);
+  /// שורת הסיום (בלעדית) של עוגן: כותרת → סוף הסעיף שלה, כולל תתי-הכותרות;
   /// שורה → השורה שאחריה, כך שהשורה הנבחרת נכללת.
   int? _anchorEndLine(_RangeAnchor? anchor, int totalLines) {
     if (anchor == null) return null;
@@ -361,15 +361,11 @@ class _PrintingScreenState extends State<PrintingScreen> {
       case _AnchorKind.header:
         if (_flatHeaders.isEmpty) return null;
         final i = anchor.index.clamp(0, _flatHeaders.length - 1);
-        return i < _flatHeaders.length - 1
-            ? _flatHeaders[i + 1].index
-            : totalLines;
+        return headerSectionEndLine(_flatHeaders, i, totalLines);
       case _AnchorKind.altHeader:
         if (_flatAltHeaders.isEmpty) return null;
         final i = anchor.index.clamp(0, _flatAltHeaders.length - 1);
-        return i < _flatAltHeaders.length - 1
-            ? _flatAltHeaders[i + 1].index
-            : totalLines;
+        return headerSectionEndLine(_flatAltHeaders, i, totalLines);
       case _AnchorKind.line:
         return anchor.index + 1;
     }

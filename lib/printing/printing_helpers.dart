@@ -106,3 +106,13 @@ int findLastHeaderIndexAtOrBefore(List<TocEntry> headers, int lineIndex) {
   }
   return result;
 }
+
+/// שורת הסיום (בלעדית) של סעיף הכותרת [index] ברשימה שטוחה בסדר המסמך:
+/// תחילת הכותרת הבאה שרמתה אינה עמוקה יותר (כך שתתי-הכותרות נכללות), או [totalLines].
+int headerSectionEndLine(List<TocEntry> headers, int index, int totalLines) {
+  final level = headers[index].level;
+  for (var i = index + 1; i < headers.length; i++) {
+    if (headers[i].level <= level) return headers[i].index;
+  }
+  return totalLines;
+}
