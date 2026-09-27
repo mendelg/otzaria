@@ -67,6 +67,7 @@ import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/bloc/tabs_event.dart';
 import 'package:otzaria/tabs/bloc/tabs_state.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
+import 'package:otzaria/tabs/models/combined_tab.dart';
 import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/widgets/navigation/reader_nav_center.dart';
 import 'package:otzaria/utils/navigation/open_book.dart';
@@ -4133,9 +4134,14 @@ class _PdfBookScreenState extends State<PdfBookScreen>
             _isActivePane(previous) != _isActivePane(current),
         listener: (context, state) =>
             _pdfViewFocusNode.canRequestFocus = _isActivePane(state),
-        child: BlocListener<PdfBookBloc, PdfBookState>(
-          listener: _onBlocStateChanged,
-          child: _buildContent(context),
+        child: BlocListener<TabsBloc, TabsState>(
+          listenWhen: (previous, current) =>
+              _isShown(previous) && !_isShown(current),
+          listener: (context, _) => _releaseImagesWhileHidden(),
+          child: BlocListener<PdfBookBloc, PdfBookState>(
+            listener: _onBlocStateChanged,
+            child: _buildContent(context),
+          ),
         ),
       ),
     );
@@ -4143,6 +4149,20 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
   bool _isActivePane(TabsState state) =>
       identical(state.activePane, widget.tab);
+
+  /// מוצג בטאב הנוכחי — גם כחלונית שאינה פעילה בטאב מפוצל.
+  bool _isShown(TabsState state) {
+    final current = state.currentTab;
+    return current != null &&
+        leafPanes(current).any((pane) => identical(pane, widget.tab));
+  }
+
+  /// הטאב נשמר חי ברקע; תמונות העמודים שמחוץ למסך ומטמון הדפדוף מתרנדרים מחדש בחזרה.
+  void _releaseImagesWhileHidden() {
+    _disposeAllSpreadCache();
+    final controller = widget.tab.pdfViewerController;
+    if (controller.isReady) controller.releaseCachedImages();
+  }
 
   void _onBlocStateChanged(BuildContext context, PdfBookState state) {
     final mode = switch (state) {

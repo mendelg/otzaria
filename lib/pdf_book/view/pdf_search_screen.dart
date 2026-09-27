@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -30,6 +31,7 @@ import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/text_book/utils/search_query_sync.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/navigation/search_pane_base.dart';
+import 'package:otzaria/widgets/navigation/search_result_nav_button.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart';
@@ -545,6 +547,46 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     return false;
   }
 
+  /// הקודמת/הבאה, ועצירה בזמן סריקה — רק בחיפוש הפשוט, שבו כל תוצאה היא התאמה.
+  Widget? _buildResultToolbar() {
+    if (!_isSimpleSearch) return null;
+    final searcher = widget.textSearcher;
+    final isScanning = _isSearching;
+    if (_searchResults.isEmpty && !isScanning) return null;
+    final current = searcher.currentIndex;
+    final hasResults = _searchResults.isNotEmpty;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isScanning) ...[
+          SearchResultNavButton(
+            icon: FluentIcons.stop_24_regular,
+            tooltip: 'עצור את החיפוש',
+            onPressed: searcher.stopTextSearch,
+          ),
+          const SizedBox(width: 4),
+        ],
+        SearchResultNavButton(
+          icon: FluentIcons.chevron_up_24_regular,
+          tooltip: 'התוצאה הקודמת',
+          onPressed: hasResults && (current ?? 0) > 0
+              ? () => unawaited(searcher.goToPrevMatch())
+              : null,
+        ),
+        const SizedBox(width: 4),
+        SearchResultNavButton(
+          icon: FluentIcons.chevron_down_24_regular,
+          tooltip: 'התוצאה הבאה',
+          onPressed:
+              hasResults &&
+                  (current == null || current < _searchResults.length - 1)
+              ? () => unawaited(searcher.goToNextMatch())
+              : null,
+        ),
+      ],
+    );
+  }
+
   String? _resultCountString() {
     if (_searchResults.isEmpty) return null;
     final current = widget.textSearcher.currentIndex;
@@ -843,6 +885,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
             )
           : null,
       resultCountString: _resultCountString(),
+      resultToolbar: _buildResultToolbar(),
       resultsWidget: NavTreeFocusGroup(
         child: ScrollablePositionedList.builder(
           itemScrollController: _resultsScrollController,

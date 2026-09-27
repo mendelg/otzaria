@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:otzaria/theme/app_tokens.dart';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -36,6 +35,7 @@ import 'package:otzaria/text_book/utils/section_search_utils.dart';
 import 'package:otzaria/text_book/utils/search_query_sync.dart';
 import 'package:otzaria/utils/text/ref_helper.dart' show tocSectionAt;
 import 'package:otzaria/widgets/text/otzaria_search_field.dart';
+import 'package:otzaria/widgets/navigation/search_result_nav_button.dart';
 
 class _GroupedResultItem {
   final String? header;
@@ -1204,56 +1204,18 @@ class TextBookSearchViewState extends State<TextBookSearchView>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildResultNavigationButton(
+            SearchResultNavButton(
               icon: FluentIcons.chevron_up_24_regular,
               tooltip: 'התוצאה הקודמת',
               onPressed: isAtFirstResult ? null : () => _moveBetweenResults(-1),
             ),
             const SizedBox(width: 4),
-            _buildResultNavigationButton(
+            SearchResultNavButton(
               icon: FluentIcons.chevron_down_24_regular,
               tooltip: 'התוצאה הבאה',
               onPressed: isAtLastResult ? null : () => _moveBetweenResults(1),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildResultNavigationButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isEnabled = onPressed != null;
-
-    return Tooltip(
-      message: tooltip,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: AppTokens.borderRadiusAll,
-        child: Container(
-          padding: const EdgeInsets.all(6),
-          decoration: BoxDecoration(
-            color: isEnabled
-                ? colorScheme.primaryContainer
-                : colorScheme.surfaceContainerHigh,
-            borderRadius: AppTokens.borderRadiusAll,
-            border: Border.all(
-              color: isEnabled
-                  ? colorScheme.primary
-                  : colorScheme.outlineVariant,
-            ),
-          ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: isEnabled
-                ? colorScheme.onPrimaryContainer
-                : colorScheme.onSurfaceVariant,
-          ),
         ),
       ),
     );
