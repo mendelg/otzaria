@@ -2213,6 +2213,8 @@ class _CombinedViewState extends State<CombinedView> {
                                             }
                                             return SmoothWheelScroll(
                                               child: ScrollPositionReanchor(
+                                                preferredIndex:
+                                                    _selectedItemIndex(state),
                                                 scrollController:
                                                     widget.tab.scrollController,
                                                 positionsListener: widget
@@ -2277,6 +2279,12 @@ class _CombinedViewState extends State<CombinedView> {
         ),
       ),
     );
+  }
+
+  int? _selectedItemIndex(TextBookLoaded state) {
+    final line = state.selectedIndex;
+    if (line == null || state.readingSegments.isEmpty) return line;
+    return segmentIndexForLine(state.readingSegments, line);
   }
 
   Widget buildOuterList(
