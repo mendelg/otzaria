@@ -54,6 +54,7 @@ class PersonalNotesRepository {
     required PersonalNoteContentFormat contentFormat,
     String? selectedText,
     int? selectionColumn,
+    bool punctuationHidden = false,
     int? categoryId,
   }) async {
     final bookContent = await _loadBookContent(bookId, categoryId: categoryId);
@@ -66,6 +67,7 @@ class PersonalNotesRepository {
       contentFormat: contentFormat,
       selectedText: selectedText,
       selectionColumn: selectionColumn,
+      punctuationHidden: punctuationHidden,
     );
   }
 

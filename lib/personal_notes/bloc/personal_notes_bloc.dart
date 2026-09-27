@@ -91,6 +91,7 @@ class PersonalNotesBloc extends Bloc<PersonalNotesEvent, PersonalNotesState> {
         contentFormat: event.contentFormat,
         selectedText: event.selectedText,
         selectionColumn: event.selectionColumn,
+        punctuationHidden: event.punctuationHidden,
         categoryId: state.categoryId,
       );
       _emitNotes(event.bookId, notes, emit, clearCreatingState: true);
@@ -184,6 +185,7 @@ class PersonalNotesBloc extends Bloc<PersonalNotesEvent, PersonalNotesState> {
         newNoteReferenceText: event.referenceText,
         newNoteSelectedText: event.selectedText,
         newNoteSelectionColumn: event.selectionColumn,
+        newNotePunctuationHidden: event.punctuationHidden,
         newNoteInitialContent: event.initialContent,
         newNoteInitialFormat: event.initialFormat,
       ),

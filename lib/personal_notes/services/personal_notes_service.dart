@@ -51,6 +51,7 @@ class PersonalNotesService {
     required PersonalNoteContentFormat contentFormat,
     String? selectedText,
     int? selectionColumn,
+    bool punctuationHidden = false,
   }) async {
     final lines = splitBookContentIntoLines(bookContent);
     // ספר ללא תוכן טקסטואלי (PDF): lineNumber הוא מספר עמוד ונשמר כפי שהוא,
@@ -85,6 +86,7 @@ class PersonalNotesService {
         rawLine: rawLine,
         selectedText: trimmedSelectedText,
         selectionColumnHint: selectionColumn,
+        punctuationHidden: punctuationHidden,
       );
       if (computed != null) {
         anchorText = normalizeAnchorText(trimmedSelectedText);
@@ -200,15 +202,30 @@ class PersonalNotesService {
     List<String> lines,
     String bookId,
   ) {
-    if (note.status == PersonalNoteStatus.missing || note.lineNumber == null) {
-      return note;
-    }
-
     // ספר ללא תוכן טקסטואלי (PDF): אין שורות לעגן אליהן — ה-lineNumber הוא
     // מספר עמוד ונשאר תקף, בלי לסמן 'חסר'.
     if (lines.isEmpty) {
       return note;
     }
+
+    if (note.status == PersonalNoteStatus.missing) {
+      final previousLine = note.lastKnownLineNumber ?? note.lineNumber;
+      if (previousLine != null &&
+          previousLine > 0 &&
+          previousLine <= lines.length &&
+          _displayTitleExistsInLine(
+            note.displayTitle,
+            lines[previousLine - 1],
+          )) {
+        return note.copyWith(
+          lineNumber: previousLine,
+          status: PersonalNoteStatus.located,
+          updatedAt: DateTime.now(),
+        );
+      }
+      return note;
+    }
+    if (note.lineNumber == null) return note;
 
     final lineIndex = note.lineNumber! - 1;
     if (lineIndex < 0 || lineIndex >= lines.length) {
@@ -268,9 +285,9 @@ class PersonalNotesService {
       return false;
     }
 
-    // Normalize both strings for comparison (remove diacritics)
-    final normalizedTitle = removeHebrewDiacritics(displayTitle);
-    final normalizedLine = removeHebrewDiacritics(lineContent);
+    final normalizedTitle = normalizeAnchorText(displayTitle);
+    if (normalizedTitle.isEmpty) return false;
+    final normalizedLine = projectLine(lineContent).normalized;
 
     // Check if the title exists in the line
     return normalizedLine.contains(normalizedTitle);

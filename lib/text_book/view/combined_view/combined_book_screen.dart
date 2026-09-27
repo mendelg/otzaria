@@ -1884,6 +1884,7 @@ class _CombinedViewState extends State<CombinedView> {
         referenceText: referenceText,
         selectedText: selectedText?.trim(),
         selectionColumn: _selectionStartColumn,
+        punctuationHidden: state.removePunctuation,
         initialContent: draft?.content ?? '',
         initialFormat: draft?.contentFormat ?? PersonalNoteContentFormat.plain,
       ),

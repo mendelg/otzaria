@@ -348,6 +348,7 @@ Future<void> saveCommentaryNoteToRepository({
   required PersonalNoteEditorResult result,
   String? selectedText,
   int? selectionColumn,
+  bool punctuationHidden = false,
   int? categoryId,
 }) {
   return repository.addNote(
@@ -358,6 +359,7 @@ Future<void> saveCommentaryNoteToRepository({
     contentFormat: result.contentFormat,
     selectedText: selectedText,
     selectionColumn: selectionColumn,
+    punctuationHidden: punctuationHidden,
     categoryId: categoryId,
   );
 }
@@ -2379,6 +2381,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         referenceText: referenceText,
         selectedText: selectedText?.trim(),
         selectionColumn: _selectionStartColumn,
+        punctuationHidden: state.commentaryRemovePunctuation,
       );
       return;
     }
@@ -2400,6 +2403,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         referenceText: referenceText,
         selectedText: selectedText?.trim(),
         selectionColumn: _selectionStartColumn,
+        punctuationHidden: state.removePunctuation,
         initialContent: draft?.content ?? '',
         initialFormat: draft?.contentFormat ?? PersonalNoteContentFormat.plain,
       ),
@@ -2441,6 +2445,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     required String referenceText,
     String? selectedText,
     int? selectionColumn,
+    bool punctuationHidden = false,
   }) async {
     final notesKey = _commentaryNotesKey(bookTitle);
     final categoryId = widget.reportBook?.categoryId;
@@ -2481,6 +2486,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         result: result,
         selectedText: selectedText,
         selectionColumn: selectionColumn,
+        punctuationHidden: punctuationHidden,
         categoryId: categoryId,
       );
       await _loadCommentaryNotes();

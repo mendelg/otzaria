@@ -184,6 +184,7 @@ class PersonalNotesSidebarState extends State<PersonalNotesSidebar>
         referenceText: draft.referenceText,
         selectedText: currentState.newNoteSelectedText,
         selectionColumn: currentState.newNoteSelectionColumn,
+        punctuationHidden: currentState.newNotePunctuationHidden,
         initialContent: draft.content,
         initialFormat: draft.contentFormat,
       ),
@@ -212,6 +213,7 @@ class PersonalNotesSidebarState extends State<PersonalNotesSidebar>
         contentFormat: result.contentFormat,
         selectedText: selectedText?.trim(),
         selectionColumn: selectionColumn,
+        punctuationHidden: bloc.state.newNotePunctuationHidden,
       ),
     );
 
