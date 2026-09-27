@@ -355,7 +355,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:').Line.Split(' ')[1].Split('+')[0]
-          $tag = if ('${{ github.ref }}' -eq 'refs/heads/main') { $version } else { "$version+${{ github.run_number }}" }
+          $tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'
           dart run tool/release/generate_app_file_manifest.dart --stamp `
             --tag "$tag" --version "$version" `
             --dir "build\windows\x64\runner\Release" --architecture x64
@@ -498,7 +498,7 @@ jobs:
         run: |
           Write-Host "Building the Download Assistant helper..."
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:').Line.Split(' ')[1].Split('+')[0]
-          $tag = if ('${{ github.ref }}' -eq 'refs/heads/main') { $version } else { "$version+${{ github.run_number }}" }
+          $tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'
           $env:OTZARIA_ASSISTANT_RELEASE_TAG = $tag
           & "$env:ISCC" installer\download_assistant.iss
           if ($LASTEXITCODE -ne 0) {
@@ -548,7 +548,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:').Line.Split(' ')[1].Split('+')[0]
-          $tag = if ('${{ github.ref }}' -eq 'refs/heads/main') { $version } else { "$version+${{ github.run_number }}" }
+          $tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'
           dart run tool/release/generate_app_file_manifest.dart `
             --tag "$tag" --version "$version" `
             --dir "build\windows\x64\runner\Release" --architecture x64
@@ -712,7 +712,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:').Line.Split(' ')[1].Split('+')[0]
-          $tag = if ('${{ github.ref }}' -eq 'refs/heads/main') { $version } else { "$version+${{ github.run_number }}" }
+          $tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'
           dart run tool/release/generate_app_file_manifest.dart --stamp `
             --tag "$tag" --version "$version" `
             --dir "build\windows\arm64\runner\Release" --architecture arm64
@@ -782,7 +782,7 @@ jobs:
         shell: pwsh
         run: |
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:').Line.Split(' ')[1].Split('+')[0]
-          $tag = if ('${{ github.ref }}' -eq 'refs/heads/main') { $version } else { "$version+${{ github.run_number }}" }
+          $tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'
           dart run tool/release/generate_app_file_manifest.dart `
             --tag "$tag" --version "$version" `
             --dir "build\windows\arm64\runner\Release" --architecture arm64
@@ -1530,7 +1530,7 @@ jobs:
         run: |
           set -euo pipefail
           version=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
-          if [ '${{ github.ref }}' = 'refs/heads/main' ]; then tag="$version"; else tag="$version+${{ github.run_number }}"; fi
+          tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')
           dart run tool/release/generate_app_file_manifest.dart --stamp \
             --tag "$tag" --version "$version" \
             --dir linux-build --platform linux --architecture ${{ matrix.arch == 'aarch64' && 'arm64' || 'x64' }}
@@ -1685,7 +1685,7 @@ jobs:
         run: |
           set -euo pipefail
           version=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
-          if [ '${{ github.ref }}' = 'refs/heads/main' ]; then tag="$version"; else tag="$version+${{ github.run_number }}"; fi
+          tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')
           dart run tool/release/generate_app_file_manifest.dart \
             --tag "$tag" --version "$version" \
             --dir full_installer/otzaria-linux-full/app --platform linux --architecture ${{ matrix.arch == 'aarch64' && 'arm64' || 'x64' }}
@@ -1738,11 +1738,7 @@ jobs:
           unset LIBRARY_PATH LD_LIBRARY_PATH PKG_CONFIG_PATH
           command -v xvfb-run >/dev/null || apt-get install -y xvfb xauth
           version=$(awk '/^version:/ {split($2, v, "+"); print v[1]; exit}' pubspec.yaml)
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            tag="$version"
-          else
-            tag="${version}+${{ github.run_number }}"
-          fi
+          tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')
           export OTZARIA_ASSISTANT_RELEASE_TAG="$tag"
           cd tool/download_assistant/linux
           make test
@@ -2246,7 +2242,7 @@ jobs:
           set -euo pipefail
           APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
           version=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
-          if [ '${{ github.ref }}' = 'refs/heads/main' ]; then tag="$version"; else tag="$version+${{ github.run_number }}"; fi
+          tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')
           dart run tool/release/generate_app_file_manifest.dart --stamp \
             --tag "$tag" --version "$version" \
             --dir "$APP_PATH/Contents/Resources" --platform macos --architecture universal
@@ -2283,7 +2279,7 @@ jobs:
           set -euo pipefail
           APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
           version=$(grep '^version:' pubspec.yaml | cut -d ' ' -f 2 | cut -d '+' -f 1)
-          if [ '${{ github.ref }}' = 'refs/heads/main' ]; then tag="$version"; else tag="$version+${{ github.run_number }}"; fi
+          tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')
           dart run tool/release/generate_app_file_manifest.dart \
             --tag "$tag" --version "$version" \
             --dir "$APP_PATH" --platform macos --architecture universal
@@ -2436,11 +2432,7 @@ jobs:
         run: |
           set -euo pipefail
           version=$(grep -E '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
-          if [ '${{ github.ref }}' = 'refs/heads/main' ]; then
-            tag="$version"
-          else
-            tag="${version}+${{ github.run_number }}"
-          fi
+          tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')
           export OTZARIA_ASSISTANT_RELEASE_TAG="$tag"
           bash tool/download_assistant/macos/build_app.sh "$RUNNER_TEMP/download-assistant-macos"
 
@@ -2523,11 +2515,7 @@ jobs:
         shell: pwsh
         run: |
           $version = ((Get-Content pubspec.yaml | Select-String '^version:').Line -split '\s+')[1].Split('+')[0]
-          if ($env:GITHUB_REF -eq 'refs/heads/main') {
-            $releaseTag = $version
-          } else {
-            $releaseTag = "$version+$env:GITHUB_RUN_NUMBER"
-          }
+          $releaseTag = & ./tool/version/release_tag.ps1 $version $env:GITHUB_REF $env:GITHUB_RUN_NUMBER
           $env:OTZARIA_INDEXED_RELEASE_TAG = $releaseTag
           & "$env:ISCC" '/DIndexedSplitFull=1' installer\otzaria_full.iss
           if ($LASTEXITCODE -ne 0) {
@@ -2584,18 +2572,18 @@ jobs:
             exit 1
           fi
           
+          TAG=$(bash tool/version/release_tag.sh "$VERSION" '${{ github.ref }}' '${{ github.run_number }}')
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            echo "tag=$VERSION" >> $GITHUB_OUTPUT
             echo "prerelease=false" >> $GITHUB_OUTPUT
-            echo "title=Otzaria $VERSION" >> $GITHUB_OUTPUT
+            echo "title=Otzaria $TAG" >> $GITHUB_OUTPUT
           else
             # Use proper semver pre-release format with dots instead of hyphens
             BRANCH_NAME="${{ github.ref_name }}"
             # Replace any invalid characters in branch name for semver
             CLEAN_BRANCH=$(echo "$BRANCH_NAME" | sed 's/[^A-Za-z0-9.-]/-/g')
-            echo "tag=$VERSION+${{ github.run_number }}" >> $GITHUB_OUTPUT
             echo "prerelease=true" >> $GITHUB_OUTPUT
-            echo "title=Otzaria $VERSION (Preview from ${{ github.ref_name }})" >> $GITHUB_OUTPUT
+            echo "title=Otzaria ${TAG%%+*} (Preview from ${{ github.ref_name }})" >> $GITHUB_OUTPUT
           fi
 
 

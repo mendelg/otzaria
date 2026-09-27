@@ -62,6 +62,7 @@ import 'package:otzaria/utils/canonical_json.dart';
 import 'package:otzaria/utils/file/save_file_with_extension.dart';
 import 'package:otzaria/plugins/view/webview_environment_holder.dart';
 import 'package:otzaria/widgets/misc/restart_widget.dart';
+import 'package:otzaria/update/app_release_version.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:otzaria/settings/widgets/settings_tab_scroll_view.dart';
 
@@ -427,7 +428,7 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
 
     if (!mounted) return;
     setState(() {
-      _appVersion = packageInfo.version;
+      _appVersion = appReleaseVersion(packageInfo);
       _libraryVersion = libVersion;
       _bookCount = count;
     });

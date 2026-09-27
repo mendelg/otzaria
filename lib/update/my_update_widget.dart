@@ -27,6 +27,7 @@ import 'package:otzaria/core/windowing/app_window_scope.dart';
 import 'package:otzaria/core/windowing/multi_window_service.dart';
 import 'package:otzaria/core/windowing/window_role.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
+import 'app_release_version.dart';
 import 'differential/differential_update_service.dart';
 import 'differential/swap_recovery.dart';
 import 'differential/installed_release.dart';
@@ -351,11 +352,8 @@ Map<String, dynamic> pickLatestDevRelease(List<dynamic> releases) {
   return (releases.first as Map).cast<String, dynamic>();
 }
 
-/// כאשר ערוץ המפתחים פעיל, עדיין צריך לבחור release יציב אם הוא חדש יותר
-/// מה-pre-release האחרון. במקרה של שוויון בגרסת הליבה מחזירים את ה-stable,
-/// כדי לעגן את ה-changelog והנכסים ל-release היציב; עצם ההקפצה למשתמש עדיין
-/// תלויה בהשוואת semver המלאה של `updat`, ולכן שינוי רק ב-`+build` לא ייחשב
-/// לעדכון חדש.
+/// בערוץ המפתחים בוחר את ה-release היציב אם הוא חדש מה-pre-release האחרון.
+/// בשוויון גרסה (בלי `+build`) מוחזר ה-stable, כדי לעגן אליו את ה-changelog והנכסים.
 @visibleForTesting
 Map<String, dynamic> pickPreferredReleaseForDevChannel({
   required Map<String, dynamic> stableRelease,
@@ -393,7 +391,9 @@ Future<Map<String, dynamic>> _fetchRelease(String version) async {
         .timeout(_kGithubTimeout);
     final releases = jsonDecode(data.body) as List;
     final byPrefix = releases
-        .where((r) => r["tag_name"].toString().startsWith(version))
+        .where(
+          (r) => releaseTagMatchesVersion(r["tag_name"].toString(), version),
+        )
         .toList();
     final pool = byPrefix.isNotEmpty ? byPrefix : releases;
     release = pickLatestDevRelease(pool);
@@ -426,6 +426,12 @@ Future<Map<String, dynamic>> _fetchRelease(String version) async {
   return release;
 }
 
+/// האם [tag] הוא שחרור של [version] בדיוק: `0.9.97` תופס את `0.9.97+789`
+/// ולא את ה-hotfix `0.9.97.2+790`.
+@visibleForTesting
+bool releaseTagMatchesVersion(String tag, String version) =>
+    tag == version || tag.startsWith('$version+');
+
 /// בונה URL לקובץ raw בריפו, צמוד לתג הספציפי של ה-release.
 /// שימוש ב-`pathSegments` מבטיח קידוד נכון של תווים מיוחדים כמו `+` שבתגים
 /// בערוץ dev (לדוגמה `0.9.92+628`) ושל תווי יוניקוד בנתיב.
@@ -447,15 +453,16 @@ Uri rawAssetUrlForTag(String tagName, String relativePath) {
 }
 
 final _changelogHeadingPattern = RegExp(
-  r'^\s*(?:(?:#{1,6}|[*-])\s*)?\*{0,2}v?(\d+(?:\.\d+){1,2}(?:[-+][^\s*]+)?)\*{0,2}\s*$',
+  r'^\s*(?:(?:#{1,6}|[*-])\s*)?\*{0,2}v?(\d+(?:\.\d+){1,3}(?:[-+][^\s*]+)?)\*{0,2}\s*$',
 );
 
 class _ParsedVersion implements Comparable<_ParsedVersion> {
   final int major;
   final int minor;
   final int patch;
+  final int hotfix;
 
-  const _ParsedVersion(this.major, this.minor, this.patch);
+  const _ParsedVersion(this.major, this.minor, this.patch, this.hotfix);
 
   @override
   int compareTo(_ParsedVersion other) {
@@ -465,7 +472,10 @@ class _ParsedVersion implements Comparable<_ParsedVersion> {
     final minorCompare = minor.compareTo(other.minor);
     if (minorCompare != 0) return minorCompare;
 
-    return patch.compareTo(other.patch);
+    final patchCompare = patch.compareTo(other.patch);
+    if (patchCompare != 0) return patchCompare;
+
+    return hotfix.compareTo(other.hotfix);
   }
 
   bool operator >(_ParsedVersion other) => compareTo(other) > 0;
@@ -473,7 +483,8 @@ class _ParsedVersion implements Comparable<_ParsedVersion> {
   bool operator <=(_ParsedVersion other) => compareTo(other) <= 0;
 
   @override
-  String toString() => '$major.$minor.$patch';
+  String toString() =>
+      hotfix > 0 ? '$major.$minor.$patch.$hotfix' : '$major.$minor.$patch';
 
   @override
   bool operator ==(Object other) =>
@@ -482,10 +493,11 @@ class _ParsedVersion implements Comparable<_ParsedVersion> {
           runtimeType == other.runtimeType &&
           major == other.major &&
           minor == other.minor &&
-          patch == other.patch;
+          patch == other.patch &&
+          hotfix == other.hotfix;
 
   @override
-  int get hashCode => Object.hash(major, minor, patch);
+  int get hashCode => Object.hash(major, minor, patch, hotfix);
 }
 
 /// בוחר פורמט עדכון לפי סוג ההתקנה: מתקין (`exe`) לאפליקציה מותקנת, או
@@ -520,14 +532,28 @@ String _normalizeVersion(String version) {
 _ParsedVersion? _tryParseVersion(String version) {
   final core = _normalizeVersion(version).split('-').first;
   final parts = core.split('.');
-  if (parts.length < 2 || parts.length > 3) return null;
+  if (parts.length < 2 || parts.length > 4) return null;
 
   final major = int.tryParse(parts[0]);
   final minor = int.tryParse(parts[1]);
-  final patch = parts.length == 3 ? int.tryParse(parts[2]) : 0;
-  if (major == null || minor == null || patch == null) return null;
+  final patch = parts.length >= 3 ? int.tryParse(parts[2]) : 0;
+  final hotfix = parts.length == 4 ? int.tryParse(parts[3]) : 0;
+  if (major == null || minor == null || patch == null || hotfix == null) {
+    return null;
+  }
 
-  return _ParsedVersion(major, minor, patch);
+  return _ParsedVersion(major, minor, patch, hotfix);
+}
+
+/// האם [latestVersion] חדשה מ-[currentVersion]; גרסה שאינה ניתנת לפענוח אינה עדכון.
+@visibleForTesting
+bool isNewerReleaseVersion({
+  required String latestVersion,
+  required String currentVersion,
+}) {
+  final latest = _tryParseVersion(latestVersion);
+  final current = _tryParseVersion(currentVersion);
+  return latest != null && current != null && latest > current;
 }
 
 /// מחזירה את פריטי יומן השינויים שבין הגרסה הנוכחית לגרסה הזמינה.
@@ -925,7 +951,7 @@ class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
 
     try {
       final packageInfo = await PackageInfo.fromPlatform();
-      final currentVersion = packageInfo.version;
+      final currentVersion = appReleaseVersion(packageInfo);
       final latestVersion = await _getLatestVersion();
 
       if (!mounted) return;
@@ -945,12 +971,10 @@ class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
         return;
       }
 
-      final parsedCurrent = _tryParseVersion(currentVersion);
-      final parsedLatest = _tryParseVersion(latestVersion);
-
-      if (parsedCurrent != null &&
-          parsedLatest != null &&
-          parsedLatest > parsedCurrent) {
+      if (isNewerReleaseVersion(
+        latestVersion: latestVersion,
+        currentVersion: currentVersion,
+      )) {
         final changelog = await _getChangelog(latestVersion, currentVersion);
         if (!mounted) return;
         setState(() {
