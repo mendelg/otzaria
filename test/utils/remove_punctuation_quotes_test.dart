@@ -67,6 +67,49 @@ void main() {
       });
     }
 
+    test('תג סוגר אחרי האות שאחרי הגרשיים הוא גבול מילה', () {
+      expect(
+        removePunctuation('<b>וא"כ</b>השתא יש ללמוד'),
+        '<b>וא"כ</b>השתא יש ללמוד',
+      );
+      expect(removePunctuation('<i>וב"ח</i>ב"ל'), '<i>וב"ח</i>ב"ל');
+      expect(removePunctuation('<i>ד"ת</i>ממאי'), '<i>ד"ת</i>ממאי');
+      expect(removePunctuation('<i>הגה"ה</i>וכן'), '<i>הגה"ה</i>וכן');
+      expect(removePunctuation('<b>רש"</b>י'), '<b>רש"</b>י');
+    });
+
+    test('תגים מקוננים אינם מסתירים את גבול התג שעוטף את ראשי התיבות', () {
+      expect(
+        removePunctuation('<b>וא"<i>כ</i></b>השתא יש ללמוד'),
+        '<b>וא"<i>כ</i></b>השתא יש ללמוד',
+      );
+      expect(
+        removePunctuation('<span><b>וב"ח</b></span>ב"ל'),
+        '<span><b>וב"ח</b></span>ב"ל',
+      );
+      expect(
+        removePunctuation('<b>ד"<i><em>ת</em></i></b>ממאי'),
+        '<b>ד"<i><em>ת</em></i></b>ממאי',
+      );
+    });
+
+    for (final outerTag in ['b', 'strong', 'span', 'em']) {
+      for (final innerTag in ['i', 'span']) {
+        if (outerTag == innerTag) continue;
+        test('סגירת $outerTag מזוהה אחרי תג $innerTag מקונן', () {
+          final input =
+              '<$outerTag>רש"<$innerTag>י</$innerTag>'
+              '</$outerTag>וכן כתב';
+          expect(removePunctuation(input), input);
+        });
+      }
+    }
+
+    test('תג שנפתח אחרי הגרשיים אינו יוצר גבול בפני עצמו', () {
+      expect(removePunctuation('א"<b>ב</b>ג'), 'א<b>ב</b>ג');
+      expect(removePunctuation('<b>ד"<i>ת</i>וכן</b>'), '<b>ד<i>ת</i>וכן</b>');
+    });
+
     test('תצוגה והעתקה משתמשות באותה הכרעה עם ניקוד ובלעדיו', () {
       const input = '<b>רַש</b>"<b>י</b>, ב"<i>כִּ</i>י';
       for (final removeNikud in [false, true]) {

@@ -303,7 +303,24 @@ final RegExp _quoteContextTokens = RegExp(
   '${_htmlStripper.pattern}|${_htmlEntity.pattern}|["״]',
 );
 final RegExp _acronymLetter = RegExp(r'[א-תa-zA-Z]');
-final RegExp _quoteAdjacentPunctuation = RegExp(r'[!:;.,?\-—–]');
+final RegExp _quoteAdjacentPunctuation = RegExp(r'[!:;.,?\-—–\x00]');
+final RegExp _htmlTagName = RegExp(r'^<\s*(/?)\s*([a-zA-Z][a-zA-Z0-9:-]*)');
+const Set<String> _voidHtmlTags = {
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr',
+};
 
 /// מכריע על גרשיים לפי הטקסט הגלוי, ומשאיר את התגים והישויות במקורם.
 String _stripQuotesOutsideTags(String text) {
@@ -311,17 +328,57 @@ String _stripQuotesOutsideTags(String text) {
 
   final contextBuffer = StringBuffer();
   final quotes = <({int source, int context})>[];
+  final openTags = <String>[];
+  final quoteCountsByTagDepth = <int>[0];
+  var deepestQuoteTagDepth = 0;
   var lastEnd = 0;
   for (final match in _quoteContextTokens.allMatches(text)) {
     contextBuffer.write(removeVolwels(text.substring(lastEnd, match.start)));
     final token = match.group(0)!;
     if (token.startsWith('<')) {
-      if (_breakingTagStripper.hasMatch(token)) contextBuffer.write(' ');
+      final isBreakingTag = _breakingTagStripper.hasMatch(token);
+      final tag = _htmlTagName.firstMatch(token);
+      if (tag != null) {
+        final name = tag.group(2)!.toLowerCase();
+        if (tag.group(1) == '/') {
+          final openTagIndex = openTags.lastIndexOf(name);
+          if (openTagIndex >= 0) {
+            openTags.removeRange(openTagIndex, openTags.length);
+            final newDepth = openTags.length;
+            if (deepestQuoteTagDepth > newDepth) {
+              if (!isBreakingTag) contextBuffer.write('\x00');
+              for (
+                var depth = newDepth + 1;
+                depth < quoteCountsByTagDepth.length;
+                depth++
+              ) {
+                quoteCountsByTagDepth[depth] = 0;
+              }
+              deepestQuoteTagDepth = newDepth;
+              while (deepestQuoteTagDepth > 0 &&
+                  quoteCountsByTagDepth[deepestQuoteTagDepth] == 0) {
+                deepestQuoteTagDepth--;
+              }
+            }
+          }
+        } else if (!_voidHtmlTags.contains(name) && !token.endsWith('/>')) {
+          openTags.add(name);
+          while (quoteCountsByTagDepth.length <= openTags.length) {
+            quoteCountsByTagDepth.add(0);
+          }
+        }
+      }
+      if (isBreakingTag) {
+        contextBuffer.write(' ');
+      }
     } else if (token.startsWith('&')) {
       contextBuffer.write(removeVolwels(decodeHtmlEntities(token)));
     } else {
       quotes.add((source: match.start, context: contextBuffer.length));
       contextBuffer.write(token);
+      final depth = openTags.length;
+      quoteCountsByTagDepth[depth]++;
+      if (depth > deepestQuoteTagDepth) deepestQuoteTagDepth = depth;
     }
     lastEnd = match.end;
   }
@@ -334,7 +391,7 @@ String _stripQuotesOutsideTags(String text) {
   for (final quote in quotes) {
     var before = quote.context - 1;
     var after = quote.context + 1;
-    // רק פיסוק שצמוד לגרשיים מדולג; אחרי האות האחרונה הוא גבול מילה.
+    // תג שסוגר מעטפת שנפתחה לפני הגרשיים מסמן גבול, גם עם תגים מקוננים.
     // כל רצף נסרק לכל היותר משני צדדיו, בלי להעתיק את השורה לכל גרשיים.
     while (before >= 0 && _quoteAdjacentPunctuation.hasMatch(context[before])) {
       before--;
