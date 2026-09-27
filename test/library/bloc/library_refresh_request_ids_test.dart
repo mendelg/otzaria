@@ -37,4 +37,34 @@ void main() {
       );
     });
   });
+
+  group('LibraryState.refreshRequestSettled', () {
+    test('רענון אחר שהסתיים קודם אינו מסיים את המתנת עדכון הספרייה', () {
+      const requestId = 7;
+      const otherRefresh = LibraryState(completedRefreshRequestIds: {3});
+      expect(
+        LibraryState.refreshRequestSettled(otherRefresh, requestId),
+        isFalse,
+      );
+      const updateRefresh = LibraryState(completedRefreshRequestIds: {7, 8});
+      expect(
+        LibraryState.refreshRequestSettled(updateRefresh, requestId),
+        isTrue,
+      );
+    });
+
+    test('כשל של בקשת העדכון מסיים המתנה בלי לדווח הצלחה', () {
+      const failed = LibraryState(failedRefreshRequestIds: {7});
+      expect(LibraryState.refreshRequestSettled(failed, 7), isTrue);
+      expect(failed.completedRefreshRequestIds, isNull);
+      expect(LibraryState.refreshRequestSettled(failed, 8), isFalse);
+    });
+
+    test('מזהי כשל לא נגררים ל-state הבא', () {
+      const failed = LibraryState(failedRefreshRequestIds: {7});
+      final next = failed.copyWith(isSearching: true);
+      expect(next.failedRefreshRequestIds, isNull);
+      expect(next, isNot(equals(failed)));
+    });
+  });
 }

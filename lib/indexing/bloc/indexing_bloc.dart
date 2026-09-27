@@ -38,7 +38,13 @@ class IndexingBloc extends Bloc<IndexingEvent, IndexingState> {
        _showHiddenReconciliationError =
            showHiddenReconciliationError ?? UiSnack.showError,
        super(IndexingInitial()) {
-    on<IndexingWorkEvent>(_onIndexingWork, transformer: sequential());
+    on<IndexingWorkEvent>((event, emit) async {
+      try {
+        await _onIndexingWork(event, emit);
+      } finally {
+        event.onSettled?.call();
+      }
+    }, transformer: sequential());
     on<CheckIndexStatus>(_onCheckIndexStatus);
     on<CancelIndexing>(_onCancelIndexing);
     on<PauseIndexing>(_onPauseIndexing);

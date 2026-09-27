@@ -356,11 +356,11 @@ class MainWindowScreenState extends State<MainWindowScreen>
   );
   bool _hasCheckedAutoIndex = false;
   // עדכון הספרייה של העלייה: האינדוקס ממתין לריענון שאחריו.
-  Completer<void>? _startupUpdateRefresh;
-  int? _startupUpdateRefreshRequestId;
+  final StartupRefreshWait _startupRefreshWait = StartupRefreshWait();
   // גרסת אינדקס השתנתה ⇒ אינדוקס מלא ממתין: אינדוקס חלקי אחרי העדכון מיותר,
   // וה-clearIndex של המלא היה רץ באמצעו.
   bool _startupFullReindexPending = false;
+  bool _startupIndexingBeforeUpdate = false;
   // מסך הפתיחה (סמל צף) מוצג עד שתוכן הטאב הפעיל נטען, ואז החלון הקטן/השקוף
   // מתרחב לחלון המלא. ראה _scheduleSplashReveal / _revealNow.
   bool _initialContentReady = false;
@@ -949,44 +949,81 @@ class MainWindowScreenState extends State<MainWindowScreen>
   }
 
   /// מריץ את עדכון הספרייה וממתין לסיומו, כולל ריענון הספרייה שאחריו.
-  Future<void> _runStartupLibraryUpdate(library_model.Library library) async {
+  Future<void> _runStartupLibraryUpdate(
+    library_model.Library library, {
+    required bool indexingFollowsUpdate,
+  }) async {
     await startupRecoveryVerified;
     if (!mounted) return;
     final bloc = context.read<LibraryUpdateBloc>();
     _startupFullReindexPending =
+        indexingFollowsUpdate &&
         context.read<SettingsBloc>().state.autoUpdateIndex &&
         await _indexingRepository.requiresManualReindex(library);
     if (!mounted) return;
-    final refresh = _startupUpdateRefresh = Completer<void>();
-    final settled = bloc.stream.firstWhere(libraryUpdateSettledForIndexing);
-    bloc.add(const StartLibraryUpdate());
-    final result = await settled;
-    // אותו תנאי שבו ה-listener של LibraryUpdateBloc שולח RefreshLibrary.
-    final refreshRequested =
-        result.hasUpdate &&
-        (result.status == LibraryUpdateStatus.completed ||
-            result.status == LibraryUpdateStatus.error);
-    if (refreshRequested) await refresh.future;
-    _startupUpdateRefresh = null;
+    final refresh = _startupRefreshWait.begin();
+    try {
+      final settled = bloc.stream.firstWhere(libraryUpdateSettledForIndexing);
+      bloc.add(const StartLibraryUpdate());
+      final result = await settled;
+      // אותו תנאי שבו ה-listener של LibraryUpdateBloc שולח RefreshLibrary.
+      final refreshRequested =
+          result.hasUpdate &&
+          (result.status == LibraryUpdateStatus.completed ||
+              result.status == LibraryUpdateStatus.error);
+      if (refreshRequested) await refresh;
+    } finally {
+      _startupRefreshWait.cancel();
+    }
   }
 
-  /// סיור ← בדיקת תוכנה ← עדכון ספרייה ← אינדוקס, כדי לאנדקס פעם אחת
-  /// תוכן עדכני.
+  /// בזמן סיור האינדוקס רץ מיד כדי שהחיפוש בו יעבוד; העדכון ממתין לסיומו.
   Future<void> _runStartupSequence(library_model.Library library) async {
+    final tourActive = _tourCubit.state.isActive;
+    _startupIndexingBeforeUpdate = tourActive;
+    if (tourActive) _startupWorkGate.holdDeferredWork();
     try {
-      await runStartupUpdatesBeforeIndexing(
-        shouldCheckLibraryUpdate: _shouldCheckLibraryUpdateAtStartup,
-        tourFinished: _tourFinished,
-        isSoftwareUpdateAvailable: initialSoftwareUpdateAvailable,
-        runLibraryUpdate: () => _runStartupLibraryUpdate(library),
+      await runStartupIndexingSequence(
+        tourActive: tourActive,
+        resolveIndexing: () async {
+          await resolveStartupIndexingNonFatal(
+            gate: _startupWorkGate,
+            resolve: () async {
+              if (!mounted) return;
+              final freshLibrary = await DataRepository.instance.library;
+              if (!mounted || !context.mounted) return;
+              await _resolveStartupIndexing(context, freshLibrary);
+            },
+            onError: (error, stackTrace) => debugPrint(
+              'Startup indexing decision failed: $error\n$stackTrace',
+            ),
+          );
+          _tryStartDeferredStartupWork();
+        },
+        waitForIndexing: () =>
+            mounted ? _startupWorkGate.indexingSettled : Future<void>.value(),
+        runUpdates: () async {
+          try {
+            await runStartupUpdatesBeforeIndexing(
+              shouldCheckLibraryUpdate: _shouldCheckLibraryUpdateAtStartup,
+              tourFinished: _tourFinished,
+              isSoftwareUpdateAvailable: initialSoftwareUpdateAvailable,
+              runLibraryUpdate: () => _runStartupLibraryUpdate(
+                library,
+                indexingFollowsUpdate: !tourActive,
+              ),
+            );
+          } catch (error, stackTrace) {
+            debugPrint('Startup library update failed: $error\n$stackTrace');
+          }
+        },
       );
-    } catch (error, stackTrace) {
-      debugPrint('Startup library update failed: $error\n$stackTrace');
+    } finally {
+      if (tourActive) {
+        _startupWorkGate.releaseDeferredWork();
+        _tryStartDeferredStartupWork();
+      }
     }
-    if (!mounted) return;
-    final freshLibrary = await DataRepository.instance.library;
-    if (!mounted || !context.mounted) return;
-    await _resolveStartupIndexing(context, freshLibrary);
   }
 
   /// Setup synchronization between window fullscreen state and settings
@@ -1111,7 +1148,10 @@ class MainWindowScreenState extends State<MainWindowScreen>
       return;
     }
 
-    final pendingReconciliation = _pendingHiddenReconciliation(library);
+    final pendingReconciliation = _pendingHiddenReconciliation(
+      library,
+      onSettled: _onStartupIndexingSettled,
+    );
     final decision = decideStartupIndexing(
       requiresManualReindex: requiresManualReindex,
       autoUpdateIndex: autoUpdateIndex,
@@ -1127,6 +1167,8 @@ class MainWindowScreenState extends State<MainWindowScreen>
         return;
       case StartupIndexingDecision.autoReindexThenStart:
         if (!await _indexingRepository.clearIndex()) {
+          _startupWorkGate.markIndexingDecisionResolved(expectIndexing: false);
+          _tryStartDeferredStartupWork();
           return;
         }
         if (!mounted || !context.mounted) {
@@ -1135,18 +1177,23 @@ class MainWindowScreenState extends State<MainWindowScreen>
         _startupWorkGate.markIndexingDecisionResolved(expectIndexing: true);
         _tryStartDeferredStartupWork();
         context.read<IndexingBloc>().add(
-          pendingReconciliation ?? StartIndexing(library),
+          pendingReconciliation ??
+              StartIndexing(library, onSettled: _onStartupIndexingSettled),
         );
         return;
       case StartupIndexingDecision.promptManualReindex:
-        _startupWorkGate.markIndexingDecisionResolved(expectIndexing: false);
+        final started = await _showStartupManualReindexDialog(context, library);
+        if (!started) {
+          _startupWorkGate.markIndexingDecisionResolved(expectIndexing: false);
+        }
         _tryStartDeferredStartupWork();
-        await _showStartupManualReindexDialog(context, library);
         return;
       case StartupIndexingDecision.startIndexing:
         _startupWorkGate.markIndexingDecisionResolved(expectIndexing: true);
         _tryStartDeferredStartupWork();
-        context.read<IndexingBloc>().add(StartIndexing(library));
+        context.read<IndexingBloc>().add(
+          StartIndexing(library, onSettled: _onStartupIndexingSettled),
+        );
         return;
       case StartupIndexingDecision.checkIndexStatus:
         _startupWorkGate.markIndexingDecisionResolved(expectIndexing: false);
@@ -1157,14 +1204,16 @@ class MainWindowScreenState extends State<MainWindowScreen>
   }
 
   ReconcileHiddenIndex? _pendingHiddenReconciliation(
-    library_model.Library library,
-  ) {
+    library_model.Library library, {
+    void Function()? onSettled,
+  }) {
     const store = HiddenLibraryStore();
     final restore = store.hasPendingIndexReconciliation;
     final visibility = store.hasPendingVisibilityIndex;
     if (!restore && !visibility) return null;
     return ReconcileHiddenIndex(
       library,
+      onSettled: onSettled,
       indexVisible: true,
       clearRestoreMarker: restore,
       clearVisibilityMarker: visibility,
@@ -1172,12 +1221,17 @@ class MainWindowScreenState extends State<MainWindowScreen>
     );
   }
 
-  Future<void> _showStartupManualReindexDialog(
+  void _onStartupIndexingSettled() {
+    _startupWorkGate.markStartupIndexingSettled();
+    _tryStartDeferredStartupWork();
+  }
+
+  Future<bool> _showStartupManualReindexDialog(
     BuildContext context,
     library_model.Library library,
   ) async {
     if (_isShowingStartupManualReindexDialog) {
-      return;
+      return false;
     }
 
     _isShowingStartupManualReindexDialog = true;
@@ -1192,20 +1246,25 @@ class MainWindowScreenState extends State<MainWindowScreen>
         confirmText: 'אפס ועדכן',
       );
       if (!mounted || !context.mounted || result != true) {
-        return;
+        return false;
       }
 
       if (!await _indexingRepository.clearIndex()) {
-        return;
+        return false;
       }
       if (!mounted || !context.mounted) {
-        return;
+        return false;
       }
 
       _startupWorkGate.markIndexingDecisionResolved(expectIndexing: true);
       indexingBloc.add(
-        _pendingHiddenReconciliation(library) ?? StartIndexing(library),
+        _pendingHiddenReconciliation(
+              library,
+              onSettled: _onStartupIndexingSettled,
+            ) ??
+            StartIndexing(library, onSettled: _onStartupIndexingSettled),
       );
+      return true;
     } finally {
       _isShowingStartupManualReindexDialog = false;
     }
@@ -1698,6 +1757,8 @@ class MainWindowScreenState extends State<MainWindowScreen>
 
   @override
   void dispose() {
+    _startupWorkGate.markStartupIndexingSettled();
+    _startupRefreshWait.cancel();
     PluginPageLauncher.instance.navigator = null;
     ToolsLauncherController.instance.opener = null;
     // Clean up fullscreen callback
@@ -2759,9 +2820,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
                       state.status == LibraryUpdateStatus.error) &&
                   state.hasUpdate) {
                 final requestId = _nextIndexRequestId++;
-                if (_startupUpdateRefresh != null) {
-                  _startupUpdateRefreshRequestId ??= requestId;
-                }
+                _startupRefreshWait.attachRequest(requestId);
                 _pendingIndexRequests[requestId] = (
                   // אחרי הורדה מלאה אין דיווח מי השתנה, וכך גם כששינו טבלאות
                   // שאינן ניתנות למיפוי לספרים — נדרשת השוואת טביעות-אצבע.
@@ -2788,11 +2847,6 @@ class MainWindowScreenState extends State<MainWindowScreen>
           BlocListener<LibraryBloc, LibraryState>(
             listenWhen: LibraryState.reloadCompleted,
             listener: (context, state) {
-              // גם רענון שנכשל מסיים את ההמתנה — אחרת האינדוקס לא היה רץ.
-              if (_startupUpdateRefreshRequestId != null) {
-                _startupUpdateRefresh?.complete();
-                _startupUpdateRefresh = null;
-              }
               _startupWorkGate.markLibraryLoaded();
               _tryStartDeferredStartupWork();
               // החלטת האינדוקס צורכת את הקטלוג שזה עתה נטען — כך אין קריאה
@@ -2828,38 +2882,66 @@ class MainWindowScreenState extends State<MainWindowScreen>
           BlocListener<LibraryBloc, LibraryState>(
             listenWhen: (previous, current) =>
                 (current.completedRefreshRequestIds?.isNotEmpty ?? false) ||
+                (current.failedRefreshRequestIds?.isNotEmpty ?? false) ||
                 (current.newBooksToIndex?.isNotEmpty ?? false) ||
                 (current.changedBooksToIndex?.isNotEmpty ?? false),
             listener: (context, state) async {
-              if (state.library == null) return;
-              final library = await DataRepository.instance.library;
-              if (!mounted || !context.mounted) return;
-              final resolved = resolveCompletedIndexRequests(
-                pendingRequests: _pendingIndexRequests,
-                completedRequestIds: state.completedRefreshRequestIds,
-              );
-              final startupRefreshId = _startupUpdateRefreshRequestId;
-              if (startupRefreshId != null &&
-                  (state.completedRefreshRequestIds?.contains(
-                        startupRefreshId,
-                      ) ??
-                      false)) {
-                _startupUpdateRefreshRequestId = null;
-                if (_startupFullReindexPending) return;
-              }
-              final plan = buildRefreshIndexingPlan(
-                library: library,
-                newBooks: state.newBooksToIndex ?? const [],
-                changedBooks: state.changedBooksToIndex ?? const [],
-                indexWholeLibrary: resolved.indexWholeLibrary,
-                reconcile: resolved.reconcile,
-                autoUpdateIndex:
-                    !resolved.respectAutoUpdateSetting ||
-                    context.read<SettingsBloc>().state.autoUpdateIndex,
-              );
-              final indexingBloc = context.read<IndexingBloc>();
-              for (final event in plan) {
-                indexingBloc.add(event);
+              final startupRefreshId = _startupRefreshWait.requestId;
+              final completedIds = state.completedRefreshRequestIds;
+              final failedIds = state.failedRefreshRequestIds;
+              try {
+                if (failedIds != null) {
+                  for (final id in failedIds) {
+                    _pendingIndexRequests.remove(id);
+                  }
+                }
+                if (state.library == null || !mounted || !context.mounted) {
+                  return;
+                }
+                if (startupRefreshId != null &&
+                    (completedIds?.contains(startupRefreshId) ?? false) &&
+                    _startupFullReindexPending) {
+                  resolveCompletedIndexRequests(
+                    pendingRequests: _pendingIndexRequests,
+                    completedRequestIds: completedIds,
+                  );
+                  return;
+                }
+                final library = await DataRepository.instance.library;
+                if (!mounted || !context.mounted) return;
+                final resolved = resolveCompletedIndexRequests(
+                  pendingRequests: _pendingIndexRequests,
+                  completedRequestIds: completedIds,
+                );
+                final plan = buildRefreshIndexingPlan(
+                  library: library,
+                  newBooks: state.newBooksToIndex ?? const [],
+                  changedBooks: state.changedBooksToIndex ?? const [],
+                  indexWholeLibrary: resolved.indexWholeLibrary,
+                  reconcile: resolved.reconcile,
+                  autoUpdateIndex:
+                      !resolved.respectAutoUpdateSetting ||
+                      context.read<SettingsBloc>().state.autoUpdateIndex,
+                );
+                final indexingBloc = context.read<IndexingBloc>();
+                final waitForBatch =
+                    _startupIndexingBeforeUpdate &&
+                    startupRefreshId != null &&
+                    (completedIds?.contains(startupRefreshId) ?? false) &&
+                    plan.any((event) => event is IndexingWorkEvent);
+                if (waitForBatch) {
+                  _startupWorkGate.markStartupIndexingBatchPending();
+                }
+                for (final event in plan) {
+                  indexingBloc.add(event);
+                }
+                if (waitForBatch) {
+                  indexingBloc.add(
+                    IndexingWorkBarrier(onSettled: _onStartupIndexingSettled),
+                  );
+                }
+              } finally {
+                _startupRefreshWait.settle(state);
               }
             },
           ),

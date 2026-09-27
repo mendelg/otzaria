@@ -88,7 +88,23 @@ bool managesUpdatesInThisWindow({
   );
 }
 
-final _initialSoftwareCheck = Completer<bool>();
+@visibleForTesting
+class InitialSoftwareCheck {
+  Completer<bool> _current = Completer<bool>();
+
+  Future<bool> get result => _current.future;
+
+  Completer<bool> begin() {
+    if (!_current.isCompleted) _current.complete(false);
+    return _current = Completer<bool>();
+  }
+
+  void resolve(Completer<bool> check, {required bool updateAvailable}) {
+    if (!check.isCompleted) check.complete(updateAvailable);
+  }
+}
+
+final _initialSoftwareCheck = InitialSoftwareCheck();
 
 /// האם בדיקת התוכנה של העלייה מצאה גרסה חדשה.
 /// `false` כשהבדיקה לא רצה (תדירות, מנותק) או נכשלה; בזמן סיור ממתינה לסופו.
@@ -99,14 +115,8 @@ Future<bool> initialSoftwareUpdateAvailable() =>
       isWeb: kIsWeb,
       operatingSystem: Platform.operatingSystem,
     )
-    ? _initialSoftwareCheck.future
+    ? _initialSoftwareCheck.result
     : Future.value(false);
-
-void _resolveInitialSoftwareCheck({required bool updateAvailable}) {
-  if (!_initialSoftwareCheck.isCompleted) {
-    _initialSoftwareCheck.complete(updateAvailable);
-  }
-}
 
 /// מנסה את מסלול העדכון המצומצם ומחזיר `null` בכל כשל או חוסר זמינות.
 ///
@@ -667,6 +677,7 @@ class _ManagedUpdatWidget extends StatefulWidget {
 }
 
 class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
+  late final Completer<bool> _softwareCheck;
   UpdatStatus _status = UpdatStatus.checking;
   String? _currentVersion;
   String? _latestVersion;
@@ -716,6 +727,7 @@ class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
   @override
   void initState() {
     super.initState();
+    _softwareCheck = _initialSoftwareCheck.begin();
     _installWindowCloseHook();
     _listenForUpdateUnblock();
     // דוחים את הבדיקה הראשונית ל-post-frame כדי שהסיור המודרך (שמופעל אף הוא
@@ -768,14 +780,15 @@ class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
   /// (הצ'יפ בשורת הכותרת) קוראת ל-[_checkForUpdate] ישירות ואינה מושפעת.
   void _runInitialCheckIfDue() {
     if (!isAutoUpdateCheckDue(SettingsRepository.keyLastSoftwareUpdateCheck)) {
-      _resolveInitialSoftwareCheck(updateAvailable: false);
+      _initialSoftwareCheck.resolve(_softwareCheck, updateAvailable: false);
       setState(() {
         _status = UpdatStatus.upToDate;
       });
       return;
     }
     _checkForUpdate().whenComplete(
-      () => _resolveInitialSoftwareCheck(
+      () => _initialSoftwareCheck.resolve(
+        _softwareCheck,
         updateAvailable: _status == UpdatStatus.availableWithChangelog,
       ),
     );
@@ -783,6 +796,7 @@ class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
 
   @override
   void dispose() {
+    _initialSoftwareCheck.resolve(_softwareCheck, updateAvailable: false);
     _tourSubscription?.cancel();
     _settingsSubscription?.cancel();
     _offlineRecheckTimer?.cancel();

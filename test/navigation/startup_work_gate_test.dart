@@ -41,5 +41,22 @@ void main() {
       gate.markIndexingRunning(false);
       expect(gate.consumeStartPermission(), isTrue);
     });
+
+    test('סיור: סנכרון רקע מחכה גם לכל תור האינדוקס של העדכון המאוחר', () {
+      final gate = StartupWorkGate()..markLibraryLoaded();
+      gate.holdDeferredWork();
+      gate.markIndexingDecisionResolved(expectIndexing: true);
+      gate.markStartupIndexingSettled();
+      gate.markStartupIndexingBatchPending();
+      gate.releaseDeferredWork();
+
+      expect(gate.consumeStartPermission(), isFalse);
+      gate.markIndexingRunning(true);
+      gate.markIndexingRunning(false);
+      expect(gate.consumeStartPermission(), isFalse);
+
+      gate.markStartupIndexingSettled();
+      expect(gate.consumeStartPermission(), isTrue);
+    });
   });
 }

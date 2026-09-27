@@ -10,13 +10,20 @@ abstract class IndexingEvent extends Equatable {
 }
 
 abstract class IndexingWorkEvent extends IndexingEvent {
-  const IndexingWorkEvent();
+  final void Function()? onSettled;
+
+  const IndexingWorkEvent({this.onSettled});
+}
+
+/// אות סיום לכל עבודת האינדוקס שנשלחה לפניו לתור הסדרתי.
+class IndexingWorkBarrier extends IndexingWorkEvent {
+  const IndexingWorkBarrier({super.onSettled});
 }
 
 class StartIndexing extends IndexingWorkEvent {
   final Library library;
 
-  const StartIndexing(this.library);
+  const StartIndexing(this.library, {super.onSettled});
 
   @override
   List<Object?> get props => [library];
@@ -75,6 +82,7 @@ class ReconcileHiddenIndex extends IndexingWorkEvent {
 
   const ReconcileHiddenIndex(
     this.library, {
+    super.onSettled,
     this.indexVisible = false,
     this.clearRestoreMarker = false,
     this.clearVisibilityMarker = false,
