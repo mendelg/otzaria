@@ -353,7 +353,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     }
   }
 
-  /// שורת הסיום (בלעדית) של עוגן: כותרת → תחילת הכותרת הבאה (או סוף הספר);
+  /// שורת הסיום (בלעדית) של עוגן: כותרת → סוף הסעיף שלה, כולל תתי-הכותרות;
   /// שורה → השורה שאחריה, כך שהשורה הנבחרת נכללת.
   int? _anchorEndLine(_RangeAnchor? anchor, int totalLines) {
     if (anchor == null) return null;
@@ -361,15 +361,11 @@ class _PrintingScreenState extends State<PrintingScreen> {
       case _AnchorKind.header:
         if (_flatHeaders.isEmpty) return null;
         final i = anchor.index.clamp(0, _flatHeaders.length - 1);
-        return i < _flatHeaders.length - 1
-            ? _flatHeaders[i + 1].index
-            : totalLines;
+        return headerSectionEndLine(_flatHeaders, i, totalLines);
       case _AnchorKind.altHeader:
         if (_flatAltHeaders.isEmpty) return null;
         final i = anchor.index.clamp(0, _flatAltHeaders.length - 1);
-        return i < _flatAltHeaders.length - 1
-            ? _flatAltHeaders[i + 1].index
-            : totalLines;
+        return headerSectionEndLine(_flatAltHeaders, i, totalLines);
       case _AnchorKind.line:
         return anchor.index + 1;
     }
@@ -805,11 +801,6 @@ class _PrintingScreenState extends State<PrintingScreen> {
       _ => 120.0,
     };
     final rasterPages = <Uint8List>[];
-    final generation = _renderGeneration;
-
-    // אם נרשם render חדש יותר, דלג כדי לא לבזבז עבודה מיושנת.
-    if (generation != _renderGeneration || !mounted) return sourcePdf;
-
     final doc = await _openPdfInMemory(sourcePdf, 'nup');
 
     // Update total page count on first open and clamp page range
@@ -830,10 +821,6 @@ class _PrintingScreenState extends State<PrintingScreen> {
         min((endPage ?? doc.pages.length) - 1, doc.pages.length - 1),
       );
       for (var i = firstIdx; i <= lastIdx; i++) {
-        // אם המשתמש שינה פרמטר באמצע ה-render, זרוק את המסמך מוקדם.
-        if (generation != _renderGeneration || !mounted) {
-          return sourcePdf;
-        }
         final page = doc.pages[i];
         final pdfImage = await page.render(
           fullWidth: page.width * scale,
