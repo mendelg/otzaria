@@ -272,19 +272,26 @@ class BookLocator {
   ///
   /// [bookTitle] - שם הספר
   /// [category] - הקטגוריה שבה נמצא הספר (אופציונלי)
+  /// [bookId] - מזהה הספר ב-DB של [source]; קובע איזה ספר נמחק כשיש לו
+  /// תאום באותה כותרת וקטגוריה
   ///
   /// מחזיר true אם המחיקה הצליחה, false אחרת
   static Future<bool> deleteBook(
     String bookTitle, {
     Category? category,
     int? categoryId,
+    int? bookId,
+    BookSource source = BookSource.official,
   }) async {
     try {
-      final location = await locateBook(
-        bookTitle,
-        category: category,
-        categoryId: categoryId,
-      );
+      // מזהה שלא נמצא לא נופל לחיפוש לפי כותרת — שם נשלף התאום.
+      final location = bookId == null
+          ? await locateBook(
+              bookTitle,
+              category: category,
+              categoryId: categoryId,
+            )
+          : await _locateById(bookId, source);
       if (location == null) {
         debugPrint('❌ Book "$bookTitle" not found');
         return false;
@@ -299,6 +306,25 @@ class BookLocator {
       debugPrint('❌ Error deleting book "$bookTitle": $e');
       return false;
     }
+  }
+
+  static Future<BookLocation?> _locateById(
+    int bookId,
+    BookSource source,
+  ) async {
+    final resolved = await BookDatabaseResolver.resolveBookById(
+      bookId,
+      source: source,
+    );
+    if (resolved == null) return null;
+    return BookLocation(
+      book: resolved.book,
+      storage: BookStorageKind.database,
+      filePath: null,
+      categoryId: resolved.book.categoryId,
+      repository: resolved.repository,
+      source: resolved.source,
+    );
   }
 
   /// מחיקת ספר ממסד הנתונים
