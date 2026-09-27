@@ -1,9 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/search/utils/literal_search_pattern.dart';
 
+import '../support/search_engine_test_init.dart';
 import '../text_book/utils/literal_pattern_test_helper.dart';
 
-void main() {
+Future<void> main() async {
+  final engineReady = await tryInitSearchEngine();
+
   group('normalizeLiteralQuery', () {
     test('מסיר ניקוד', () {
       expect(normalizeLiteralQuery('הֲרֵעֹתִי'), 'הרעתי');
@@ -72,4 +75,39 @@ void main() {
       expect(stripWordBoundaryWrapper('(?<![א-ת])(?:אבג)'), isNull);
     });
   });
+
+  group('buildLiteralPattern — התאמה חלקית (issue #1546)', () {
+    bool partialHas(String query, String line) =>
+        buildLiteralPattern(query, wholeWord: false)!.regExp.hasMatch(line);
+
+    test('אות סופית בסוף השאילתה מתאימה גם לצורה הרגילה', () {
+      expect(partialHas('מלך', 'ויאמר המלכים'), isTrue);
+      expect(partialHas('שלום', 'ויהי שלומו'), isTrue);
+      expect(partialHas('ארץ', 'ארצות'), isTrue);
+      expect(partialHas('ברית עולם', 'ברית עולמים'), isTrue);
+    });
+
+    test('הצורה הסופית עצמה עדיין נמצאת', () {
+      expect(partialHas('מלך', 'ויאמר המלך'), isTrue);
+    });
+
+    test('בלי הכיוון ההפוך: אות רגילה אינה מתאימה לסופית', () {
+      expect(partialHas('מלכ', 'ויאמר המלך'), isFalse);
+    });
+
+    test('אות סופית באמצע השאילתה אינה משתנה', () {
+      expect(partialHas('מלך ישראל', 'מלכ ישראל'), isFalse);
+    });
+
+    test('אות בודדת נמצאת כמילה שלמה ולא בתוך מילה', () {
+      expect(partialHas('פ', 'סוף פסוק פ'), isTrue);
+      expect(partialHas('פ', 'סוף פסוק'), isFalse);
+    });
+
+    test('במילים שלמות אין שינוי', () {
+      final pattern = buildLiteralPattern('מלך', wholeWord: true)!.regExp;
+      expect(pattern.hasMatch('ויאמר המלכים'), isFalse);
+      expect(pattern.hasMatch('ויאמר מלך'), isTrue);
+    });
+  }, skip: engineReady ? false : searchEngineSkipReason);
 }

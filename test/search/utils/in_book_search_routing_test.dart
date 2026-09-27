@@ -5,44 +5,6 @@ import 'package:otzaria_search_engine/otzaria_search_engine.dart'
     show SearchScope, WordMatchMode;
 
 void main() {
-  group('isSearchableQuery', () {
-    test('שאילתה ריקה — לא נחפשת בשני המצבים', () {
-      expect(
-        InBookSearchRouting.isSearchableQuery('', wholeWord: false),
-        isFalse,
-      );
-      expect(
-        InBookSearchRouting.isSearchableQuery('', wholeWord: true),
-        isFalse,
-      );
-    });
-
-    test('תו בודד אינו נחפש בהתאמה חלקית', () {
-      expect(
-        InBookSearchRouting.isSearchableQuery('ש', wholeWord: false),
-        isFalse,
-      );
-    });
-
-    test('תו בודד כן נחפש במילים שלמות — "פ"/"ס" בתנ"ך', () {
-      expect(
-        InBookSearchRouting.isSearchableQuery('פ', wholeWord: true),
-        isTrue,
-      );
-    });
-
-    test('שני תווים נחפשים בשני המצבים', () {
-      expect(
-        InBookSearchRouting.isSearchableQuery('של', wholeWord: false),
-        isTrue,
-      );
-      expect(
-        InBookSearchRouting.isSearchableQuery('של', wholeWord: true),
-        isTrue,
-      );
-    });
-  });
-
   group('canRunAsSimpleSearch', () {
     test('שאילתה ליטרלית בלי תוספות — מסלול פשוט', () {
       expect(

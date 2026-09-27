@@ -34,18 +34,6 @@ class InBookSearchParameters {
 class InBookSearchRouting {
   const InBookSearchRouting._();
 
-  /// המינימום להתאמה חלקית. תו בודד מתאים בתוך כמעט כל מילה, ולכן סריקה
-  /// עליו יקרה וחסרת ערך. במילים שלמות אין מינימום — "פ"/"ס" בתנ"ך.
-  static const int minPartialMatchChars = 2;
-
-  /// האם כדאי להריץ חיפוש על [normalizedQuery] (אחרי trim והסרת ניקוד).
-  static bool isSearchableQuery(
-    String normalizedQuery, {
-    required bool wholeWord,
-  }) =>
-      normalizedQuery.isNotEmpty &&
-      (wholeWord || normalizedQuery.length >= minPartialMatchChars);
-
   /// האם השאילתה ניתנת להרצה כחיפוש ליטרלי מקומי בספר.
   ///
   /// כל תוספת על שאילתה ליטרלית — מרווח בין מילים, אפשרות פר-מילה, מילה

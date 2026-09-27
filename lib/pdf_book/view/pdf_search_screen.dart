@@ -699,12 +699,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     if (utils.hasNikud(query)) {
       query = utils.removeVolwels(query);
     }
-    return InBookSearchRouting.isSearchableQuery(
-          query,
-          wholeWord: _isSimpleSearch ? _wholeWord : true,
-        )
-        ? query
-        : null;
+    return query.isEmpty ? null : query;
   }
 
   Future<void> _searchTextUpdated() async {

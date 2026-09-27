@@ -279,12 +279,8 @@ class TextBookSearchViewState extends State<TextBookSearchView>
 
     // עדכון שדה החיפוש אם initialQuery השתנה
     final queryChanged = widget.initialQuery != oldWidget.initialQuery;
-    // השדה שולח ל-BLoC את השאילתה *המנורמלת* (_searchableQuery — ריק מתחת
-    // למינימום התווים), ולכן ה-state שחוזר כ-initialQuery אינו בהכרח זהה
-    // לטקסט הגולמי בשדה. השוואה לטקסט הגולמי בלבד סימנה את ההד של ההקלדה
-    // כשינוי חיצוני ודרסה אותה: כשקדם חיפוש אחר, האות הראשונה שהוקלדה
-    // במקומו נעלמה (issue #1430). ערך שתואם לצורה המנורמלת של השדה הוא
-    // הד של השדה עצמו; רק ערך אחר מגיע מבחוץ ומסונכרן אליו.
+    // ה-BLoC מקבל את השאילתה המנורמלת (בלי ניקוד ורווחים), וערך שתואם לה
+    // הוא הד של השדה עצמו, לא שינוי חיצוני שדורס את ההקלדה (issue #1430).
     final controllerQuery = searchTextController.text;
     final needsControllerSync =
         widget.initialQuery != controllerQuery &&
@@ -412,12 +408,7 @@ class TextBookSearchViewState extends State<TextBookSearchView>
     if (utils.hasNikud(query)) {
       query = utils.removeVolwels(query);
     }
-    return InBookSearchRouting.isSearchableQuery(
-          query,
-          wholeWord: _effectiveWholeWord,
-        )
-        ? query
-        : null;
+    return query.isEmpty ? null : query;
   }
 
   Future<void> _searchTextUpdated() async {
