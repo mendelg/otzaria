@@ -131,6 +131,38 @@ void main() {
       expect(await CopyUtils.extractCurrentPath(book, 7), 'פרק ב, סעיף א');
     });
   });
+
+  group('CopyUtils.extractCurrentPath — נתיב מתוך התוכן', () {
+    test('כותרת עמוקה של הלכה קודמת לא נכנסת להלכה הבאה', () async {
+      final content = [
+        '<h2>פרק א</h2>',
+        '<h3>הלכה א</h3>',
+        '<h4>סעיף א</h4>',
+        'טקסט',
+        '<h3>הלכה ב</h3>',
+        'טקסט של הלכה ב',
+      ];
+      expect(
+        await CopyUtils.extractCurrentPath(
+          _TocBook(const []),
+          5,
+          bookContent: content,
+        ),
+        'פרק א, הלכה ב',
+      );
+    });
+
+    test('כמה כותרות באותה שורה נאספות כולן', () async {
+      expect(
+        await CopyUtils.extractCurrentPath(
+          _TocBook(const []),
+          1,
+          bookContent: ['<h2>פרק א</h2><h3>הלכה א</h3>', 'טקסט'],
+        ),
+        'פרק א, הלכה א',
+      );
+    });
+  });
 }
 
 class _TocBook extends TextBook {
