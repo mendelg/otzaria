@@ -199,19 +199,14 @@ if (Test-Path $pbxprojFile) {
 
 # Update assets/יומן שינויים.md (Add new version as first item)
 $changelogFile = "assets/יומן שינויים.md"
-# 1. REMOVE the leading `n` from the version line itself
-$changelogVersionLine = "* **$newVersion**" # The version line in Markdown format (NO leading newline)
+$changelogVersion = if ($hotfix -gt 0) { "$newVersion.$hotfix" } else { $newVersion }
+$changelogVersionLine = "* **$changelogVersion**"
 
 if (Test-Path $changelogFile) {
-    # Read existing content
     $existingContent = Get-Content $changelogFile -Raw -Encoding $Utf8NoBom
-
-    # 2. Add the NEW version line followed by a single newline
     $newChangelogContent = $changelogVersionLine + "`n" + $existingContent
-
-    # 3. Write back to the file
     $newChangelogContent | Set-Content $changelogFile -Encoding $Utf8NoBom
-    Write-Host "Updated $changelogFile with new version: $newVersion"
+    Write-Host "Updated $changelogFile with new version: $changelogVersion"
 } else {
     Write-Warning "Changelog file '$changelogFile' not found! Skipping changelog update."
 }

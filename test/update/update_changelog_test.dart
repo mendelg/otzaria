@@ -1,8 +1,22 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/update/my_update_widget.dart';
 
 void main() {
   group('changelogBetweenVersionsForUpdateDialog', () {
+    test('reads the current hotfix section from the release changelog', () {
+      final changelog = File('assets/יומן שינויים.md').readAsStringSync();
+      final result = changelogBetweenVersionsForUpdateDialog(
+        changelog: changelog,
+        currentVersion: '0.9.97.1',
+        latestVersion: '0.9.97.2',
+      );
+
+      expect(result, contains('גרסה זו יצאה עקב באגים שונים במתקינים'));
+      expect(result, isNot(contains('כלי חדש: ביוגרפיות')));
+    });
+
     test(
       'returns only versions between current and latest, including headings',
       () {

@@ -164,9 +164,13 @@ fi
 # ---- assets/יומן שינויים.md ----
 CHANGELOG="assets/יומן שינויים.md"
 if [[ -f "$CHANGELOG" ]]; then
+    CHANGELOG_VERSION="$NEW_VERSION"
+    if (( HOTFIX > 0 )); then
+        CHANGELOG_VERSION="$NEW_VERSION.$HOTFIX"
+    fi
     EXISTING=$(cat "$CHANGELOG")
-    printf "* **%s**\n%s" "$NEW_VERSION" "$EXISTING" > "$CHANGELOG"
-    echo "Updated $CHANGELOG with new version: $NEW_VERSION"
+    printf "* **%s**\n%s" "$CHANGELOG_VERSION" "$EXISTING" > "$CHANGELOG"
+    echo "Updated $CHANGELOG with new version: $CHANGELOG_VERSION"
 fi
 
 # ---- Git commit ----
