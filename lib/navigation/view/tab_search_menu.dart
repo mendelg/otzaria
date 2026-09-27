@@ -44,6 +44,9 @@ class TabSearchButton extends StatelessWidget {
 /// החלונית הפתוחה כרגע, אם יש. הקיצור עשוי להילחץ שוב לפני שהיא נסגרה.
 _TabSearchRoute? _openRoute;
 
+/// האם חלונית חיפוש הכרטיסיות היא ה-route העליון.
+bool get isTabSearchMenuOnTop => _openRoute?.isCurrent ?? false;
+
 /// פותח את חלונית חיפוש הכרטיסיות, וסוגר אותה אם היא כבר פתוחה. בלי
 /// [anchorContext] היא נפתחת ממורכזת בראש החלון — כך גם קיצור המקלדת מגיע
 /// אליה בלי כפתור מוצג.

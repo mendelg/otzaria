@@ -21,6 +21,7 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
+import 'package:otzaria/navigation/view/tab_search_menu.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
@@ -1373,6 +1374,108 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(blocs.tabsBloc.state.tabs, hasLength(2));
+      expect(find.byType(AlertDialog), findsOneWidget);
+    });
+  });
+
+  group('KeyboardShortcuts - קיצור חיפוש הכרטיסיות פותח וסוגר', () {
+    late MockSettingsBloc settingsBlocLocal;
+    late StreamController<SettingsState> settingsControllerLocal;
+
+    setUpAll(() async {
+      await Settings.init(cacheProvider: MemorySettingsCache());
+    });
+
+    setUp(() {
+      FocusRepository().resetForTesting();
+      settingsBlocLocal = MockSettingsBloc();
+      settingsControllerLocal = StreamController<SettingsState>.broadcast();
+      whenListen(
+        settingsBlocLocal,
+        settingsControllerLocal.stream,
+        initialState: SettingsState.initial().copyWith(
+          shortcuts: const {'key-shortcut-search-tabs': 'ctrl+shift+a'},
+        ),
+      );
+    });
+
+    tearDown(() async {
+      await settingsControllerLocal.close();
+      FocusRepository().resetForTesting();
+    });
+
+    Future<void> pumpReadingScreen(WidgetTester tester) async {
+      final tabsBloc = TabsBloc(repository: _FakeTabsRepository());
+      final historyBloc = _StubHistoryBloc();
+      final navigationBloc = _StubNavigationBloc();
+      addTearDown(() async {
+        final openTabs = List<OpenedTab>.from(tabsBloc.state.tabs);
+        await tabsBloc.close();
+        for (final tab in openTabs) {
+          tab.dispose();
+        }
+        await historyBloc.close();
+        await navigationBloc.close();
+      });
+
+      tabsBloc.add(AddTab(SearchingTab('חיפוש א', 'א')));
+      await tester.pump();
+
+      await tester.pumpWidget(
+        MultiBlocProvider(
+          providers: [
+            BlocProvider<SettingsBloc>.value(value: settingsBlocLocal),
+            BlocProvider<TabsBloc>.value(value: tabsBloc),
+            BlocProvider<HistoryBloc>.value(value: historyBloc),
+            BlocProvider<NavigationBloc>.value(value: navigationBloc),
+            Provider<FocusRepository>.value(value: FocusRepository()),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: KeyboardShortcuts(
+                onFindRefRequested: () {},
+                child: const SizedBox(width: 100, height: 100),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    Future<void> sendCtrlShiftA(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('לחיצה שנייה על הקיצור סוגרת את החלונית הפתוחה', (
+      tester,
+    ) async {
+      await pumpReadingScreen(tester);
+
+      await sendCtrlShiftA(tester);
+      expect(find.byType(TabSearchPanel), findsOneWidget);
+
+      await sendCtrlShiftA(tester);
+      expect(find.byType(TabSearchPanel), findsNothing);
+    });
+
+    testWidgets('הקיצור אינו פותח את החלונית מעל דיאלוג אחר', (tester) async {
+      await pumpReadingScreen(tester);
+      showDialog(
+        context: tester.element(find.byType(SizedBox)),
+        builder: (_) => const AlertDialog(title: Text('דיאלוג בדיקה')),
+      );
+      await tester.pumpAndSettle();
+
+      await sendCtrlShiftA(tester);
+
+      expect(find.byType(TabSearchPanel), findsNothing);
       expect(find.byType(AlertDialog), findsOneWidget);
     });
   });

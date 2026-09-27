@@ -390,7 +390,8 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
       return KeyEventResult.handled;
     }
 
-    if (isReadingScreen &&
+    // החלונית עצמה היא route פתוח ולכן isReadingScreen שקרי; הקיצור צריך לסגור אותה.
+    if ((isReadingScreen || isTabSearchMenuOnTop) &&
         ShortcutHelper.matchesShortcut(event, searchTabsShortcut)) {
       showTabSearchMenu(context);
       return KeyEventResult.handled;
