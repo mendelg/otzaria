@@ -303,7 +303,7 @@ final RegExp _quoteContextTokens = RegExp(
   '${_htmlStripper.pattern}|${_htmlEntity.pattern}|["״]',
 );
 final RegExp _acronymLetter = RegExp(r'[א-תa-zA-Z]');
-final RegExp _quoteAdjacentPunctuation = RegExp(r'[!:;.,?\-—–]');
+final RegExp _quoteAdjacentPunctuation = RegExp(r'[!:;.,?\-—–\x00]');
 
 /// מכריע על גרשיים לפי הטקסט הגלוי, ומשאיר את התגים והישויות במקורם.
 String _stripQuotesOutsideTags(String text) {
@@ -311,17 +311,25 @@ String _stripQuotesOutsideTags(String text) {
 
   final contextBuffer = StringBuffer();
   final quotes = <({int source, int context})>[];
+  var tagSinceQuote = true;
   var lastEnd = 0;
   for (final match in _quoteContextTokens.allMatches(text)) {
     contextBuffer.write(removeVolwels(text.substring(lastEnd, match.start)));
     final token = match.group(0)!;
     if (token.startsWith('<')) {
-      if (_breakingTagStripper.hasMatch(token)) contextBuffer.write(' ');
+      if (_breakingTagStripper.hasMatch(token)) {
+        contextBuffer.write(' ');
+      } else if (!tagSinceQuote && token.startsWith('</')) {
+        // תג שנפתח לפני הגרשיים ונסגר אחריהם תוחם את המילה (<b>וא"כ</b>השתא).
+        contextBuffer.write('\x00');
+      }
+      tagSinceQuote = true;
     } else if (token.startsWith('&')) {
       contextBuffer.write(removeVolwels(decodeHtmlEntities(token)));
     } else {
       quotes.add((source: match.start, context: contextBuffer.length));
       contextBuffer.write(token);
+      tagSinceQuote = false;
     }
     lastEnd = match.end;
   }
@@ -334,7 +342,7 @@ String _stripQuotesOutsideTags(String text) {
   for (final quote in quotes) {
     var before = quote.context - 1;
     var after = quote.context + 1;
-    // רק פיסוק שצמוד לגרשיים מדולג; אחרי האות האחרונה הוא גבול מילה.
+    // רק פיסוק ותג סוגר (\x00) שצמודים לגרשיים מדולגים; אחרי האות האחרונה הם גבול מילה.
     // כל רצף נסרק לכל היותר משני צדדיו, בלי להעתיק את השורה לכל גרשיים.
     while (before >= 0 && _quoteAdjacentPunctuation.hasMatch(context[before])) {
       before--;

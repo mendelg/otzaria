@@ -67,6 +67,17 @@ void main() {
       });
     }
 
+    test('תג סוגר אחרי האות שאחרי הגרשיים הוא גבול מילה', () {
+      expect(
+        removePunctuation('<b>וא"כ</b>השתא יש ללמוד'),
+        '<b>וא"כ</b>השתא יש ללמוד',
+      );
+      expect(removePunctuation('<i>וב"ח</i>ב"ל'), '<i>וב"ח</i>ב"ל');
+      expect(removePunctuation('<i>ד"ת</i>ממאי'), '<i>ד"ת</i>ממאי');
+      expect(removePunctuation('<i>הגה"ה</i>וכן'), '<i>הגה"ה</i>וכן');
+      expect(removePunctuation('<b>רש"</b>י'), '<b>רש"</b>י');
+    });
+
     test('תצוגה והעתקה משתמשות באותה הכרעה עם ניקוד ובלעדיו', () {
       const input = '<b>רַש</b>"<b>י</b>, ב"<i>כִּ</i>י';
       for (final removeNikud in [false, true]) {
