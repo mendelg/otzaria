@@ -330,6 +330,9 @@ void main(List<String> args) async {
       .timeout(const Duration(seconds: 20), onTimeout: () {});
 
   PluginDevToolsMode.initFromArgs(args);
+  // שכבות טקסט של ספרים סרוקים שומרות עברית בסדר ויזואלי; בלי זה חיפוש,
+  // העתקה ואינדוקס מקבלים את המילים הפוכות.
+  Pdfrx.normalizeHebrewText = true;
 
   SentryWidgetsFlutterBinding.ensureInitialized();
 
@@ -1856,6 +1859,7 @@ void secondaryWindowMain(List<String> args) async {
   }
   WindowRole.isSecondary = true;
   _secondaryWindowStartup = Stopwatch()..start();
+  Pdfrx.normalizeHebrewText = true;
   SentryWidgetsFlutterBinding.ensureInitialized();
   EditableText.debugDeterministicCursor = true;
 
