@@ -40,6 +40,10 @@ class _FakeReadyController extends PdfViewerController {
   @override
   bool get isReady => true;
 
+  // קונטרולר אמיתי מוכן תמיד מחזיר עמוד; זה אינו מחובר לצפיין.
+  @override
+  int? get pageNumber => null;
+
   @override
   PdfDocument get document => _FakeDocument();
 
