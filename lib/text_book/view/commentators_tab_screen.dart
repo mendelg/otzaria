@@ -627,17 +627,12 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
     });
   }
 
-  // התצוגה נגזרת מגודל גופן המפרשים הגלובלי, כמו בכרטיסיית המפרשים של PDF.
   void _zoomIn(BuildContext context) {
-    final bloc = context.read<SettingsBloc>();
-    final next = (bloc.state.commentatorsFontSize + 2).clamp(10.0, 40.0);
-    bloc.add(UpdateCommentatorsFontSize(next));
+    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(2));
   }
 
   void _zoomOut(BuildContext context) {
-    final bloc = context.read<SettingsBloc>();
-    final next = (bloc.state.commentatorsFontSize - 2).clamp(10.0, 40.0);
-    bloc.add(UpdateCommentatorsFontSize(next));
+    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(-2));
   }
 
   @override

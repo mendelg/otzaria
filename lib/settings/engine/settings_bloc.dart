@@ -43,7 +43,10 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     on<UpdateCommentatorsFontFamily>(_onUpdateCommentatorsFontFamily);
     on<UpdateFontBold>(_onUpdateFontBold);
     on<UpdateCommentatorsFontBold>(_onUpdateCommentatorsFontBold);
-    on<UpdateCommentatorsFontSize>(_onUpdateCommentatorsFontSize);
+    on<CommentatorsFontSizeEvent>(
+      _onCommentatorsFontSizeChanged,
+      transformer: sequential(),
+    );
     on<UpdateLineHeight>(_onUpdateLineHeight);
     on<UpdateShowOtzarHachochma>(_onUpdateShowOtzarHachochma);
     on<UpdateShowHebrewBooks>(_onUpdateShowHebrewBooks);
@@ -458,12 +461,19 @@ class SettingsBloc extends Bloc<SettingsEvent, SettingsState> {
     emit(state.copyWith(commentatorsFontBold: event.commentatorsFontBold));
   }
 
-  Future<void> _onUpdateCommentatorsFontSize(
-    UpdateCommentatorsFontSize event,
+  Future<void> _onCommentatorsFontSizeChanged(
+    CommentatorsFontSizeEvent event,
     Emitter<SettingsState> emit,
   ) async {
-    await _repository.updateCommentatorsFontSize(event.commentatorsFontSize);
-    emit(state.copyWith(commentatorsFontSize: event.commentatorsFontSize));
+    final next = switch (event) {
+      UpdateCommentatorsFontSize(:final commentatorsFontSize) =>
+        commentatorsFontSize,
+      AdjustCommentatorsFontSize(:final delta) =>
+        (state.commentatorsFontSize + delta).clamp(10.0, 40.0),
+    };
+    if (next == state.commentatorsFontSize) return;
+    await _repository.updateCommentatorsFontSize(next);
+    emit(state.copyWith(commentatorsFontSize: next));
   }
 
   Future<void> _onUpdateLineHeight(

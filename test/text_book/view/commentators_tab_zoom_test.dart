@@ -1,35 +1,26 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_event.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
-import 'package:otzaria/settings/engine/settings_event.dart';
-import 'package:otzaria/settings/engine/settings_state.dart';
 import 'package:otzaria/tabs/models/commentators_tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
+import 'package:otzaria/text_book/view/commentary_list_base.dart';
 import 'package:otzaria/text_book/view/commentators_tab_screen.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../helpers/memory_settings_cache.dart';
-
-class _RecordingSettingsBloc extends Bloc<SettingsEvent, SettingsState>
-    implements SettingsBloc {
-  _RecordingSettingsBloc(super.initialState) {
-    on<SettingsEvent>((event, _) => events.add(event));
-  }
-
-  final events = <SettingsEvent>[];
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
+import '../../unit/mocks/mock_settings_repository.mocks.dart';
 
 class _TestTextBookBloc extends Bloc<TextBookEvent, TextBookState>
     implements TextBookBloc {
@@ -79,7 +70,7 @@ void main() {
     await Settings.init(cacheProvider: MemorySettingsCache());
   });
 
-  testWidgets('זום בכרטיסיית המפרשים משנה את גודל גופן המפרשים (issue #1520)', (
+  testWidgets('לחיצות זום רצופות מעדכנות את הגופן המוצג גם בשמירה איטית', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1600, 900);
@@ -95,9 +86,14 @@ void main() {
       blocOverride: sourceBloc,
     );
     final tab = CommentatorsTab(sourceTab: sourceTab, blocOverride: tabBloc);
-    final settings = _RecordingSettingsBloc(
-      SettingsState.initial().copyWith(commentatorsFontSize: 20),
-    );
+    final repository = MockSettingsRepository();
+    final firstWrite = Completer<void>();
+    final writes = <double>[];
+    when(repository.updateCommentatorsFontSize(any)).thenAnswer((invocation) {
+      writes.add(invocation.positionalArguments.single as double);
+      return writes.length == 1 ? firstWrite.future : Future<void>.value();
+    });
+    final settings = SettingsBloc(repository: repository);
     final notes = _TestPersonalNotesBloc();
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -122,15 +118,45 @@ void main() {
       ),
     );
     await tester.pump();
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      22,
+    );
 
     await tester.tap(find.byTooltip('הגדל את גודל הטקסט').first);
     await tester.pump();
-
+    await tester.tap(find.byTooltip('הגדל את גודל הטקסט').first);
+    await tester.pump();
+    expect(writes, [24.0]);
     expect(
-      settings.events.whereType<UpdateCommentatorsFontSize>().map(
-        (e) => e.commentatorsFontSize,
-      ),
-      [22.0],
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      22,
+    );
+
+    firstWrite.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(writes, [24.0, 26.0]);
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      26,
+    );
+
+    await tester.tap(find.byTooltip('הקטן את גודל הטקסט').first);
+    await tester.pump();
+    await tester.pump();
+    expect(writes, [24.0, 26.0, 24.0]);
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      24,
     );
   });
 }
