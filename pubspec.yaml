@@ -124,8 +124,8 @@ dependencies:
   wakelock_plus: ^1.8.0
 
 dependency_overrides:
-  # TODO: להחזיר ל-pub.dev רק אחרי ששני ה-PR ימוזגו וישוחררו: espresso3389/pdfrx#724
-  # ו-#729. עד אז ענף הפורק שמכיל את שניהם (נמשך מראש הענף בכל pub get).
+  # TODO: להחזיר ל-pub.dev רק אחרי שכל ה-PR ימוזגו וישוחררו: espresso3389/pdfrx#724,
+  # #729 ו-#730. עד אז ענף הפורק שמכיל את כולם (נמשך מראש הענף בכל pub get).
   pdfrx:
     git:
       url: https://github.com/palmoni5/pdfrx
