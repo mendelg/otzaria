@@ -1296,13 +1296,17 @@ void main() {
       );
     }
 
-    Future<List<DateTime>> scheduledFor(CustomEvent event) async {
+    Future<List<DateTime>> scheduledFor(
+      CustomEvent event, {
+      DateTime? notificationNow,
+    }) async {
       final settings = _NotificationsEnabledSettings()
         ..storedEventsJson = jsonEncode([event.toJson()]);
       final notifications = _RecordingNotificationService();
       final cubit = CalendarCubit(
         settingsRepository: settings,
         notificationService: notifications,
+        now: () => notificationNow ?? DateTime.now(),
       );
       await Future.delayed(const Duration(milliseconds: 100));
       await cubit.close();
@@ -1349,6 +1353,46 @@ void main() {
       );
 
       expect(dates, containsAll([at10(start), at10(start, monthLength)]));
+    });
+
+    test('אירוע חודשי גרגוריאני ביום 31 מתוזמן אחרי חודש חסר', () async {
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.monthlyGregorian, DateTime(2024, 1, 31)),
+        notificationNow: DateTime(2025, 2, 1),
+      );
+
+      expect(dates, contains(DateTime(2025, 3, 31, 10)));
+    });
+
+    test('אירוע חודשי עברי ביום 30 מתוזמן אחרי חודש בן 29 יום', () async {
+      DateTime? previousOccurrence;
+      DateTime? nextOccurrence;
+      for (
+        var day = DateTime(2025, 1, 1);
+        day.isBefore(DateTime(2030));
+        day = day.add(const Duration(days: 1))
+      ) {
+        if (JewishDate.fromDateTime(day).getJewishDayOfMonth() != 30) {
+          continue;
+        }
+        if (previousOccurrence != null &&
+            day.difference(previousOccurrence).inDays > 45) {
+          nextOccurrence = day;
+          break;
+        }
+        previousOccurrence = day;
+      }
+
+      expect(previousOccurrence, isNotNull);
+      expect(nextOccurrence, isNotNull);
+      final previous = previousOccurrence!;
+      final next = nextOccurrence!;
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.monthlyHebrew, previous),
+        notificationNow: previous.add(const Duration(days: 1)),
+      );
+
+      expect(dates, contains(at10(next)));
     });
 
     test('אירוע שנתי ממשיך להיות מתוזמן לשנה זו ולשנה הבאה', () async {
