@@ -174,10 +174,7 @@ String removePunctuation(String text) {
     ).firstMatch(processed);
     final lastAllowedPunctuationIndex = lastAllowedPunctuationMatch?.start;
 
-    // הסרה לינארית של פיסוק, עם תמיכה בסוגריים מקוננים.
-    // בתוך סוגריים שומרים רק . ו- :
-    // תגי HTML (למשל <a href="otzaria://...">) נשארים מחוץ לעיבוד - אחרת
-    // ה-":" וה-"-" בתוך ה-href נמחקים והקישור נשבר.
+    // תגי HTML נשמרים בשלמותם כדי שפיסוק בתוך href לא ישבור קישורים.
     final buffer = StringBuffer();
     var parenDepth = 0;
     var inTag = false;
@@ -302,56 +299,64 @@ String removePunctuation(String text) {
   return result.replaceAll('\n', '<br>');
 }
 
-/// רגקס לאיתור תגי HTML (ומכאן טווחים שיש לדלג עליהם בניקוי גרשיים).
-final RegExp _htmlTagSpan = RegExp(r'<[^>]*>');
+final RegExp _quoteContextTokens = RegExp(
+  '${_htmlStripper.pattern}|${_htmlEntity.pattern}|["״]',
+);
+final RegExp _acronymLetter = RegExp(r'[א-תa-zA-Z]');
+final RegExp _quoteAdjacentPunctuation = RegExp(r'[!:;.,?\-—–]');
 
-/// מסיר גרשיים ומירכאות ציטוט (ראו [removePunctuation]) בכל הטקסט *חוץ*
-/// מתוך תגי HTML - כדי לא לפגוע בגרשיים סביב attributes כמו href="...".
+/// מכריע על גרשיים לפי הטקסט הגלוי, ומשאיר את התגים והישויות במקורם.
 String _stripQuotesOutsideTags(String text) {
-  final buffer = StringBuffer();
+  if (!text.contains('"') && !text.contains('״')) return text;
+
+  final contextBuffer = StringBuffer();
+  final quotes = <({int source, int context})>[];
   var lastEnd = 0;
-  for (final match in _htmlTagSpan.allMatches(text)) {
-    buffer.write(_stripAcronymQuotes(text, lastEnd, match.start));
-    buffer.write(match.group(0));
+  for (final match in _quoteContextTokens.allMatches(text)) {
+    contextBuffer.write(removeVolwels(text.substring(lastEnd, match.start)));
+    final token = match.group(0)!;
+    if (token.startsWith('<')) {
+      if (_breakingTagStripper.hasMatch(token)) contextBuffer.write(' ');
+    } else if (token.startsWith('&')) {
+      contextBuffer.write(removeVolwels(decodeHtmlEntities(token)));
+    } else {
+      quotes.add((source: match.start, context: contextBuffer.length));
+      contextBuffer.write(token);
+    }
     lastEnd = match.end;
   }
-  buffer.write(_stripAcronymQuotes(text, lastEnd, text.length));
-  return buffer.toString();
-}
+  if (quotes.isEmpty) return text;
+  contextBuffer.write(removeVolwels(text.substring(lastEnd)));
+  final context = contextBuffer.toString();
 
-// תגים ופיסוק שצמודים לגרשיים אינם חלק מההכרעה (גם שגיאת הקלדה כמו א,"א).
-final RegExp _leadingSkippable = RegExp(r'^(?:<[^>]*>|[!:;.,?\-—–])+');
-final RegExp _trailingSkippable = RegExp(r'(?:<[^>]*>|[!:;.,?\-—–])+$');
-
-/// מסיר גרשיים/מירכאות מהטווח [start, end) של [text] (ללא תגי HTML), פרט
-/// לראשי תיבות. ההקשר נבדק על כל השורה, כי תג יכול ליפול בתוך ראשי התיבות.
-String _stripAcronymQuotes(String text, int start, int end) {
-  final segment = text.substring(start, end);
-  if (segment.isEmpty) return segment;
-  return segment.replaceAllMapped(RegExp(r'["״]'), (match) {
-    final index = start + match.start;
-    final letter = RegExp(r'[א-תa-zA-Z]');
-    // ראשי תיבות: הגרשיים לפני האות האחרונה, כלומר אות אחת בלבד אחריו
-    // ואז גבול מילה. שתי אותיות אחריו = מירכאות ציטוט (כמו ב"כי יותן).
-    // מנקים ניקוד משני הצדדים כדי שאות מנוקדת (רַשִׁ"י, ב"כִּי) לא תיחשב
-    // בטעות כסימן ניקוד או כאות בודדת.
-    final before = removeVolwels(
-      text.substring(0, index).replaceFirst(_trailingSkippable, ''),
-    );
-    final hasBefore =
-        before.isNotEmpty && letter.hasMatch(before[before.length - 1]);
-    final rest = removeVolwels(
-      text.substring(index + 1).replaceFirst(_leadingSkippable, ''),
-    );
-    final hasSingleLetterAfter =
-        rest.isNotEmpty &&
-        letter.hasMatch(rest[0]) &&
-        (rest.length == 1 || !letter.hasMatch(rest[1]));
-    if (hasBefore && hasSingleLetterAfter) {
-      return match.group(0)!;
+  final result = StringBuffer();
+  lastEnd = 0;
+  for (final quote in quotes) {
+    var before = quote.context - 1;
+    var after = quote.context + 1;
+    // רק פיסוק שצמוד לגרשיים מדולג; אחרי האות האחרונה הוא גבול מילה.
+    // כל רצף נסרק לכל היותר משני צדדיו, בלי להעתיק את השורה לכל גרשיים.
+    while (before >= 0 && _quoteAdjacentPunctuation.hasMatch(context[before])) {
+      before--;
     }
-    return '';
-  });
+    while (after < context.length &&
+        _quoteAdjacentPunctuation.hasMatch(context[after])) {
+      after++;
+    }
+    final isAcronym =
+        before >= 0 &&
+        _acronymLetter.hasMatch(context[before]) &&
+        after < context.length &&
+        _acronymLetter.hasMatch(context[after]) &&
+        (after + 1 == context.length ||
+            !_acronymLetter.hasMatch(context[after + 1]));
+    if (!isAcronym) {
+      result.write(text.substring(lastEnd, quote.source));
+      lastEnd = quote.source + 1;
+    }
+  }
+  result.write(text.substring(lastEnd));
+  return result.toString();
 }
 
 bool isHeadingLine(String line) {
