@@ -77,12 +77,12 @@ new_root=$(extract_tree "$new_zip" "$work/new")
 # השחרורים הקודמים, החדש ביותר תחילה, בלי טיוטות ובלי השחרור הנוכחי.
 mapfile -t candidates < <(
   # לפי גרסה ולא לפי createdAt: הוא נגזר מהקומיט וחוזר על עצמו בין שחרורים,
-  # ובשוויון הסדר שרירותי. ההשוואה מספרית, כדי ש-0.10.0 יגבר על 0.9.99.
+  # ובשוויון הסדר שרירותי. ההשוואה מספרית ומרופדת ל-4 חלקים (0.9.97.2 > 0.9.97+789).
   gh release list --repo "$source_repo" --limit 40 \
     --json tagName,isDraft,isPrerelease \
     --jq 'map(select(.isDraft | not))
       | map(. + {key: (.tagName | sub("^v"; "") | split("+") as $p
-          | ($p[0] | split(".") | map(try tonumber catch 0))
+          | (($p[0] | split(".") | map(try tonumber catch 0)) + [0, 0, 0, 0])[:4]
             + [($p[1] // "0") | try tonumber catch 0])})
       | sort_by(.key) | reverse
       | .[] | "\(.tagName) \(if .isPrerelease then "pre" else "stable" end)"' |

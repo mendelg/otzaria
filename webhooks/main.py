@@ -50,8 +50,8 @@ def load_asset_links(event_path: str | None) -> list[str]:
 
 
 def extract_version(tag: str) -> str:
-    """מחלץ את מספר הגרסה הסמנטית מתוך תג (לדוגמה '0.9.92+631' → '0.9.92')."""
-    match = re.match(r"(\d+\.\d+\.\d+)", tag)
+    """מחלץ את הגרסה מתוך תג ('0.9.92+631' → '0.9.92', '0.9.97.2' → '0.9.97.2')."""
+    match = re.match(r"(\d+\.\d+\.\d+(?:\.\d+)?)", tag)
     return match.group(1) if match else tag
 
 
