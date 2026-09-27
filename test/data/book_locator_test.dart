@@ -12,6 +12,7 @@ import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/models/book.dart' as migration_models;
 import 'package:otzaria/migration/models/category.dart' as migration_models;
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:path/path.dart' as path;
 
@@ -178,6 +179,100 @@ void main() {
       final location = await BookLocator.locateBook('לא קיים');
 
       expect(location, isNull);
+    });
+  });
+
+  group('BookLocator.deleteBook — ספר אישי עם תאום בסוג קובץ אחר', () {
+    late SeforimRepository userRepo;
+    late int folderId;
+    late int pdfId;
+    late int txtId;
+    late library_models.Category folder;
+
+    setUp(() async {
+      userRepo = await UserBooksDatabaseHolder.instance.repository;
+      final rootId = await userRepo.insertCategory(
+        const migration_models.Category(title: 'ספרים אישיים'),
+      );
+      folderId = await userRepo.insertCategory(
+        migration_models.Category(title: 'מסמכים', parentId: rootId, level: 1),
+      );
+      final sourceId = await userRepo.insertSource('personal', -1);
+      pdfId = await userRepo.insertBook(
+        migration_models.Book(
+          categoryId: folderId,
+          sourceId: sourceId,
+          title: 'תאום',
+          isPersonal: true,
+          isContentExternal: true,
+          filePath: path.join(tempDir.path, 'תאום.pdf'),
+          fileType: 'pdf',
+        ),
+      );
+      txtId = await userRepo.insertBook(
+        migration_models.Book(
+          categoryId: folderId,
+          sourceId: sourceId,
+          title: 'תאום',
+          isPersonal: true,
+          fileType: 'txt',
+        ),
+      );
+
+      final library = library_models.Library(categories: []);
+      final personal = library_models.Category(
+        title: 'ספרים אישיים',
+        description: '',
+        shortDescription: '',
+        order: 1,
+        subCategories: [],
+        books: [],
+        parent: library,
+      );
+      folder = library_models.Category(
+        title: 'מסמכים',
+        description: '',
+        shortDescription: '',
+        order: 1,
+        subCategories: [],
+        books: [],
+        parent: personal,
+      );
+    });
+
+    test('מזהה הספר קובע איזה ספר נמחק', () async {
+      // ספר רשמי עם אותו מזהה — מרחבי המזהים של המסדים חופפים.
+      await insertBookFor(repo: seforimRepo, title: 'רשמי');
+      await insertBookFor(repo: seforimRepo, title: 'רשמי 2');
+      expect(await seforimRepo.getBook(txtId), isNotNull);
+
+      final ok = await BookLocator.deleteBook(
+        'תאום',
+        category: folder,
+        categoryId: folderId,
+        bookId: txtId,
+        source: BookSource.user,
+      );
+
+      expect(ok, isTrue);
+      expect(await userRepo.getBook(txtId), isNull);
+      expect(await userRepo.getBook(pdfId), isNotNull);
+      expect(await seforimRepo.getBook(txtId), isNotNull);
+    });
+
+    test('מזהה שכבר נמחק אינו מוחק את התאום', () async {
+      await userRepo.deleteBookCompletely(txtId);
+
+      final ok = await BookLocator.deleteBook(
+        'תאום',
+        category: folder,
+        categoryId: folderId,
+        bookId: txtId,
+        source: BookSource.user,
+      );
+
+      expect(ok, isFalse);
+      expect(await userRepo.getBook(pdfId), isNotNull);
     });
   });
 

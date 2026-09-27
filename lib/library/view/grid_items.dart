@@ -962,6 +962,8 @@ Future<void> _deleteBook(Book book) async {
       book.title,
       category: book.category,
       categoryId: book.categoryId,
+      bookId: book.id,
+      source: book.source,
     );
 
     if (!success) {
