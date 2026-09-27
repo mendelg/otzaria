@@ -39,36 +39,35 @@ class StartupWorkGate {
   }
 }
 
-/// מתחיל עבודות אתחול מושהות פעם אחת לאחר פתיחת [gate].
-///
-/// עדכון הספרייה נשלח רק כשקיימת ספרייה מותקנת ([isLibraryInstalled]),
-/// כשהסנכרון האוטומטי ועדכוני הרשת מותרים, ורק כשתדירות הבדיקה שנבחרה
-/// בהגדרות מתירה בדיקה בעלייה זו ([isLibraryUpdateCheckDue]).
+/// מתחיל את סנכרון הרקע פעם אחת לאחר פתיחת [gate].
 bool tryStartDeferredStartupWork({
   required StartupWorkGate gate,
   required VoidCallback startBackgroundSync,
-  required bool Function() isLibraryInstalled,
-  required bool Function() isAutoSyncEnabled,
-  required bool Function() canUseSoftwareAndBookUpdates,
-  required bool Function() isLibraryUpdateCheckDue,
-  required LibraryUpdateBloc Function() libraryUpdateBloc,
 }) {
   if (!gate.consumeStartPermission()) {
     return false;
   }
-
   startBackgroundSync();
-  // בלי seforim.db הבדיקה נכשלת בפתיחת ה-DB (SqliteException 14) — אין מה
-  // להשוות מולו עד שהמשתמש יתקין ספרייה.
-  if (isLibraryInstalled() &&
-      isAutoSyncEnabled() &&
-      canUseSoftwareAndBookUpdates() &&
-      isLibraryUpdateCheckDue()) {
-    try {
-      libraryUpdateBloc().add(const StartLibraryUpdate());
-    } catch (error) {
-      debugPrint('Could not start library update: $error');
-    }
-  }
   return true;
+}
+
+/// האם עדכון ספרייה שהתחיל הגיע למצב שבו אפשר להמשיך לאינדוקס.
+/// דיאלוג ההורדה המלאה חוסם ונפתר מיד; בחירת מסלול באזור ההתראות — לא.
+bool libraryUpdateSettledForIndexing(LibraryUpdateState state) =>
+    !state.isBusy && state.status != LibraryUpdateStatus.needsFullConfirmation;
+
+/// שלבי העלייה שלפני האינדוקס: סיור ← בדיקת תוכנה ← עדכון ספרייה.
+///
+/// כשעדכון הספרייה לא אמור לרוץ ([shouldCheckLibraryUpdate]) חוזרים מיד.
+/// גרסת תוכנה חדשה מדלגת עליו — היא עשויה לשנות את סכמת הספרייה.
+Future<void> runStartupUpdatesBeforeIndexing({
+  required bool Function() shouldCheckLibraryUpdate,
+  required Future<void> Function() tourFinished,
+  required Future<bool> Function() isSoftwareUpdateAvailable,
+  required Future<void> Function() runLibraryUpdate,
+}) async {
+  if (!shouldCheckLibraryUpdate()) return;
+  await tourFinished();
+  if (await isSoftwareUpdateAvailable()) return;
+  await runLibraryUpdate();
 }

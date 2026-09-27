@@ -88,6 +88,26 @@ bool managesUpdatesInThisWindow({
   );
 }
 
+final _initialSoftwareCheck = Completer<bool>();
+
+/// האם בדיקת התוכנה של העלייה מצאה גרסה חדשה.
+/// `false` כשהבדיקה לא רצה (תדירות, מנותק) או נכשלה; בזמן סיור ממתינה לסופו.
+Future<bool> initialSoftwareUpdateAvailable() =>
+    managesUpdatesInThisWindow(
+      isDebug: kDebugMode,
+      isSecondaryWindow: WindowRole.isSecondary,
+      isWeb: kIsWeb,
+      operatingSystem: Platform.operatingSystem,
+    )
+    ? _initialSoftwareCheck.future
+    : Future.value(false);
+
+void _resolveInitialSoftwareCheck({required bool updateAvailable}) {
+  if (!_initialSoftwareCheck.isCompleted) {
+    _initialSoftwareCheck.complete(updateAvailable);
+  }
+}
+
 /// מנסה את מסלול העדכון המצומצם ומחזיר `null` בכל כשל או חוסר זמינות.
 ///
 /// הבליעה היא העיקר: המסלול הזה הוא אופטימיזציה, וכל כשל בו חייב להחזיר
@@ -748,12 +768,17 @@ class _ManagedUpdatWidgetState extends State<_ManagedUpdatWidget> {
   /// (הצ'יפ בשורת הכותרת) קוראת ל-[_checkForUpdate] ישירות ואינה מושפעת.
   void _runInitialCheckIfDue() {
     if (!isAutoUpdateCheckDue(SettingsRepository.keyLastSoftwareUpdateCheck)) {
+      _resolveInitialSoftwareCheck(updateAvailable: false);
       setState(() {
         _status = UpdatStatus.upToDate;
       });
       return;
     }
-    _checkForUpdate();
+    _checkForUpdate().whenComplete(
+      () => _resolveInitialSoftwareCheck(
+        updateAvailable: _status == UpdatStatus.availableWithChangelog,
+      ),
+    );
   }
 
   @override

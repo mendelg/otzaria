@@ -1,107 +1,126 @@
-import 'package:bloc_test/bloc_test.dart';
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:otzaria/library_update/bloc/library_update_bloc.dart';
 import 'package:otzaria/navigation/view/startup_work_gate.dart';
 
-class MockLibraryUpdateBloc
-    extends MockBloc<LibraryUpdateEvent, LibraryUpdateState>
-    implements LibraryUpdateBloc {}
-
 void main() {
-  setUpAll(() {
-    registerFallbackValue(const StartLibraryUpdate());
-  });
+  group('tryStartDeferredStartupWork', () {
+    late int backgroundSyncCalls;
 
-  late MockLibraryUpdateBloc libraryUpdateBloc;
-  late int backgroundSyncCalls;
+    setUp(() => backgroundSyncCalls = 0);
 
-  setUp(() {
-    libraryUpdateBloc = MockLibraryUpdateBloc();
-    backgroundSyncCalls = 0;
-    addTearDown(libraryUpdateBloc.close);
-  });
-
-  bool tryStart({
-    required StartupWorkGate gate,
-    bool libraryInstalled = true,
-    bool autoSyncEnabled = true,
-    bool updatesAllowed = true,
-    bool updateCheckDue = true,
-  }) {
-    return tryStartDeferredStartupWork(
+    bool tryStart(StartupWorkGate gate) => tryStartDeferredStartupWork(
       gate: gate,
       startBackgroundSync: () => backgroundSyncCalls++,
-      isLibraryInstalled: () => libraryInstalled,
-      isAutoSyncEnabled: () => autoSyncEnabled,
-      canUseSoftwareAndBookUpdates: () => updatesAllowed,
-      isLibraryUpdateCheckDue: () => updateCheckDue,
-      libraryUpdateBloc: () => libraryUpdateBloc,
     );
-  }
 
-  test('שולח עדכון ספרייה פעם אחת כשהשער נפתח', () {
-    final gate = StartupWorkGate();
-    gate.markLibraryLoaded();
-    gate.markIndexingDecisionResolved(expectIndexing: false);
+    test('מתחיל סנכרון רקע פעם אחת כשהשער נפתח', () {
+      final gate = StartupWorkGate();
+      gate.markLibraryLoaded();
+      gate.markIndexingDecisionResolved(expectIndexing: false);
 
-    expect(tryStart(gate: gate), isTrue);
-    expect(tryStart(gate: gate), isFalse);
+      expect(tryStart(gate), isTrue);
+      expect(tryStart(gate), isFalse);
+      expect(backgroundSyncCalls, 1);
+    });
 
-    expect(backgroundSyncCalls, 1);
-    verify(() => libraryUpdateBloc.add(const StartLibraryUpdate())).called(1);
+    test('לא מתחיל עבודות לפני שהשער נפתח', () {
+      expect(tryStart(StartupWorkGate()), isFalse);
+      expect(backgroundSyncCalls, 0);
+    });
   });
 
-  test('לא מתחיל עבודות לפני שהשער נפתח', () {
-    final gate = StartupWorkGate();
+  group('runStartupUpdatesBeforeIndexing', () {
+    late List<String> steps;
 
-    expect(tryStart(gate: gate), isFalse);
+    setUp(() => steps = []);
 
-    expect(backgroundSyncCalls, 0);
-    verifyNever(() => libraryUpdateBloc.add(const StartLibraryUpdate()));
+    Future<void> run({
+      bool shouldCheck = true,
+      Future<void> Function()? tourFinished,
+      Future<bool> Function()? softwareUpdateAvailable,
+    }) => runStartupUpdatesBeforeIndexing(
+      shouldCheckLibraryUpdate: () {
+        steps.add('shouldCheck');
+        return shouldCheck;
+      },
+      tourFinished: () async {
+        steps.add('tour');
+        await tourFinished?.call();
+      },
+      isSoftwareUpdateAvailable: () {
+        steps.add('software');
+        return softwareUpdateAvailable?.call() ?? Future.value(false);
+      },
+      runLibraryUpdate: () async => steps.add('library'),
+    );
+
+    test('סיור ← תוכנה ← ספרייה', () async {
+      await run();
+      expect(steps, ['shouldCheck', 'tour', 'software', 'library']);
+    });
+
+    test('עדכונים כבויים: חוזר מיד, בלי סיור ובלי בדיקת תוכנה', () async {
+      await run(shouldCheck: false);
+      expect(steps, ['shouldCheck']);
+    });
+
+    test('לא מעדכן ספרייה כשזמינה גרסת תוכנה חדשה', () async {
+      await run(softwareUpdateAvailable: () => Future.value(true));
+      expect(steps, ['shouldCheck', 'tour', 'software']);
+    });
+
+    test('ממתין לסוף הסיור לפני בדיקת התוכנה', () async {
+      final tour = Completer<void>();
+      final done = run(tourFinished: () => tour.future);
+      await pumpEventQueue();
+      expect(steps, ['shouldCheck', 'tour']);
+
+      tour.complete();
+      await done;
+      expect(steps.last, 'library');
+    });
+
+    test('עדכון הספרייה ממתין לתשובת בדיקת התוכנה', () async {
+      final software = Completer<bool>();
+      final done = run(softwareUpdateAvailable: () => software.future);
+      await pumpEventQueue();
+      expect(steps, isNot(contains('library')));
+
+      software.complete(false);
+      await done;
+      expect(steps.last, 'library');
+    });
   });
 
-  test('מתחיל סנכרון רקע אך לא עדכון ספרייה במצב מנותק', () {
-    final gate = StartupWorkGate();
-    gate.markLibraryLoaded();
-    gate.markIndexingDecisionResolved(expectIndexing: false);
+  group('libraryUpdateSettledForIndexing', () {
+    bool settled(LibraryUpdateStatus status) =>
+        libraryUpdateSettledForIndexing(LibraryUpdateState(status: status));
 
-    expect(tryStart(gate: gate, updatesAllowed: false), isTrue);
+    test('ממתין בזמן עבודה ובדיאלוג ההורדה המלאה החוסם', () {
+      for (final status in [
+        LibraryUpdateStatus.checking,
+        LibraryUpdateStatus.downloading,
+        LibraryUpdateStatus.applying,
+        LibraryUpdateStatus.refreshing,
+        LibraryUpdateStatus.needsFullConfirmation,
+      ]) {
+        expect(settled(status), isFalse, reason: status.name);
+      }
+    });
 
-    expect(backgroundSyncCalls, 1);
-    verifyNever(() => libraryUpdateBloc.add(const StartLibraryUpdate()));
-  });
-
-  test('מתחיל סנכרון רקע אך לא עדכון ספרייה כשהסנכרון האוטומטי כבוי', () {
-    final gate = StartupWorkGate();
-    gate.markLibraryLoaded();
-    gate.markIndexingDecisionResolved(expectIndexing: false);
-
-    expect(tryStart(gate: gate, autoSyncEnabled: false), isTrue);
-
-    expect(backgroundSyncCalls, 1);
-    verifyNever(() => libraryUpdateBloc.add(const StartLibraryUpdate()));
-  });
-
-  test('לא בודק עדכון ספרייה כשאין ספרייה מותקנת', () {
-    final gate = StartupWorkGate();
-    gate.markLibraryLoaded();
-    gate.markIndexingDecisionResolved(expectIndexing: false);
-
-    expect(tryStart(gate: gate, libraryInstalled: false), isTrue);
-
-    expect(backgroundSyncCalls, 1);
-    verifyNever(() => libraryUpdateBloc.add(const StartLibraryUpdate()));
-  });
-
-  test('מתחיל סנכרון רקע אך לא עדכון ספרייה כשתדירות הבדיקה טרם חלפה', () {
-    final gate = StartupWorkGate();
-    gate.markLibraryLoaded();
-    gate.markIndexingDecisionResolved(expectIndexing: false);
-
-    expect(tryStart(gate: gate, updateCheckDue: false), isTrue);
-
-    expect(backgroundSyncCalls, 1);
-    verifyNever(() => libraryUpdateBloc.add(const StartLibraryUpdate()));
+    test('ממשיך בסיום, בכשל, ובבחירת מסלול שאינה חוסמת', () {
+      for (final status in [
+        LibraryUpdateStatus.idle,
+        LibraryUpdateStatus.completed,
+        LibraryUpdateStatus.error,
+        LibraryUpdateStatus.disconnected,
+        LibraryUpdateStatus.blocked,
+        LibraryUpdateStatus.needsRouteChoice,
+      ]) {
+        expect(settled(status), isTrue, reason: status.name);
+      }
+    });
   });
 }

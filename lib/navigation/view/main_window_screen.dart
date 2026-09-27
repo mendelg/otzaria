@@ -355,6 +355,12 @@ class MainWindowScreenState extends State<MainWindowScreen>
     TantivyDataProvider.instance,
   );
   bool _hasCheckedAutoIndex = false;
+  // עדכון הספרייה של העלייה: האינדוקס ממתין לריענון שאחריו.
+  Completer<void>? _startupUpdateRefresh;
+  int? _startupUpdateRefreshRequestId;
+  // גרסת אינדקס השתנתה ⇒ אינדוקס מלא ממתין: אינדוקס חלקי אחרי העדכון מיותר,
+  // וה-clearIndex של המלא היה רץ באמצעו.
+  bool _startupFullReindexPending = false;
   // מסך הפתיחה (סמל צף) מוצג עד שתוכן הטאב הפעיל נטען, ואז החלון הקטן/השקוף
   // מתרחב לחלון המלא. ראה _scheduleSplashReveal / _revealNow.
   bool _initialContentReady = false;
@@ -912,8 +918,8 @@ class MainWindowScreenState extends State<MainWindowScreen>
   }
 
   void _tryStartDeferredStartupWork() {
-    // סנכרון הרקע ועדכון הספרייה כותבים ל-seforim.db — ממתינים לאימות ה-DB
-    // שנדחה מהעלייה (ראה startupRecoveryVerified).
+    // סנכרון הרקע כותב ל-seforim.db — ממתינים לאימות ה-DB שנדחה מהעלייה
+    // (ראה startupRecoveryVerified).
     unawaited(startupRecoveryVerified.then((_) => _startDeferredStartupWork()));
   }
 
@@ -922,22 +928,65 @@ class MainWindowScreenState extends State<MainWindowScreen>
     tryStartDeferredStartupWork(
       gate: _startupWorkGate,
       startBackgroundSync: _initializeBackgroundSync,
-      isLibraryInstalled: () {
-        final navigationState = context.read<NavigationBloc>().state;
-        return navigationState.hasCheckedLibrary &&
-            !navigationState.isLibraryEmpty;
-      },
-      isAutoSyncEnabled: () =>
-          Settings.getValue<bool>(SettingsRepository.keyAutoSync) ?? true,
-      canUseSoftwareAndBookUpdates: () =>
-          context.read<SettingsBloc>().state.canUseSoftwareAndBookUpdates,
-      // ⚠️ פר-תהליך: עדכון הספרייה מוריד את אותם קבצים לאותו נתיב, ושני
-      // חלונות שמתחילים אותו במקביל נלחמים על אותו `seforim.db`.
-      isLibraryUpdateCheckDue: () =>
-          !WindowRole.isSecondary &&
-          isAutoUpdateCheckDue(SettingsRepository.keyLastLibraryUpdateCheck),
-      libraryUpdateBloc: context.read<LibraryUpdateBloc>,
     );
+  }
+
+  bool _shouldCheckLibraryUpdateAtStartup() {
+    final navigationState = context.read<NavigationBloc>().state;
+    // בלי seforim.db הבדיקה נכשלת בפתיחת ה-DB (SqliteException 14).
+    return navigationState.hasCheckedLibrary &&
+        !navigationState.isLibraryEmpty &&
+        (Settings.getValue<bool>(SettingsRepository.keyAutoSync) ?? true) &&
+        context.read<SettingsBloc>().state.canUseSoftwareAndBookUpdates &&
+        // ⚠️ פר-תהליך: שני חלונות היו מורידים לאותו נתיב ונלחמים על seforim.db.
+        !WindowRole.isSecondary &&
+        isAutoUpdateCheckDue(SettingsRepository.keyLastLibraryUpdateCheck);
+  }
+
+  Future<void> _tourFinished() async {
+    if (!_tourCubit.state.isActive) return;
+    await _tourCubit.stream.firstWhere((state) => !state.isActive);
+  }
+
+  /// מריץ את עדכון הספרייה וממתין לסיומו, כולל ריענון הספרייה שאחריו.
+  Future<void> _runStartupLibraryUpdate(library_model.Library library) async {
+    await startupRecoveryVerified;
+    if (!mounted) return;
+    final bloc = context.read<LibraryUpdateBloc>();
+    _startupFullReindexPending =
+        context.read<SettingsBloc>().state.autoUpdateIndex &&
+        await _indexingRepository.requiresManualReindex(library);
+    if (!mounted) return;
+    final refresh = _startupUpdateRefresh = Completer<void>();
+    final settled = bloc.stream.firstWhere(libraryUpdateSettledForIndexing);
+    bloc.add(const StartLibraryUpdate());
+    final result = await settled;
+    // אותו תנאי שבו ה-listener של LibraryUpdateBloc שולח RefreshLibrary.
+    final refreshRequested =
+        result.hasUpdate &&
+        (result.status == LibraryUpdateStatus.completed ||
+            result.status == LibraryUpdateStatus.error);
+    if (refreshRequested) await refresh.future;
+    _startupUpdateRefresh = null;
+  }
+
+  /// סיור ← בדיקת תוכנה ← עדכון ספרייה ← אינדוקס, כדי לאנדקס פעם אחת
+  /// תוכן עדכני.
+  Future<void> _runStartupSequence(library_model.Library library) async {
+    try {
+      await runStartupUpdatesBeforeIndexing(
+        shouldCheckLibraryUpdate: _shouldCheckLibraryUpdateAtStartup,
+        tourFinished: _tourFinished,
+        isSoftwareUpdateAvailable: initialSoftwareUpdateAvailable,
+        runLibraryUpdate: () => _runStartupLibraryUpdate(library),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Startup library update failed: $error\n$stackTrace');
+    }
+    if (!mounted) return;
+    final freshLibrary = await DataRepository.instance.library;
+    if (!mounted || !context.mounted) return;
+    await _resolveStartupIndexing(context, freshLibrary);
   }
 
   /// Setup synchronization between window fullscreen state and settings
@@ -999,7 +1048,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
     if (_hasCheckedAutoIndex) return;
     _hasCheckedAutoIndex = true;
 
-    unawaited(_resolveStartupIndexing(context, library));
+    unawaited(_runStartupSequence(library));
   }
 
   /// מציג דיאלוג אישור לפני הורדה מלאה (~ג'יגות). המשתמש יכול לבחור להישאר
@@ -2710,6 +2759,9 @@ class MainWindowScreenState extends State<MainWindowScreen>
                       state.status == LibraryUpdateStatus.error) &&
                   state.hasUpdate) {
                 final requestId = _nextIndexRequestId++;
+                if (_startupUpdateRefresh != null) {
+                  _startupUpdateRefreshRequestId ??= requestId;
+                }
                 _pendingIndexRequests[requestId] = (
                   // אחרי הורדה מלאה אין דיווח מי השתנה, וכך גם כששינו טבלאות
                   // שאינן ניתנות למיפוי לספרים — נדרשת השוואת טביעות-אצבע.
@@ -2736,6 +2788,11 @@ class MainWindowScreenState extends State<MainWindowScreen>
           BlocListener<LibraryBloc, LibraryState>(
             listenWhen: LibraryState.reloadCompleted,
             listener: (context, state) {
+              // גם רענון שנכשל מסיים את ההמתנה — אחרת האינדוקס לא היה רץ.
+              if (_startupUpdateRefreshRequestId != null) {
+                _startupUpdateRefresh?.complete();
+                _startupUpdateRefresh = null;
+              }
               _startupWorkGate.markLibraryLoaded();
               _tryStartDeferredStartupWork();
               // החלטת האינדוקס צורכת את הקטלוג שזה עתה נטען — כך אין קריאה
@@ -2781,6 +2838,15 @@ class MainWindowScreenState extends State<MainWindowScreen>
                 pendingRequests: _pendingIndexRequests,
                 completedRequestIds: state.completedRefreshRequestIds,
               );
+              final startupRefreshId = _startupUpdateRefreshRequestId;
+              if (startupRefreshId != null &&
+                  (state.completedRefreshRequestIds?.contains(
+                        startupRefreshId,
+                      ) ??
+                      false)) {
+                _startupUpdateRefreshRequestId = null;
+                if (_startupFullReindexPending) return;
+              }
               final plan = buildRefreshIndexingPlan(
                 library: library,
                 newBooks: state.newBooksToIndex ?? const [],
