@@ -50,6 +50,24 @@ Future<void> main() async {
       expect(bloc.state.isLoading, isFalse);
     });
 
+    test('שגיאת חיפוש ישן אחרי ניקוי אינה משנה את המצב', () async {
+      bloc = SearchBloc(repository: repository);
+
+      bloc.add(UpdateSearchQuery('שלום'));
+      await waitFor((s) => s.isLoading);
+
+      bloc.add(UpdateSearchQuery(''));
+      await waitFor((s) => s.searchQuery.isEmpty);
+
+      repository.stream.addError(StateError('stale search failure'));
+      await pumpEventQueue();
+
+      expect(bloc.state.searchQuery, isEmpty);
+      expect(bloc.state.results, isEmpty);
+      expect(bloc.state.isLoading, isFalse);
+      expect(bloc.state.errorMessage, isNull);
+    });
+
     test(
       'LoadMoreResults שחוזר אחרי חיפוש חדש אינו מצרף עמוד ישן ואינו מאפס טעינה',
       () async {

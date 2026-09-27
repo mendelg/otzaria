@@ -339,10 +339,8 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
         ),
       );
     } catch (e, stackTrace) {
-      // זיהוי שגיאה: שגיאת מנוע (למשל כשל קומפילציית רגקס) פעם נבלעה כאן
-      // בשקט והוצגה כ"0 תוצאות" — מצב שלא נבדל מחיפוש ריק לגיטימי. כעת:
-      // (1) toast מיידי דרך UiSnack, וגם (2) שדה errorMessage ב-state כדי
-      // שה-UI יציג שגיאה במקום "אין תוצאות" באופן מתמשך עד החיפוש הבא.
+      if (requestId != _searchRequestId) return;
+      // שגיאת החיפוש מוצגת בהודעה וב-state כדי שלא תיראה כ"0 תוצאות".
       debugPrint('❌ Search failed: $e\n$stackTrace');
       // בלי רישום ליומן, כשל חיפוש (כמו אחרי יציאה משינה, issue #1012)
       // אינו משאיר עקבות לאבחון — errors.txt נשאר ריק.
