@@ -1157,6 +1157,31 @@ void main() {
           .reduce(min);
       expect(top, 10);
     });
+
+    testWidgets('גלילה ידנית מבטלת יעד ניווט ממתין', (tester) async {
+      final (tab, state) = await pumpLongBook(tester);
+
+      tab.navNextSegmentNotifier.value++;
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.drag(
+        find.byType(ScrollablePositionedList),
+        const Offset(0, -500),
+      );
+      await tester.pumpAndSettle();
+
+      int topVisibleIndex() => state.positionsListener.itemPositions.value
+          .where((position) => position.itemTrailingEdge > 0)
+          .map((position) => position.index)
+          .reduce(min);
+
+      final topAfterManualScroll = topVisibleIndex();
+      expect(topAfterManualScroll, greaterThan(1));
+
+      tab.navNextSegmentNotifier.value++;
+      await tester.pumpAndSettle();
+
+      expect(topVisibleIndex(), topAfterManualScroll + 1);
+    });
   });
 }
 
