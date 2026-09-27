@@ -323,6 +323,8 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       state.copyWith(
         tabs: event.tabs,
         currentTabIndex: event.currentTabIndex,
+        // ריק→ריק הוא state שווה ש-Bloc אינו פולט; בלי זה הממתין ב-main.dart נתקע.
+        forceUpdate: true,
         selectedTabs: const <OpenedTab>[],
         // clear ולא unchanged: הרשימה הישנה מפונה, וחלונית פעילה ששייכת
         // לטאב שנסגר אינה יכולה להישאר.

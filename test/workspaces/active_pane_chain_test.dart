@@ -163,6 +163,52 @@ void main() {
     expect(tabsBloc.state.rawActivePane, isNull);
     expect(tabsBloc.state.activePane!.title, 'אחר');
   });
+
+  test('מעבר בין שני שולחנות ריקים מסתיים ואינו תוקע מעברים הבאים', () async {
+    final tabsBloc = TabsBloc(repository: _FakeTabsRepository());
+    addTearDown(tabsBloc.close);
+    // אחרי פליטה ראשונה Bloc מדלג על state זהה, ובלעדיה הבאג לא משתחזר.
+    final tab = leaf('זמני');
+    tabsBloc.add(AddTab(tab));
+    tabsBloc.add(RemoveTab(tab));
+    await tabsBloc.stream.firstWhere((s) => s.tabs.isEmpty);
+
+    final workspaceA = Workspace(name: 'א', tabs: const []);
+    final workspaceB = Workspace(name: 'ב', tabs: const []);
+    final workspaceBloc = WorkspaceBloc(
+      repository: _FakeWorkspaceRepository(
+        workspaces: [workspaceA, workspaceB],
+        activeWorkspaceId: workspaceA.id,
+      ),
+      // בדיוק ההמתנה שב-main.dart.
+      onWorkspaceTabsChanged: (tabs, activeIndex, activePane) async {
+        final replaced = tabsBloc.stream.firstWhere(
+          (state) =>
+              identical(state.tabs, tabs) &&
+              state.currentTabIndex == activeIndex,
+        );
+        tabsBloc.add(
+          ReplaceAllTabs(tabs, activeIndex, activePane: activePane),
+        );
+        await replaced;
+      },
+    )..add(LoadWorkspaces());
+    addTearDown(workspaceBloc.close);
+    await workspaceBloc.stream.firstWhere((s) => !s.isLoading);
+
+    for (final target in [workspaceB, workspaceA]) {
+      workspaceBloc.add(
+        SwitchToWorkspace(
+          targetWorkspaceId: target.id,
+          currentTabsToSave: tabsBloc.state.tabs,
+          currentTabIndexToSave: tabsBloc.state.currentTabIndex,
+        ),
+      );
+      await workspaceBloc.stream
+          .firstWhere((s) => s.activeWorkspaceId == target.id)
+          .timeout(const Duration(seconds: 5));
+    }
+  });
 }
 
 class _FakeTabsRepository extends TabsRepository {
