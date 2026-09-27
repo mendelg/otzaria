@@ -1650,10 +1650,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
       if (!itemInRenderTree) {
         if (_itemScrollController.isAttached) {
-          _itemScrollController.scrollTo(
+          // לא scrollTo: הוא בונה רשימה שנייה, ובשתיהן אותו GlobalKey (issue #1505).
+          _itemScrollController.jumpTo(
             index: targetGroupIndex,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
             alignment: 0.05,
           );
         }
