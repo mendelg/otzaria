@@ -132,7 +132,11 @@ class _BarSplitButtonState<T> extends State<BarSplitButton<T>> {
         message: tooltip,
         child: InkWell(
           onTap: onTap,
-          borderRadius: borderRadius.resolve(direction),
+          // customBorder ולא borderRadius: כך ההדגשה נחתכת לצורה במקום להצטייר כמלבן מעוגל,
+          // ש-Impeller מצייר עם "מדרגה" כשהרדיוס גדול מחצי הרוחב.
+          customBorder: RoundedRectangleBorder(
+            borderRadius: borderRadius.resolve(direction),
+          ),
           child: SizedBox(
             width: width,
             height: height,

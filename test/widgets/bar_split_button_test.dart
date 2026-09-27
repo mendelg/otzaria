@@ -84,4 +84,45 @@ void main() {
 
     expect(find.byType(PopupMenuItem<String>), findsNothing);
   });
+
+  testWidgets('הדגשת הריחוף של החצאים נחתכת לצורתם ואינה מצוירת כמלבן מעוגל', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        BarSplitButton<String>(
+          icon: FluentIcons.bookmark_24_regular,
+          tooltip: 'פעולה',
+          onPressed: () {},
+          entries: const [AppMenuEntry(value: 'a', label: 'פריט')],
+          onSelected: (_) {},
+        ),
+      ),
+    );
+
+    final inkWells = tester
+        .widgetList<InkWell>(
+          find.descendant(
+            of: find.byType(BarSplitButton<String>),
+            matching: find.byType(InkWell),
+          ),
+        )
+        .toList();
+    const radius = Radius.circular(BarSplitButton.regularHeight / 2);
+    final expectedRadii = [
+      const BorderRadius.horizontal(right: radius),
+      const BorderRadius.horizontal(left: radius),
+    ];
+
+    expect(inkWells, hasLength(2));
+    for (var i = 0; i < inkWells.length; i++) {
+      expect(inkWells[i].borderRadius, isNull);
+      final border = inkWells[i].customBorder;
+      expect(border, isA<RoundedRectangleBorder>());
+      expect(
+        (border! as RoundedRectangleBorder).borderRadius,
+        expectedRadii[i],
+      );
+    }
+  });
 }

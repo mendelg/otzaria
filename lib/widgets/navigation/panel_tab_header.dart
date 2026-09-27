@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria/theme/app_surfaces.dart';
@@ -61,13 +63,10 @@ class _PanelOpenHandleState extends State<PanelOpenHandle> {
           curve: Curves.easeOut,
           width: _isHovering ? 48 : 20,
           height: 80,
-          decoration: BoxDecoration(
+          decoration: ShapeDecoration(
             color: AppSurfaces.panelOpenHandle(cs, isHovering: _isHovering),
-            borderRadius: const BorderRadius.only(
-              topRight: Radius.circular(40),
-              bottomRight: Radius.circular(40),
-            ),
-            boxShadow: [
+            shape: const _PanelOpenHandleBorder(),
+            shadows: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.15),
                 blurRadius: _isHovering ? 8 : 4,
@@ -90,6 +89,49 @@ class _PanelOpenHandleState extends State<PanelOpenHandle> {
       ),
     );
   }
+}
+
+// ב-Impeller, מלבן מעוגל שאחד מרדיוסיו גדול מחצי הרוחב מצויר עם "מדרגה" בפינות;
+// לכן הצורה בנויה מקווים וקשתות — לא borderRadius ולא Path.addRRect (שמזוהה כמלבן מעוגל).
+class _PanelOpenHandleBorder extends ShapeBorder {
+  const _PanelOpenHandleBorder({this.radius = 40});
+
+  final double radius;
+
+  @override
+  EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
+    // אותו כיווץ רדיוס ש-RRect מבצע כשהידית צרה מהרדיוס.
+    final r = math.min(radius, math.min(rect.width, rect.height / 2));
+    final corner = Radius.circular(r);
+    return Path()
+      ..moveTo(rect.left, rect.top)
+      ..lineTo(rect.right - r, rect.top)
+      ..arcToPoint(Offset(rect.right, rect.top + r), radius: corner)
+      ..lineTo(rect.right, rect.bottom - r)
+      ..arcToPoint(Offset(rect.right - r, rect.bottom), radius: corner)
+      ..lineTo(rect.left, rect.bottom)
+      ..close();
+  }
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
+
+  @override
+  ShapeBorder scale(double t) => _PanelOpenHandleBorder(radius: radius * t);
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PanelOpenHandleBorder && other.radius == radius;
+
+  @override
+  int get hashCode => radius.hashCode;
 }
 
 /// Header לפנלים הימניים — טאב בר וכפתור סגירה.
