@@ -6,6 +6,31 @@ import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/widgets/misc/rtl_icon.dart';
 import 'package:otzaria/widgets/text/rtl_text_field.dart';
 
+/// מיקום העמוד [page] ביחס ל-[pages] הממוינים: [exact] כשהוא עצמו התאמה,
+/// ו-[previous]/[next] — ההתאמות הקרובות לפניו ואחריו (אינדקסים).
+@visibleForTesting
+({int? exact, int? previous, int? next}) externalMatchCursor(
+  List<int> pages,
+  int page,
+) {
+  int? previous;
+  int? exact;
+  for (var i = 0; i < pages.length; i++) {
+    if (pages[i] < page) {
+      previous = i;
+    } else {
+      if (pages[i] == page) exact = i;
+      final next = exact == null ? i : i + 1;
+      return (
+        exact: exact,
+        previous: previous,
+        next: next < pages.length ? next : null,
+      );
+    }
+  }
+  return (exact: null, previous: previous, next: null);
+}
+
 /// סרגל ניווט בין עמודי התאמה שסופקו על-ידי מנוע חיפוש חיצוני (תוסף).
 ///
 /// מוצג מתחת לסרגל העליון של קורא ה-PDF רק כשלטאב יש [ExternalBookMatches].
@@ -32,7 +57,9 @@ class PdfExternalMatchesBar extends StatefulWidget {
 
 class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
   late final TextEditingController _queryController;
-  int _currentIndex = 0;
+
+  /// העמוד שבקורא — גם אחרי גלילה ידנית, כדי ש"הבא" ימשיך מהמקום הנוכחי.
+  int _page = 1;
   bool _searching = false;
   String? _error;
 
@@ -43,19 +70,29 @@ class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
     super.initState();
     _queryController = TextEditingController(text: _matches?.query ?? '');
     widget.tab.externalMatches.addListener(_onMatchesChanged);
+    _page = widget.tab.pageNumber;
+    widget.tab.pdfViewerController.addListener(_onViewerChanged);
   }
 
   @override
   void dispose() {
+    widget.tab.pdfViewerController.removeListener(_onViewerChanged);
     widget.tab.externalMatches.removeListener(_onMatchesChanged);
     _queryController.dispose();
     super.dispose();
   }
 
+  void _onViewerChanged() {
+    final controller = widget.tab.pdfViewerController;
+    if (!mounted || !controller.isReady || _matches == null) return;
+    final page = controller.pageNumber;
+    if (page == null || page == _page) return;
+    setState(() => _page = page);
+  }
+
   void _onMatchesChanged() {
     if (!mounted) return;
     setState(() {
-      _currentIndex = 0;
       final query = _matches?.query;
       if (query != null && query.isNotEmpty) _queryController.text = query;
     });
@@ -65,7 +102,7 @@ class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
     final matches = _matches;
     if (matches == null || matches.pages.isEmpty) return;
     final clamped = index.clamp(0, matches.pages.length - 1);
-    setState(() => _currentIndex = clamped);
+    setState(() => _page = matches.pages[clamped]);
     await widget.onNavigateToPage(matches.pages[clamped]);
   }
 
@@ -102,9 +139,8 @@ class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
         final theme = Theme.of(context);
         final pages = matches.pages;
         final hasPages = pages.isNotEmpty;
-        final current = hasPages
-            ? pages[_currentIndex.clamp(0, pages.length - 1)]
-            : null;
+        final cursor = externalMatchCursor(pages, _page);
+        final position = cursor.exact == null ? '–' : '${cursor.exact! + 1}';
         return Material(
           color: theme.colorScheme.surfaceContainerHighest,
           child: Padding(
@@ -167,9 +203,9 @@ class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
                     ),
                     iconSize: 18,
                     tooltip: 'המופע הקודם',
-                    onPressed: _currentIndex > 0
-                        ? () => _goToIndex(_currentIndex - 1)
-                        : null,
+                    onPressed: cursor.previous == null
+                        ? null
+                        : () => _goToIndex(cursor.previous!),
                   ),
                   PopupMenuButton<int>(
                     tooltip: 'רשימת עמודי ההתאמה',
@@ -185,7 +221,7 @@ class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       child: Text(
-                        'עמוד $current · ${_currentIndex + 1}/${pages.length}',
+                        'עמוד $_page · $position/${pages.length}',
                         style: theme.textTheme.bodySmall,
                       ),
                     ),
@@ -196,9 +232,9 @@ class _PdfExternalMatchesBarState extends State<PdfExternalMatchesBar> {
                     ),
                     iconSize: 18,
                     tooltip: 'המופע הבא',
-                    onPressed: _currentIndex < pages.length - 1
-                        ? () => _goToIndex(_currentIndex + 1)
-                        : null,
+                    onPressed: cursor.next == null
+                        ? null
+                        : () => _goToIndex(cursor.next!),
                   ),
                 ] else
                   Text('אין התאמות', style: theme.textTheme.bodySmall),

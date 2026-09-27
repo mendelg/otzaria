@@ -84,6 +84,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     on<ZoomIn>(_onZoomIn);
     on<ZoomOut>(_onZoomOut);
     on<ResetZoom>(_onResetZoom);
+    on<FitZoom>(_onFitZoom);
     on<SetLayoutMode>(_onSetLayoutMode);
     on<SetShowZoomBar>(_onSetShowZoomBar);
 
@@ -600,6 +601,19 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     tab.savedZoom = newZoom;
 
     emit(current.copyWith(zoom: newZoom, showZoomBar: true));
+    _startZoomBarTimer(emit);
+    add(const SavePerBookSettings());
+  }
+
+  void _onFitZoom(FitZoom event, Emitter<PdfBookState> emit) {
+    if (!pdfController.isReady) return;
+    final current = state;
+    if (current is! PdfBookLoaded) return;
+
+    pdfController.setZoom(event.center, event.zoom, duration: Duration.zero);
+    tab.savedZoom = event.zoom;
+
+    emit(current.copyWith(zoom: event.zoom, showZoomBar: true));
     _startZoomBarTimer(emit);
     add(const SavePerBookSettings());
   }

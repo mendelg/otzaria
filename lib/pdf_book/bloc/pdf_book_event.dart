@@ -1,3 +1,5 @@
+import 'dart:ui' show Offset;
+
 import 'package:equatable/equatable.dart';
 import 'package:otzaria/models/pdf_headings.dart';
 import 'package:otzaria/models/links.dart';
@@ -164,6 +166,17 @@ class ZoomOut extends PdfBookEvent {
 /// Reset zoom to 1.0
 class ResetZoom extends PdfBookEvent {
   const ResetZoom();
+}
+
+/// Zoom to [zoom] around the document point [center] (fit page / fit width).
+class FitZoom extends PdfBookEvent {
+  final double zoom;
+  final Offset center;
+
+  const FitZoom({required this.zoom, required this.center});
+
+  @override
+  List<Object?> get props => [zoom, center];
 }
 
 /// Set layout mode directly

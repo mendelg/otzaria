@@ -261,6 +261,23 @@ double pdfPreviewRenderingScaleFor(
   );
 }
 
+/// זום ההתאמה לרוחב ולעמוד שלם של [shown] — העמוד, או הכפולה בתצוגת ספר.
+@visibleForTesting
+({double width, double page}) pdfFitZooms({
+  required Rect shown,
+  required Size viewSize,
+  required double margin,
+}) {
+  final width = (viewSize.width - margin * 2) / shown.width;
+  final height = (viewSize.height - margin * 2) / shown.height;
+  return (width: width, page: min(width, height));
+}
+
+/// המתג עובר לעמוד שלם כשהתצוגה כבר מותאמת לרוחב, ולרוחב בכל מצב אחר.
+@visibleForTesting
+bool pdfNextFitIsPage({required double zoom, required double widthZoom}) =>
+    (zoom - widthZoom).abs() <= widthZoom * 0.01;
+
 @visibleForTesting
 PdfViewerSizeDelegateProvider pdfSizeDelegateProviderForLayoutMode(
   PdfLayoutMode layoutMode,
@@ -3023,7 +3040,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
     final targetSpreadStartPage = _spreadStartPageFor(targetPage);
     // הרינדור רץ בזמן שהאצבע גוררת, כך שבשחרור היעד כבר מוכן ברוב המקרים.
-    if (!_spreadCache.containsKey(targetSpreadStartPage)) {
+    if (!_isSpreadCachedSharpEnough(targetSpreadStartPage)) {
       await _renderSpreadPagesIntoCache(targetSpreadStartPage);
       if (!mounted || token != _interactiveTurnToken) return;
     }
@@ -3077,8 +3094,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
     try {
       if (!commit) {
-        final duration = Duration(
-          milliseconds: max(80, (250 * progress).round()),
+        final duration = _pageTurnMotion(
+          Duration(milliseconds: max(80, (250 * progress).round())),
         );
         await _pageTurnController.animateBack(
           0.0,
@@ -3090,10 +3107,12 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
       _lastInitiatedTargetPage = targetPage;
       final flingBoost = (velocity / 3000).clamp(0.0, 1.0);
-      final duration = Duration(
-        milliseconds: max(
-          100,
-          (420 * (1.0 - progress) * (1.0 - 0.5 * flingBoost)).round(),
+      final duration = _pageTurnMotion(
+        Duration(
+          milliseconds: max(
+            100,
+            (420 * (1.0 - progress) * (1.0 - 0.5 * flingBoost)).round(),
+          ),
         ),
       );
 
@@ -3534,6 +3553,11 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _inFlightAnimationTarget = null;
   }
 
+  /// "הפחת אנימציות" של מערכת ההפעלה: הדפדוף מתחלף בבת אחת. שכבת הצילום
+  /// נשארת, כדי שלא יוצגו אריחים לבנים עד שהכפולה החדשה מרונדרת.
+  Duration _pageTurnMotion(Duration duration) =>
+      MediaQuery.disableAnimationsOf(context) ? Duration.zero : duration;
+
   Future<void> _animateBookPageTurn({
     required int targetPage,
     required _BookPageTurnDirection direction,
@@ -3618,15 +3642,15 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       // page-turn with the new page fully visible from frame 1.
       final targetSpreadStartPage = _spreadStartPageFor(targetPage);
       // בהחטאה מרנדרים את כפולת היעד עכשיו ומרכיבים ממנה: צילום הצפיין אחרי
-      // הניווט חיכה לקפיצה ולהשהיה, ועדיין תפס לעיתים אריחים לבנים.
-      if (!_spreadCache.containsKey(targetSpreadStartPage)) {
+      // הניווט חיכה לקפיצה ולהשהיה, ועדיין תפס לעיתים אריחים לבנים. כפולה
+      // שמורה מזום נמוך יותר מרונדרת גם היא מחדש — אחרת הצילום מטושטש.
+      if (!_isSpreadCachedSharpEnough(targetSpreadStartPage)) {
         await _renderSpreadPagesIntoCache(targetSpreadStartPage);
         if (!mounted) return;
       }
       final hasCachedTarget = _spreadCache.containsKey(targetSpreadStartPage);
-      _pageTurnController.duration = pdfQueuedPageTurnDuration(
-        _kPageTurnDuration,
-        _pendingPageTurns.length,
+      _pageTurnController.duration = _pageTurnMotion(
+        pdfQueuedPageTurnDuration(_kPageTurnDuration, _pendingPageTurns.length),
       );
 
       if (hasCachedTarget) {
@@ -4754,6 +4778,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                       documentRef: widget.tab.documentRef.value,
                       controller: widget.tab.pdfViewerController,
                       onNavigateToPage: _goToPageWithSpreadLock,
+                      shownPagesFor: _spreadPageRangeFor,
                     ),
                   ),
                 ),
@@ -4843,6 +4868,38 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
   void _resetZoom() {
     _bloc.add(const pdf_events.ResetZoom());
+  }
+
+  void _toggleFitMode() {
+    final controller = widget.tab.pdfViewerController;
+    if (!controller.isReady) return;
+    final page = controller.pageNumber ?? widget.tab.pageNumber;
+    final layout = controller.layout;
+    final shown = _isBookViewModeActive()
+        ? _spreadRectForPageLayout(layout, _spreadStartPageFor(page))
+        : (page >= 1 && page <= layout.pageLayouts.length
+              ? layout.pageLayouts[page - 1]
+              : null);
+    if (shown == null || shown.isEmpty) return;
+
+    final fits = pdfFitZooms(
+      shown: shown,
+      viewSize: controller.viewSize,
+      margin: controller.params.margin,
+    );
+    // לרוחב שומרים את גובה הקריאה; עמוד שלם ממורכז.
+    final toPage = pdfNextFitIsPage(
+      zoom: controller.currentZoom,
+      widthZoom: fits.width,
+    );
+    _bloc.add(
+      pdf_events.FitZoom(
+        zoom: toPage ? fits.page : fits.width,
+        center: toPage
+            ? shown.center
+            : Offset(shown.center.dx, controller.centerPosition.dy),
+      ),
+    );
   }
 
   /// Returns the page that next/prev navigation should treat as the user's
@@ -5189,6 +5246,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         onPressed: _zoomOut,
         compact: isCompact,
         actionId: ToolbarActionId.zoomOut,
+      ),
+      ActionButtonData.simple(
+        icon: FluentIcons.page_fit_24_regular,
+        tooltip: 'התאם לרוחב / לעמוד שלם',
+        onPressed: _toggleFitMode,
+        compact: isCompact,
+        actionId: ToolbarActionId.fitMode,
       ),
     ];
   }

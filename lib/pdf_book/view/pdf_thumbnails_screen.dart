@@ -10,6 +10,7 @@ class ThumbnailsView extends StatefulWidget {
     required this.documentRef,
     required this.controller,
     this.onNavigateToPage,
+    this.shownPagesFor,
     super.key,
   });
 
@@ -18,6 +19,10 @@ class ThumbnailsView extends StatefulWidget {
 
   /// ניווט של המסך (שומר זום ונעילת זוגות); בלעדיו goToPage מאפס את הזום.
   final Future<void> Function(int pageNumber)? onNavigateToPage;
+
+  /// העמודים שמוצגים יחד עם [pageNumber] — בתצוגת ספר כל הכפולה מודגשת.
+  final ({int startPage, int endPageExclusive}) Function(int pageNumber)?
+  shownPagesFor;
 
   @override
   State<ThumbnailsView> createState() => _ThumbnailsViewState();
@@ -125,10 +130,18 @@ class _ThumbnailsViewState extends State<ThumbnailsView>
           itemExtent: _itemExtent,
           itemCount: document?.pages.length ?? 0,
           itemBuilder: (context, index) {
+            final currentPage = _currentPage;
+            final shown = currentPage == null
+                ? null
+                : widget.shownPagesFor?.call(currentPage) ??
+                      (
+                        startPage: currentPage,
+                        endPageExclusive: currentPage + 1,
+                      );
             final isSelected =
-                widget.controller != null &&
-                widget.controller!.isReady &&
-                widget.controller!.pageNumber == index + 1;
+                shown != null &&
+                index + 1 >= shown.startPage &&
+                index + 1 < shown.endPageExclusive;
             return Container(
               margin: const EdgeInsets.all(8),
               height: 250,
