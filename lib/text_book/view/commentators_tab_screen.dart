@@ -33,6 +33,7 @@ export 'package:otzaria/widgets/commentary/commentary_search_results_list.dart'
 import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/widgets/lists/commentators_selection_panel.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
+import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/text_display/view/text_display_bar_button.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
@@ -626,6 +627,14 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
     });
   }
 
+  void _zoomIn(BuildContext context) {
+    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(2));
+  }
+
+  void _zoomOut(BuildContext context) {
+    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(-2));
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context); // נדרש ע"י AutomaticKeepAliveClientMixin
@@ -1113,16 +1122,12 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
                   tooltip: 'הגדל את גודל הטקסט',
                   icon: FluentIcons.zoom_in_24_regular,
                   compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () => context.read<TextBookBloc>().add(
-                    UpdateFontSize((state.fontSize + 3).clamp(15, 50)),
-                  ),
+                  onPressed: () => _zoomIn(context),
                 ),
                 icon: FluentIcons.zoom_in_24_regular,
                 tooltip: 'הגדל את גודל הטקסט',
                 actionId: ToolbarActionId.zoomIn,
-                onPressed: () => context.read<TextBookBloc>().add(
-                  UpdateFontSize((state.fontSize + 3).clamp(15, 50)),
-                ),
+                onPressed: () => _zoomIn(context),
               ),
               // הקטן טקסט
               ActionButtonData(
@@ -1130,16 +1135,12 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
                   tooltip: 'הקטן את גודל הטקסט',
                   icon: FluentIcons.zoom_out_24_regular,
                   compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () => context.read<TextBookBloc>().add(
-                    UpdateFontSize((state.fontSize - 3).clamp(15, 50)),
-                  ),
+                  onPressed: () => _zoomOut(context),
                 ),
                 icon: FluentIcons.zoom_out_24_regular,
                 tooltip: 'הקטן את גודל הטקסט',
                 actionId: ToolbarActionId.zoomOut,
-                onPressed: () => context.read<TextBookBloc>().add(
-                  UpdateFontSize((state.fontSize - 3).clamp(15, 50)),
-                ),
+                onPressed: () => _zoomOut(context),
               ),
             ],
             alwaysInMenu: [

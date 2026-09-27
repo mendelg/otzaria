@@ -1,0 +1,162 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mockito/mockito.dart';
+import 'package:otzaria/models/books.dart';
+import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
+import 'package:otzaria/personal_notes/bloc/personal_notes_event.dart';
+import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
+import 'package:otzaria/settings/engine/settings_bloc.dart';
+import 'package:otzaria/tabs/models/commentators_tab.dart';
+import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
+import 'package:otzaria/text_book/bloc/text_book_event.dart';
+import 'package:otzaria/text_book/bloc/text_book_state.dart';
+import 'package:otzaria/text_book/view/commentary_list_base.dart';
+import 'package:otzaria/text_book/view/commentators_tab_screen.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+
+import '../../helpers/memory_settings_cache.dart';
+import '../../unit/mocks/mock_settings_repository.mocks.dart';
+
+class _TestTextBookBloc extends Bloc<TextBookEvent, TextBookState>
+    implements TextBookBloc {
+  _TestTextBookBloc(super.initialState) {
+    on<TextBookEvent>((_, _) {});
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestPersonalNotesBloc
+    extends Bloc<PersonalNotesEvent, PersonalNotesState>
+    implements PersonalNotesBloc {
+  _TestPersonalNotesBloc() : super(const PersonalNotesState.initial()) {
+    on<PersonalNotesEvent>((_, _) {});
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+TextBookLoaded _loaded(TextBook book) => TextBookLoaded(
+  book: book,
+  showLeftPane: false,
+  content: const ['שורה א', 'שורה ב'],
+  fontSize: 25,
+  showSplitView: false,
+  activeCommentators: const [],
+  commentatorGroups: const [],
+  availableCommentators: const [],
+  links: const [],
+  visibleLinks: const [],
+  linksByLine: const {},
+  tableOfContents: const [],
+  removeNikud: false,
+  visibleIndices: const [0],
+  selectedIndex: 0,
+  pinLeftPane: false,
+  searchText: '',
+  scrollController: ItemScrollController(),
+  positionsListener: ItemPositionsListener.create(),
+);
+
+void main() {
+  setUpAll(() async {
+    await Settings.init(cacheProvider: MemorySettingsCache());
+  });
+
+  testWidgets('לחיצות זום רצופות מעדכנות את הגופן המוצג גם בשמירה איטית', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final book = TextBook(title: 'חולין');
+    final sourceBloc = _TestTextBookBloc(_loaded(book));
+    final tabBloc = _TestTextBookBloc(_loaded(book));
+    final sourceTab = TextBookTab(
+      book: book,
+      index: 0,
+      blocOverride: sourceBloc,
+    );
+    final tab = CommentatorsTab(sourceTab: sourceTab, blocOverride: tabBloc);
+    final repository = MockSettingsRepository();
+    final firstWrite = Completer<void>();
+    final writes = <double>[];
+    when(repository.updateCommentatorsFontSize(any)).thenAnswer((invocation) {
+      writes.add(invocation.positionalArguments.single as double);
+      return writes.length == 1 ? firstWrite.future : Future<void>.value();
+    });
+    final settings = SettingsBloc(repository: repository);
+    final notes = _TestPersonalNotesBloc();
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settings.close();
+      await notes.close();
+      await tabBloc.close();
+      await sourceBloc.close();
+      sourceTab.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MultiBlocProvider(
+          providers: [
+            BlocProvider<SettingsBloc>.value(value: settings),
+            BlocProvider<PersonalNotesBloc>.value(value: notes),
+          ],
+          child: Scaffold(
+            body: CommentatorsTabScreen(tab: tab, openBookCallback: (_) {}),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      22,
+    );
+
+    await tester.tap(find.byTooltip('הגדל את גודל הטקסט').first);
+    await tester.pump();
+    await tester.tap(find.byTooltip('הגדל את גודל הטקסט').first);
+    await tester.pump();
+    expect(writes, [24.0]);
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      22,
+    );
+
+    firstWrite.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(writes, [24.0, 26.0]);
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      26,
+    );
+
+    await tester.tap(find.byTooltip('הקטן את גודל הטקסט').first);
+    await tester.pump();
+    await tester.pump();
+    expect(writes, [24.0, 26.0, 24.0]);
+    expect(
+      tester
+          .widget<CommentaryListBase>(find.byType(CommentaryListBase))
+          .fontSize,
+      24,
+    );
+  });
+}

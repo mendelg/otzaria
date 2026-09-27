@@ -73,6 +73,115 @@ void main() {
       expect(settingsBloc.state, equals(SettingsState.initial()));
     });
 
+    group('גודל גופן מפרשים', () {
+      test('לחיצות רצופות נשמרות לפי הסדר גם בזמן כתיבה איטית', () async {
+        final firstWrite = Completer<void>();
+        final firstStarted = Completer<void>();
+        final writes = <double>[];
+        var persisted = 22.0;
+        when(mockRepository.updateCommentatorsFontSize(any)).thenAnswer((
+          invocation,
+        ) async {
+          final value = invocation.positionalArguments.single as double;
+          writes.add(value);
+          if (writes.length == 1) {
+            firstStarted.complete();
+            await firstWrite.future;
+          }
+          persisted = value;
+        });
+
+        settingsBloc.add(const AdjustCommentatorsFontSize(2));
+        await firstStarted.future;
+        settingsBloc.add(const AdjustCommentatorsFontSize(2));
+        settingsBloc.add(const AdjustCommentatorsFontSize(-2));
+        expect(writes, [24.0]);
+        expect(settingsBloc.state.commentatorsFontSize, 22.0);
+
+        firstWrite.complete();
+        await settingsBloc.stream.firstWhere(
+          (state) => state.commentatorsFontSize == 24.0,
+        );
+        await pumpEventQueue();
+        expect(writes, [24.0, 26.0, 24.0]);
+        expect(settingsBloc.state.commentatorsFontSize, 24.0);
+        expect(persisted, 24.0);
+      });
+
+      test('עדכון מוחלט מהמחוון מסודר עם לחיצות זום', () async {
+        final firstWrite = Completer<void>();
+        final secondWrite = Completer<void>();
+        final firstStarted = Completer<void>();
+        final secondStarted = Completer<void>();
+        final writes = <double>[];
+        var persisted = 22.0;
+        when(mockRepository.updateCommentatorsFontSize(any)).thenAnswer((
+          invocation,
+        ) async {
+          final value = invocation.positionalArguments.single as double;
+          writes.add(value);
+          if (writes.length == 1) {
+            firstStarted.complete();
+            await firstWrite.future;
+          } else if (writes.length == 2) {
+            secondStarted.complete();
+            await secondWrite.future;
+          }
+          persisted = value;
+        });
+
+        settingsBloc.add(const AdjustCommentatorsFontSize(2));
+        await firstStarted.future;
+        settingsBloc.add(const UpdateCommentatorsFontSize(30));
+        settingsBloc.add(const AdjustCommentatorsFontSize(-2));
+        firstWrite.complete();
+        await secondStarted.future;
+        expect(writes, [24.0, 30.0]);
+        expect(persisted, 24.0);
+        secondWrite.complete();
+        await settingsBloc.stream.firstWhere(
+          (state) => state.commentatorsFontSize == 28.0,
+        );
+
+        expect(writes, [24.0, 30.0, 28.0]);
+        expect(settingsBloc.state.commentatorsFontSize, 28.0);
+        expect(persisted, 28.0);
+      });
+
+      test('הזום נעצר בגבולות בלי כתיבות מיותרות', () async {
+        final writes = <double>[];
+        when(mockRepository.updateCommentatorsFontSize(any)).thenAnswer((
+          invocation,
+        ) async {
+          writes.add(invocation.positionalArguments.single as double);
+        });
+
+        settingsBloc.add(const UpdateCommentatorsFontSize(39));
+        await settingsBloc.stream.firstWhere(
+          (state) => state.commentatorsFontSize == 39.0,
+        );
+        settingsBloc.add(const AdjustCommentatorsFontSize(2));
+        await settingsBloc.stream.firstWhere(
+          (state) => state.commentatorsFontSize == 40.0,
+        );
+        settingsBloc.add(const AdjustCommentatorsFontSize(2));
+        await pumpEventQueue();
+        expect(writes, [39.0, 40.0]);
+
+        settingsBloc.add(const UpdateCommentatorsFontSize(11));
+        await settingsBloc.stream.firstWhere(
+          (state) => state.commentatorsFontSize == 11.0,
+        );
+        settingsBloc.add(const AdjustCommentatorsFontSize(-2));
+        await settingsBloc.stream.firstWhere(
+          (state) => state.commentatorsFontSize == 10.0,
+        );
+        settingsBloc.add(const AdjustCommentatorsFontSize(-2));
+        await pumpEventQueue();
+        expect(writes, [39.0, 40.0, 11.0, 10.0]);
+      });
+    });
+
     group('LoadSettings', () {
       blocTest<SettingsBloc, SettingsState>(
         'emits updated state when LoadSettings is added',

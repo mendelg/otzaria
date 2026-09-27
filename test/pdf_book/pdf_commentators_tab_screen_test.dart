@@ -26,8 +26,10 @@ class _FakeSettingsBloc extends Bloc<SettingsEvent, SettingsState>
     implements SettingsBloc {
   _FakeSettingsBloc([SettingsState? initial])
     : super(initial ?? SettingsState.initial()) {
-    on<SettingsEvent>((_, _) {});
+    on<SettingsEvent>((event, _) => events.add(event));
   }
+
+  final events = <SettingsEvent>[];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -55,10 +57,16 @@ class _FakePersonalNotesBloc
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Widget _wrap(Widget child, {SettingsState? settings}) => MaterialApp(
+Widget _wrap(
+  Widget child, {
+  SettingsState? settings,
+  _FakeSettingsBloc? settingsBloc,
+}) => MaterialApp(
   home: MultiBlocProvider(
     providers: [
-      BlocProvider<SettingsBloc>.value(value: _FakeSettingsBloc(settings)),
+      BlocProvider<SettingsBloc>.value(
+        value: settingsBloc ?? _FakeSettingsBloc(settings),
+      ),
       BlocProvider<PersonalNotesBloc>.value(
         value: _FakePersonalNotesBloc(),
       ),
@@ -72,6 +80,40 @@ void main() {
 
   setUpAll(() async {
     await Settings.init(cacheProvider: MemorySettingsCache());
+  });
+
+  testWidgets('זום בכרטיסיית מפרשי PDF שולח צעדים לשני הכיוונים', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final sourceTab = PdfBookTab(
+      book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),
+      pageNumber: 1,
+    );
+    addTearDown(sourceTab.dispose);
+    final settingsBloc = _FakeSettingsBloc();
+    addTearDown(settingsBloc.close);
+    final tab = PdfCommentatorsTab(sourceTab: sourceTab);
+
+    await tester.pumpWidget(
+      _wrap(PdfCommentatorsTabScreen(tab: tab), settingsBloc: settingsBloc),
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('הגדל את גודל הטקסט').first);
+    await tester.pump();
+    await tester.tap(find.byTooltip('הקטן את גודל הטקסט').first);
+    await tester.pump();
+
+    expect(
+      settingsBloc.events.whereType<AdjustCommentatorsFontSize>().map(
+        (event) => event.delta,
+      ),
+      [2.0, -2.0],
+    );
   });
 
   testWidgets('כרטסיית מפרשי PDF מסתנכרנת עם currentTitle של sourceTab', (

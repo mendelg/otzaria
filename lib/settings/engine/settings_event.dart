@@ -101,13 +101,26 @@ class UpdateCommentatorsFontBold extends SettingsEvent {
   List<Object?> get props => [commentatorsFontBold];
 }
 
-class UpdateCommentatorsFontSize extends SettingsEvent {
+sealed class CommentatorsFontSizeEvent extends SettingsEvent {
+  const CommentatorsFontSizeEvent();
+}
+
+class UpdateCommentatorsFontSize extends CommentatorsFontSizeEvent {
   final double commentatorsFontSize;
 
   const UpdateCommentatorsFontSize(this.commentatorsFontSize);
 
   @override
   List<Object?> get props => [commentatorsFontSize];
+}
+
+class AdjustCommentatorsFontSize extends CommentatorsFontSizeEvent {
+  final double delta;
+
+  const AdjustCommentatorsFontSize(this.delta);
+
+  @override
+  List<Object?> get props => [delta];
 }
 
 class UpdateLineHeight extends SettingsEvent {
