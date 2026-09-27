@@ -65,7 +65,15 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
   @override
   void didUpdateWidget(covariant ScrollPositionReanchor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.preferredIndex != oldWidget.preferredIndex) _trackSelected();
+    final listenerChanged =
+        widget.positionsListener != oldWidget.positionsListener;
+    if (listenerChanged) {
+      oldWidget.positionsListener.itemPositions.removeListener(_trackSelected);
+      widget.positionsListener.itemPositions.addListener(_trackSelected);
+    }
+    if (listenerChanged || widget.preferredIndex != oldWidget.preferredIndex) {
+      _trackSelected();
+    }
   }
 
   @override
@@ -95,7 +103,7 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
     final edge = _selectedEdge;
     if (previous == null || previous == width || !widget.enabled) return;
     if (index == null || edge == null) return;
-    // עוגן ישן (הגלילה עוד לא נחה): קפיצה אחרי השפיכה מפילה layout cycles.
+    // קפיצה לפני שהגלילה נחה מפילה את layout cycles של החבילה.
     if (_idleTimer?.isActive ?? false) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !widget.scrollController.isAttached) return;

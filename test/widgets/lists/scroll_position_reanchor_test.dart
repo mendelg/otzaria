@@ -310,6 +310,72 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('מחליף את positionsListener יחד עם הווידג’ט', (tester) async {
+      final controller = ItemScrollController();
+      final oldListener = ItemPositionsListener.create();
+      final newListener = ItemPositionsListener.create();
+      Widget list(double width, ItemPositionsListener listener) => _buildList(
+        width: width,
+        controller: controller,
+        listener: listener,
+        enabled: true,
+      );
+
+      await tester.pumpWidget(list(600, oldListener));
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byType(ScrollablePositionedList),
+        const Offset(0, -1500),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(ScrollPositionReanchor.idleDelay);
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(list(600, newListener));
+      await tester.pumpAndSettle();
+      final index = _topIndex(newListener) + 8;
+      await tester.pumpWidget(
+        _buildList(
+          width: 600,
+          controller: controller,
+          listener: newListener,
+          enabled: true,
+          preferredIndex: index,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byType(ScrollablePositionedList),
+        const Offset(0, -90),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(ScrollPositionReanchor.idleDelay);
+      await tester.pumpAndSettle();
+
+      final edgeBefore = newListener.itemPositions.value
+          .firstWhere((p) => p.index == index)
+          .itemLeadingEdge;
+      await tester.pumpWidget(
+        _buildList(
+          width: 300,
+          controller: controller,
+          listener: newListener,
+          enabled: true,
+          preferredIndex: index,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final after = newListener.itemPositions.value.firstWhere(
+        (p) => p.index == index,
+      );
+      expect(
+        after.itemLeadingEdge,
+        moreOrLessEquals(edgeBefore, epsilon: 0.01),
+      );
+      expect(oldListener.itemPositions.value, isNotEmpty);
+    });
+
     // ניווט לתוצאה שעל המסך בוחר שורה וגולל אליה באותו רגע.
     testWidgets('בחירה בזמן גלילה אינה מבטלת את הגלילה', (tester) async {
       final controller = ItemScrollController();
