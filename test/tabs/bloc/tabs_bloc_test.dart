@@ -1181,6 +1181,64 @@ void main() {
     });
   });
 
+  group('TabsBloc סדר שחזור אחרי סגירה קבוצתית', () {
+    setUp(() async {
+      await Settings.init(cacheProvider: _MemoryCacheProvider());
+    });
+
+    Future<(TabsBloc, List<TextBookTab>)> openFour() async {
+      final bloc = TabsBloc(repository: _FakeTabsRepository());
+      final tabs = [
+        for (final (i, title) in ['א', 'ב', 'ג', 'ד'].indexed)
+          _createTextTab(title, categoryId: i + 1),
+      ];
+      for (final tab in tabs) {
+        bloc.add(AddTab(tab));
+      }
+      await bloc.stream.firstWhere((s) => s.tabs.length == 4);
+      return (bloc, tabs);
+    }
+
+    Future<List<String>> restoreAll(TabsBloc bloc, int count) async {
+      for (var i = 0; i < count; i++) {
+        final length = bloc.state.tabs.length;
+        bloc.add(const RestoreLastClosedTab());
+        await bloc.stream.firstWhere((s) => s.tabs.length == length + 1);
+      }
+      return bloc.state.tabs.map((t) => t.title).toList();
+    }
+
+    test('CloseAllTabs ושחזור סדרתי מחזירים את הסדר המקורי', () async {
+      final (bloc, _) = await openFour();
+
+      bloc.add(CloseAllTabs());
+      await bloc.stream.firstWhere((s) => s.tabs.isEmpty);
+
+      expect(await restoreAll(bloc, 4), ['א', 'ב', 'ג', 'ד']);
+      await _closeBlocAndAllowDeferredDispose(bloc);
+    });
+
+    test('CloseOtherTabs ושחזור סדרתי מחזירים את הסדר המקורי', () async {
+      final (bloc, tabs) = await openFour();
+
+      bloc.add(CloseOtherTabs(tabs[1]));
+      await bloc.stream.firstWhere((s) => s.tabs.length == 1);
+
+      expect(await restoreAll(bloc, 3), ['א', 'ב', 'ג', 'ד']);
+      await _closeBlocAndAllowDeferredDispose(bloc);
+    });
+
+    test('AdoptTab ושחזור סדרתי מחזירים את הסדר המקורי', () async {
+      final (bloc, _) = await openFour();
+
+      bloc.add(AdoptTab(_createTextTab('מאומצת', categoryId: 9)));
+      await bloc.stream.firstWhere((s) => s.tabs.length == 1);
+
+      expect(await restoreAll(bloc, 4), ['א', 'ב', 'ג', 'ד', 'מאומצת']);
+      await _closeBlocAndAllowDeferredDispose(bloc);
+    });
+  });
+
   group('TabsBloc tab selection', () {
     setUp(() async {
       await Settings.init(cacheProvider: _MemoryCacheProvider());
