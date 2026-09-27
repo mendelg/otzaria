@@ -34,8 +34,20 @@ class DataRepository {
   Future<Library>? _libraryFuture;
   @visibleForTesting
   Future<Library>? get cachedLibraryFutureForTesting => _libraryFuture;
-  Future<Library> get library => _libraryFuture ??= _getLibrary();
-  set library(Future<Library> value) => _libraryFuture = value;
+  Future<Library> get library =>
+      _libraryFuture ??= _forgetIfFailed(_getLibrary());
+  set library(Future<Library> value) => _libraryFuture = _forgetIfFailed(value);
+
+  // בנייה שנכשלה לא נשמרת — אחרת כל קורא הבא (גם רענון) יקבל את אותה שגיאה.
+  Future<Library> _forgetIfFailed(Future<Library> future) {
+    future.then<void>(
+      (_) {},
+      onError: (Object _) {
+        if (identical(_libraryFuture, future)) _libraryFuture = null;
+      },
+    );
+    return future;
+  }
 
   /// לאחר החלפת נתיב ספרייה, הקריאה הבאה חייבת לבנות את העץ מהנתיב החדש.
   void invalidateLibraryCache() => _libraryFuture = null;

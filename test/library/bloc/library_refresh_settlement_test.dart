@@ -139,4 +139,34 @@ void main() {
     expect(result.completedRefreshRequestIds, isNull);
     expect(LibraryState.refreshRequestSettled(result, 7), isTrue);
   });
+
+  test('רענון אחרי רענון שנכשל בונה קטלוג חדש ומחזיר את הספרייה', () async {
+    final broken = Completer<Library>();
+    files.results.addAll([
+      broken.future,
+      Future.value(Library(categories: [])),
+    ]);
+
+    final failed = bloc.stream.firstWhere(
+      (state) => state.failedRefreshRequestIds?.contains(1) ?? false,
+    );
+    bloc.add(const RefreshLibrary(requestIds: {1}));
+    while (files.calls < 1) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    broken.completeError(StateError('catalog failed'));
+    expect((await failed).error, isNotNull);
+
+    final recovered = bloc.stream.firstWhere(
+      (state) =>
+          (state.completedRefreshRequestIds?.contains(2) ?? false) ||
+          (state.failedRefreshRequestIds?.contains(2) ?? false),
+    );
+    bloc.add(const RefreshLibrary(requestIds: {2}));
+    final result = await recovered;
+
+    expect(files.calls, 2);
+    expect(result.completedRefreshRequestIds, {2});
+    expect(result.error, isNull);
+  });
 }
