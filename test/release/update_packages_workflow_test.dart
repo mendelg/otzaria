@@ -5,6 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../tool/release/generate_app_file_manifest.dart';
 import '../../tool/release/generate_update_package.dart';
 
+const _bashReleaseTag =
+    r'''tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')''';
+const _pwshReleaseTag =
+    r"$tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'";
+
 void main() {
   final workflow = File(
     '.github/workflows/build-and-announce.yml',
@@ -103,8 +108,8 @@ void main() {
         expect(body, contains('generate_app_file_manifest.dart --stamp'));
         expect(body, contains('$dir\\runner\\Release'));
         expect(body, contains('--architecture $arch'));
-        // התג האמיתי הוא `<version>+<run_number>` — בדיוק מה שהלקוח מחפש.
-        expect(body, contains(r'"$version+${{ github.run_number }}"'));
+        // התג בא מהסקריפט המשותף — בדיוק מה שהלקוח מחפש.
+        expect(body, contains(_pwshReleaseTag));
         expect(body, contains('continue-on-error: true'), reason: step);
       }
     });
@@ -130,13 +135,19 @@ void main() {
 
     test('התג בחותם הוא בדיוק התג שהשחרור מקבל', () {
       // החותם הוא הבסיס שחבילת העדכון נבנית ממנו; תג אחר = אין חבילה בשם.
-      expect(workflow, contains(r'tag=$VERSION+${{ github.run_number }}'));
       expect(
-        r'"$version+${{ github.run_number }}"'.allMatches(workflow).length,
-        9,
+        workflow,
+        contains(
+          r'''TAG=$(bash tool/version/release_tag.sh "$VERSION" '${{ github.ref }}' '${{ github.run_number }}')''',
+        ),
+      );
+      expect(
+        _pwshReleaseTag.allMatches(workflow).length +
+            _bashReleaseTag.allMatches(workflow).length,
+        11,
         reason:
             'חותם ומניפסט ב-Windows (שתי ארכיטקטורות), ב-macOS וב-Linux, '
-            'ומסייע ההורדה',
+            'ומסייעי ההורדה',
       );
     });
 

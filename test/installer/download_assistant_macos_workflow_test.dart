@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+const _bashReleaseTag =
+    r'''tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')''';
+const _pwshReleaseTag =
+    r"$tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'";
+
 /// מסייע ההורדה ל-macOS נבנה בסוף `build_macos`, ואינו יכול לחסום שחרור.
 void main() {
   final workflow = File(
@@ -92,8 +97,7 @@ void main() {
     test('התג מועבר במשתנה סביבה, באותו כלל של מסייע Windows', () {
       final build = stepBody(buildStep);
       expect(build, contains('export OTZARIA_ASSISTANT_RELEASE_TAG="\$tag"'));
-      expect(build, contains("'\${{ github.ref }}' = 'refs/heads/main'"));
-      expect(build, contains(r'tag="${version}+${{ github.run_number }}"'));
+      expect(build, contains(_bashReleaseTag));
       expect(
         build,
         contains('bash tool/download_assistant/macos/build_app.sh'),
@@ -106,8 +110,7 @@ void main() {
       final windows = stepBody(
         'Build Download Assistant (non-fatal helper tool)',
       );
-      expect(windows, contains('refs/heads/main'));
-      expect(windows, contains('github.run_number'));
+      expect(windows, contains(_pwshReleaseTag));
     });
   });
 

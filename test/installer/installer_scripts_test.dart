@@ -2264,8 +2264,8 @@ void main() {
       expect(
         step,
         contains(
-          "if ('\${{ github.ref }}' -eq 'refs/heads/main') "
-          '{ \$version } else { "\$version+\${{ github.run_number }}" }',
+          r"$tag = & ./tool/version/release_tag.ps1 $version "
+          r"'${{ github.ref }}' '${{ github.run_number }}'",
         ),
       );
     });
@@ -2312,6 +2312,13 @@ void main() {
       expect(
         step,
         contains(r'$env:OTZARIA_INDEXED_RELEASE_TAG = $releaseTag'),
+      );
+      expect(
+        step,
+        contains(
+          r'$releaseTag = & ./tool/version/release_tag.ps1 $version '
+          r'$env:GITHUB_REF $env:GITHUB_RUN_NUMBER',
+        ),
       );
       expect(
         step,

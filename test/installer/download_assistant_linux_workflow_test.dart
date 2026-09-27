@@ -3,6 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
+const _bashReleaseTag =
+    r'''tag=$(bash tool/version/release_tag.sh "$version" '${{ github.ref }}' '${{ github.run_number }}')''';
+const _pwshReleaseTag =
+    r"$tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'";
+
 /// מסייע ההורדה ל-Linux ב-workflow: נבנה בסוף `build_linux` רק במטריצה `raw`,
 /// אינו חוסם שחרור, ושמות הארטיפקט והנכס תואמים לטבלה ב-docs/download_assistant.md.
 void main() {
@@ -101,13 +106,11 @@ void main() {
   test('התג מוטבע דרך משתנה סביבה, באותו כלל של מסייע Windows', () {
     final build = step(buildName);
     expect(build, contains(r'export OTZARIA_ASSISTANT_RELEASE_TAG="$tag"'));
-    expect(build, contains("\"\${{ github.ref }}\" = \"refs/heads/main\""));
-    expect(build, contains(r'tag="${version}+${{ github.run_number }}"'));
+    expect(build, contains(_bashReleaseTag));
     expect(build, isNot(contains('make OTZARIA_ASSISTANT_RELEASE_TAG')));
 
     final windows = step('Build Download Assistant (non-fatal helper tool)');
-    expect(windows, contains("'refs/heads/main'"));
-    expect(windows, contains(r'$version+${{ github.run_number }}'));
+    expect(windows, contains(_pwshReleaseTag));
   });
 
   test('שמות הארטיפקט והנכס תואמים לטבלה ולשלב ה-Stage', () {

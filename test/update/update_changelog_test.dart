@@ -174,4 +174,143 @@ void main() {
       },
     );
   });
+
+  group('גרסאות hotfix (issue #1547)', () {
+    // 0.9.97+99702 הוא hotfix 2; appReleaseVersion מציג אותו כ-0.9.97.2.
+    test('hotfix מותקן מול התג שלו — אין עדכון', () {
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.97.2',
+          currentVersion: '0.9.97.2',
+        ),
+        isFalse,
+      );
+    });
+
+    test('גרסת בסיס מול hotfix שלה — מוצע עדכון', () {
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.97.2',
+          currentVersion: '0.9.97',
+        ),
+        isTrue,
+      );
+    });
+
+    test('hotfix מול הגרסה הבאה — מוצע עדכון, ולא להפך', () {
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.98',
+          currentVersion: '0.9.97.2',
+        ),
+        isTrue,
+      );
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.97.2',
+          currentVersion: '0.9.98',
+        ),
+        isFalse,
+      );
+    });
+
+    test('hotfix נמוך מול גבוה', () {
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.97.3',
+          currentVersion: '0.9.97.2',
+        ),
+        isTrue,
+      );
+    });
+
+    test('תגים בפורמט הישן ממשיכים לעבוד', () {
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.98',
+          currentVersion: '0.9.97',
+        ),
+        isTrue,
+      );
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.9.97',
+          currentVersion: '0.9.97',
+        ),
+        isFalse,
+      );
+      expect(
+        isNewerReleaseVersion(
+          latestVersion: '0.10.0+900',
+          currentVersion: '0.9.99',
+        ),
+        isTrue,
+      );
+    });
+
+    test('ערוץ dev: build של hotfix גובר על stable של הבסיס', () {
+      final selected = pickPreferredReleaseForDevChannel(
+        stableRelease: {'tag_name': '0.9.97'},
+        devRelease: {'tag_name': '0.9.97.2+790'},
+      );
+      expect(selected['tag_name'], '0.9.97.2+790');
+    });
+
+    test('ערוץ dev: stable של hotfix גובר על build ישן של הבסיס', () {
+      final selected = pickPreferredReleaseForDevChannel(
+        stableRelease: {'tag_name': '0.9.97.2'},
+        devRelease: {'tag_name': '0.9.97+789'},
+      );
+      expect(selected['tag_name'], '0.9.97.2');
+    });
+
+    test('ערוץ dev: שוויון גרסה מלאה בוחר ב-stable', () {
+      final selected = pickPreferredReleaseForDevChannel(
+        stableRelease: {'tag_name': '0.9.97.2'},
+        devRelease: {'tag_name': '0.9.97.2+790'},
+      );
+      expect(selected['tag_name'], '0.9.97.2');
+    });
+
+    test('התאמת תג לגרסה מדויקת — בסיס אינו תופס hotfix ולהפך', () {
+      expect(releaseTagMatchesVersion('0.9.97', '0.9.97'), isTrue);
+      expect(releaseTagMatchesVersion('0.9.97+789', '0.9.97'), isTrue);
+      expect(releaseTagMatchesVersion('0.9.97.2+790', '0.9.97'), isFalse);
+      expect(releaseTagMatchesVersion('0.9.97.2', '0.9.97'), isFalse);
+      expect(releaseTagMatchesVersion('0.9.97.2+790', '0.9.97.2'), isTrue);
+      expect(releaseTagMatchesVersion('0.9.97+789', '0.9.97.2'), isFalse);
+      expect(releaseTagMatchesVersion('0.9.970+1', '0.9.97'), isFalse);
+    });
+
+    test('יומן השינויים כולל כותרת hotfix שבין הגרסאות', () {
+      const changelog = '''
+* **0.9.98**
+  - גרסה הבאה
+
+* **0.9.97.2**
+  - תיקון חירום
+
+* **0.9.97**
+  - גרסת בסיס
+''';
+
+      final fromBase = changelogBetweenVersionsForUpdateDialog(
+        changelog: changelog,
+        currentVersion: '0.9.97',
+        latestVersion: '0.9.97.2',
+      );
+      expect(fromBase, contains('* **0.9.97.2**'));
+      expect(fromBase, contains('  - תיקון חירום'));
+      expect(fromBase, isNot(contains('  - גרסה הבאה')));
+      expect(fromBase, isNot(contains('  - גרסת בסיס')));
+
+      final fromHotfix = changelogBetweenVersionsForUpdateDialog(
+        changelog: changelog,
+        currentVersion: '0.9.97.2',
+        latestVersion: '0.9.98+800',
+      );
+      expect(fromHotfix, contains('  - גרסה הבאה'));
+      expect(fromHotfix, isNot(contains('  - תיקון חירום')));
+    });
+  });
 }
