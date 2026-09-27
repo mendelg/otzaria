@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
@@ -344,12 +345,15 @@ class _DefaultPluginSource implements CalendarPluginSource {
 class CalendarCubit extends Cubit<CalendarState> {
   static const String _primaryGoogleCalendarId = 'primary';
   static const int _zmanScheduleDaysAhead = 45;
+  // גם לאחר חודש בלי היום המבוקש, המרווח הבא בין מופעים יכול להגיע ל־61 יום.
+  static const int _eventScheduleDaysAhead = 62;
 
   final SettingsRepository _settingsRepository;
   final NotificationService _notificationService;
   final GoogleCalendarService _googleCalendarService;
   final IcsCalendarService _icsCalendarService;
   final CalendarPluginSource _pluginCalendarAdapter;
+  final DateTime Function() _now;
   final Completer<void> _initializationCompleter = Completer<void>();
   Timer? _todayRefreshTimer;
   int _pluginRefreshGeneration = 0;
@@ -380,6 +384,7 @@ class CalendarCubit extends Cubit<CalendarState> {
     GoogleCalendarService? googleCalendarService,
     IcsCalendarService? icsCalendarService,
     CalendarPluginSource? pluginCalendarAdapter,
+    DateTime Function()? now,
   }) : _settingsRepository = settingsRepository ?? SettingsRepository(),
        _notificationService = notificationService ?? NotificationService(),
        _googleCalendarService =
@@ -387,6 +392,7 @@ class CalendarCubit extends Cubit<CalendarState> {
        _icsCalendarService = icsCalendarService ?? IcsCalendarService(),
        _pluginCalendarAdapter =
            pluginCalendarAdapter ?? const _DefaultPluginSource(),
+       _now = now ?? DateTime.now,
        super(CalendarState.initial()) {
     _initializeCalendar(resetSelectedToToday: true);
   }
@@ -2238,14 +2244,20 @@ class CalendarCubit extends Cubit<CalendarState> {
 
     final scheduledIds = <int>{};
 
-    final now = DateTime.now();
+    final now = _now();
 
     for (final event in state.events) {
       if (event.recurring) {
-        // Schedule for the next 2 years
-        for (int i = 0; i < 2; i++) {
+        // שנתי: השנה והבאה; שבועי/חודשי: כל יום בחלון הקרוב שבו מתחיל מופע.
+        final annual =
+            event.recurrenceType == RecurrenceType.annualGregorian ||
+            event.recurrenceType == RecurrenceType.annualHebrew;
+        final candidates = annual ? 2 : _eventScheduleDaysAhead + 1;
+        for (int i = 0; i < candidates; i++) {
           final DateTime occurrenceDate;
-          if (event.recurOnHebrew) {
+          if (!annual) {
+            occurrenceDate = DateTime(now.year, now.month, now.day + i);
+          } else if (event.recurOnHebrew) {
             final currentHebrewYear = JewishDate.fromDateTime(
               now,
             ).getJewishYear();
@@ -2276,6 +2288,7 @@ class CalendarCubit extends Cubit<CalendarState> {
               event.baseGregorianDate.day,
             );
           }
+          if (!event.startsOccurrenceOn(occurrenceDate)) continue;
 
           // שילוב השעה אם קיימת
           final DateTime eventDateTime;
@@ -2527,6 +2540,14 @@ class CustomEvent extends Equatable {
       if (_isOccurrenceStart(day) && _occurrenceInEffect(day)) return true;
     }
     return false;
+  }
+
+  /// האם מופע של האירוע החוזר מתחיל בתאריך הנתון.
+  bool startsOccurrenceOn(DateTime date) {
+    final day = _dateOnly(date);
+    return !day.isBefore(_dateOnly(baseGregorianDate)) &&
+        _isOccurrenceStart(day) &&
+        _occurrenceInEffect(day);
   }
 
   bool _isOccurrenceStart(DateTime day) {

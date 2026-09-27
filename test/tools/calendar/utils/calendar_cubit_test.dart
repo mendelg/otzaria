@@ -88,6 +88,31 @@ class _FakeNotificationService implements NotificationService {
   noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+/// רושם את מועדי ההתראות שתוזמנו לאירועים.
+class _RecordingNotificationService extends _FakeNotificationService {
+  final scheduledDates = <DateTime>[];
+
+  @override
+  Future<void> scheduleNotification({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime eventDate,
+    required int reminderMinutes,
+    bool soundEnabled = true,
+  }) async {
+    scheduledDates.add(eventDate);
+  }
+}
+
+class _NotificationsEnabledSettings extends _InMemorySettingsRepository {
+  @override
+  Future<Map<String, dynamic>> loadSettings() async => {
+    ...await super.loadSettings(),
+    'calendarNotificationsEnabled': true,
+  };
+}
+
 /// SettingsRepository מינימלי בזיכרון — שומר ערכים שכתבנו וחושף אותם
 /// דרך getters לאסרציות בטסטים.
 class _InMemorySettingsRepository implements SettingsRepository {
@@ -1242,6 +1267,158 @@ void main() {
           .map((e) => (e as Map<String, dynamic>)['id'])
           .toList();
       expect(saved, unorderedEquals(['otzaria-local', 'plain-local']));
+    });
+  });
+  group('תזמון התראות לאירוע חוזר לפי סוג החזרה', () {
+    final now = DateTime.now();
+    final tomorrow = DateTime(now.year, now.month, now.day + 1);
+
+    CustomEvent recurringEvent(
+      RecurrenceType type,
+      DateTime start, {
+      DateTime? recurrenceEndDate,
+      int? recurringYears,
+    }) {
+      final jewish = JewishDate.fromDateTime(start);
+      return CustomEvent(
+        id: 'recurring-$type',
+        title: 'אירוע חוזר',
+        description: '',
+        createdAt: now,
+        baseGregorianDate: start,
+        baseJewishYear: jewish.getJewishYear(),
+        baseJewishMonth: jewish.getJewishMonth(),
+        baseJewishDay: jewish.getJewishDayOfMonth(),
+        recurrenceType: type,
+        eventTime: const TimeOfDay(hour: 10, minute: 0),
+        recurrenceEndDate: recurrenceEndDate,
+        recurringYears: recurringYears,
+      );
+    }
+
+    Future<List<DateTime>> scheduledFor(
+      CustomEvent event, {
+      DateTime? notificationNow,
+    }) async {
+      final settings = _NotificationsEnabledSettings()
+        ..storedEventsJson = jsonEncode([event.toJson()]);
+      final notifications = _RecordingNotificationService();
+      final cubit = CalendarCubit(
+        settingsRepository: settings,
+        notificationService: notifications,
+        now: () => notificationNow ?? DateTime.now(),
+      );
+      await Future.delayed(const Duration(milliseconds: 100));
+      await cubit.close();
+      return notifications.scheduledDates;
+    }
+
+    DateTime at10(DateTime day, [int addDays = 0]) =>
+        DateTime(day.year, day.month, day.day + addDays, 10);
+
+    test('אירוע שבועי מתוזמן לכל שבוע ולא פעם בשנה', () async {
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.weekly, tomorrow),
+      );
+
+      expect(
+        dates,
+        containsAll([at10(tomorrow), at10(tomorrow, 7), at10(tomorrow, 14)]),
+      );
+      expect(dates.every((d) => d.weekday == tomorrow.weekday), isTrue);
+    });
+
+    test('אירוע שבועי אינו מתוזמן אחרי תאריך סוף החזרה', () async {
+      final dates = await scheduledFor(
+        recurringEvent(
+          RecurrenceType.weekly,
+          tomorrow,
+          recurrenceEndDate: at10(tomorrow, 8),
+        ),
+      );
+
+      expect(dates, [at10(tomorrow), at10(tomorrow, 7)]);
+    });
+
+    test('אירוע חודשי עברי מתוזמן גם בחודש העברי הבא', () async {
+      // יום ל' חסר בחלק מהחודשים, ולכן מתחילים מיום שקיים בכל חודש.
+      final start =
+          JewishDate.fromDateTime(tomorrow).getJewishDayOfMonth() == 30
+          ? DateTime(tomorrow.year, tomorrow.month, tomorrow.day + 1)
+          : tomorrow;
+      final monthLength = JewishDate.fromDateTime(start).getDaysInJewishMonth();
+
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.monthlyHebrew, start),
+      );
+
+      expect(dates, containsAll([at10(start), at10(start, monthLength)]));
+    });
+
+    test('אירוע חודשי גרגוריאני ביום 31 מתוזמן אחרי חודש חסר', () async {
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.monthlyGregorian, DateTime(2024, 1, 31)),
+        notificationNow: DateTime(2025, 2, 1),
+      );
+
+      expect(dates, contains(DateTime(2025, 3, 31, 10)));
+    });
+
+    test('אירוע חודשי עברי ביום 30 מתוזמן אחרי חודש בן 29 יום', () async {
+      DateTime? previousOccurrence;
+      DateTime? nextOccurrence;
+      for (
+        var day = DateTime(2025, 1, 1);
+        day.isBefore(DateTime(2030));
+        day = day.add(const Duration(days: 1))
+      ) {
+        if (JewishDate.fromDateTime(day).getJewishDayOfMonth() != 30) {
+          continue;
+        }
+        if (previousOccurrence != null &&
+            day.difference(previousOccurrence).inDays > 45) {
+          nextOccurrence = day;
+          break;
+        }
+        previousOccurrence = day;
+      }
+
+      expect(previousOccurrence, isNotNull);
+      expect(nextOccurrence, isNotNull);
+      final previous = previousOccurrence!;
+      final next = nextOccurrence!;
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.monthlyHebrew, previous),
+        notificationNow: previous.add(const Duration(days: 1)),
+      );
+
+      expect(dates, contains(at10(next)));
+    });
+
+    test('אירוע שנתי ממשיך להיות מתוזמן לשנה זו ולשנה הבאה', () async {
+      final base = DateTime(now.year - 1, 3, 15);
+      final expected = [
+        for (final year in [now.year, now.year + 1])
+          if (DateTime(year, 3, 15, 10).isAfter(now)) DateTime(year, 3, 15, 10),
+      ];
+
+      final dates = await scheduledFor(
+        recurringEvent(RecurrenceType.annualGregorian, base),
+      );
+
+      expect(dates, expected);
+    });
+
+    test('אירוע שנתי אינו מתוזמן אחרי מספר שנות החזרה', () async {
+      final dates = await scheduledFor(
+        recurringEvent(
+          RecurrenceType.annualGregorian,
+          DateTime(now.year - 1, 3, 15),
+          recurringYears: 1,
+        ),
+      );
+
+      expect(dates, isEmpty);
     });
   });
 }
