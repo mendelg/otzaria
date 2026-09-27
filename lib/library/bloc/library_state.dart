@@ -5,6 +5,8 @@ import 'package:otzaria/library/models/library.dart';
 class LibraryState extends Equatable {
   final Library? library;
   final bool isLoading;
+
+  /// שגיאת הפעולה האחרונה. מתאפסת אחרי כל copyWith, אחרת מסך הספרייה נתקע עליה.
   final String? error;
   final Category? currentCategory;
   final List<Book>? searchResults;
@@ -264,7 +266,7 @@ class LibraryState extends Equatable {
     return LibraryState(
       library: library ?? this.library,
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      error: error,
       currentCategory: currentCategory ?? this.currentCategory,
       searchResults: searchResults,
       searchCategoryResults: searchCategoryResults,
