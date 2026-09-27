@@ -124,12 +124,12 @@ dependencies:
   wakelock_plus: ^1.8.0
 
 dependency_overrides:
-  # TODO: להחזיר ל-pub.dev כשיתמזג וישוחרר espresso3389/pdfrx#724 (עיגון התצוגה
-  # באותו פריים כשגודל עמוד משתנה). עד אז הפורק palmoni5, מוצמד לקומיט.
+  # TODO: להחזיר ל-pub.dev רק אחרי ששני ה-PR ימוזגו וישוחררו: espresso3389/pdfrx#724
+  # ו-#729. עד אז ענף הפורק שמכיל את שניהם (נמשך מראש הענף בכל pub get).
   pdfrx:
     git:
       url: https://github.com/palmoni5/pdfrx
-      ref: 57ee62fe8127d654b63e6b2f84e2028025b7eec9
+      ref: perf/viewer-render-order
       path: packages/pdfrx
   # TODO: להחזיר ל-pub.dev כשיתמזג וישוחרר MaikuB/flutter_local_notifications#2826
   # (קריאות WinRT ב-thread ייעודי). עד אז הפורק Otzaria, מוצמד לקומיט.
