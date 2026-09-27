@@ -323,6 +323,8 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       state.copyWith(
         tabs: event.tabs,
         currentTabIndex: event.currentTabIndex,
+        // ריק→ריק הוא state שווה ש-Bloc אינו פולט; בלי זה הממתין ב-main.dart נתקע.
+        forceUpdate: true,
         selectedTabs: const <OpenedTab>[],
         // clear ולא unchanged: הרשימה הישנה מפונה, וחלונית פעילה ששייכת
         // לטאב שנסגר אינה יכולה להישאר.
@@ -969,6 +971,8 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     return tab.title;
   }
 
+  /// בסגירה קבוצתית קוראים בסדר אינדקס יורד: השחזור הוא LIFO, וכך שחזור
+  /// סדרתי מחזיר כל כרטיסיה למקומה המקורי.
   void _rememberClosedTab(OpenedTab tab, int originalIndex) {
     _recentlyClosedTabs.add(
       _ClosedTabEntry(
@@ -1036,8 +1040,6 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     final toRemove = event.tabs.where(state.tabs.contains).toSet();
     if (toRemove.isEmpty) return;
 
-    // נזכרים בסדר אינדקס יורד: השחזור הוא LIFO, וכך שחזור סדרתי מחזיר כל
-    // כרטיסיה למקומה המקורי.
     for (var i = state.tabs.length - 1; i >= 0; i--) {
       if (toRemove.contains(state.tabs[i])) {
         _rememberClosedTab(state.tabs[i], i);
@@ -1212,7 +1214,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     // שמירת טאבים מוצמדים בלבד
     final pinnedTabs = state.tabs.where((tab) => tab.isPinned).toList();
     final tabsToDispose = state.tabs.where((tab) => !tab.isPinned).toList();
-    for (var i = 0; i < state.tabs.length; i++) {
+    for (var i = state.tabs.length - 1; i >= 0; i--) {
       final tab = state.tabs[i];
       if (!tab.isPinned) {
         _rememberClosedTab(tab, i);
@@ -1244,7 +1246,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   Future<void> _onAdoptTab(AdoptTab event, Emitter<TabsState> emit) async {
     final pinned = state.tabs.where((tab) => tab.isPinned).toList();
     final toDispose = state.tabs.where((tab) => !tab.isPinned).toList();
-    for (var i = 0; i < state.tabs.length; i++) {
+    for (var i = state.tabs.length - 1; i >= 0; i--) {
       if (!state.tabs[i].isPinned) {
         _rememberClosedTab(state.tabs[i], i);
       }
@@ -1270,7 +1272,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     CloseOtherTabs event,
     Emitter<TabsState> emit,
   ) async {
-    for (var i = 0; i < state.tabs.length; i++) {
+    for (var i = state.tabs.length - 1; i >= 0; i--) {
       final tab = state.tabs[i];
       if (tab != event.keepTab) {
         _rememberClosedTab(tab, i);
