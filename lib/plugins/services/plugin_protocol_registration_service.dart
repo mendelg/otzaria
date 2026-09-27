@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:otzaria/core/app_paths.dart';
@@ -41,15 +42,20 @@ class PluginProtocolRegistrationService {
     }
   }
 
-  // הכתיבה ישירה דרך ה-API של הרגיסטרי, לא דרך תת-תהליכי reg.exe: במחשב
-  // עם סוכן סינון/אנטי-וירוס שמאט יצירת תהליכים, 10 spawn-ים סדרתיים חרגו
-  // מכל timeout והרישום נכשל בכל הפעלה (issue #989).
-  Future<void> _ensureWindowsRegistration() async {
-    final entries = buildWindowsRegistrationEntries(
-      Platform.resolvedExecutable,
-    );
-    for (final entry in entries) {
-      final key = CURRENT_USER.create('Software\\Classes\\${entry.subkey}');
+  // ⚠️ ב-isolate נפרד: קריאות הרג'יסטרי סינכרוניות (FFI), ורג'יסטרי איטי
+  // (אנטי-וירוס, hive נודד) היה מקפיא את ה-UI כולו (issue #1549).
+  Future<void> _ensureWindowsRegistration() {
+    final exePath = Platform.resolvedExecutable;
+    return Isolate.run(() => writeWindowsRegistration(exePath));
+  }
+
+  /// [root] הוא קידומת יחסית ל-HKCU לכל המפתחות; ריקה בשימוש אמיתי.
+  @visibleForTesting
+  static void writeWindowsRegistration(String exePath, {String root = ''}) {
+    for (final entry in buildWindowsRegistrationEntries(exePath)) {
+      final key = CURRENT_USER.create(
+        '${root}Software\\Classes\\${entry.subkey}',
+      );
       try {
         key.setValue(entry.name, entry.value);
       } finally {
@@ -58,7 +64,7 @@ class PluginProtocolRegistrationService {
     }
 
     markOfficeTrustedProtocols(
-      (subkey) => CURRENT_USER.create(subkey).close(),
+      (subkey) => CURRENT_USER.create('$root$subkey').close(),
     );
   }
 
