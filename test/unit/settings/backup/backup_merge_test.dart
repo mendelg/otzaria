@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/bookmarks/models/bookmark.dart';
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/models/books.dart';
 import 'package:otzaria/settings/services/backup/backup_merge.dart';
 
 void main() {
@@ -20,9 +22,13 @@ void main() {
     now: now,
   );
 
-  Map<String, dynamic> bookmark(String ref, {String title = 'ספר'}) => {
+  Map<String, dynamic> bookmark(
+    String ref, {
+    String title = 'ספר',
+    int index = 1,
+  }) => {
     'ref': ref,
-    'index': 1,
+    'index': index,
     'targetKind': 'book',
     'isSearch': false,
     'book': {'title': title},
@@ -43,10 +49,92 @@ void main() {
   });
 
   group('סימניות', () {
+    test('ref שונה באותו מיקום אינו מכפיל סימנייה בארכיון', () {
+      final oldBookmark = Bookmark(
+        ref: 'בראשית א, א',
+        book: TextBook(id: 7, title: 'בראשית'),
+        index: 42,
+      );
+      final newBookmark = Bookmark(
+        ref: 'ספר בראשית פרק א פסוק א',
+        book: TextBook(id: 7, title: 'בראשית'),
+        index: 42,
+      );
+      expect(oldBookmark.bookmarkIdentity, newBookmark.bookmarkIdentity);
+
+      final merged = merge(
+        {
+          'bookmarks': [jsonDecode(jsonEncode(oldBookmark.toJson()))],
+        },
+        {
+          'bookmarks': [jsonDecode(jsonEncode(newBookmark.toJson()))],
+        },
+      );
+
+      final bookmarks = (merged['bookmarks'] as List).cast<Map>();
+      expect(bookmarks, hasLength(1));
+      expect(bookmarks.single['ref'], newBookmark.ref);
+    });
+
+    test('שומר מפתח otzarId של ספר חיצוני דרך סיבוב JSON', () {
+      final oldBookmark = Bookmark(
+        ref: 'דף ב',
+        book: ExternalLibraryBook(
+          title: 'ספר חיצוני',
+          id: 7,
+          link: 'https://example.test/book/7',
+          externalLibraryId: 'source-a',
+        ),
+        index: 1,
+      );
+      final newBookmark = Bookmark(
+        ref: 'דף ג',
+        book: ExternalLibraryBook(
+          title: 'ספר חיצוני',
+          id: 7,
+          link: 'https://example.test/book/7',
+        ),
+        index: 1,
+      );
+      final olderEntry = jsonDecode(jsonEncode(oldBookmark.toJson()));
+      final newerEntry = jsonDecode(jsonEncode(newBookmark.toJson()));
+
+      final merged = merge(
+        {
+          'bookmarks': [olderEntry],
+          'history': [olderEntry],
+        },
+        {
+          'bookmarks': [newerEntry],
+          'history': [newerEntry],
+        },
+      );
+
+      expect(merged['bookmarks'] as List, hasLength(1));
+      expect(merged['history'] as List, hasLength(1));
+    });
+
+    test('חיפושים ישנים ברשימת הסימניות עדיין מזוהים לפי ref', () {
+      final merged = merge(
+        {
+          'bookmarks': [
+            {...bookmark('חיפוש א'), 'isSearch': true},
+          ],
+        },
+        {
+          'bookmarks': [
+            {...bookmark('חיפוש ב'), 'isSearch': true},
+          ],
+        },
+      );
+
+      expect(merged['bookmarks'] as List, hasLength(2));
+    });
+
     test('פריט ישן-בלבד נשמר עם lastSeenAt; פריט חדש מנצח', () {
       final merged = merge(
         {
-          'bookmarks': [bookmark('דף ב'), bookmark('דף ג')],
+          'bookmarks': [bookmark('דף ב'), bookmark('דף ג', index: 2)],
         },
         {
           'bookmarks': [
@@ -71,7 +159,7 @@ void main() {
       final merged = merge(
         {
           'bookmarks': [
-            {...bookmark('עתיק'), 'lastSeenAt': ancient},
+            {...bookmark('עתיק', index: 2), 'lastSeenAt': ancient},
             bookmark('רגיל'),
           ],
         },
@@ -144,6 +232,26 @@ void main() {
         {
           'bookmarks': [entry('PdfBook')],
           'history': [entry('PdfBook')],
+        },
+      );
+
+      expect(merged['bookmarks'] as List, hasLength(2));
+      expect(merged['history'] as List, hasLength(2));
+    });
+
+    test('שני קובצי PDF ללא id ובכותרת זהה נשמרים לפי הנתיב', () {
+      Map<String, dynamic> entry(String path) => {
+        ...bookmark('דף ב'),
+        'book': {'id': null, 'title': 'ספר', 'type': 'PdfBook', 'path': path},
+      };
+      final merged = merge(
+        {
+          'bookmarks': [entry('/books/first.pdf')],
+          'history': [entry('/books/first.pdf')],
+        },
+        {
+          'bookmarks': [entry('/books/second.pdf')],
+          'history': [entry('/books/second.pdf')],
         },
       );
 

@@ -212,28 +212,58 @@ class BackupMerge {
     return raw.cast<String, dynamic>();
   }
 
-  /// כמו `bookIdentity`: PDF של מסכת חולק id עם מהדורת הטקסט, ומהדורה
-  /// חלופית חולקת id עם הנוסח הממוזג.
-  static String _bookTitleOf(Map<String, dynamic> m) {
+  /// סדר העדיפויות תואם ל-`bookIdentity` בלי לפענח כל רשומה לאובייקט.
+  static String _bookIdentityOf(Map<String, dynamic> m) {
     final book = m['book'];
     if (book is! Map) return '';
-    final id = book['id'];
-    final title = book['title'] ?? '';
+
+    final type = book['type'];
+    final id = type == 'ExternalLibraryBook'
+        ? (book['id'] ?? book['otzarId'])
+        : book['id'];
     final source = BookSource.fromJson(book).identitySuffix;
-    final pdf = book['type'] == 'PdfBook' ? '|pdf' : '';
-    final version = book['versionTitle'];
-    final base = id != null ? 'id:$id$pdf$source' : 'title:$title$pdf$source';
+    late final String base;
+    if (id != null) {
+      final pdf = type == 'PdfBook' ? '|pdf' : '';
+      base = 'id:$id$pdf$source';
+    } else {
+      final externalId = book['externalLibraryId'];
+      final path = book['path'];
+      final filePath = book['filePath'];
+      final categoryId = book['categoryId'];
+      final title = book['title'] ?? '';
+      final fileType = book['fileType'] ?? '';
+
+      if (externalId is String && externalId.isNotEmpty) {
+        base = 'external:$externalId$source';
+      } else if (path is String && path.isNotEmpty) {
+        base = 'file:$path$source';
+      } else if (filePath is String && filePath.isNotEmpty) {
+        base = 'filePath:$filePath$source';
+      } else if (categoryId != null) {
+        base = 'category:$categoryId|title:$title|type:$fileType$source';
+      } else {
+        base = 'title:$title$source';
+      }
+    }
+
+    final version = type == 'TextBook' ? book['versionTitle'] : null;
     return version == null ? base : '$base|version:$version';
   }
 
-  static String _bookmarkKey(Map<String, dynamic> m) =>
-      '${m['targetKind']}|${m['ref']}|${m['index']}|${m['isSearch']}|${_bookTitleOf(m)}';
+  static String _targetKindOf(Map<String, dynamic> m) =>
+      m['targetKind'] == 'commentators' ? 'commentators' : 'book';
+
+  static String _bookmarkKey(Map<String, dynamic> m) {
+    if (m['isSearch'] == true) return 'search:${m['ref']}';
+    return '${_bookIdentityOf(m)}|${m['index']}|${_targetKindOf(m)}';
+  }
 
   /// זהות רשומת היסטוריה: אחת לכל ספר וסוג יעד,
   /// כך שמיזוג משמר את מיקום הקריאה האחרון פר-ספר ולא כל ביקור.
   static String _historyKey(Map<String, dynamic> m) {
     if (m['isSearch'] == true) return 'search:${m['ref']}';
-    return '${m['targetKind']}:${_bookTitleOf(m)}';
+    return '${_targetKindOf(m)}:${_bookIdentityOf(m)}';
   }
 
   /// מיזוג הערות: איחוד לפי `note.id`, ה-`updatedAt` המאוחר מנצח.
