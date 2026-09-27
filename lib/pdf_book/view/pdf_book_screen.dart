@@ -3094,8 +3094,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
     try {
       if (!commit) {
-        final duration = _pageTurnMotion(
-          Duration(milliseconds: max(80, (250 * progress).round())),
+        final duration = Duration(
+          milliseconds: max(80, (250 * progress).round()),
         );
         await _pageTurnController.animateBack(
           0.0,
@@ -3107,12 +3107,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
       _lastInitiatedTargetPage = targetPage;
       final flingBoost = (velocity / 3000).clamp(0.0, 1.0);
-      final duration = _pageTurnMotion(
-        Duration(
-          milliseconds: max(
-            100,
-            (420 * (1.0 - progress) * (1.0 - 0.5 * flingBoost)).round(),
-          ),
+      final duration = Duration(
+        milliseconds: max(
+          100,
+          (420 * (1.0 - progress) * (1.0 - 0.5 * flingBoost)).round(),
         ),
       );
 
@@ -3553,11 +3551,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _inFlightAnimationTarget = null;
   }
 
-  /// "הפחת אנימציות" של מערכת ההפעלה: הדפדוף מתחלף בבת אחת. שכבת הצילום
-  /// נשארת, כדי שלא יוצגו אריחים לבנים עד שהכפולה החדשה מרונדרת.
-  Duration _pageTurnMotion(Duration duration) =>
-      MediaQuery.disableAnimationsOf(context) ? Duration.zero : duration;
-
   Future<void> _animateBookPageTurn({
     required int targetPage,
     required _BookPageTurnDirection direction,
@@ -3649,8 +3642,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         if (!mounted) return;
       }
       final hasCachedTarget = _spreadCache.containsKey(targetSpreadStartPage);
-      _pageTurnController.duration = _pageTurnMotion(
-        pdfQueuedPageTurnDuration(_kPageTurnDuration, _pendingPageTurns.length),
+      _pageTurnController.duration = pdfQueuedPageTurnDuration(
+        _kPageTurnDuration,
+        _pendingPageTurns.length,
       );
 
       if (hasCachedTarget) {
