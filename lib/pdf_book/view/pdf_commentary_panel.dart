@@ -387,6 +387,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
+  final Set<Completer<void>> _pendingPositionWaits = {};
   final ScrollOffsetController _scrollOffsetController =
       ScrollOffsetController();
   final FocusNode _commentaryFocusNode = FocusNode();
@@ -702,6 +703,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   @override
   void dispose() {
+    for (final wait in _pendingPositionWaits.toList()) {
+      if (!wait.isCompleted) wait.complete();
+    }
     _hiddenSelectionSubscription?.cancel();
     _settingsSyncSubscription?.cancel();
     _searchUpdateDebounce?.cancel();
@@ -1655,8 +1659,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             index: targetGroupIndex,
             alignment: 0.05,
           );
+          await _waitForGroupPosition(targetGroupIndex);
         }
-        await Future.delayed(const Duration(milliseconds: 350));
         if (!mounted) return;
       }
 
@@ -1675,6 +1679,28 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         }
       }
     });
+  }
+
+  Future<void> _waitForGroupPosition(int index) async {
+    bool isVisible() => _itemPositionsListener.itemPositions.value.any(
+      (position) => position.index == index,
+    );
+    if (!mounted || isVisible()) return;
+
+    final wait = Completer<void>();
+    void onPositionsChanged() {
+      if (!wait.isCompleted && (!mounted || isVisible())) wait.complete();
+    }
+
+    _pendingPositionWaits.add(wait);
+    _itemPositionsListener.itemPositions.addListener(onPositionsChanged);
+    onPositionsChanged();
+    try {
+      await wait.future;
+    } finally {
+      _itemPositionsListener.itemPositions.removeListener(onPositionsChanged);
+      _pendingPositionWaits.remove(wait);
+    }
   }
 
   Widget _buildCommentaryGroupTile(CommentaryGroup group) {
