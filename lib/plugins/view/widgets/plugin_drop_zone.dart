@@ -87,7 +87,9 @@ class _PluginDropZoneState extends State<PluginDropZone> {
     // ההתקנה פותחת דיאלוג הרשאות אחד — קבצים נוספים היו מתנגשים בו.
     if (paths.length > 1) UiSnack.show(PluginMessages.dropSinglePluginOnly);
     if (!mounted) return;
-    context.read<PluginSystemBloc>().add(InstallPluginRequested(paths.first));
+    context.read<PluginSystemBloc>().add(
+      InstallPluginRequested(paths.first, isUserInitiated: true),
+    );
   }
 
   @override

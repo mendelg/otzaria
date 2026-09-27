@@ -19,10 +19,16 @@ class SeedBundledPlugins extends PluginSystemEvent {
 class InstallPluginRequested extends PluginSystemEvent {
   final String archivePath;
   final bool forceOverwrite;
-  const InstallPluginRequested(this.archivePath, {this.forceOverwrite = false});
+  final bool isUserInitiated;
+
+  const InstallPluginRequested(
+    this.archivePath, {
+    this.forceOverwrite = false,
+    this.isUserInitiated = false,
+  });
 
   @override
-  List<Object?> get props => [archivePath, forceOverwrite];
+  List<Object?> get props => [archivePath, forceOverwrite, isUserInitiated];
 }
 
 class InstallRemotePluginRequested extends PluginSystemEvent {

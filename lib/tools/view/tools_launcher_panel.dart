@@ -255,7 +255,9 @@ class _ToolsLauncherPanelState extends State<ToolsLauncherPanel> {
     );
     final path = result?.path;
     if (path == null || !mounted) return;
-    context.read<PluginSystemBloc>().add(InstallPluginRequested(path));
+    context.read<PluginSystemBloc>().add(
+      InstallPluginRequested(path, isUserInitiated: true),
+    );
   }
 
   Future<void> _loadDevPlugin() async {

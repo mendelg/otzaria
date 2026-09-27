@@ -383,7 +383,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
           previousAllowOrderBeforeBuiltInsGranted:
               prepareInfo.previousAllowOrderBeforeBuiltInsGranted,
           previousGrantedPermissions: prepareInfo.previousGrantedPermissions,
-          isUserInitiated: true,
+          isUserInitiated: event.isUserInitiated,
         ),
       );
     } on PluginOverwriteException catch (e) {
@@ -392,6 +392,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
           archivePath: event.archivePath,
           pluginName: e.pluginName,
           version: e.version,
+          isUserInitiated: event.isUserInitiated,
         ),
       );
     } catch (e) {

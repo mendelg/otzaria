@@ -183,6 +183,7 @@ void main() {
     expect(pluginBloc.added, hasLength(1));
     final event = pluginBloc.added.single as InstallPluginRequested;
     expect(event.archivePath, 'C:/x.otzplugin');
+    expect(event.isUserInitiated, isTrue);
   });
 
   testWidgets('שחרור מחוץ לאזור אינו מבקש התקנה', (tester) async {

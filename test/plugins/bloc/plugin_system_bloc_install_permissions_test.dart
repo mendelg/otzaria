@@ -39,7 +39,7 @@ PluginManifest _manifest() => PluginManifest.fromJson({
 
 void main() {
   test(
-    'InstallPluginRequested מעביר את החלטות ההרשאה הקודמות אל ה-state',
+    'InstallPluginRequested מעביר הרשאות קודמות ומקור יוזמה אל ה-state',
     () async {
       const previousGrants = {'app.info.read': false};
       final bloc = PluginSystemBloc(
@@ -65,6 +65,30 @@ void main() {
           (await pending) as PluginSystemInstallRequiresPermissions;
       expect(requiresPermissions.previousVersion, '1.0.0');
       expect(requiresPermissions.previousGrantedPermissions, previousGrants);
+      expect(requiresPermissions.isUserInitiated, isFalse);
     },
   );
+
+  test('שומר התקנה יזומה במסלול התקנת קובץ', () async {
+    final bloc = PluginSystemBloc(
+      repository: _FakeRepo(),
+      installerService: _StubInstaller(
+        PreparedInstall(_manifest(), '/tmp/staged', false),
+      ),
+    );
+    addTearDown(bloc.close);
+
+    final pending = bloc.stream.firstWhere(
+      (s) => s is PluginSystemInstallRequiresPermissions,
+    );
+    bloc.add(
+      const InstallPluginRequested(
+        '/tmp/plugin.otzplugin',
+        isUserInitiated: true,
+      ),
+    );
+
+    final state = (await pending) as PluginSystemInstallRequiresPermissions;
+    expect(state.isUserInitiated, isTrue);
+  });
 }

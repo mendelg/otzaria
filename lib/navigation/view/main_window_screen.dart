@@ -1386,7 +1386,11 @@ class MainWindowScreenState extends State<MainWindowScreen>
       );
       if (value == true) {
         bloc.add(
-          InstallPluginRequested(state.archivePath, forceOverwrite: true),
+          InstallPluginRequested(
+            state.archivePath,
+            forceOverwrite: true,
+            isUserInitiated: state.isUserInitiated,
+          ),
         );
       } else {
         bloc.add(LoadPlugins());

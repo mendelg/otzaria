@@ -57,7 +57,9 @@ class _PluginSidePanelState extends State<PluginSidePanel> {
     );
     final path = result?.path;
     if (path != null && context.mounted) {
-      context.read<PluginSystemBloc>().add(InstallPluginRequested(path));
+      context.read<PluginSystemBloc>().add(
+        InstallPluginRequested(path, isUserInitiated: true),
+      );
     }
   }
 

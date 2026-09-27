@@ -56,15 +56,22 @@ class PluginSystemOverwriteRequired extends PluginSystemState {
   final String archivePath;
   final String pluginName;
   final String version;
+  final bool isUserInitiated;
 
   const PluginSystemOverwriteRequired({
     required this.archivePath,
     required this.pluginName,
     required this.version,
+    this.isUserInitiated = false,
   });
 
   @override
-  List<Object?> get props => [archivePath, pluginName, version];
+  List<Object?> get props => [
+    archivePath,
+    pluginName,
+    version,
+    isUserInitiated,
+  ];
 }
 
 /// אחרי התקנה שהושלמה: נמצאו תוספים מותקנים אחרים בעלי אותו שם אך מזהה שונה
