@@ -56,15 +56,22 @@ class PluginSystemOverwriteRequired extends PluginSystemState {
   final String archivePath;
   final String pluginName;
   final String version;
+  final bool isUserInitiated;
 
   const PluginSystemOverwriteRequired({
     required this.archivePath,
     required this.pluginName,
     required this.version,
+    this.isUserInitiated = false,
   });
 
   @override
-  List<Object?> get props => [archivePath, pluginName, version];
+  List<Object?> get props => [
+    archivePath,
+    pluginName,
+    version,
+    isUserInitiated,
+  ];
 }
 
 /// אחרי התקנה שהושלמה: נמצאו תוספים מותקנים אחרים בעלי אותו שם אך מזהה שונה
@@ -138,6 +145,9 @@ class PluginSystemInstallRequiresPermissions extends PluginSystemState {
   final Map<String, bool> previousGrantedPermissions;
   final PluginInstallReportContext? reportContext;
 
+  /// ההתקנה נדרשה מממשק התוכנה עצמו ולא מתוסף או מקישור חיצוני.
+  final bool isUserInitiated;
+
   const PluginSystemInstallRequiresPermissions({
     required this.manifest,
     required this.tempDirPath,
@@ -145,6 +155,7 @@ class PluginSystemInstallRequiresPermissions extends PluginSystemState {
     this.previousAllowOrderBeforeBuiltInsGranted,
     this.previousGrantedPermissions = const {},
     this.reportContext,
+    this.isUserInitiated = false,
   });
 
   bool get isUpdate => previousVersion != null;
@@ -158,5 +169,6 @@ class PluginSystemInstallRequiresPermissions extends PluginSystemState {
     previousGrantedPermissions,
     reportContext?.token,
     reportContext?.callbackUrl,
+    isUserInitiated,
   ];
 }
