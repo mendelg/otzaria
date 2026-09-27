@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -43,6 +46,36 @@ List<TocEntry> _buildLargeToc({required int simanim, required int seifim}) {
     }
     return parent;
   });
+}
+
+/// ה-TOC האמיתי של "מיקרופדיה תלמודית" (ספר 7414): שורש, 600 ערכי רמה 2
+/// ותת-העץ המלא של הראשון, שנפתח כברירת מחדל.
+List<TocEntry> _loadMikropediaToc() {
+  final json =
+      jsonDecode(
+            File(
+              'test/fixtures/toc/mikropedia_talmudit_toc.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  final roots = <TocEntry>[];
+  final stack = <TocEntry>[];
+  for (final row in json['entries'] as List) {
+    final [int level, int line, String text] = row as List;
+    while (stack.isNotEmpty && stack.last.level >= level) {
+      stack.removeLast();
+    }
+    final parent = stack.isEmpty ? null : stack.last;
+    final entry = TocEntry(
+      text: text,
+      index: line,
+      level: level,
+      parent: parent,
+    );
+    (parent?.children ?? roots).add(entry);
+    stack.add(entry);
+  }
+  return roots;
 }
 
 TextBookLoaded _loadedState({
@@ -652,11 +685,8 @@ Future<void> main() async {
   testWidgets(
     'ניקוי חיפוש בין תזמון הגלילה לביצועה אינו זורק (מסלול שהוחלף)',
     (tester) async {
-      // ספר גדול (מסלול וירטואלי) שחיפוש מצמצם למסלול הרקורסיבי. הגלילה
-      // לפריט הפעיל מתוזמנת שני frames קדימה; ניקוי החיפוש בינתיים מחזיר
-      // את הרשימה הוירטואלית ובקר הגלילה של המסלול הרקורסיבי מתנתק, בעוד
-      // ה-GlobalKey של הפריט (משותף לשני המסלולים) עדיין מוצא הקשר חי.
-      // היעד קרוב לראש, כך שהרשימה הוירטואלית בונה אותו ומפתחו חי.
+      // הגלילה מתוזמנת במסלול הרקורסיבי, וניקוי החיפוש לפני ביצועה מחזיר את
+      // הרשימה הוירטואלית ומנתק את בקר הגלילה.
       final toc = List.generate(
         600,
         (i) => TocEntry(
@@ -875,6 +905,50 @@ Future<void> main() async {
       reason: 'setState בתחילת/סוף גלילה גורם לפריים ארוך שקוטע את האינרציה',
     );
   });
+
+  testWidgets(
+    'קפיצה לערך רחוק בספר גדול אינה בונה שורות כפולות (מיקרופדיה תלמודית)',
+    (tester) async {
+      final toc = _loadMikropediaToc();
+      // כמאה שורות מתחת לראש: רחוק מהתצוגה, אך בטווח ש-ScrollablePositionedList
+      // בונה בשתי הרשימות של מעבר הגלילה.
+      final target = toc.single.children[80];
+      final initial = _loadedState(toc: toc, visibleIndices: const [0]);
+      final bloc = _TestTextBookBloc(initial);
+      addTearDown(bloc.close);
+      final focusNode = FocusNode();
+      addTearDown(focusNode.dispose);
+
+      await tester.pumpWidget(
+        _wrap(
+          TocViewer(
+            scrollController: ItemScrollController(),
+            closeLeftPaneCallback: () {},
+            focusNode: focusNode,
+          ),
+          bloc,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ScrollablePositionedList), findsOneWidget);
+      expect(find.text(target.text), findsNothing);
+
+      bloc.emitState(initial.copyWith(visibleIndices: [target.index]));
+      await tester.pump();
+      for (var i = 0; i < 6; i++) {
+        tester.binding.scheduleFrame();
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // היעד מתחת לתצוגה - מובא לקצה התחתון (alignment 0.85), לא למרכז.
+      final list = tester.getRect(find.byType(ScrollablePositionedList));
+      final row = tester.getRect(find.text(target.text));
+      expect(row.top, greaterThan(list.top + list.height * 0.7));
+      expect(row.bottom, lessThanOrEqualTo(list.bottom));
+    },
+  );
 }
 
 /// השדה בלשונית הניווט סגור עד הלחיצה על אייקון החיפוש שבכותרת.

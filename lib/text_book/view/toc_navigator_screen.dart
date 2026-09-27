@@ -410,8 +410,8 @@ class _TocViewerState extends State<TocViewer>
     required bool isExpanded,
     bool isGroupStart = false,
     bool isGroupEnd = false,
+    bool keyed = true,
   }) {
-    final itemKey = _tocItemKeys.putIfAbsent(entry.index, () => GlobalKey());
     void navigateToEntry() => _navigateToLine(entry.index);
 
     // בזמן דפדוף בחיצים הסימון הוא של תוצאת הדפדוף, לא של מיקום הקריאה.
@@ -443,7 +443,14 @@ class _TocViewerState extends State<TocViewer>
     return NavTreeGroupCard(
       isGroupStart: isGroupStart,
       isGroupEnd: isGroupEnd,
-      child: KeyedSubtree(key: itemKey, child: tile),
+      // ScrollablePositionedList בונה אותה שורה פעמיים במעבר גלילה - GlobalKey
+      // אסור שם, והגלילה שם לפי אינדקס ממילא.
+      child: keyed
+          ? KeyedSubtree(
+              key: _tocItemKeys.putIfAbsent(entry.index, () => GlobalKey()),
+              child: tile,
+            )
+          : tile,
     );
   }
 
@@ -520,6 +527,7 @@ class _TocViewerState extends State<TocViewer>
           isExpanded: item.isExpanded,
           isGroupStart: index == 1,
           isGroupEnd: index == flat.length,
+          keyed: false,
         );
       },
       padding: kNavTreeListPadding,
