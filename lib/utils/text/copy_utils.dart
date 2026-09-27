@@ -107,9 +107,17 @@ class CopyUtils {
       final toc = await book.tableOfContents;
       if (toc.isEmpty) return '';
 
+      // בעץ עם דילוג ברמות (h4 אחרי h2) סדר ה-pre-order אינו לפי שורה.
+      final entries = flattenToc(toc)
+        ..sort(
+          (a, b) => a.index != b.index
+              ? a.index.compareTo(b.index)
+              : a.level.compareTo(b.level),
+        );
       final Map<int, String> lastByLevel = {};
-      for (final entry in toc) {
+      for (final entry in entries) {
         if (entry.index <= currentIndex) {
+          lastByLevel.removeWhere((level, _) => level > entry.level);
           if (entry.level <= 1) {
             continue; // רמה 1 = שם הספר, כבר מכוסה ע"י bookName
           }
@@ -279,8 +287,8 @@ class CopyUtils {
   //                 HELPERS - STRICT CONTENT PARSING
   // ------------------------------------------------------------
 
-  /// הלוגיקה החדשה: סורקים אחורה מהמיקום הנוכחי עד לתחילת הקובץ,
-  /// ואוספים את הכותרת האחרונה (הקרובה ביותר) מכל רמה.
+  /// סורקים אחורה מהמיקום הנוכחי ואוספים את שרשרת הכותרות שמעליו,
+  /// הקרובה ביותר מכל רמה.
   static String _extractPathFromContentStrict(
     List<String>? content,
     int currentIndex,
@@ -293,30 +301,19 @@ class CopyUtils {
 
     // סריקה מהמיקום הנוכחי אחורה עד להתחלה
     for (int i = currentIndex; i >= 0; i--) {
-      // עוצרים רק כשיש שרשרת רציפה מרמה 2 עד הרמה העמוקה שנמצאה
-      if (lastHeaderByLevel.isNotEmpty) {
-        final maxLevel = lastHeaderByLevel.keys.reduce(
-          (a, b) => a > b ? a : b,
-        );
-        bool hasContiguousChain = true;
-        for (int lvl = 2; lvl <= maxLevel; lvl++) {
-          if (!lastHeaderByLevel.containsKey(lvl)) {
-            hasContiguousChain = false;
-            break;
-          }
-        }
-        if (hasContiguousChain) break;
-      }
+      // רמה 2 היא הרדודה ביותר שנאספת, ואחריה אין עוד הורה.
+      if (lastHeaderByLevel.containsKey(2)) break;
 
       final line = content[i];
-      for (final match in hTag.allMatches(line)) {
+      for (final match in hTag.allMatches(line).toList().reversed) {
         try {
           final level = int.parse(match.group(1)!);
           if (level <= 1) continue; // רמה 1 = שם הספר, כבר מכוסה ע"י bookName
           final text = _cleanHtml(match.group(2)!);
 
-          // שומרים רק את הכותרת הראשונה שנמצאה עבור כל רמה (כי אנחנו הולכים אחורה)
-          if (!lastHeaderByLevel.containsKey(level) && text.isNotEmpty) {
+          // בסריקה אחורה רק כותרת רדודה מכל מה שנמצא היא הורה; עמוקה שייכת לקטע קודם.
+          final isAncestor = lastHeaderByLevel.keys.every((l) => level < l);
+          if (isAncestor && text.isNotEmpty) {
             lastHeaderByLevel[level] = text;
           }
         } catch (_) {
