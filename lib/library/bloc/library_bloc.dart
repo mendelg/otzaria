@@ -317,6 +317,9 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         state.copyWith(
           error: e.toString(),
           isLoading: false,
+          failedRefreshRequestIds: event.requestIds.isNotEmpty
+              ? event.requestIds
+              : null,
         ),
       );
     }

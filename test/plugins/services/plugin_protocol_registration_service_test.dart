@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:isolate';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/plugins/services/plugin_protocol_registration_service.dart';
 import 'package:win32_registry/win32_registry.dart';
@@ -212,6 +215,46 @@ void main() {
         PluginProtocolRegistrationService.buildOfficeTrustedProtocolKeys(),
       );
     });
+
+    test(
+      'writeWindowsRegistration כותב לרג\'יסטרי האמיתי מתוך Isolate.run',
+      () async {
+        final root =
+            'Software\\OtzariaTest_${DateTime.now().microsecondsSinceEpoch}';
+        const exePath = r'C:\Program Files\Otzaria\otzaria.exe';
+        try {
+          await Isolate.run(
+            () => PluginProtocolRegistrationService.writeWindowsRegistration(
+              exePath,
+              root: '$root\\',
+            ),
+          );
+
+          final classes = CURRENT_USER.open('$root\\Software\\Classes');
+          try {
+            for (final entry
+                in PluginProtocolRegistrationService.buildWindowsRegistrationEntries(
+                  exePath,
+                )) {
+              expect(
+                classes.getValue(entry.name, path: entry.subkey),
+                entry.value,
+                reason: '${entry.subkey} [${entry.name}]',
+              );
+            }
+          } finally {
+            classes.close();
+          }
+          for (final subkey
+              in PluginProtocolRegistrationService.buildOfficeTrustedProtocolKeys()) {
+            CURRENT_USER.open('$root\\$subkey').close();
+          }
+        } finally {
+          CURRENT_USER.removeSubkey(root);
+        }
+      },
+      skip: !Platform.isWindows,
+    );
 
     test('כשל הרשאה במפתח מדיניות אינו מפיל את הסימון כולו', () {
       final created = <String>[];

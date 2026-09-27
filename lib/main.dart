@@ -873,11 +873,8 @@ Future<void> _initializeRestartableRuntime() async {
     }),
   );
 
-  // גיבוי אוטומטי ורישום פרוטוקול אינם נחוצים להצגת ה-UI הראשי (טאבים,
-  // ספרים, ניווט). הם מועברים ל-unawaited כדי שלא יעכבו את ה-bootstrap —
-  // אחרת ב-Windows רישום הפרוטוקול לבדו מריץ 10 תת-תהליכי reg.exe סדרתית,
-  // מה שמוסיף כמה שניות עד שהטאבים השמורים נטענים. ראה
-  // _runDeferredAutoBackup ו-_runDeferredProtocolRegistration למטה.
+  // אינם נחוצים להצגת ה-UI הראשי. unawaited לבדו אינו דוחה: הקוד שעד ה-await
+  // הראשון בכל אחד מהם רץ כאן, ולכן עבודה סינכרונית חייבת לחכות לחשיפה בעצמה.
   unawaited(_runDeferredAutoBackup());
   unawaited(_runDeferredRestoreWindows());
   unawaited(_runDeferredProtocolRegistration());
@@ -1132,8 +1129,11 @@ Future<void> _syncExternalLinkIndex() async {
 }
 
 Future<void> _runDeferredProtocolRegistration() async {
-  // פר-תהליך: רישום ברג'יסטרי של המכונה, עשרה תת-תהליכי `reg.exe` בכל חלון.
+  // פר-תהליך: רישום ברג'יסטרי של המשתמש, שחלון משני היה חוזר עליו.
   if (WindowRole.isSecondary) return;
+  // הכתיבה עצמה ב-isolate; ההמתנה רק כדי שהפעלתו לא תתחרה בעלייה.
+  await _mainWindowRevealedCompleter.future;
+  await Future<void>.delayed(const Duration(seconds: 2));
   try {
     await PluginProtocolRegistrationService().ensureRegistered();
   } catch (error, stackTrace) {

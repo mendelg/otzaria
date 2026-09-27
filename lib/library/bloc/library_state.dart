@@ -28,6 +28,9 @@ class LibraryState extends Equatable {
   /// מתאפס אחרי כל copyWith.
   final Set<int>? completedRefreshRequestIds;
 
+  /// מזהי בקשות הרענון שהסתיימו בכשל. מתאפס אחרי כל copyWith.
+  final Set<int>? failedRefreshRequestIds;
+
   /// נתיב HebrewBooks ששונה. מתאפס אחרי כל copyWith.
   final String? changedHebrewBooksPath;
 
@@ -48,6 +51,7 @@ class LibraryState extends Equatable {
     this.newBooksToIndex,
     this.changedBooksToIndex,
     this.completedRefreshRequestIds,
+    this.failedRefreshRequestIds,
     this.changedHebrewBooksPath,
     this.isSearching = false,
   });
@@ -56,6 +60,10 @@ class LibraryState extends Equatable {
   /// החלפת מיקום) במקומות שמציגים נתונים הנגזרים ממנה, כמו גרסת הספרייה.
   static bool reloadCompleted(LibraryState previous, LibraryState current) =>
       previous.isLoading && !current.isLoading && current.library != null;
+
+  static bool refreshRequestSettled(LibraryState state, int requestId) =>
+      (state.completedRefreshRequestIds?.contains(requestId) ?? false) ||
+      (state.failedRefreshRequestIds?.contains(requestId) ?? false);
 
   factory LibraryState.initial() {
     // יצירת ספרייה ראשונית עם כל הקטגוריות מה-DB
@@ -249,6 +257,7 @@ class LibraryState extends Equatable {
     List<Book>? newBooksToIndex,
     List<Book>? changedBooksToIndex,
     Set<int>? completedRefreshRequestIds,
+    Set<int>? failedRefreshRequestIds,
     String? changedHebrewBooksPath,
     bool? isSearching,
   }) {
@@ -270,6 +279,7 @@ class LibraryState extends Equatable {
       newBooksToIndex: newBooksToIndex, // null = אין ספרים לאינדוקס
       changedBooksToIndex: changedBooksToIndex, // null = אין ספרים שהשתנו
       completedRefreshRequestIds: completedRefreshRequestIds,
+      failedRefreshRequestIds: failedRefreshRequestIds,
       changedHebrewBooksPath: changedHebrewBooksPath,
       isSearching: isSearching ?? this.isSearching,
     );
@@ -290,6 +300,7 @@ class LibraryState extends Equatable {
     newBooksToIndex,
     changedBooksToIndex,
     completedRefreshRequestIds,
+    failedRefreshRequestIds,
     changedHebrewBooksPath,
     isSearching,
   ];

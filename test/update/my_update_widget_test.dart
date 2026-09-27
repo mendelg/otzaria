@@ -7,6 +7,34 @@ import 'package:otzaria/update/my_update_widget.dart';
 import 'package:updat/updat.dart';
 
 void main() {
+  group('InitialSoftwareCheck', () {
+    test('RestartWidget: בדיקה חדשה אינה יורשת תוצאה מהפעלה קודמת', () async {
+      final check = InitialSoftwareCheck();
+      final first = check.begin();
+      check.resolve(first, updateAvailable: true);
+      expect(await check.result, isTrue);
+
+      final second = check.begin();
+      var secondSettled = false;
+      check.result.then((_) => secondSettled = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(secondSettled, isFalse);
+      check.resolve(second, updateAvailable: false);
+      expect(await check.result, isFalse);
+    });
+
+    test('סיום מאוחר של בדיקה ישנה לא משנה בדיקה חדשה', () async {
+      final check = InitialSoftwareCheck();
+      final first = check.begin();
+      final oldResult = check.result;
+      final second = check.begin();
+      check.resolve(first, updateAvailable: true);
+      expect(await oldResult, isFalse);
+      check.resolve(second, updateAvailable: true);
+      expect(await check.result, isTrue);
+    });
+  });
+
   group('supportsManagedUpdatePlatform', () {
     test('supports desktop platforms only', () {
       expect(

@@ -54,6 +54,53 @@ void main() {
   tearDown(() => WindowRole.isSecondary = false);
 
   group('StartIndexing', () {
+    test('callback משלים גם כשאין ספרים ולא נפלט InProgress', () async {
+      final bloc = _FakeIndexingBloc();
+      final settled = Completer<void>();
+      bloc.add(
+        StartIndexing(
+          Library(categories: []),
+          onSettled: settled.complete,
+        ),
+      );
+      await settled.future.timeout(const Duration(seconds: 2));
+      expect(bloc.repository.indexAllCalls, 0);
+      await bloc.close();
+    });
+
+    test('callback שייך לאירוע המסוים וממתין לסיום העבודה', () async {
+      final repository = _FakeIndexingRepository()
+        ..finalizeGate = Completer<void>();
+      final bloc = _FakeIndexingBloc(repository);
+      final settled = Completer<void>();
+      bloc.add(
+        StartIndexing(
+          libraryWithBooks(),
+          onSettled: settled.complete,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(settled.isCompleted, isFalse);
+      repository.finalizeGate!.complete();
+      await settled.future.timeout(const Duration(seconds: 2));
+      await bloc.close();
+    });
+
+    test('מחסום התור נפתח רק אחרי עבודת האינדוקס שלפניו', () async {
+      final repository = _FakeIndexingRepository()
+        ..finalizeGate = Completer<void>();
+      final bloc = _FakeIndexingBloc(repository);
+      final barrier = Completer<void>();
+      bloc.add(StartIndexing(libraryWithBooks()));
+      bloc.add(IndexingWorkBarrier(onSettled: barrier.complete));
+      await Future<void>.delayed(Duration.zero);
+      expect(barrier.isCompleted, isFalse);
+      repository.finalizeGate!.complete();
+      await barrier.future.timeout(const Duration(seconds: 2));
+      expect(repository.indexAllCalls, 1);
+      await bloc.close();
+    });
+
     blocTest<IndexingBloc, IndexingState>(
       'ריצה נקייה מסתיימת ב-IndexingComplete נקי ואינה נרשמת ללוג',
       build: () {
@@ -182,6 +229,20 @@ void main() {
   });
 
   group('שחזור הגדרות הסתרה', () {
+    test('סיום ניקוי הסתרות ללא אינדוקס משחרר את ממתין העלייה', () async {
+      final bloc = _FakeIndexingBloc();
+      final settled = Completer<void>();
+      bloc.add(
+        ReconcileHiddenIndex(
+          Library(categories: []),
+          onSettled: settled.complete,
+        ),
+      );
+      await settled.future.timeout(const Duration(seconds: 2));
+      expect(bloc.repository.dropHiddenCalls, 1);
+      await bloc.close();
+    });
+
     final startupMessages = <String>[];
     blocTest<IndexingBloc, IndexingState>(
       'כשל ניקוי הסתרות בעלייה מדווח כשהחיפוש עלול לחשוף ספר',
@@ -449,6 +510,20 @@ void main() {
     tearDown(() {
       owner.dispose();
       WindowBus.namespace = 'otzaria.window';
+    });
+
+    test('callback מסיים גם כשהעבודה מועברת לחלון הראשי', () async {
+      final bloc = _FakeIndexingBloc();
+      final settled = Completer<void>();
+      bloc.add(
+        StartIndexing(
+          libraryWithBooks(),
+          onSettled: settled.complete,
+        ),
+      );
+      await settled.future.timeout(const Duration(seconds: 2));
+      expect(bloc.repository.indexAllCalls, 0);
+      await bloc.close();
     });
 
     blocTest<IndexingBloc, IndexingState>(
