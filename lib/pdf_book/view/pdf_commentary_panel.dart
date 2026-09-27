@@ -387,7 +387,11 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
-  final Set<Completer<void>> _pendingPositionWaits = {};
+  Completer<bool>? _pendingGroupPositionWait;
+  VoidCallback? _pendingGroupPositionListener;
+  int? _pendingGroupPositionIndex;
+  String? _pendingGroupPositionTitle;
+  int _searchScrollGeneration = 0;
   final ScrollOffsetController _scrollOffsetController =
       ScrollOffsetController();
   final FocusNode _commentaryFocusNode = FocusNode();
@@ -687,6 +691,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       _lastResolvedGroups = null;
       _orderedLinks = [];
       _orderedGroups = [];
+      _cancelPendingGroupPositionWait();
       _itemKeys.clear();
       _commentatorGroups = [];
       _loadCommentatorGroups();
@@ -703,9 +708,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   @override
   void dispose() {
-    for (final wait in _pendingPositionWaits.toList()) {
-      if (!wait.isCompleted) wait.complete();
-    }
+    _cancelPendingGroupPositionWait();
     _hiddenSelectionSubscription?.cancel();
     _settingsSyncSubscription?.cancel();
     _searchUpdateDebounce?.cancel();
@@ -752,6 +755,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     if (isFirstRange) return;
     _orderedLinks = [];
     _orderedGroups = [];
+    _cancelPendingGroupPositionWait();
     _totalSearchResults = 0;
     _currentSearchIndex = 0;
     _searchResultsPerLink.clear();
@@ -1367,6 +1371,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   Widget _buildCommentariesView() {
     if (_showFilterTab) {
+      _cancelPendingGroupPositionWait();
       return _buildCommentatorsFilter();
     }
 
@@ -1384,6 +1389,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   Widget _buildCommentariesListContent() {
     final visibleContent = _getVisibleContent();
     if (visibleContent == null) {
+      _cancelPendingGroupPositionWait();
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -1399,6 +1405,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     }
 
     if (visibleContent.commentaryLinks.isEmpty) {
+      _cancelPendingGroupPositionWait();
       if (widget.linksLoading) {
         return Center(
           child: Padding(
@@ -1463,6 +1470,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             snapshot.connectionState == ConnectionState.done && snapshot.hasData
             ? snapshot.data
             : null;
+        if (currentGroups == null) _cancelPendingGroupPositionWait();
         final sortedGroups = currentGroups ?? _lastResolvedGroups;
         if (sortedGroups == null) {
           return const Center(child: CircularProgressIndicator());
@@ -1470,6 +1478,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         if (currentGroups != null) {
           _lastResolvedGroups = currentGroups;
           _orderedGroups = currentGroups;
+          _cancelPendingWaitIfGroupChanged();
         }
 
         // Rebuild _orderedLinks based on groups
@@ -1583,6 +1592,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   }
 
   void _scrollToSearchResult() {
+    final generation = ++_searchScrollGeneration;
+    _cancelPendingGroupPositionWait();
     if (_totalSearchResults == 0 ||
         _orderedLinks.isEmpty ||
         !_itemScrollController.isAttached) {
@@ -1624,7 +1635,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     if (targetGroupIndex == -1 || targetGroup == null) return;
 
     // 3. מבטיח שה-ExpansionTile של הקבוצה פתוח
-    final groupKey = targetGroup.bookTitle;
+    final groupTitle = targetGroup.bookTitle;
+    final groupKey = groupTitle;
     final bool isCurrentlyExpanded = _expansionStates[groupKey] ?? _allExpanded;
 
     if (!isCurrentlyExpanded) {
@@ -1635,11 +1647,11 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
     // 4. ביצוע הגלילה
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted) return;
+      if (!mounted || generation != _searchScrollGeneration) return;
 
       if (!isCurrentlyExpanded) {
         await Future.delayed(const Duration(milliseconds: 200));
-        if (!mounted) return;
+        if (!mounted || generation != _searchScrollGeneration) return;
       }
 
       final linkKey = _getLinkKey(targetLink!);
@@ -1659,9 +1671,14 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             index: targetGroupIndex,
             alignment: 0.05,
           );
-          await _waitForGroupPosition(targetGroupIndex);
+          final reachedTarget = await _waitForGroupPosition(
+            targetGroupIndex,
+            groupTitle,
+            generation,
+          );
+          if (!reachedTarget) return;
         }
-        if (!mounted) return;
+        if (!mounted || generation != _searchScrollGeneration) return;
       }
 
       final BuildContext? ctx = itemKey?.currentContext;
@@ -1681,26 +1698,73 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     });
   }
 
-  Future<void> _waitForGroupPosition(int index) async {
+  Future<bool> _waitForGroupPosition(
+    int index,
+    String groupTitle,
+    int generation,
+  ) async {
     bool isVisible() => _itemPositionsListener.itemPositions.value.any(
       (position) => position.index == index,
     );
-    if (!mounted || isVisible()) return;
+    bool isTargetGroupCurrent() =>
+        index < _orderedGroups.length &&
+        _orderedGroups[index].bookTitle == groupTitle;
+    if (!mounted || generation != _searchScrollGeneration) return false;
+    if (!isTargetGroupCurrent()) return false;
+    if (isVisible()) return true;
 
-    final wait = Completer<void>();
+    final wait = Completer<bool>();
     void onPositionsChanged() {
-      if (!wait.isCompleted && (!mounted || isVisible())) wait.complete();
+      if (wait.isCompleted) return;
+      if (!mounted ||
+          generation != _searchScrollGeneration ||
+          !isTargetGroupCurrent()) {
+        wait.complete(false);
+      } else if (isVisible()) {
+        wait.complete(true);
+      }
     }
 
-    _pendingPositionWaits.add(wait);
+    _pendingGroupPositionWait = wait;
+    _pendingGroupPositionListener = onPositionsChanged;
+    _pendingGroupPositionIndex = index;
+    _pendingGroupPositionTitle = groupTitle;
     _itemPositionsListener.itemPositions.addListener(onPositionsChanged);
     onPositionsChanged();
     try {
-      await wait.future;
+      return await wait.future;
     } finally {
       _itemPositionsListener.itemPositions.removeListener(onPositionsChanged);
-      _pendingPositionWaits.remove(wait);
+      if (identical(_pendingGroupPositionWait, wait)) {
+        _pendingGroupPositionWait = null;
+        _pendingGroupPositionListener = null;
+        _pendingGroupPositionIndex = null;
+        _pendingGroupPositionTitle = null;
+      }
     }
+  }
+
+  void _cancelPendingWaitIfGroupChanged() {
+    final index = _pendingGroupPositionIndex;
+    final title = _pendingGroupPositionTitle;
+    if (index == null || title == null) return;
+    if (index >= _orderedGroups.length ||
+        _orderedGroups[index].bookTitle != title) {
+      _cancelPendingGroupPositionWait();
+    }
+  }
+
+  void _cancelPendingGroupPositionWait() {
+    final listener = _pendingGroupPositionListener;
+    if (listener != null) {
+      _itemPositionsListener.itemPositions.removeListener(listener);
+    }
+    final wait = _pendingGroupPositionWait;
+    _pendingGroupPositionWait = null;
+    _pendingGroupPositionListener = null;
+    _pendingGroupPositionIndex = null;
+    _pendingGroupPositionTitle = null;
+    if (wait != null && !wait.isCompleted) wait.complete(false);
   }
 
   Widget _buildCommentaryGroupTile(CommentaryGroup group) {

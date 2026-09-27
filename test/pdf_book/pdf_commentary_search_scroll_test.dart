@@ -88,12 +88,21 @@ Future<void> main() async {
       await tester.pumpAndSettle();
 
       // התוצאה ה-30 נמצאת בקבוצה רחוקה מהמסך שעוד לא נבנתה.
-      final next = find.byIcon(FluentIcons.chevron_down_24_regular);
-      for (var i = 0; i < 29; i++) {
-        await tester.tap(next);
-        await tester.pump(const Duration(milliseconds: 100));
+      final nextButton = tester.widget<IconButton>(
+        find
+            .ancestor(
+              of: find.byIcon(FluentIcons.chevron_down_24_regular),
+              matching: find.byType(IconButton),
+            )
+            .first,
+      );
+      final next = nextButton.onPressed!;
+      for (var i = 0; i < 28; i++) {
+        next();
       }
-      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      // היעד הבא מחליף את jumpTo בזמן שהקבוצה הקודמת עדיין נבנית.
+      next();
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
