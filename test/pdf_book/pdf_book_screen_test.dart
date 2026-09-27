@@ -98,6 +98,35 @@ void main() {
     });
   });
 
+  group('pdfQueuedPageTurnDuration', () {
+    const single = Duration(milliseconds: 500);
+
+    test('בלי תור — משך דפדוף מלא', () {
+      expect(pdfQueuedPageTurnDuration(single, 0), single);
+    });
+
+    test('דפדופים ממתינים חולקים את משך הדפדוף הבודד', () {
+      expect(
+        pdfQueuedPageTurnDuration(single, 4),
+        const Duration(milliseconds: 100),
+      );
+      // ארבעה ממתינים: 125+167+250+500 ≈ 1 שנ' במקום 2 שנ' בקצב מלא.
+      final backlog = [3, 2, 1, 0].fold<Duration>(
+        Duration.zero,
+        (sum, pending) => sum + pdfQueuedPageTurnDuration(single, pending),
+      );
+      expect(backlog.inMilliseconds, lessThan(4 * single.inMilliseconds));
+      expect(
+        pdfQueuedPageTurnDuration(single, 3),
+        lessThan(pdfQueuedPageTurnDuration(single, 1)),
+      );
+    });
+
+    test('ערך שלילי מטופל כתור ריק', () {
+      expect(pdfQueuedPageTurnDuration(single, -2), single);
+    });
+  });
+
   group('shouldDropPendingPageTurns', () {
     test('מחזירה true כשהתור מכיל דפדוף בכיוון ההפוך', () {
       expect(
@@ -658,8 +687,9 @@ void main() {
 
     test('פעולת "העתקה" מנוטרלת כשהמסמך אוסר העתקה', () {
       expect(
-        copyActionOf(buildMenu(hasTextSelection: true, canCopySelection: false))
-            .enabled,
+        copyActionOf(
+          buildMenu(hasTextSelection: true, canCopySelection: false),
+        ).enabled,
         isFalse,
       );
     });

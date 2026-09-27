@@ -341,6 +341,12 @@ bool shouldDropPendingPageTurns<T>({
   return pendingDirections.any((d) => d != incomingDirection);
 }
 
+/// משך דפדוף כשממתינים [pendingTurns] נוספים בתור: 1/(n+1) מהמשך הבודד, כך
+/// שתור של לחיצות מהירות מתקצר ככל שהוא ארוך יותר.
+@visibleForTesting
+Duration pdfQueuedPageTurnDuration(Duration single, int pendingTurns) =>
+    Duration(microseconds: single.inMicroseconds ~/ (max(0, pendingTurns) + 1));
+
 /// מחזירה את מספר העמוד הנוכחי של ה-controller רק אם הוא מחובר ומוכן.
 ///
 /// [isReady] - האם ה-controller מחובר ל-PdfViewer (`controller.isReady`).
@@ -774,7 +780,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   // page.render() in the background and composited on-demand into a
   // viewport-sized ui.Image when a page-turn fires.
   final Map<int, _PdfSpreadCacheEntry> _spreadCache = {};
-  final Set<int> _spreadRenderInProgress = {};
+
+  /// רינדור כפולה שכבר רץ — דפדוף שממתין לאותה כפולה מצטרף אליו במקום לוותר.
+  final Map<int, Future<void>> _spreadRenders = {};
   final Map<int, PdfPageRenderCancellationToken> _spreadCancellationTokens = {};
   int? _lastPrerenderTriggeredSpread;
 
@@ -787,6 +795,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   /// כפולות רחוקות מהנוכחית מעבר לטווח הזה לא מרונדרות ומפונות מהמטמון.
   /// בעמודים: ±כפולה אחת — בדיוק מה ש-[_schedulePrerenderForAdjacentSpreads] מרנדר.
   static const int _kSpreadKeepRange = 2;
+  static const Duration _kPageTurnDuration = Duration(milliseconds: 500);
+
+  /// כיוון הדפדוף האחרון — קובע איזו כפולה שכנה תרונדר ראשונה.
+  _BookPageTurnDirection _lastTurnDirection = _BookPageTurnDirection.next;
   int _spreadCacheGeneration = 0;
 
   // Tracks the most recent page-turn target we *initiated* (animation started
@@ -989,7 +1001,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
     _pageTurnController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: _kPageTurnDuration,
     );
     if (widget.tab.pageNumber < 1) {
       widget.tab.pageNumber = 1;
@@ -2727,7 +2739,11 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
-  Future<void> _goToPageWithSpreadLock(int pageNumber) async {
+  /// [duration] — Duration.zero מתחת לשכבת הדפדוף: שם האנימציה מוסתרת, ורק מעכבת.
+  Future<void> _goToPageWithSpreadLock(
+    int pageNumber, {
+    Duration duration = const Duration(milliseconds: 200),
+  }) async {
     final controller = widget.tab.pdfViewerController;
     if (!controller.isReady) return;
     final totalPages = controller.pageCount;
@@ -2776,6 +2792,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                 controller: controller,
                 spreadStartPage: _lockedSpreadStartPage!,
               ),
+              duration: duration,
             )
             .timeout(const Duration(seconds: 3), onTimeout: () {});
         if (!_pdfViewFocusNode.hasFocus) {
@@ -2962,6 +2979,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
     _isPageTurnInProgress = true;
     _isInteractivePageTurn = true;
+    _lastTurnDirection = direction;
     final token = ++_interactiveTurnToken;
     _interactiveDirection = direction;
     _interactiveTargetPage = targetPage;
@@ -2993,6 +3011,11 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     });
 
     final targetSpreadStartPage = _spreadStartPageFor(targetPage);
+    // הרינדור רץ בזמן שהאצבע גוררת, כך שבשחרור היעד כבר מוכן ברוב המקרים.
+    if (!_spreadCache.containsKey(targetSpreadStartPage)) {
+      await _renderSpreadPagesIntoCache(targetSpreadStartPage);
+      if (!mounted || token != _interactiveTurnToken) return;
+    }
     if (_spreadCache.containsKey(targetSpreadStartPage)) {
       final composed = await _composeCachedSpreadSnapshot(
         targetSpreadStartPage,
@@ -3066,6 +3089,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       if (_pageTurnTargetSnapshot != null) {
         final navigationFuture = _goToPageWithSpreadLock(
           targetPage,
+          duration: Duration.zero,
         ).catchError((Object _) {});
         await _pageTurnController.animateTo(
           1.0,
@@ -3074,7 +3098,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         );
         await navigationFuture;
       } else {
-        await _goToPageWithSpreadLock(targetPage);
+        await _goToPageWithSpreadLock(targetPage, duration: Duration.zero);
         if (!mounted) return;
         await Future<void>.delayed(const Duration(milliseconds: 90));
         if (!mounted) return;
@@ -3132,19 +3156,28 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   }
 
   /// Renders the pages of [spreadStartPage] via pdfrx and stores the rendered
-  /// images in the cache. Safe to call repeatedly: returns immediately if the
-  /// spread is already cached or being rendered.
-  Future<void> _renderSpreadPagesIntoCache(int spreadStartPage) async {
-    if (_isSpreadCachedSharpEnough(spreadStartPage)) return;
-    if (_spreadRenderInProgress.contains(spreadStartPage)) return;
+  /// images in the cache. Safe to call repeatedly: completes at once if the
+  /// spread is already cached, and joins the render already running for it.
+  Future<void> _renderSpreadPagesIntoCache(int spreadStartPage) {
+    if (_isSpreadCachedSharpEnough(spreadStartPage)) return Future.value();
+    final running = _spreadRenders[spreadStartPage];
+    if (running != null) return running;
+    final render = _renderSpreadPagesNow(spreadStartPage);
+    _spreadRenders[spreadStartPage] = render;
+    render.whenComplete(() {
+      if (identical(_spreadRenders[spreadStartPage], render)) {
+        _spreadRenders.remove(spreadStartPage);
+      }
+    });
+    return render;
+  }
 
+  Future<void> _renderSpreadPagesNow(int spreadStartPage) async {
     final controller = widget.tab.pdfViewerController;
     if (!controller.isReady) return;
 
     final pageNumbers = _pagesInSpread(spreadStartPage);
     if (pageNumbers.isEmpty) return;
-
-    _spreadRenderInProgress.add(spreadStartPage);
 
     final pageImages = <int, ui.Image>{};
     final renderScale = _requiredSpreadRenderScale(controller);
@@ -3209,7 +3242,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       debugPrint('Spread pre-render failed for $spreadStartPage: $e\n$s');
       _disposeImageMap(pageImages);
     } finally {
-      _spreadRenderInProgress.remove(spreadStartPage);
       _spreadCancellationTokens.remove(spreadStartPage);
     }
   }
@@ -3413,17 +3445,27 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     }
     _lastPrerenderTriggeredSpread = currentSpread;
 
-    final totalPages = controller.pageCount;
-    final candidates = <int>[
+    // לפי תחילת הכפולה בפועל: עם עמוד שער ±2 מהכפולה הראשונה אינו תחילת כפולה.
+    final next = pdfNextSpreadFocusPage(
       currentSpread,
-      currentSpread + 2,
-      currentSpread - 2,
-    ];
-
-    for (final spread in candidates) {
-      if (spread >= 1 && spread <= totalPages) {
-        _enqueueSpreadPrerender(spread);
-      }
+      controller.pageCount,
+      coverPage: _hasCoverPage(),
+    );
+    final previousLastPage = pdfPreviousSpreadFocusPage(
+      currentSpread,
+      coverPage: _hasCoverPage(),
+    );
+    final previous = previousLastPage == null
+        ? null
+        : _spreadStartPageFor(previousLastPage);
+    // התור סדרתי: הכפולה בכיוון הקריאה קודמת. הנוכחית אחרונה — מקור הדפדוף
+    // נלכד מהצפיין החי, והיא נדרשת רק כיעד של דפדוף חזרה.
+    final forward = _lastTurnDirection == _BookPageTurnDirection.previous
+        ? previous
+        : next;
+    final backward = forward == next ? previous : next;
+    for (final spread in [forward, backward, currentSpread]) {
+      if (spread != null) _enqueueSpreadPrerender(spread);
     }
 
     _evictSpreadCacheFarFrom(currentSpread);
@@ -3480,7 +3522,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       token.cancel();
     }
     _spreadCancellationTokens.clear();
-    _spreadRenderInProgress.clear();
+    _spreadRenders.clear();
     _lastPrerenderTriggeredSpread = null;
     _lastInitiatedTargetPage = null;
     _inFlightAnimationTarget = null;
@@ -3520,6 +3562,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     // loading), goToPage hangs because normalization keeps fighting it.
     _isPageTurnInProgress = true;
     _inFlightAnimationTarget = targetPage;
+    _lastTurnDirection = direction;
 
     try {
       final currentSpreadViewportRect = _currentSpreadViewportRect(
@@ -3568,7 +3611,17 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       // navigation in parallel with the curl. The user gets an instant
       // page-turn with the new page fully visible from frame 1.
       final targetSpreadStartPage = _spreadStartPageFor(targetPage);
+      // בהחטאה מרנדרים את כפולת היעד עכשיו ומרכיבים ממנה: צילום הצפיין אחרי
+      // הניווט חיכה לקפיצה ולהשהיה, ועדיין תפס לעיתים אריחים לבנים.
+      if (!_spreadCache.containsKey(targetSpreadStartPage)) {
+        await _renderSpreadPagesIntoCache(targetSpreadStartPage);
+        if (!mounted) return;
+      }
       final hasCachedTarget = _spreadCache.containsKey(targetSpreadStartPage);
+      _pageTurnController.duration = pdfQueuedPageTurnDuration(
+        _kPageTurnDuration,
+        _pendingPageTurns.length,
+      );
 
       if (hasCachedTarget) {
         final composed = await _composeCachedSpreadSnapshot(
@@ -3598,14 +3651,14 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         // progress=1) until finally clears it, so the user sees no flash.
         final navigationFuture = _goToPageWithSpreadLock(
           targetPage,
+          duration: Duration.zero,
         ).catchError((Object _) {});
 
         await _pageTurnController.forward(from: 0);
         await navigationFuture;
       } else {
-        // Cache miss — fall back to sequential flow (the cost on first visit
-        // before pre-rendering completes for this spread).
-        await _goToPageWithSpreadLock(targetPage);
+        // הרינדור נכשל או בוטל — חוזרים לזרימה הסדרתית מהצפיין החי.
+        await _goToPageWithSpreadLock(targetPage, duration: Duration.zero);
 
         if (!mounted) return;
 
