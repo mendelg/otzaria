@@ -10,12 +10,20 @@ import 'dart:ui';
 /// מדווח את הקודם (שעדיין תופס נתח גדול מהחלון). מאחר שכל עמוד הוא יחידה
 /// נפרדת והעיגון הוא לראש הדף, העמוד הנוכחי הוא זה שקצהו העליון של החלון
 /// נופל בתוכו. מחזיר null אם אין עמודים.
+/// נקרא בכל פריים; העמודים מסודרים אנכית ולכן החיפוש בינארי.
 int? pdfTopmostVisiblePage(Rect visibleRect, List<Rect> pageRects) {
   if (pageRects.isEmpty) return null;
-  for (var i = 0; i < pageRects.length; i++) {
-    if (pageRects[i].bottom > visibleRect.top + 0.5) return i + 1;
+  final top = visibleRect.top + 0.5;
+  var low = 0, high = pageRects.length;
+  while (low < high) {
+    final mid = (low + high) >> 1;
+    if (pageRects[mid].bottom > top) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
   }
-  return pageRects.length;
+  return low < pageRects.length ? low + 1 : pageRects.length;
 }
 
 /// מחזיר את עמוד ההתחלה של הספירייד שמכיל את [pageNumber].

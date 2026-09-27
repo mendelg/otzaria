@@ -363,6 +363,26 @@ void main() {
     test('רשימת עמודים ריקה מחזירה null', () {
       expect(pdfTopmostVisiblePage(viewportAt(0), const []), isNull);
     });
+
+    test('ספר ארוך בגבהים משתנים — זהה לסריקה ליניארית בכל מיקום', () {
+      final rects = <Rect>[];
+      var y = 0.0;
+      for (var i = 0; i < 997; i++) {
+        final height = 500.0 + (i * 37) % 400;
+        rects.add(Rect.fromLTWH(0, y, 500, height));
+        y += height + 4;
+      }
+      int linear(double top) {
+        for (var i = 0; i < rects.length; i++) {
+          if (rects[i].bottom > top + 0.5) return i + 1;
+        }
+        return rects.length;
+      }
+
+      for (var top = -100.0; top < y + 100; top += 173) {
+        expect(pdfTopmostVisiblePage(viewportAt(top), rects), linear(top));
+      }
+    });
   });
 
   group('pdfCombineSpreadTitles', () {

@@ -153,6 +153,34 @@ class PdfBookSearchView extends StatefulWidget {
   static bool hasSearchableText(Iterable<String> pageTexts) =>
       pageTexts.any(_searchableLetter.hasMatch);
 
+  /// השורה בשכבת הטקסט שבה נמצאת ההתאמה — להצגה ברשימת התוצאות.
+  @visibleForTesting
+  static String matchLineSnippet(PdfPageTextRange match, String fallback) {
+    final text = match.pageText.fullText;
+    if (match.start < 0 || match.end > text.length) return fallback;
+    final lineStart = match.start == 0
+        ? 0
+        : text.lastIndexOf('\n', match.start - 1) + 1;
+    var lineEnd = text.indexOf('\n', match.end);
+    if (lineEnd < 0) lineEnd = text.length;
+    final line = text.substring(lineStart, lineEnd).trim();
+    return line.isEmpty ? fallback : line;
+  }
+
+  /// כמה מ-[previous] נשארות בראש [matches]: ה-searcher מודיע אחרי כל עמוד
+  /// עם רשימה מצטברת חדשה, ולכן ממפים רק את מה שנוסף; חיפוש חדש מחזיר 0.
+  @visibleForTesting
+  static int keptMatchCount(
+    List<PdfPageTextRange> previous,
+    List<PdfPageTextRange> matches,
+  ) {
+    if (previous.isEmpty || matches.length < previous.length) return 0;
+    final extendsPrevious =
+        identical(matches.first, previous.first) &&
+        identical(matches[previous.length - 1], previous.last);
+    return extendsPrevious ? previous.length : 0;
+  }
+
   /// העמודים שנדגמים לבדיקת קיום טקסט: העמוד שהמשתמש רואה ועוד שניים
   /// פרושׂים על הספר — עמוד בודד עלול להיות שער או לוח תמונות.
   @visibleForTesting
@@ -222,6 +250,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
   bool _isSearching = false;
   List<SearchResult> _searchResults = [];
+  List<PdfPageTextRange> _mappedMatches = const [];
 
   /// מוצגת במקום "אין תוצאות" הגנרי: כשל מנוע/FFI או ספר שאינו באינדקס.
   String? _searchErrorMessage;
@@ -411,25 +440,27 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
       if (mounted) {
         setState(() {
           final query = widget.searchController.text;
-          _searchResults =
-              widget.textSearcher.matches
-                  .map(
-                    (m) => SearchResult(
-                      id: BigInt.zero,
-                      title: widget.bookTitle ?? '',
-                      reference: '', // Populated by _pageTitles in build
-                      // Use query as text so it appears in the list and is highlighted.
-                      // Ideally we would fetch the surrounding text but that requires async page loading.
-                      text: query,
-                      segment: BigInt.from(m.pageNumber - 1),
-                      isPdf: true,
-                      filePath: widget.pdfFilePath ?? '',
-                      mergedCount: 1,
-                      merged: const [],
-                    ),
-                  )
-                  .toList()
-                ..sort((a, b) => a.segment.compareTo(b.segment));
+          final matches = widget.textSearcher.matches;
+          final keptCount = _searchResults.length == _mappedMatches.length
+              ? PdfBookSearchView.keptMatchCount(_mappedMatches, matches)
+              : 0;
+          _searchResults = [
+            ..._searchResults.take(keptCount),
+            for (var i = keptCount; i < matches.length; i++)
+              SearchResult(
+                // בחיפוש הפשוט: אינדקס ההתאמה ב-searcher, לניווט למקומה המדויק.
+                id: BigInt.from(i),
+                title: widget.bookTitle ?? '',
+                reference: '', // Populated by _pageTitles in build
+                text: PdfBookSearchView.matchLineSnippet(matches[i], query),
+                segment: BigInt.from(matches[i].pageNumber - 1),
+                isPdf: true,
+                filePath: widget.pdfFilePath ?? '',
+                mergedCount: 1,
+                merged: const [],
+              ),
+          ];
+          _mappedMatches = matches;
           _isSearching = widget.textSearcher.isSearching;
         });
         // גלילה לעמוד הנוכחי בסיום החיפוש — רק אם השאילתה הממתינה עדיין
@@ -496,7 +527,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
   Future<bool> _checkTextLayer(int generation) async {
     final pdfState = context.read<PdfBookBloc>().state;
     final pages = PdfBookSearchView.textLayerProbePages(
-      currentPage: pdfState is PdfBookLoaded ? pdfState.currentPageNumber : 1,
+      currentPage: pdfState is PdfBookLoaded ? _currentPage(pdfState) : 1,
       totalPages: pdfState is PdfBookLoaded ? pdfState.totalPages : 1,
     );
 
@@ -514,6 +545,19 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     return false;
   }
 
+  String? _resultCountString() {
+    if (_searchResults.isEmpty) return null;
+    final current = widget.textSearcher.currentIndex;
+    if (_isSimpleSearch && current != null && current < _searchResults.length) {
+      return 'תוצאה ${current + 1} מתוך ${_searchResults.length}';
+    }
+    return 'נמצאו ${_searchResults.length} תוצאות';
+  }
+
+  /// ‏currentPageNumber ב-state נקבע בפתיחה בלבד; העמוד המוצג בפועל נמצא בקונטרולר.
+  int _currentPage(PdfBookLoaded state) =>
+      widget.textSearcher.controller?.pageNumber ?? state.currentPageNumber;
+
   void _scheduleScrollToCurrentPage() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -526,7 +570,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
       final visualIdx = PdfBookSearchView.computeTargetVisualIndexForTesting(
         resultsPageNumbersSorted: resultsPageNumbers,
-        currentPage: pdfState.currentPageNumber,
+        currentPage: _currentPage(pdfState),
       );
 
       if (!_resultsScrollController.isAttached) return;
@@ -686,9 +730,11 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
         wholeWord: _wholeWord,
       );
       _lastPdfHighlightSource = literal?.source ?? query;
+      // שדה החיפוש כבר ממתין להפסקת ההקלדה; השהיית pdfrx הייתה מוסיפה עוד 500ms.
       widget.textSearcher.startTextSearch(
         literal?.regExp ?? query,
         goToFirstMatch: false,
+        searchImmediately: true,
       );
       return;
     }
@@ -788,11 +834,15 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
       searchController: widget.searchController,
       focusNode: widget.focusNode,
       progressWidget: _isSearching
-          ? const LinearProgressIndicator(minHeight: 4)
+          ? LinearProgressIndicator(
+              minHeight: 4,
+              // המנוע אינו מדווח התקדמות; החיפוש הפשוט עובר עמוד-עמוד.
+              value: _isSimpleSearch
+                  ? widget.textSearcher.searchProgress
+                  : null,
+            )
           : null,
-      resultCountString: _searchResults.isNotEmpty
-          ? 'נמצאו ${_searchResults.length} תוצאות'
-          : null,
+      resultCountString: _resultCountString(),
       resultsWidget: NavTreeFocusGroup(
         child: ScrollablePositionedList.builder(
           itemScrollController: _resultsScrollController,
@@ -829,12 +879,21 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
               isGroupStart: isGroupStart,
               isGroupEnd: isGroupEnd,
               child: SearchResultTile(
-                key: ValueKey('${result.segment}_${result.text.hashCode}'),
+                key: ValueKey(
+                  '${result.segment}_${result.id}_${result.text.hashCode}',
+                ),
                 result: result,
                 onTap: () async {
                   final pageNumber = _getPdfPageNumber(result);
                   final controller = widget.textSearcher.controller;
-                  if (controller != null &&
+                  final matchIndex = result.id.toInt();
+                  if (_isSimpleSearch &&
+                      matchIndex < widget.textSearcher.matches.length &&
+                      widget.textSearcher.matches[matchIndex].pageNumber ==
+                          pageNumber) {
+                    // גלילה למקום ההתאמה בעמוד וסימונה כהתאמה הנוכחית.
+                    await widget.textSearcher.goToMatchOfIndex(matchIndex);
+                  } else if (controller != null &&
                       controller.isReady &&
                       controller.layout.pageLayouts.isNotEmpty) {
                     final layout = controller.layout;

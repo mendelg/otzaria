@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/pdf_book/utils/pdf_color_filter.dart';
 
 /// היפוך הצבעים של ה-PDF חייב להיגזר מבהירות התמה בפועל: הדגל השמור
 /// `isDarkMode` נשאר על ערכו הישן במצב "מערכת", וה-PDF נתקע כהה (issue #1426).
@@ -23,9 +24,13 @@ void main() {
     const themeBrightness = 'Theme.of(context).brightness == Brightness.dark';
     var sites = 0;
     for (var i = 0; i < code.length; i++) {
-      if (!code[i].contains('BlendMode.difference')) continue;
+      final invertsColors =
+          code[i].contains('PdfDarkModeFilter(') ||
+          code[i].contains('PdfDarkModeFilter.invertColors');
+      if (!invertsColors) continue;
       sites++;
-      final window = code.sublist(i - 10 < 0 ? 0 : i - 10, i + 1).join('\n');
+      final end = i + 2 > code.length ? code.length : i + 2;
+      final window = code.sublist(i - 10 < 0 ? 0 : i - 10, end).join('\n');
       expect(
         window,
         contains(themeBrightness),
@@ -37,8 +42,10 @@ void main() {
 
   // issue #1419: בפריסה נעוצה אין קליפ סביב התוכן, והשכבה ההפוכה כיסתה בלבן את
   // הסרגל העליון.
-  test('ה-ColorFiltered של הצפיין עטוף ב-ClipRect', () {
-    final index = code.indexWhere((l) => l.contains('child: ColorFiltered('));
+  test('שכבת ההיפוך של הצפיין עטופה ב-ClipRect', () {
+    final index = code.indexWhere(
+      (l) => l.contains('child: PdfDarkModeFilter('),
+    );
     expect(index, greaterThan(0));
     expect(code[index - 1], contains('child: ClipRect('));
   });
@@ -46,8 +53,8 @@ void main() {
   testWidgets('ClipRect מונע מהשכבה ההפוכה לצבוע את מה שמעליה', (tester) async {
     Future<int> barPixel({required bool clip}) async {
       final key = GlobalKey();
-      Widget viewer = const ColorFiltered(
-        colorFilter: ColorFilter.mode(Colors.white, BlendMode.difference),
+      Widget viewer = const PdfDarkModeFilter(
+        inverted: true,
         child: ColoredBox(color: Color(0xFFDBDBDB), child: SizedBox.expand()),
       );
       if (clip) viewer = ClipRect(child: viewer);

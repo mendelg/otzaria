@@ -43,6 +43,20 @@ class OutlineView extends StatefulWidget {
   State<OutlineView> createState() => _OutlineViewState();
 }
 
+/// הסעיף העמוק ביותר שמתחיל בעמוד [page] או לפניו. סעיף בלי יעד מדולג, ולא עוצר
+/// את הסריקה של אחיו.
+@visibleForTesting
+PdfOutlineNode? pdfOutlineActiveNode(List<PdfOutlineNode> nodes, int page) {
+  PdfOutlineNode? bestMatch;
+  for (final node in nodes) {
+    final nodePage = node.dest?.pageNumber;
+    if (nodePage == null) continue;
+    if (nodePage > page) break;
+    bestMatch = pdfOutlineActiveNode(node.children, page) ?? node;
+  }
+  return bestMatch;
+}
+
 class _OutlineViewState extends State<OutlineView>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController searchController = TextEditingController();
@@ -51,6 +65,9 @@ class _OutlineViewState extends State<OutlineView>
   final Map<PdfOutlineNode, GlobalKey> _tocItemKeys = {};
   bool _isManuallyScrolling = false;
   int? _lastScrolledPage;
+
+  /// הסעיף שהעמוד הנוכחי נמצא בו — גם כשהעמוד אינו תחילת סעיף.
+  PdfOutlineNode? _activeNode;
   final Map<PdfOutlineNode, bool> _expanded = {};
   final Map<PdfOutlineNode, ExpansibleController> _controllers = {};
 
@@ -158,47 +175,31 @@ class _OutlineViewState extends State<OutlineView>
   }
 
   void _scrollToActiveItem() {
-    if (_isManuallyScrolling || !widget.isPaneOpen) return;
-    if (!widget.controller.isReady) return;
+    if (!widget.isPaneOpen || !widget.controller.isReady) return;
 
     final currentPage = widget.controller.pageNumber;
     if (currentPage == _lastScrolledPage) return;
 
-    PdfOutlineNode? activeNode;
+    final outline = widget.outline;
+    final activeNode = outline != null && currentPage != null
+        ? pdfOutlineActiveNode(outline, currentPage)
+        : null;
 
-    PdfOutlineNode? findClosestNode(List<PdfOutlineNode> nodes, int page) {
-      PdfOutlineNode? bestMatch;
-      for (final node in nodes) {
-        if (node.dest?.pageNumber != null && node.dest!.pageNumber <= page) {
-          bestMatch = node;
-          final childMatch = findClosestNode(node.children, page);
-          if (childMatch != null) {
-            bestMatch = childMatch;
-          }
-        } else {
-          break;
-        }
+    // בגלילה ידנית רק ההדגשה מתעדכנת; הגלילה האוטומטית תחכה לסיומה.
+    if (_isManuallyScrolling) {
+      if (!identical(activeNode, _activeNode) && mounted) {
+        setState(() => _activeNode = activeNode);
       }
-      return bestMatch;
-    }
-
-    if (widget.outline != null && currentPage != null) {
-      activeNode = findClosestNode(widget.outline!, currentPage);
-    }
-
-    if (activeNode != null && widget.outline != null) {
-      _ensureParentsOpen(widget.outline!, activeNode);
-    }
-
-    // קריאה ל-setState כדי לוודא שהפריט הנכון מודגש לפני הגלילה
-    if (mounted) {
-      setState(() {});
-    }
-
-    if (activeNode == null) {
-      _lastScrolledPage = currentPage;
       return;
     }
+
+    // מסומן מיד — אחרת כל עדכון של הקונטרולר חוזר על סריקת העץ וה-setState.
+    _lastScrolledPage = currentPage;
+    if (activeNode != null && outline != null) {
+      _ensureParentsOpen(outline, activeNode);
+    }
+    if (mounted) setState(() => _activeNode = activeNode);
+    if (activeNode == null) return;
 
     // נחכה פריים אחד כדי שה-setState יסיים וה-UI יתעדכן
     SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -246,8 +247,6 @@ class _OutlineViewState extends State<OutlineView>
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
-
-      _lastScrolledPage = currentPage;
     });
   }
 
@@ -393,9 +392,7 @@ class _OutlineViewState extends State<OutlineView>
       await widget.controller.goToPage(pageNumber: targetPage);
     }
 
-    final bool selected =
-        widget.controller.isReady &&
-        node.dest?.pageNumber == widget.controller.pageNumber;
+    final bool selected = identical(node, _activeNode);
 
     final hasChildren = node.children.isNotEmpty;
     final bool isExpanded = _expanded[node] ?? (level == 0 || isFirstChild);

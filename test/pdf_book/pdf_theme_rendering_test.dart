@@ -22,13 +22,8 @@ void main() {
           key: key,
           child: SizedBox.square(
             dimension: 24,
-            child: ColorFiltered(
-              colorFilter: ColorFilter.mode(
-                Colors.white,
-                brightness == Brightness.dark
-                    ? BlendMode.difference
-                    : BlendMode.dst,
-              ),
+            child: PdfDarkModeFilter(
+              inverted: brightness == Brightness.dark,
               child: Stack(
                 alignment: Alignment.topLeft,
                 fit: StackFit.expand,

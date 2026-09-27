@@ -40,6 +40,8 @@ import 'package:otzaria/pdf_book/bloc/pdf_book_bloc.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_event.dart' as pdf_events;
 import 'package:otzaria/pdf_book/bloc/pdf_book_state.dart';
 import 'package:otzaria/pdf_book/utils/pdf_spread_layout.dart';
+import 'package:otzaria/pdf_book/utils/pdf_render_scale.dart';
+import 'package:otzaria/pdf_book/utils/pdf_search_index_restorer.dart';
 import 'package:otzaria/pdf_book/utils/trackpad_axis_lock.dart';
 import 'package:otzaria/pdf_book/utils/trackpad_pan_recognizer.dart';
 import 'package:otzaria/widgets/misc/app_cursors.dart';
@@ -233,6 +235,30 @@ class PdfPaneToggleAnchor {
 }
 
 /// מחזיר את מדיניות שינוי גודל ה-PDF לפי מצב התצוגה.
+/// קנה המידה של תמונת התצוגה המקדימה לפי הזום הנוכחי; ראה [pdfPreviewRenderingScale].
+double pdfPreviewRenderingScaleFor(
+  BuildContext context,
+  PdfPage page,
+  PdfViewerController controller,
+  double estimatedScale,
+) {
+  final pageRect = controller.layout.pageLayouts[page.pageNumber - 1];
+  final displayScale = page.width > 0
+      ? controller.currentZoom *
+            MediaQuery.devicePixelRatioOf(context) *
+            pageRect.width /
+            page.width
+      : 0.0;
+  return pdfPreviewRenderingScale(
+    displayScale: displayScale,
+    threshold: estimatedScale,
+    pageWidth: page.width,
+    pageHeight: page.height,
+    // ברירת המחדל של onePassRenderingSizeThreshold ב-pdfrx.
+    sizeThreshold: 2000,
+  );
+}
+
 @visibleForTesting
 PdfViewerSizeDelegateProvider pdfSizeDelegateProviderForLayoutMode(
   PdfLayoutMode layoutMode,
@@ -555,8 +581,81 @@ PdfPageLayout buildBookViewPageLayout({
   );
 }
 
+/// יחס הפיקסלים של צילום הדפדוף: עד 1.6MP לכל החלון, בין 0.85 ל-1.35.
+@visibleForTesting
+double pdfSpreadSnapshotPixelRatio({
+  required Size viewSize,
+  required double devicePixelRatio,
+}) {
+  final viewportPixels = viewSize.width * viewSize.height;
+  const maxCapturePixels = 1600000.0;
+  final cappedPixelRatio = viewportPixels <= 0
+      ? 1.0
+      : sqrt(maxCapturePixels / viewportPixels);
+  return min(devicePixelRatio, min(1.35, cappedPixelRatio)).clamp(0.85, 1.35);
+}
+
+/// קנה המידה לרינדור עמוד לצילום הדפדוף: מה שהצילום מצייר בפועל (בתצוגת ספר
+/// מלבן העמוד = גודלו בנקודות), ולא יותר מ-1.5 — 2.0 הקריס מכונות חלשות.
+/// מעוגל למעלה לחזקת 2, כדי שזום בגלגלת לא ירנדר את הכפולות מחדש בכל צעד.
+@visibleForTesting
+double pdfSpreadPageRenderScale({
+  required double zoom,
+  required double snapshotPixelRatio,
+}) {
+  final needed = zoom * snapshotPixelRatio;
+  if (!needed.isFinite || needed <= 0) return 1.5;
+  return min(1.5, pow(2, (log(needed) / ln2).ceil()).toDouble());
+}
+
+/// מחזיר את אותו [PdfPageLayout] כל עוד מידות העמודים והפרמטרים לא השתנו —
+/// pdfrx קורא ל-layoutPages בכל בנייה, ומופע זהה מקצר אצלו את ההשוואה.
+@visibleForTesting
+class BookViewLayoutMemo {
+  PdfPageLayout? _layout;
+  List<double> _sizes = const [];
+  bool? _hasCover;
+  double? _verticalMargin;
+
+  PdfPageLayout layout(
+    List<PdfPage> pages, {
+    required bool hasCover,
+    required double verticalMargin,
+  }) {
+    final cached = _layout;
+    if (cached != null &&
+        hasCover == _hasCover &&
+        verticalMargin == _verticalMargin &&
+        _sameSizes(pages)) {
+      return cached;
+    }
+    _hasCover = hasCover;
+    _verticalMargin = verticalMargin;
+    _sizes = [
+      for (final page in pages) ...[page.width, page.height],
+    ];
+    return _layout = buildBookViewPageLayout(
+      pageSizes: [for (final page in pages) Size(page.width, page.height)],
+      hasCover: hasCover,
+      verticalMargin: verticalMargin,
+    );
+  }
+
+  bool _sameSizes(List<PdfPage> pages) {
+    if (_sizes.length != pages.length * 2) return false;
+    for (var i = 0; i < pages.length; i++) {
+      if (_sizes[i * 2] != pages[i].width ||
+          _sizes[i * 2 + 1] != pages[i].height) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
 class _PdfBookScreenState extends State<PdfBookScreen>
     with AutomaticKeepAliveClientMixin, TickerProviderStateMixin {
+  final _bookViewLayoutMemo = BookViewLayoutMemo();
   static const int _defaultPdfLineRange = 50;
 
   /// צל העמוד — מוגדר במפורש (ולא נשען על ברירת המחדל של pdfrx) כי הצילום
@@ -685,7 +784,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   final Set<int> _queuedSpreadPrerenders = {};
 
   /// כפולות רחוקות מהנוכחית מעבר לטווח הזה לא מרונדרות ומפונות מהמטמון.
-  static const int _kSpreadKeepRange = 4;
+  /// בעמודים: ±כפולה אחת — בדיוק מה ש-[_schedulePrerenderForAdjacentSpreads] מרנדר.
+  static const int _kSpreadKeepRange = 2;
+  int _spreadCacheGeneration = 0;
 
   // Tracks the most recent page-turn target we *initiated* (animation started
   // or queued). next/prev navigation reads this instead of
@@ -856,38 +957,24 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
-  int? _lastProcessedSearchSessionId;
+  late final PdfSearchIndexRestorer _searchIndexRestorer;
 
   void _onTextSearcherUpdated() {
-    String currentSearchTerm = widget.tab.searchController.text;
-    int? persistedIndexFromTab = widget.tab.pdfSearchCurrentMatchIndex;
+    final searcher = textSearcher;
+    widget.tab.searchText = widget.tab.searchController.text;
+    // matches היא רשימה בלתי-ניתנת-לשינוי שמוחלפת בכל עדכון; אין צורך בהעתקה.
+    // בלי setState: ה-searcher מודיע אחרי כל עמוד, ורשימת התוצאות מאזינה לו בעצמה.
+    widget.tab.pdfSearchMatches = searcher?.matches;
+    widget.tab.pdfSearchCurrentMatchIndex = searcher?.currentIndex;
 
-    widget.tab.searchText = currentSearchTerm;
-    widget.tab.pdfSearchMatches = textSearcher != null
-        ? List.from(textSearcher!.matches)
-        : null;
-    widget.tab.pdfSearchCurrentMatchIndex = textSearcher?.currentIndex;
-
-    if (mounted) {
-      setState(() {});
-    }
-
-    if (textSearcher != null) {
-      bool isNewSearchExecution =
-          (_lastProcessedSearchSessionId != textSearcher!.searchSession);
-      if (isNewSearchExecution) {
-        _lastProcessedSearchSessionId = textSearcher!.searchSession;
-      }
-
-      if (isNewSearchExecution &&
-          currentSearchTerm.isNotEmpty &&
-          textSearcher!.matches.isNotEmpty &&
-          persistedIndexFromTab != null &&
-          persistedIndexFromTab >= 0 &&
-          persistedIndexFromTab < textSearcher!.matches.length &&
-          textSearcher!.currentIndex != persistedIndexFromTab) {
-        textSearcher!.goToMatchOfIndex(persistedIndexFromTab);
-      }
+    if (searcher == null) return;
+    final restoreIndex = _searchIndexRestorer.onSearcherUpdate(
+      session: searcher.searchSession,
+      isSearching: searcher.isSearching,
+      matchCount: searcher.matches.length,
+    );
+    if (restoreIndex != null) {
+      unawaited(searcher.goToMatchOfIndex(restoreIndex));
     }
   }
 
@@ -910,6 +997,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     pdfController = PdfViewerController();
     widget.tab.pdfViewerController = pdfController;
     _resolvedPdfPath = resolveMovedFileBookPath(widget.tab.book.path);
+    _searchIndexRestorer = PdfSearchIndexRestorer(
+      widget.tab.pdfSearchCurrentMatchIndex,
+    );
     _pdfDocumentRef = _createDocumentRef();
 
     final settingsBloc = context.read<SettingsBloc>();
@@ -1591,10 +1681,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     return PdfViewerParams(
       onPageChanged: (pageNumber) => _pageNumberNotifier.value = pageNumber,
       layoutPages: layoutMode.isBookView
-          ? (pages, params) => buildBookViewPageLayout(
-              pageSizes: [
-                for (final page in pages) Size(page.width, page.height),
-              ],
+          ? (pages, params) => _bookViewLayoutMemo.layout(
+              pages,
               hasCover: layoutMode.hasCoverPage,
               // המרווח הוכפל יחד עם הפריסה, לשמירת אותה פרופורציה בין כפולות.
               verticalMargin: params.margin * 2,
@@ -1654,6 +1742,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       horizontalCacheExtent: 0,
       verticalCacheExtent: layoutMode.isBookView ? 2 : 1,
       pageAnchor: PdfPageAnchor.top, // עיגון לראש הדף
+      getPageRenderingScale: pdfPreviewRenderingScaleFor,
       onInteractionStart: (_) {
         if (!(widget.tab.pinLeftPane.value ||
             (Settings.getValue<bool>('key-pin-sidebar') ?? false))) {
@@ -1765,6 +1854,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         if (document == null) {
           widget.tab.documentRef.value = null;
           widget.tab.outline.value = null;
+        } else {
+          _bloc.add(const pdf_events.LoadProgressed());
         }
       },
       onViewerReady: (document, controller) async {
@@ -1779,8 +1870,11 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         // ה-searcher הקודם לפני יצירת חדש כדי לא להדליף listener וזיכרון.
         textSearcher?.removeListener(_onTextSearcherUpdated);
         textSearcher?.dispose();
-        textSearcher = PdfTextSearcher(pdfController)
-          ..addListener(_onTextSearcherUpdated);
+        _searchIndexRestorer.resetSession();
+        setState(() {
+          textSearcher = PdfTextSearcher(pdfController)
+            ..addListener(_onTextSearcherUpdated);
+        });
 
         final documentRef = controller.documentRef;
         widget.tab.documentRef.value = documentRef;
@@ -1809,24 +1903,12 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         );
 
         if (!mounted) return;
-        final enablePerBookSettings = context
-            .read<SettingsBloc>()
-            .state
-            .enablePerBookSettings;
-
-        final savedZoom = widget.tab.savedZoom;
-        final hasSavedZoom = savedZoom != null && savedZoom != 1.0;
-        bool shouldFitToWidth = !layoutMode.isBookView && !hasSavedZoom;
-
-        // בחירת המפרשים נטענת תמיד (לא תלוי ב-enablePerBookSettings); זום ופריסה
-        // נשארים כפופים להגדרה.
+        // בחירת המפרשים נטענת תמיד (לא תלוי ב-enablePerBookSettings); את הזום
+        // מחיל LoadPerBookSettings בבלוק.
         final settings = await _loadPerBookSettings();
         if (settings?.activeCommentators != null) {
           widget.tab.activeCommentators.clear();
           widget.tab.activeCommentators.addAll(settings!.activeCommentators!);
-        }
-        if (enablePerBookSettings) {
-          shouldFitToWidth = shouldFitToWidth && settings?.zoom == null;
         }
 
         final currentReadyPage = resolveReadyPdfPageNumber(
@@ -1852,29 +1934,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
           }
         } else {
           _initialPageNumber = null;
-        }
-
-        if (shouldFitToWidth) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted && controller.isReady) {
-              final currentPage = controller.pageNumber ?? initialTargetPage;
-              final matrix = controller.calcMatrixFitWidthForPage(
-                pageNumber: currentPage,
-              );
-              if (matrix != null) {
-                controller.goTo(matrix);
-                Future.delayed(const Duration(milliseconds: 50), () {
-                  if (mounted && controller.isReady) {
-                    final currentZoom = controller.value.zoom;
-                    controller.setZoom(
-                      controller.centerPosition,
-                      currentZoom * 0.98,
-                    );
-                  }
-                });
-              }
-            }
-          });
         }
 
         _runInitialSearchIfNeeded();
@@ -1906,7 +1965,12 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       // תמיד progressive: pdfrx מציג את העמוד הראשון מיד במקום
       // להמתין למטא-דאטה של כל העמודים.
       useProgressiveLoading: true,
-      passwordProvider: () => passwordDialog(context),
+      passwordProvider: () async {
+        _bloc.add(const pdf_events.LoadWatchdogPaused());
+        final password = await passwordDialog(context);
+        _bloc.add(const pdf_events.LoadProgressed());
+        return password;
+      },
     );
   }
 
@@ -3070,7 +3134,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   /// images in the cache. Safe to call repeatedly: returns immediately if the
   /// spread is already cached or being rendered.
   Future<void> _renderSpreadPagesIntoCache(int spreadStartPage) async {
-    if (_spreadCache.containsKey(spreadStartPage)) return;
+    if (_isSpreadCachedSharpEnough(spreadStartPage)) return;
     if (_spreadRenderInProgress.contains(spreadStartPage)) return;
 
     final controller = widget.tab.pdfViewerController;
@@ -3082,6 +3146,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _spreadRenderInProgress.add(spreadStartPage);
 
     final pageImages = <int, ui.Image>{};
+    final renderScale = _requiredSpreadRenderScale(controller);
+    final generation = _spreadCacheGeneration;
 
     try {
       for (final pageNum in pageNumbers) {
@@ -3098,10 +3164,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         final cancellationToken = page.createCancellationToken();
         _spreadCancellationTokens[spreadStartPage] = cancellationToken;
 
-        // 1.5x the page's natural 72-DPI size: sharp on most displays. 2.0
-        // blew native memory (~78% more bitmap bytes) and crashed weak
-        // machines when several spreads rendered at once.
-        const renderScale = 1.5;
         final pdfImage = await page.render(
           fullWidth: page.width * renderScale,
           fullHeight: page.height * renderScale,
@@ -3131,10 +3193,16 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         pageImages[pageNum] = uiImage;
       }
 
+      // המטמון נוקה באמצע (החלפת מצב תצוגה) — המפתח כבר לא מצביע על אותם עמודים.
+      if (generation != _spreadCacheGeneration) {
+        _disposeImageMap(pageImages);
+        return;
+      }
       // Replace any stale entry (e.g. from previous render at different zoom).
       _spreadCache[spreadStartPage]?.dispose();
       _spreadCache[spreadStartPage] = _PdfSpreadCacheEntry(
         pageImages: pageImages,
+        renderScale: renderScale,
       );
     } catch (e, s) {
       debugPrint('Spread pre-render failed for $spreadStartPage: $e\n$s');
@@ -3143,6 +3211,24 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       _spreadRenderInProgress.remove(spreadStartPage);
       _spreadCancellationTokens.remove(spreadStartPage);
     }
+  }
+
+  double _requiredSpreadRenderScale(PdfViewerController controller) =>
+      pdfSpreadPageRenderScale(
+        zoom: controller.currentZoom,
+        snapshotPixelRatio: pdfSpreadSnapshotPixelRatio(
+          viewSize: controller.viewSize,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        ),
+      );
+
+  /// כפולה שמורה חדה מספיק לזום הנוכחי; אחרי הגדלת זום היא מרונדרת מחדש.
+  bool _isSpreadCachedSharpEnough(int spreadStartPage) {
+    final entry = _spreadCache[spreadStartPage];
+    if (entry == null) return false;
+    final controller = widget.tab.pdfViewerController;
+    return !controller.isReady ||
+        entry.renderScale >= _requiredSpreadRenderScale(controller);
   }
 
   void _disposeImageMap(Map<int, ui.Image> images) {
@@ -3211,16 +3297,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       spreadStartPage: spreadStartPage,
     );
 
-    final viewportPixels = viewSize.width * viewSize.height;
-    const maxCapturePixels = 1600000.0;
-    final cappedPixelRatio = viewportPixels <= 0
-        ? 1.0
-        : sqrt(maxCapturePixels / viewportPixels);
-    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
-    final pixelRatio = min(
-      devicePixelRatio,
-      min(1.35, cappedPixelRatio),
-    ).clamp(0.85, 1.35);
+    final pixelRatio = pdfSpreadSnapshotPixelRatio(
+      viewSize: viewSize,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+    );
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
@@ -3233,11 +3313,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     if (isDarkMode) {
       canvas.saveLayer(
         canvasRect,
-        Paint()
-          ..colorFilter = const ColorFilter.mode(
-            Colors.white,
-            BlendMode.difference,
-          ),
+        Paint()..colorFilter = PdfDarkModeFilter.invertColors,
       );
     }
 
@@ -3331,7 +3407,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     final currentSpread = _spreadStartPageFor(currentPage);
 
     if (_lastPrerenderTriggeredSpread == currentSpread &&
-        _spreadCache.containsKey(currentSpread)) {
+        _isSpreadCachedSharpEnough(currentSpread)) {
       return;
     }
     _lastPrerenderTriggeredSpread = currentSpread;
@@ -3394,6 +3470,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   }
 
   void _disposeAllSpreadCache() {
+    _spreadCacheGeneration++;
     for (final entry in _spreadCache.values) {
       entry.dispose();
     }
@@ -3697,7 +3774,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     widget.tab.currentTextLineNumber = resolved.start;
     widget.tab.currentTextLineNumberEnd = resolved.end;
     unawaited(_refreshLinksWindow());
-    if (mounted) setState(() {});
+    _pageDataRevision.value++;
   }
 
   /// בודק אם [page] עדיין רלוונטי — האם המשתמש לא ניווט הלאה.
@@ -3848,6 +3925,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     textSearcher?.dispose();
     textSearcher = null;
     _pageMetadataTimer?.cancel();
+    _pageDataRevision.dispose();
     pdfController.removeListener(_onPdfViewerControllerUpdate);
     _leftPaneTabController?.removeListener(_leftPaneTabControllerListener);
     widget.tab.showLeftPane.removeListener(_showLeftPaneListener);
@@ -3892,6 +3970,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   int? _initialPageNumber; // שמירת מספר העמוד ההתחלתי
   bool _isJumping = false; // flag לציון שאנחנו בתהליך קפיצה
   bool _linksLoading = true; // true עד שטעינת הקישורים מסתיימת
+
+  /// טווח השורות והקישורים של העמוד הנוכחי השתנו — בונה מחדש רק את חלונית המפרשים.
+  final _pageDataRevision = ValueNotifier<int>(0);
 
   // מסלול חלון-הקישורים (ספרי מסד): tab.links מחזיק רק חלון שורות סביב
   // המיקום הנוכחי ומתרענן בדפדוף — ראה PdfLinksWindowPolicy.
@@ -3940,7 +4021,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     widget.tab.links = loaded;
     _linksWindowStart = window.startLine;
     _linksWindowEnd = window.endLine;
-    setState(() {});
+    _pageDataRevision.value++;
   }
 
   void _onPdfViewerControllerUpdate() async {
@@ -3952,7 +4033,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _schedulePrerenderForAdjacentSpreads();
 
     final newZoom = widget.tab.pdfViewerController.value.zoom;
-    widget.tab.savedZoom = newZoom;
+    // לפני Loaded זה ההתאמה-לרוחב הראשונית של pdfrx; כתיבתה דרסה את הזום
+    // שנשמר בטאב לפני ש-LoadPerBookSettings הספיק לשחזר אותו.
+    if (_bloc.state is PdfBookLoaded) widget.tab.savedZoom = newZoom;
 
     // Sync wheel/pinch zoom into BLoC so toolbar buttons start from the
     // current zoom, and show the zoom bar just like the toolbar buttons do.
@@ -4034,7 +4117,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         primaryValue: widget.tab.title,
       ),
     );
-    setState(() {});
+    _pageDataRevision.value++;
   }
 
   @override
@@ -4096,7 +4179,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     widget.tab.currentTextLineNumber = resolved.start;
     widget.tab.currentTextLineNumberEnd = resolved.end;
     unawaited(_refreshLinksWindow());
-    setState(() {});
+    _pageDataRevision.value++;
   }
 
   /// חיפוש-בתוך-ספר דרך ספק חיצוני (תוסף): זמין רק לספר עם זהות חיצונית
@@ -4131,7 +4214,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
             _ensureSearchTabIsActive,
         LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyF):
             _ensureSearchTabIsActive,
-        ..._zoomBindings(),
+        ..._configurableBindings(),
       },
       child: Scaffold(
         body: Column(
@@ -4291,13 +4374,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                 // difference מול לבן צובע גם פיקסלים שקופים, ולכן השכבה מתפשטת
                 // עד הקליפ העוטף — בלי ClipRect היא מכסה בלבן את הסרגל העליון.
                 child: ClipRect(
-                  child: ColorFiltered(
-                    colorFilter: ColorFilter.mode(
-                      Colors.white,
-                      Theme.of(context).brightness == Brightness.dark
-                          ? BlendMode.difference
-                          : BlendMode.dst,
-                    ),
+                  child: PdfDarkModeFilter(
+                    inverted: Theme.of(context).brightness == Brightness.dark,
                     child: Stack(
                       children: [
                         _buildPdfViewerFromFile(_resolvedPdfPath),
@@ -4529,12 +4607,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                   index: 1,
                   child: ValueListenableBuilder(
                     valueListenable: widget.tab.documentRef,
-                    builder: (context, documentRef, child) {
-                      if (widget.tab.searchController.text.isNotEmpty) {
-                        _lastProcessedSearchSessionId = null;
-                      }
-                      return child!;
-                    },
+                    builder: (context, documentRef, child) => child!,
                     child: textSearcher != null
                         ? PdfBookSearchView(
                             textSearcher: textSearcher!,
@@ -4572,6 +4645,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                     child: ThumbnailsView(
                       documentRef: widget.tab.documentRef.value,
                       controller: widget.tab.pdfViewerController,
+                      onNavigateToPage: _goToPageWithSpreadLock,
                     ),
                   ),
                 ),
@@ -4590,7 +4664,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       buildWhen: (prev, curr) =>
           prev.textDisplayPolicy != curr.textDisplayPolicy ||
           prev.commentatorsFontSize != curr.commentatorsFontSize,
-      builder: (context, settingsState) => _buildCommentaryPanel(settingsState),
+      builder: (context, settingsState) => ValueListenableBuilder<int>(
+        valueListenable: _pageDataRevision,
+        builder: (context, _, _) => _buildCommentaryPanel(settingsState),
+      ),
     );
   }
 
@@ -4623,8 +4700,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
-  /// קיצורי הזום לפי ההגדרות, כולל המקביל בלוח הספרות לאותו צירוף.
-  Map<ShortcutActivator, VoidCallback> _zoomBindings() {
+  /// קיצורי הזום והמעבר בין התאמות החיפוש לפי ההגדרות, כולל המקביל בלוח הספרות.
+  Map<ShortcutActivator, VoidCallback> _configurableBindings() {
     final bindings = <ShortcutActivator, VoidCallback>{};
     void bind(String settingKey, VoidCallback action) {
       final shortcut = ShortcutValidator.getShortcutValue(settingKey) ?? '';
@@ -4637,6 +4714,14 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     bind(ShortcutValidator.zoomInKey, _zoomIn);
     bind(ShortcutValidator.zoomOutKey, _zoomOut);
     bind(ShortcutValidator.zoomResetKey, _resetZoom);
+    bind(
+      ShortcutValidator.findNextKey,
+      () => unawaited(textSearcher?.goToNextMatch()),
+    );
+    bind(
+      ShortcutValidator.findPreviousKey,
+      () => unawaited(textSearcher?.goToPrevMatch()),
+    );
     return bindings;
   }
 
@@ -4946,6 +5031,12 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       ActionButtonData(
         widget: BlocBuilder<PdfBookBloc, PdfBookState>(
           bloc: _bloc,
+          // בלי סינון נבנה מחדש בכל פריים של זום.
+          buildWhen: (prev, curr) =>
+              (prev is PdfBookLoaded) != (curr is PdfBookLoaded) ||
+              (prev is PdfBookLoaded &&
+                  curr is PdfBookLoaded &&
+                  prev.layoutMode != curr.layoutMode),
           builder: (context, state) {
             if (state is! PdfBookLoaded) return const SizedBox.shrink();
             return _buildLayoutModeDropdown(context, state);
@@ -5225,6 +5316,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       afterTitle: PageNumberDisplay(
         controller: widget.tab.pdfViewerController,
         pageNumberNotifier: _pageNumberNotifier,
+        onNavigateToPage: _goToPageWithSpreadLock,
       ),
     );
   }
@@ -5604,8 +5696,9 @@ class _BookPageTurnTransition {
 /// tile loading + viewport capture (~150-250ms total).
 class _PdfSpreadCacheEntry {
   final Map<int, ui.Image> pageImages;
+  final double renderScale;
 
-  _PdfSpreadCacheEntry({required this.pageImages});
+  _PdfSpreadCacheEntry({required this.pageImages, required this.renderScale});
 
   void dispose() {
     for (final image in pageImages.values) {

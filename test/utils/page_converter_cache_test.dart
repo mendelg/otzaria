@@ -178,6 +178,18 @@ List<TocEntry> _tractateToc(String tractate) {
   return [root];
 }
 
+class _CountingLibrary extends Library {
+  _CountingLibrary({required super.categories});
+
+  int companionLookups = 0;
+
+  @override
+  Book? getCompanionBook(Book book, Type companionType) {
+    companionLookups++;
+    return super.getCompanionBook(book, companionType);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -352,6 +364,37 @@ void main() {
         isNull,
       );
       expect(await pdfToTextPage(books.pdf, _matchingOutline(), 3), isNull);
+    });
+
+    test('PDF בלי מהדורת טקסט — חיפוש המלווה רץ פעם אחת לכל ספרייה', () async {
+      final category = Category(
+        title: 'ספרי PDF',
+        description: '',
+        shortDescription: '',
+        order: 0,
+        subCategories: [],
+        books: [],
+        parent: null,
+      );
+      final pdf = PdfBook(
+        title: 'ספר בלי מלווה',
+        path: p.join(tempDir.path, 'no-companion.pdf'),
+        category: category,
+      );
+      category.books.add(pdf);
+      final library = _CountingLibrary(categories: [category]);
+      DataRepository.instance.library = Future.value(library);
+
+      for (var page = 1; page <= 3; page++) {
+        expect(await pdfToTextPage(pdf, _matchingOutline(), page), isNull);
+      }
+      expect(library.companionLookups, 1);
+
+      // ספרייה שנטענה מחדש מתחילה בלי המטמון הקודם.
+      final reloaded = _CountingLibrary(categories: [category]);
+      DataRepository.instance.library = Future.value(reloaded);
+      expect(await pdfToTextPage(pdf, _matchingOutline(), 1), isNull);
+      expect(reloaded.companionLookups, 1);
     });
 
     test('כשל בפתיחת הקובץ אינו נשמר במטמון', () async {

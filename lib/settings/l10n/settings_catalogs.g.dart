@@ -1189,6 +1189,8 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'תוצאות זהות יוצגו פעם אחת בלבד': 'Identical results show only once',
     'תוצאות חיפוש': 'Search Results',
     'תוצאות שמכילות מילים אלו לא יופיעו': 'Results containing these words will not appear',
+    'תוצאת החיפוש הבאה (PDF)': 'Next Search Result (PDF)',
+    'תוצאת החיפוש הקודמת (PDF)': 'Previous Search Result (PDF)',
     'תורמים': 'Contributors',
     'תחת אותה כותרת': 'Same heading',
     'תיאור': 'Description',

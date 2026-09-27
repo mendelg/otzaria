@@ -14,10 +14,14 @@ class PageNumberDisplay extends StatefulWidget {
   /// בלי המאזין הזה המונה מפגר עמוד עד לאינטראקציה הבאה.
   final ValueListenable<int?>? pageNumberNotifier;
 
+  /// ניווט של המסך (שומר זום ונעילת זוגות); בלעדיו goToPage מאפס את הזום.
+  final Future<void> Function(int pageNumber)? onNavigateToPage;
+
   const PageNumberDisplay({
     super.key,
     required this.controller,
     this.pageNumberNotifier,
+    this.onNavigateToPage,
   });
 
   @override
@@ -99,9 +103,13 @@ class _PageNumberDisplayState extends State<PageNumberDisplay> {
   void _handleSubmitted(String value) {
     final page = int.tryParse(value);
     if (page != null) {
-      widget.controller.goToPage(
-        pageNumber: page.clamp(1, widget.controller.pageCount),
-      );
+      final target = page.clamp(1, widget.controller.pageCount);
+      final navigate = widget.onNavigateToPage;
+      if (navigate != null) {
+        navigate(target);
+      } else {
+        widget.controller.goToPage(pageNumber: target);
+      }
     }
     setState(() {
       _isEditing = false;

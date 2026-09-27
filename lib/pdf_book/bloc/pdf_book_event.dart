@@ -54,6 +54,17 @@ class RetryLoad extends PdfBookEvent {
   const RetryLoad();
 }
 
+/// The load advanced (document opened, password entered): restart the watchdog.
+class LoadProgressed extends PdfBookEvent {
+  const LoadProgressed();
+}
+
+/// The load waits on the user (password dialog): stop the watchdog until
+/// [LoadProgressed].
+class LoadWatchdogPaused extends PdfBookEvent {
+  const LoadWatchdogPaused();
+}
+
 /// Load PDF headings and links for commentary
 class LoadHeadingsAndLinks extends PdfBookEvent {
   final PdfHeadings? headings;
