@@ -803,6 +803,7 @@ void main() {
         ),
         selectedText: 'טקסט נבחר',
         selectionColumn: 12,
+        punctuationHidden: true,
         categoryId: 7,
       );
 
@@ -820,6 +821,7 @@ void main() {
         12,
         reason: 'רמז עמודת הבחירה מועבר לזיהוי המופע הנכון בטקסט חוזר',
       );
+      expect(repo.capturedPunctuationHidden, isTrue);
     },
   );
 
@@ -2260,6 +2262,7 @@ class _RecordingNotesRepository extends PersonalNotesRepository {
   String? capturedContentPlain;
   int? capturedCategoryId;
   int? capturedSelectionColumn;
+  bool? capturedPunctuationHidden;
   int addNoteCallCount = 0;
 
   @override
@@ -2271,6 +2274,7 @@ class _RecordingNotesRepository extends PersonalNotesRepository {
     required PersonalNoteContentFormat contentFormat,
     String? selectedText,
     int? selectionColumn,
+    bool punctuationHidden = false,
     int? categoryId,
   }) async {
     addNoteCallCount++;
@@ -2279,6 +2283,7 @@ class _RecordingNotesRepository extends PersonalNotesRepository {
     capturedContentPlain = contentPlain;
     capturedCategoryId = categoryId;
     capturedSelectionColumn = selectionColumn;
+    capturedPunctuationHidden = punctuationHidden;
     return const [];
   }
 }

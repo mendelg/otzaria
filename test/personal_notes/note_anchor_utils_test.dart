@@ -135,6 +135,30 @@ void main() {
       expect(anchor!.start, line.indexOf('אמר רבא'));
     });
 
+    test('כשהפיסוק מוסתר, רמז העמודה בוחר את המופע השני', () {
+      final line = '${List.filled(40, 'א,').join()} מילה משהו מילה';
+      final shownLine = removePunctuation(line);
+      final anchor = computeAnchorForSelection(
+        rawLine: line,
+        selectedText: 'מילה',
+        selectionColumnHint: shownLine.lastIndexOf('מילה'),
+        punctuationHidden: true,
+      );
+      expect(anchor!.start, line.lastIndexOf('מילה'));
+    });
+
+    test('רמז העמודה סופר גם גרשיים שנשמרים בראשי תיבות', () {
+      final line = '${List.filled(40, 'רש"י ').join()}מילה משהו מילה';
+      final shownLine = removePunctuation(line);
+      final anchor = computeAnchorForSelection(
+        rawLine: line,
+        selectedText: 'מילה',
+        selectionColumnHint: shownLine.lastIndexOf('מילה'),
+        punctuationHidden: true,
+      );
+      expect(anchor!.start, line.lastIndexOf('מילה'));
+    });
+
     test('עוגן שנשמר כשהפיסוק הוצג נמצא גם כשהוא מוסתר', () {
       final range = locateAnchor(
         rawLine: raw,

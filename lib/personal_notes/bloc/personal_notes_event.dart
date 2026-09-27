@@ -27,6 +27,7 @@ class AddPersonalNote extends PersonalNotesEvent {
 
   /// עמודת ההתחלה המשוערת של הבחירה (לזיהוי המופע הנכון כשהטקסט חוזר בשורה).
   final int? selectionColumn;
+  final bool punctuationHidden;
 
   const AddPersonalNote({
     required this.bookId,
@@ -36,6 +37,7 @@ class AddPersonalNote extends PersonalNotesEvent {
     required this.contentFormat,
     this.selectedText,
     this.selectionColumn,
+    this.punctuationHidden = false,
   });
 
   @override
@@ -47,6 +49,7 @@ class AddPersonalNote extends PersonalNotesEvent {
     contentFormat,
     selectedText,
     selectionColumn,
+    punctuationHidden,
   ];
 }
 
@@ -120,6 +123,7 @@ class StartCreatingPersonalNote extends PersonalNotesEvent {
   final String? referenceText;
   final String? selectedText;
   final int? selectionColumn;
+  final bool punctuationHidden;
   final String? initialContent;
   final PersonalNoteContentFormat? initialFormat;
 
@@ -129,6 +133,7 @@ class StartCreatingPersonalNote extends PersonalNotesEvent {
     this.referenceText,
     this.selectedText,
     this.selectionColumn,
+    this.punctuationHidden = false,
     this.initialContent,
     this.initialFormat,
   });
@@ -140,6 +145,7 @@ class StartCreatingPersonalNote extends PersonalNotesEvent {
     referenceText,
     selectedText,
     selectionColumn,
+    punctuationHidden,
     initialContent,
     initialFormat,
   ];

@@ -10,6 +10,7 @@
 library;
 
 import 'package:otzaria/personal_notes/utils/note_text_utils.dart';
+import 'package:otzaria/utils/text/text_manipulation.dart' as text_utils;
 
 /// תוצאת הקרנת שורה גולמית לטקסט מנורמל.
 class LineProjection {
@@ -223,12 +224,19 @@ int _rawEnd(LineProjection p, String rawLine, int matchEnd) {
 }
 
 /// ממפה אינדקס בטקסט המנורמל לאינדקס המתאים ברמז הגולמי הקרוב ביותר.
-int? _rawToNormalizedIndex(LineProjection p, int rawHint) {
+int _rawToNormalizedIndex(LineProjection p, int rawHint) {
   if (rawHint <= 0) return 0;
-  for (int i = 0; i < p.normalized.length; i++) {
-    if (p.rawIndex[i] >= rawHint) return i;
+  var low = 0;
+  var high = p.normalized.length;
+  while (low < high) {
+    final middle = (low + high) ~/ 2;
+    if (p.rawIndex[middle] < rawHint) {
+      low = middle + 1;
+    } else {
+      high = middle;
+    }
   }
-  return p.normalized.length;
+  return low;
 }
 
 /// מאתר את טווח הביטוי בשורה הגולמית.
@@ -279,6 +287,7 @@ ComputedAnchor? computeAnchorForSelection({
   required String rawLine,
   required String selectedText,
   int? selectionColumnHint,
+  bool punctuationHidden = false,
 }) {
   final needle = normalizeAnchorText(selectedText);
   if (needle.isEmpty) return null;
@@ -289,9 +298,15 @@ ComputedAnchor? computeAnchorForSelection({
 
   int matchStart = occurrences.first;
   if (selectionColumnHint != null && occurrences.length > 1) {
-    // הרמז נמדד בטקסט המוצג, שבו הפיסוק נספר כברירת מחדל.
-    final shown = projectLine(rawLine, keepPunctuation: true);
-    int shownIndex(int idx) => _rawToNormalizedIndex(shown, p.rawIndex[idx])!;
+    final displayedLine = punctuationHidden
+        ? text_utils.removePunctuation(rawLine)
+        : rawLine;
+    final shown = projectLine(displayedLine, keepPunctuation: true);
+    final displayedMatch = punctuationHidden ? projectLine(displayedLine) : p;
+    final sameMatchText = displayedMatch.normalized == p.normalized;
+    int shownIndex(int idx) => sameMatchText
+        ? _rawToNormalizedIndex(shown, displayedMatch.rawIndex[idx])
+        : idx;
     int bestDist = (shownIndex(occurrences.first) - selectionColumnHint).abs();
     for (final idx in occurrences.skip(1)) {
       final dist = (shownIndex(idx) - selectionColumnHint).abs();

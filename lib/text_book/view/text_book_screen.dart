@@ -3687,6 +3687,7 @@ Future<void> _addNoteFromKeyboard(
       referenceText: referenceText,
       selectedText: hasSelection ? trimmedSelection : null,
       selectionColumn: hasSelection ? selectionColumn : null,
+      punctuationHidden: state.removePunctuation,
       initialContent: draft?.content ?? '',
       initialFormat: draft?.contentFormat ?? PersonalNoteContentFormat.plain,
     ),
