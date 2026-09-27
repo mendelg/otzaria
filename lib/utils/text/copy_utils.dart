@@ -107,9 +107,17 @@ class CopyUtils {
       final toc = await book.tableOfContents;
       if (toc.isEmpty) return '';
 
+      // בעץ עם דילוג ברמות (h4 אחרי h2) סדר ה-pre-order אינו לפי שורה.
+      final entries = flattenToc(toc)
+        ..sort(
+          (a, b) => a.index != b.index
+              ? a.index.compareTo(b.index)
+              : a.level.compareTo(b.level),
+        );
       final Map<int, String> lastByLevel = {};
-      for (final entry in toc) {
+      for (final entry in entries) {
         if (entry.index <= currentIndex) {
+          lastByLevel.removeWhere((level, _) => level > entry.level);
           if (entry.level <= 1) {
             continue; // רמה 1 = שם הספר, כבר מכוסה ע"י bookName
           }
