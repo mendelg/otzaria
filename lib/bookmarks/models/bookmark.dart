@@ -91,14 +91,6 @@ class Bookmark {
   String get historyKey =>
       isSearch ? ref : '${targetKind.name}:${bookIdentity(book)}';
 
-  /// מפתח לזיהוי סימניה כפולה בייבוא מגיבוי של מכשיר אחר.
-  ///
-  /// למודל אין מזהה, ולכן הזהות ערכית: המיקום בספר, או טקסט החיפוש בסימניית
-  /// חיפוש. [label] אינו נכלל — אותו מיקום עם תיאור שנערך הוא אותה סימניה.
-  String get dedupeKey => isSearch
-      ? 'search:$ref'
-      : '${targetKind.name}:${bookIdentity(book)}:$index:$ref';
-
   /// מזהה יציב של סימנייה בתוך רשימת הסימניות.
   ///
   /// ⚠️ אינדקס ברשימה **אינו** מזהה: חלון אחר יכול להוסיף סימנייה ולהזיז
