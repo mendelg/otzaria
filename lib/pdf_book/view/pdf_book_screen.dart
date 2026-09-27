@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -726,6 +727,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   // ה-progress עצמו (ליניארי, צמוד לאצבע) — בלי עקומת ההאטה של קליק.
   bool _isInteractivePageTurn = false;
   _BookPageTurnDirection? _hoveredTurnEdge;
+  final ValueNotifier<int> _pageTurnUi = ValueNotifier<int>(0);
 
   /// עדכון כותרת/מטא-דאטה שנדחה כי הגיע בזמן אנימציית דפדוף.
   bool _pageTurnDeferredMetadataUpdate = false;
@@ -1678,10 +1680,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   }
 
   /// צבע הרקע שמועבר ל-[PdfViewerParams.backgroundColor].
-  Color _pdfViewerBgColor() => pdfColorBeforeFilter(
-    AppSurfaces.readerBackground(context),
-    Theme.of(context).brightness,
-  );
+  Color _pdfViewerBgColor() => AppSurfaces.readerBackground(context);
 
   PdfViewerParams _buildPdfViewerParams(PdfLayoutMode layoutMode) {
     if (layoutMode.isBookView) {
@@ -1747,6 +1746,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         _bloc.add(const pdf_events.SetLoadingState(isLoading: false));
       },
       backgroundColor: _pdfViewerBgColor(),
+      pageImageColorFilter: pdfPageColorFilter(Theme.of(context).brightness),
       pageDropShadow: _pageDropShadow,
       sizeDelegateProvider: pdfSizeDelegateProviderForLayoutMode(layoutMode),
       maxImageBytesCachedOnMemory: pdfImageCacheBytesForPanes(
@@ -1792,73 +1792,23 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         return null;
       },
       viewerOverlayBuilder: (context, size, handleLinkTap) => [
-        Positioned.fill(
-          child: AppContextMenuRegion(
-            key: _pdfContextMenuKey,
-            menuBuilder: _buildPdfContextMenuEntries,
-            child: _PdfScrollOnlyListener(
-              onPointerSignal: (event) {
-                final adjusted = _trackpadAxisLock.apply(
-                  event,
-                  isControlPressed: HardwareKeyboard.instance.isControlPressed,
-                );
-                widget.tab.pdfViewerController.handlePointerSignalEvent(
-                  adjusted,
-                );
-              },
-              // בדסקטופ, גלילה בשתי אצבעות על לוח מגע מדויק מגיעה כמחוות
-              // PointerPanZoom שעוקפות את מסלול אירועי הגלילה - נתבעות
-              // כאן כדי שנעילת הציר החכמה תחול גם עליהן (issue #969).
-              child: Platform.isAndroid || Platform.isIOS
-                  ? const SizedBox.expand()
-                  : RawGestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      gestures: {
-                        TrackpadPanRecognizer:
-                            GestureRecognizerFactoryWithHandlers<
-                              TrackpadPanRecognizer
-                            >(
-                              () => TrackpadPanRecognizer(
-                                onPanDelta: _handleTrackpadPanDelta,
-                                onPanEnd: _trackpadPanAxisLock.reset,
-                                canPanHorizontally: () =>
-                                    widget.tab.canPanHorizontally,
-                              ),
-                              (recognizer) {},
-                            ),
-                      },
-                      child: const SizedBox.expand(),
-                    ),
-            ),
-          ),
-        ),
+        _viewerInputOverlay,
         _buildBookViewViewportMask(size),
         _buildBookViewStackDecoration(context, size),
       ],
       loadingBannerBuilder: (context, bytesDownloaded, totalBytes) => Center(
         child: CircularProgressIndicator(
           value: totalBytes != null ? bytesDownloaded / totalBytes : null,
-          backgroundColor: pdfColorBeforeFilter(
-            Theme.of(context).colorScheme.surfaceContainerHighest,
-            Theme.of(context).brightness,
-          ),
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.surfaceContainerHighest,
         ),
       ),
-      linkWidgetBuilder: (context, link, size) => Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () async {
-            if (link.url != null) {
-              navigateToUrl(link.url!);
-            } else if (link.dest != null) {
-              widget.tab.pdfViewerController.goToDest(link.dest);
-            }
-          },
-          hoverColor: pdfColorBeforeFilter(
-            AppSurfaces.pdfLinkHover(Theme.of(context).colorScheme),
-            Theme.of(context).brightness,
-          ),
-        ),
+      // קישורים מצוירים על הקנבס: ווידג'ט לכל קישור נבנה מחדש בכל פריים גלילה.
+      linkHandlerParams: PdfLinkHandlerParams(
+        onLinkTap: _onPdfLinkTap,
+        linkColor: Colors.transparent,
+        linkHoverColor: AppSurfaces.pdfLinkHover(Theme.of(context).colorScheme),
       ),
       pagePaintCallbacks: textSearcher != null
           ? [textSearcher!.pageTextMatchPaintCallback]
@@ -1868,7 +1818,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
           widget.tab.documentRef.value = null;
           widget.tab.outline.value = null;
         } else {
-          _bloc.add(const pdf_events.LoadProgressed());
+          _bloc.add(const pdf_events.LoadProgressed(documentOpened: true));
         }
       },
       onViewerReady: (document, controller) async {
@@ -1970,6 +1920,57 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         }
       },
     );
+  }
+
+  /// קלט הגלילה ותפריט ההקשר מעל הצפיין. נבנה פעם אחת: pdfrx קורא ל-builder
+  /// בכל פריים גלילה, ומזהי מחוות חדשים בכל פריים הם עבודה לשווא.
+  late final Widget _viewerInputOverlay = Positioned.fill(
+    child: AppContextMenuRegion(
+      key: _pdfContextMenuKey,
+      menuBuilder: _buildPdfContextMenuEntries,
+      child: _PdfScrollOnlyListener(
+        onPointerSignal: (event) {
+          final adjusted = _trackpadAxisLock.apply(
+            event,
+            isControlPressed: HardwareKeyboard.instance.isControlPressed,
+          );
+          widget.tab.pdfViewerController.handlePointerSignalEvent(
+            adjusted,
+          );
+        },
+        // בדסקטופ, גלילה בשתי אצבעות על לוח מגע מדויק מגיעה כמחוות
+        // PointerPanZoom שעוקפות את מסלול אירועי הגלילה - נתבעות
+        // כאן כדי שנעילת הציר החכמה תחול גם עליהן (issue #969).
+        child: Platform.isAndroid || Platform.isIOS
+            ? const SizedBox.expand()
+            : RawGestureDetector(
+                behavior: HitTestBehavior.translucent,
+                gestures: {
+                  TrackpadPanRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                        TrackpadPanRecognizer
+                      >(
+                        () => TrackpadPanRecognizer(
+                          onPanDelta: _handleTrackpadPanDelta,
+                          onPanEnd: _trackpadPanAxisLock.reset,
+                          canPanHorizontally: () =>
+                              widget.tab.canPanHorizontally,
+                        ),
+                        (recognizer) {},
+                      ),
+                },
+                child: const SizedBox.expand(),
+              ),
+      ),
+    ),
+  );
+
+  void _onPdfLinkTap(PdfLink link) {
+    if (link.url != null) {
+      navigateToUrl(link.url!);
+    } else if (link.dest != null) {
+      widget.tab.pdfViewerController.goToDest(link.dest);
+    }
   }
 
   PdfDocumentRef _createDocumentRef() {
@@ -2254,7 +2255,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     return Positioned.fill(
       child: IgnorePointer(
         child: CustomPaint(
-          painter: _BookViewViewportMaskPainter(spreadViewportRect),
+          painter: _BookViewViewportMaskPainter(
+            spreadViewportRect,
+            color: pdfPageColor(Theme.of(context).brightness),
+          ),
         ),
       ),
     );
@@ -2429,7 +2433,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
   void _setHoveredTurnEdge(_BookPageTurnDirection? edge) {
     if (_hoveredTurnEdge == edge || !mounted) return;
-    setState(() => _hoveredTurnEdge = edge);
+    _updatePageTurnUi(() => _hoveredTurnEdge = edge);
   }
 
   /// חץ דפדוף אחד. כשיש רווח בין הכפולה לקצה התצוגה הוא יושב שם וגלוי תמיד;
@@ -2900,12 +2904,19 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _pageTurnTargetSnapshot = null;
   }
 
+  /// מצב שכבת הדפדוף וחיצי הריחוף נבנה מחדש לבדו — setState היה בונה את
+  /// כל המסך, כולל חלונית המפרשים, כמה פעמים בכל דפדוף.
+  void _updatePageTurnUi(VoidCallback update) {
+    update();
+    if (mounted) _pageTurnUi.value++;
+  }
+
   void _clearPageTurnOverlay() {
     _disposePageTurnSnapshot();
     _pageTurnTransition = null;
     if (_pageTurnDeferredMetadataUpdate) {
       _pageTurnDeferredMetadataUpdate = false;
-      // במיקרוטסק — נקרא מתוך setState, וסנכרוני היה מקנן setState בתוך setState.
+      // במיקרוטסק — נקרא מתוך עדכון השכבה, באמצע המעבר בין הכפולות.
       scheduleMicrotask(() {
         if (mounted) _onPdfViewerControllerUpdate();
       });
@@ -3000,7 +3011,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       return;
     }
 
-    setState(() {
+    _updatePageTurnUi(() {
       _disposePageTurnSnapshot();
       _pageTurnSnapshot = captureResult.image;
       _pageTurnTransition = _BookPageTurnTransition(
@@ -3025,7 +3036,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         composed?.dispose();
         return;
       }
-      setState(() {
+      _updatePageTurnUi(() {
         _pageTurnTargetSnapshot?.dispose();
         _pageTurnTargetSnapshot = composed;
       });
@@ -3105,7 +3116,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
         final targetCaptureResult = await _capturePdfViewportSnapshot();
         if (mounted && targetCaptureResult != null) {
-          setState(() {
+          _updatePageTurnUi(() {
             _pageTurnTargetSnapshot?.dispose();
             _pageTurnTargetSnapshot = targetCaptureResult.image;
           });
@@ -3134,7 +3145,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _isPageTurnInProgress = false;
     _inFlightAnimationTarget = null;
     if (mounted) {
-      setState(_clearPageTurnOverlay);
+      _updatePageTurnUi(_clearPageTurnOverlay);
     } else {
       _clearPageTurnOverlay();
     }
@@ -3339,22 +3350,18 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     final canvas = Canvas(recorder);
     canvas.scale(pixelRatio);
 
-    // מראה של עץ הווידג'טים החי: תוכן לפני-סינון בתוך שכבה עם אותו
-    // ColorFilter של מצב כהה — אחרת הצילום היה נבדל מהתצוגה בסיום האנימציה.
+    // מראה של הצפיין החי: רק תוכן העמודים עובר את מסנן מצב כהה — אחרת
+    // הצילום היה נבדל מהתצוגה בסיום האנימציה.
     final canvasRect = Rect.fromLTWH(0, 0, viewSize.width, viewSize.height);
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    if (isDarkMode) {
-      canvas.saveLayer(
-        canvasRect,
-        Paint()..colorFilter = PdfDarkModeFilter.invertColors,
-      );
-    }
+    final brightness = Theme.of(context).brightness;
 
     canvas.drawRect(canvasRect, Paint()..color = _pdfViewerBgColor());
 
     // צל העמוד וציור העמודים במרחב המסמך — בדיוק כפי ש-pdfrx עושה, כך
     // שהטשטוש וההיסט מתקנים את עצמם לפי הזום.
-    final paint = Paint()..filterQuality = FilterQuality.medium;
+    final paint = Paint()
+      ..filterQuality = FilterQuality.medium
+      ..colorFilter = pdfPageColorFilter(brightness);
     final shadowPaint = _pageDropShadow.toPaint()..style = PaintingStyle.fill;
     canvas.save();
     canvas.transform(targetMatrix.storage);
@@ -3390,7 +3397,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       newSpreadRect,
     ).intersect(canvasRect);
     if (spreadViewportRect.width > 0 && spreadViewportRect.height > 0) {
-      _BookViewViewportMaskPainter(spreadViewportRect).paint(canvas, viewSize);
+      _BookViewViewportMaskPainter(
+        spreadViewportRect,
+        color: pdfPageColor(brightness),
+      ).paint(canvas, viewSize);
     }
 
     // קישוט עובי הספר — בלעדיו הוא "צץ" רק בסיום האנימציה, ועובי הערימות
@@ -3410,10 +3420,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         stackShadowColor: colorScheme.shadow.withValues(alpha: 0.18),
         spineColor: colorScheme.outline.withValues(alpha: 0.28),
       ).paint(canvas, viewSize);
-    }
-
-    if (isDarkMode) {
-      canvas.restore();
     }
 
     final picture = recorder.endRecording();
@@ -3593,7 +3599,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         viewportRect: currentSpreadViewportRect,
         viewportLogicalSize: captureResult.viewportLogicalSize,
       );
-      setState(() {
+      _updatePageTurnUi(() {
         _disposePageTurnSnapshot();
         _pageTurnSnapshot = captureResult.image;
         _pageTurnTransition = transition;
@@ -3635,7 +3641,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         }
 
         if (composed != null) {
-          setState(() {
+          _updatePageTurnUi(() {
             _pageTurnTargetSnapshot?.dispose();
             _pageTurnTargetSnapshot = composed;
           });
@@ -3673,7 +3679,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         final targetCaptureResult = await _capturePdfViewportSnapshot();
 
         if (mounted && targetCaptureResult != null) {
-          setState(() {
+          _updatePageTurnUi(() {
             _pageTurnTargetSnapshot?.dispose();
             _pageTurnTargetSnapshot = targetCaptureResult.image;
           });
@@ -3688,7 +3694,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       _isPageTurnInProgress = false;
       _inFlightAnimationTarget = null;
       if (mounted) {
-        setState(_clearPageTurnOverlay);
+        _updatePageTurnUi(_clearPageTurnOverlay);
       } else {
         _clearPageTurnOverlay();
       }
@@ -3975,6 +3981,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     _disposeAllSpreadCache();
     _pendingPageTurns.clear();
     _pageTurnController.dispose();
+    _pageTurnUi.dispose();
     textSearcher?.removeListener(_onTextSearcherUpdated);
     textSearcher?.dispose();
     textSearcher = null;
@@ -4052,6 +4059,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       loadedEnd: _linksWindowEnd,
     );
     if (window == null) return;
+    // טעינה מוקדמת לפני הקצה: החלון הישן עדיין מכסה את הטווח המוצג, ובנייה
+    // נוספת של החלונית הייתה מציגה בדיוק אותם מפרשים.
+    final shownRangeCovered =
+        _linksWindowStart != null &&
+        _linksWindowEnd != null &&
+        range.startLine >= _linksWindowStart! &&
+        range.endLine <= _linksWindowEnd!;
 
     final requestId = ++_linksWindowRequestId;
     late final List<otz_links.Link> loaded;
@@ -4075,7 +4089,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     widget.tab.links = loaded;
     _linksWindowStart = window.startLine;
     _linksWindowEnd = window.endLine;
-    _pageDataRevision.value++;
+    if (!shownRangeCovered) _pageDataRevision.value++;
   }
 
   void _onPdfViewerControllerUpdate() async {
@@ -4444,61 +4458,73 @@ class _PdfBookScreenState extends State<PdfBookScreen>
             children: [
               RepaintBoundary(
                 key: _pdfViewportBoundaryKey,
-                // difference מול לבן צובע גם פיקסלים שקופים, ולכן השכבה מתפשטת
-                // עד הקליפ העוטף — בלי ClipRect היא מכסה בלבן את הסרגל העליון.
-                child: ClipRect(
-                  child: PdfDarkModeFilter(
-                    inverted: Theme.of(context).brightness == Brightness.dark,
-                    child: Stack(
-                      children: [
-                        _buildPdfViewerFromFile(_resolvedPdfPath),
-                        BlocBuilder<PdfBookBloc, PdfBookState>(
-                          buildWhen: (prev, curr) {
-                            if (prev is PdfBookLoaded &&
-                                curr is PdfBookLoaded) {
-                              return prev.isLoading != curr.isLoading ||
-                                  prev.loadSucceeded != curr.loadSucceeded;
-                            }
-                            return true;
-                          },
-                          builder: (context, state) {
-                            // בזמן auto-retry נשאר הספינר על המסך
-                            if (state is PdfBookError && !state.autoRetry) {
-                              return const SizedBox.shrink();
-                            }
-                            if (state is PdfBookError ||
-                                state is! PdfBookLoaded ||
-                                state.isLoading) {
-                              // RepaintBoundary סביב הספינר בלבד: בלי הבידוד
-                              // כל טיק שלו מרסטר מחדש את כל שכבת ה-viewport
-                              // (כולל ה-ColorFiltered) — יקר בטעינות ארוכות.
-                              return const Positioned.fill(
-                                child: ColoredBox(
-                                  color: AppColors.pageWhite,
-                                  child: Center(
-                                    child: RepaintBoundary(
+                child: Stack(
+                  children: [
+                    _buildPdfViewerFromFile(_resolvedPdfPath),
+                    BlocBuilder<PdfBookBloc, PdfBookState>(
+                      buildWhen: (prev, curr) {
+                        if (prev is PdfBookLoaded && curr is PdfBookLoaded) {
+                          return prev.isLoading != curr.isLoading ||
+                              prev.loadSucceeded != curr.loadSucceeded;
+                        }
+                        return true;
+                      },
+                      builder: (context, state) {
+                        // בזמן auto-retry נשאר הספינר על המסך
+                        if (state is PdfBookError && !state.autoRetry) {
+                          return const SizedBox.shrink();
+                        }
+                        if (state is PdfBookError ||
+                            state is! PdfBookLoaded ||
+                            state.isLoading) {
+                          // RepaintBoundary סביב הספינר בלבד: בלי הבידוד
+                          // כל טיק שלו מרסטר מחדש את כל שכבת ה-viewport.
+                          final isSlow =
+                              state is PdfBookLoading && state.isSlow;
+                          return Positioned.fill(
+                            child: ColoredBox(
+                              color: pdfPageColor(
+                                Theme.of(context).brightness,
+                              ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const RepaintBoundary(
                                       child: CircularProgressIndicator(),
                                     ),
-                                  ),
+                                    if (isSlow) ...[
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'הקובץ נפתח לאט (קובץ גדול או כונן '
+                                        'איטי) — הטעינה נמשכת…',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurface,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                              );
-                            }
-                            if (!state.loadSucceeded) {
-                              return const Positioned.fill(
-                                child: Center(
-                                  child: Text('Failed to load PDF'),
-                                ),
-                              );
-                            }
-                            return const SizedBox.shrink();
-                          },
-                        ),
-                      ],
+                              ),
+                            ),
+                          );
+                        }
+                        if (!state.loadSucceeded) {
+                          return const Positioned.fill(
+                            child: Center(
+                              child: Text('Failed to load PDF'),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
                     ),
-                  ),
+                  ],
                 ),
               ),
-              // שגיאת טעינה - מחוץ ל-ColorFiltered כדי שהצבעים יהיו נכונים
               BlocBuilder<PdfBookBloc, PdfBookState>(
                 buildWhen: (prev, curr) {
                   final prevShow = prev is PdfBookError && !prev.autoRetry;
@@ -4544,11 +4570,17 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                   );
                 },
               ),
-              _buildPageTurnOverlay(context),
+              ValueListenableBuilder<int>(
+                valueListenable: _pageTurnUi,
+                builder: (context, _, _) => _buildPageTurnOverlay(context),
+              ),
               // הלחצנים מעל שכבת האנימציה ומחוץ ל-boundary המצולם — כדי
               // שיישארו גלויים ולחיצים גם בזמן דפדוף.
               ListenableBuilder(
-                listenable: widget.tab.pdfViewerController,
+                listenable: Listenable.merge([
+                  widget.tab.pdfViewerController,
+                  _pageTurnUi,
+                ]),
                 builder: (context, _) => LayoutBuilder(
                   builder: (context, constraints) =>
                       _buildBookViewTurnButtons(context, constraints.biggest),
@@ -4557,15 +4589,18 @@ class _PdfBookScreenState extends State<PdfBookScreen>
               ValueListenableBuilder<List<PdfOutlineNode>?>(
                 valueListenable: widget.tab.outline,
                 builder: (context, outline, _) => RepaintBoundary(
-                  child: PdfScrollbar(
-                    controller: widget.tab.pdfViewerController,
-                    orientation: ScrollbarOrientation.right,
-                    trackThickness: _verticalScrollbarGutter,
-                    thumbMinSize: 50.0,
-                    scrollBoundsBuilder: _currentVerticalScrollbarBounds,
-                    freezeThumb: _pageTurnTransition != null,
-                    outline: outline,
-                    bookTitle: widget.tab.book.title,
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: _pageTurnUi,
+                    builder: (context, _, _) => PdfScrollbar(
+                      controller: widget.tab.pdfViewerController,
+                      orientation: ScrollbarOrientation.right,
+                      trackThickness: _verticalScrollbarGutter,
+                      thumbMinSize: 50.0,
+                      scrollBoundsBuilder: _currentVerticalScrollbarBounds,
+                      freezeThumb: _pageTurnTransition != null,
+                      outline: outline,
+                      bookTitle: widget.tab.book.title,
+                    ),
                   ),
                 ),
               ),
@@ -5094,7 +5129,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         tooltip: 'פתח כרטיסיית מפרשים',
         onPressed: () => context.read<TabsBloc>().add(
           AddTab(
-            PdfCommentatorsTab(sourceTab: widget.tab),
+            PdfCommentatorsTab.of(widget.tab),
             insertAdjacent: true,
           ),
         ),
@@ -5782,12 +5817,16 @@ class _PdfSpreadCacheEntry {
 
 class _BookViewViewportMaskPainter extends CustomPainter {
   final Rect spreadViewportRect;
+  final Color color;
 
-  const _BookViewViewportMaskPainter(this.spreadViewportRect);
+  const _BookViewViewportMaskPainter(
+    this.spreadViewportRect, {
+    required this.color,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = Colors.white;
+    final paint = Paint()..color = color;
 
     if (spreadViewportRect.top > 0) {
       canvas.drawRect(
@@ -5832,7 +5871,8 @@ class _BookViewViewportMaskPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BookViewViewportMaskPainter oldDelegate) =>
-      oldDelegate.spreadViewportRect != spreadViewportRect;
+      oldDelegate.spreadViewportRect != spreadViewportRect ||
+      oldDelegate.color != color;
 }
 
 class _VisibleBookPage {
@@ -5847,6 +5887,18 @@ class _VisibleBookPage {
     required this.isLeftPage,
     required this.outerStackPages,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      other is _VisibleBookPage &&
+      other.pageNumber == pageNumber &&
+      other.viewportRect == viewportRect &&
+      other.isLeftPage == isLeftPage &&
+      other.outerStackPages == outerStackPages;
+
+  @override
+  int get hashCode =>
+      Object.hash(pageNumber, viewportRect, isLeftPage, outerStackPages);
 }
 
 class _BookSpreadPainter extends CustomPainter {
@@ -5954,7 +6006,7 @@ class _BookSpreadPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BookSpreadPainter oldDelegate) =>
-      oldDelegate.pages != pages ||
+      !listEquals(oldDelegate.pages, pages) ||
       oldDelegate.pageEdgeColor != pageEdgeColor ||
       oldDelegate.stackColor != stackColor ||
       oldDelegate.stackShadowColor != stackShadowColor ||

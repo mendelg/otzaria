@@ -56,7 +56,19 @@ class RetryLoad extends PdfBookEvent {
 
 /// The load advanced (document opened, password entered): restart the watchdog.
 class LoadProgressed extends PdfBookEvent {
-  const LoadProgressed();
+  /// pdfium finished opening the file; only then can a stall be retried.
+  final bool documentOpened;
+
+  const LoadProgressed({this.documentOpened = false});
+
+  @override
+  List<Object?> get props => [documentOpened];
+}
+
+/// The native open is still running past the first timeout: tell the user,
+/// keep waiting.
+class LoadSlow extends PdfBookEvent {
+  const LoadSlow();
 }
 
 /// The load waits on the user (password dialog): stop the watchdog until

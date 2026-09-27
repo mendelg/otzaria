@@ -125,7 +125,7 @@ dependencies:
 
 dependency_overrides:
   # TODO: להחזיר ל-pub.dev רק אחרי שכל ה-PR ימוזגו וישוחררו: espresso3389/pdfrx#724,
-  # #729 ו-#730. עד אז ענף הפורק שמכיל את כולם (נמשך מראש הענף בכל pub get).
+  # #729, #730 ו-#731. עד אז ענף הפורק שמכיל את כולם (נמשך מראש הענף בכל pub get).
   pdfrx:
     git:
       url: https://github.com/palmoni5/pdfrx

@@ -437,32 +437,40 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   String _getLinkKey(Link link) => pdfCommentaryItemKey(link);
 
+  /// היסט התוצאה הראשונה של כל פריט בסדר התצוגה. מחושב פעם אחת לכל build:
+  /// סריקה מלאה לכל פריט שנבנה הייתה ריבועית בקבוצה מורחבת גדולה.
+  Map<String, int>? _searchResultOffsets;
+  List<Link>? _searchResultOffsetsFor;
+
   // Helper to determine relative index for highlighting
   int _getItemSearchIndex(Link link) {
     if (_searchResultsPerLink.isEmpty) return -1;
 
-    int cumulativeIndex = 0;
     final linkKey = _getLinkKey(link);
+    final itemResults = _searchResultsPerLink[linkKey] ?? 0;
+    if (itemResults == 0) return -1;
 
-    for (final orderedLink in _orderedLinks) {
-      final currentKey = _getLinkKey(orderedLink);
-
-      // Found the link
-      if (currentKey == linkKey) {
-        final itemResults = _searchResultsPerLink[linkKey] ?? 0;
-        if (itemResults == 0) return -1;
-
-        final relativeIndex = _currentSearchIndex - cumulativeIndex;
-        // Check if the current global index falls within this item's range
-        return (relativeIndex >= 0 && relativeIndex < itemResults)
-            ? relativeIndex
-            : -1;
-      }
-
-      cumulativeIndex += _searchResultsPerLink[currentKey] ?? 0;
+    if (!identical(_searchResultOffsetsFor, _orderedLinks)) {
+      _searchResultOffsets = null;
+      _searchResultOffsetsFor = _orderedLinks;
     }
+    final offsets = _searchResultOffsets ??= () {
+      final result = <String, int>{};
+      var cumulativeIndex = 0;
+      for (final orderedLink in _orderedLinks) {
+        final key = _getLinkKey(orderedLink);
+        result.putIfAbsent(key, () => cumulativeIndex);
+        cumulativeIndex += _searchResultsPerLink[key] ?? 0;
+      }
+      return result;
+    }();
+    final start = offsets[linkKey];
+    if (start == null) return -1;
 
-    return -1;
+    final relativeIndex = _currentSearchIndex - start;
+    return (relativeIndex >= 0 && relativeIndex < itemResults)
+        ? relativeIndex
+        : -1;
   }
 
   void _handleSearchFocusChange() {
@@ -1102,6 +1110,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   @override
   Widget build(BuildContext context) {
+    _searchResultOffsets = null;
     if (widget.isFullScreen) {
       // במצב fullscreen: הכותרת + הניווט מופעלים מ-PdfCommentatorsTabScreen.
       // הפאנל מציג רק את תוכן המפרשים (כולל שורת חיפוש ופילטר)
@@ -1262,7 +1271,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           tooltip: 'פתח כרטסיית מפרשים',
           onPressed: () => context.read<TabsBloc>().add(
             AddTab(
-              PdfCommentatorsTab(sourceTab: widget.tab),
+              PdfCommentatorsTab.of(widget.tab),
               insertAdjacent: true,
             ),
           ),

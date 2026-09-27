@@ -47,6 +47,10 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
   /// 0 → הירייה הבאה תהיה auto-retry; 1+ → הירייה הבאה תציג כפתור.
   int _watchdogFiredCount = 0;
 
+  /// pdfium פתח את הקובץ בניסיון הנוכחי. לפני כן ניסיון חוזר רק נעמד בתור
+  /// ה-worker מאחורי הפתיחה שעדיין רצה, ולכן איטיות אינה סיבה לנסות שוב.
+  bool _documentOpened = false;
+
   PdfBookBloc({
     required this.tab,
     required PdfBookInitial initialState,
@@ -64,6 +68,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     on<RetryLoad>(_onRetryLoad);
     on<LoadProgressed>(_onLoadProgressed);
     on<LoadWatchdogPaused>(_onLoadWatchdogPaused);
+    on<LoadSlow>(_onLoadSlow);
     on<LoadHeadingsAndLinks>(_onLoadHeadingsAndLinks);
 
     // Navigation events
@@ -130,19 +135,19 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     _loadWatchdog?.cancel();
     // הירייה הראשונה (count==0): מפעיל retry שקט אחרי _autoRetryDelay.
     // הירייה השנייה ואילך: מציג כפתור "נסה שוב" אחרי _showButtonDelay.
-    final isAutoRetry = _watchdogFiredCount == 0;
-    final timeout = isAutoRetry ? _autoRetryDelay : _showButtonDelay;
+    final isFirstFire = _watchdogFiredCount == 0;
+    final timeout = isFirstFire ? _autoRetryDelay : _showButtonDelay;
     _loadWatchdog = Timer(timeout, () {
       if (isClosed) return;
-      if (state is PdfBookLoading) {
-        _watchdogFiredCount++;
-        add(
-          DocumentLoadFailed(
-            'הטעינה ארכה זמן רב מדי',
-            autoRetry: isAutoRetry,
-          ),
-        );
+      if (state is! PdfBookLoading) return;
+      _watchdogFiredCount++;
+      if (isFirstFire && !_documentOpened) {
+        add(const LoadSlow());
+        return;
       }
+      add(
+        DocumentLoadFailed('הטעינה ארכה זמן רב מדי', autoRetry: isFirstFire),
+      );
     });
   }
 
@@ -167,6 +172,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     }
 
     _watchdogFiredCount = 0;
+    _documentOpened = false;
     emit(
       PdfBookLoading(
         book: book,
@@ -261,6 +267,17 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
       searchDistance = current.searchDistance;
       matchPolicy = current.matchPolicy;
       layoutMode = current.layoutMode;
+    } else if (current is PdfBookError && !current.autoRetry) {
+      // הפתיחה האיטית הסתיימה אחרי שהוצג "נסה שוב": ההצלחה המאוחרת גוברת.
+      book = current.book;
+      searchText = tab.searchText;
+      searchOptions = tab.searchOptions;
+      alternativeWords = tab.alternativeWords;
+      spacingValues = tab.spacingValues;
+      searchMode = tab.searchMode;
+      searchDistance = tab.searchDistance;
+      matchPolicy = tab.matchPolicy;
+      layoutMode = tab.savedLayoutMode ?? PdfLayoutMode.regularView;
     } else if (current is PdfBookLoaded) {
       // Already loaded, just update
       emit(
@@ -334,6 +351,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     if (!current.autoRetry) {
       _watchdogFiredCount = 0;
     }
+    _documentOpened = false;
 
     emit(
       PdfBookLoading(
@@ -352,7 +370,15 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
   }
 
   void _onLoadProgressed(LoadProgressed event, Emitter<PdfBookState> emit) {
+    if (event.documentOpened) _documentOpened = true;
     if (state is PdfBookLoading) _startLoadWatchdog();
+  }
+
+  void _onLoadSlow(LoadSlow event, Emitter<PdfBookState> emit) {
+    final current = state;
+    if (current is! PdfBookLoading) return;
+    emit(current.copyWith(isSlow: true));
+    _startLoadWatchdog();
   }
 
   void _onLoadWatchdogPaused(

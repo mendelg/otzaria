@@ -91,6 +91,9 @@ class PdfBookLoading extends PdfBookState {
   final SearchMatchPolicy matchPolicy;
   final PdfLayoutMode layoutMode;
 
+  /// הפתיחה עדיין רצה אחרי ה-timeout הראשון; ה-UI מודיע שהטעינה נמשכת.
+  final bool isSlow;
+
   const PdfBookLoading({
     required this.book,
     this.searchText = '',
@@ -101,10 +104,24 @@ class PdfBookLoading extends PdfBookState {
     this.searchDistance = 0,
     this.matchPolicy = SearchMatchPolicy.standard,
     this.layoutMode = PdfLayoutMode.regularView,
+    this.isSlow = false,
   });
 
+  PdfBookLoading copyWith({bool? isSlow}) => PdfBookLoading(
+    book: book,
+    searchText: searchText,
+    searchOptions: searchOptions,
+    alternativeWords: alternativeWords,
+    spacingValues: spacingValues,
+    searchMode: searchMode,
+    searchDistance: searchDistance,
+    matchPolicy: matchPolicy,
+    layoutMode: layoutMode,
+    isSlow: isSlow ?? this.isSlow,
+  );
+
   @override
-  List<Object?> get props => [book.title];
+  List<Object?> get props => [book.title, isSlow];
 }
 
 /// Document failed to load
