@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/text_book/models/commentator_group.dart';
 import 'package:otzaria/text_book/text_book_repository.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart'
@@ -16,11 +18,12 @@ import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 /// כותרת תת-התפריט "מפרשים" בתפריט ההקשר של גוף הספר.
 const String kParagraphCommentatorsMenuLabel = 'מפרשים על פסקה זו';
 
-/// מטמון את מפרשי הפסקה שנטענו בשאילת טווח.
+/// מטמון את מפרשי הפסקה ואת שאר קישוריה, שנטענו בשאילת טווח.
 ///
 /// [changes] מאפשר לתת־התפריט הפתוח להתעדכן כשהשאילתה מסתיימת.
 class ParagraphCommentatorsCache {
   final Map<(Object, int), List<String>> _values = {};
+  final Map<(Object, int), List<Link>> _referenceLinks = {};
   final Set<(Object, int)> _pending = {};
   final StreamController<Object?> _changes = StreamController.broadcast();
 
@@ -28,6 +31,10 @@ class ParagraphCommentatorsCache {
 
   List<String>? value(TextBook book, int paragraphIndex) =>
       _values[_key(book, paragraphIndex)];
+
+  /// קישורי הפסקה שאינם מפרשים — לתת-התפריט "קישורים".
+  List<Link>? referenceLinks(TextBook book, int paragraphIndex) =>
+      _referenceLinks[_key(book, paragraphIndex)];
 
   bool isLoading(TextBook book, int paragraphIndex) =>
       _pending.contains(_key(book, paragraphIndex));
@@ -46,11 +53,20 @@ class ParagraphCommentatorsCache {
         endIndex: paragraphIndex,
         targetBookTitles: null,
       );
+      final referenceLinks = [
+        for (final link in links)
+          if (!LinkTypes.isDependentTextLink(link.connectionType)) link,
+      ];
+      // המיון בתפריט סינכרוני — הדורות חייבים להיות במטמון לפני ההודעה.
+      await CommentaryService.preloadErasForLinks(
+        referenceLinks,
+      ).catchError((_) {});
       _values[key] = {
         for (final link in links)
           if (LinkTypes.isDependentTextLink(link.connectionType))
             getTitleFromPath(link.path2),
       }.toList();
+      _referenceLinks[key] = referenceLinks;
     } finally {
       _pending.remove(key);
       if (!_changes.isClosed) _changes.add(key);
@@ -90,6 +106,28 @@ List<String> paragraphCommentators({
     onParagraph.add(kNotesCommentatorTitle);
   }
   return availableCommentators.where(onParagraph.contains).toList();
+}
+
+/// קישורי תת-התפריט "קישורים": [linksByLine] (חלון הטעינה) מאוחד עם
+/// [queriedLinks] (שאילתת הפסקה), בלי מפרשים וקישורים פנימיים, לפי דורות.
+List<Link> paragraphReferenceLinks({
+  required Map<int, List<Link>> linksByLine,
+  required int paragraphIndex,
+  List<Link>? queriedLinks,
+}) {
+  final seen = <(int, String, int, BookSource)>{};
+  final links = [
+    for (final link in [
+      ...?linksByLine[paragraphIndex + 1],
+      ...?queriedLinks,
+    ])
+      if (!LinkTypes.isDependentTextLink(link.connectionType) &&
+          link.start == null &&
+          link.end == null &&
+          seen.add((link.index1, link.path2, link.index2, link.targetSource)))
+        link,
+  ];
+  return CommentaryService.sortLinksByEraSync(links);
 }
 
 /// פריט "פתח את חלונית המפרשים" יוצג כשיש מפרשים נבחרים, המפרשים אינם מוצגים

@@ -287,17 +287,12 @@ class Link {
     }
 
     try {
-      final resolvedRef = await refFromIndex(
-        index2 - 1,
-        LibraryProviderManager.instance
-            .getBookToc(
-              targetTitle,
-              categoryId: targetCategoryId,
-              fileType: targetFileType,
-              preferSource: targetSource,
-            )
-            .then((toc) => toc ?? const <TocEntry>[]),
-      );
+      final resolvedRef =
+          await _refFromTargetLine(targetTitle) ??
+          await refFromIndex(
+            index2 - 1,
+            _loadTargetToc(targetTitle, targetFileType),
+          );
       return formatDisplayReference(
             bookTitle: targetTitle,
             resolvedRef: resolvedRef,
@@ -311,6 +306,36 @@ class Link {
           ) +
           _rangeDisplaySuffix;
     }
+  }
+
+  /// כותרות שורת היעד בשאילתה אחת, במקום טעינת ה-TOC כולו; null → ה-TOC המלא.
+  /// ספר אישי נשאר ב-TOC: בפורמט מומר ה-TOC נגזר מהתוכן ולא משורות ה-DB.
+  Future<String?> _refFromTargetLine(String title) async {
+    final bookId = targetBookId;
+    if (bookId == null || targetSource.isUser) return null;
+    return refFromDbLine(
+      TextBook(id: bookId, title: title, source: targetSource),
+      index2 - 1,
+    );
+  }
+
+  /// טעינות TOC פעילות לפי ספר יעד: קישורים רבים לאותו ספר (תת-תפריט, רשימת
+  /// מפרשים) חולקים טעינה אחת. נמחק בסיום, כך שאין מטמון שעלול להתיישן.
+  static final Map<String, Future<List<TocEntry>>> _inflightTocs = {};
+
+  Future<List<TocEntry>> _loadTargetToc(String title, String? fileType) {
+    final key =
+        '$title|${targetCategoryId ?? ''}|${fileType ?? ''}|'
+        '${targetSource.wireKey}';
+    return _inflightTocs[key] ??= LibraryProviderManager.instance
+        .getBookToc(
+          title,
+          categoryId: targetCategoryId,
+          fileType: fileType,
+          preferSource: targetSource,
+        )
+        .then((toc) => toc ?? const <TocEntry>[])
+        .whenComplete(() => _inflightTocs.remove(key));
   }
 
   String? _resolveTargetFileType() {

@@ -345,6 +345,37 @@ void main() {
 
       expect(cache.value(book, 0), ['מפרש אישי']);
     });
+
+    test('שאילת הטווח שומרת את קישורי הפסקה שאינם מפרשים', () async {
+      final userBooksRepository =
+          await UserBooksDatabaseHolder.instance.repository;
+      await UserContentRepository(userBooksRepository.database).upsertUserLink(
+        const UserLinkRecord(
+          sourceTitle: 'ספר בסיס',
+          sourceIsUserBook: false,
+          sourceLineIndex: 0,
+          targetTitle: 'ספר מקושר',
+          targetIsUserBook: true,
+          targetLineIndex: 0,
+          connectionType: 'REFERENCE',
+        ),
+      );
+      final cache = ParagraphCommentatorsCache();
+      addTearDown(cache.dispose);
+      final book = TextBook(title: 'ספר בסיס');
+
+      await cache.prefetch(
+        repository: TextBookRepository(fileSystem: FileSystemData()),
+        book: book,
+        paragraphIndex: 0,
+      );
+
+      expect(cache.value(book, 0), isEmpty);
+      expect(
+        cache.referenceLinks(book, 0)?.map((link) => link.connectionType),
+        ['REFERENCE'],
+      );
+    });
   });
 
   group('מדיניות הצגת פריטי הפתיחה', () {

@@ -171,6 +171,26 @@ void main() {
       expect(result.map((link) => link.heRef), ['בראשית ג', 'בראשית ג ב']);
     });
 
+    test('מאחדת את שאילתת הפסקה עם חלון הטעינה בלי כפילויות', () {
+      Link reference(String path2) => Link(
+        heRef: path2,
+        index1: 3,
+        path2: path2,
+        index2: 7,
+        connectionType: 'REFERENCE',
+      );
+
+      final result = buildCombinedViewContextMenuLinksForParagraph(
+        linksByLine: {
+          3: [reference('a.txt')],
+        },
+        paragraphIndex: 2,
+        queriedLinks: [reference('a.txt'), reference('b.txt')],
+      );
+
+      expect(result.map((link) => link.path2), ['a.txt', 'b.txt']);
+    });
+
     test('מחזירה רשימה ריקה כשאין קישורים לפסקה', () {
       final result = buildCombinedViewContextMenuLinksForParagraph(
         linksByLine: const <int, List<Link>>{},

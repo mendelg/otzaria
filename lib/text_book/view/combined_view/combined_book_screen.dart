@@ -35,7 +35,6 @@ import 'package:otzaria/models/links.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/data/data_providers/library_provider_manager.dart';
-import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/utils/navigation/talmud_bavli_open_format.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
@@ -169,18 +168,12 @@ List<String> activatePreviewCommentator({
 List<Link> buildCombinedViewContextMenuLinksForParagraph({
   required Map<int, List<Link>> linksByLine,
   required int paragraphIndex,
-}) {
-  final lineLinks = linksByLine[paragraphIndex + 1] ?? const <Link>[];
-  final visibleLinks = lineLinks.where((link) {
-    return !LinkTypes.isDependentTextLink(link.connectionType) &&
-        link.start == null &&
-        link.end == null;
-  }).toList();
-
-  // מיון לפי סדר הדורות (כמו במפרשים ובחלונית הקישורים).
-  // מיון סינכרוני מהמטמון - הדורות נטענים מראש ב-BLoC בעת טעינת הקישורים.
-  return CommentaryService.sortLinksByEraSync(visibleLinks);
-}
+  List<Link>? queriedLinks,
+}) => paragraphReferenceLinks(
+  linksByLine: linksByLine,
+  paragraphIndex: paragraphIndex,
+  queriedLinks: queriedLinks,
+);
 
 @visibleForTesting
 bool shouldShowOpenLinksPaneEntry({
@@ -1256,14 +1249,21 @@ class _CombinedViewState extends State<CombinedView> {
       ];
     }
 
-    if (state.availableCommentators.isNotEmpty) {
-      _prefetchParagraphCommentators(state, paragraphIndex);
-    }
+    // גם לקישורים: linksByLine מכסה רק את חלון הטעינה סביב האזור הנראה.
+    _prefetchParagraphCommentators(state, paragraphIndex);
 
-    final paragraphLinks = buildCombinedViewContextMenuLinksForParagraph(
-      linksByLine: state.linksByLine,
-      paragraphIndex: paragraphIndex,
-    );
+    List<Link> currentParagraphLinks() =>
+        buildCombinedViewContextMenuLinksForParagraph(
+          linksByLine: state.linksByLine,
+          paragraphIndex: paragraphIndex,
+          queriedLinks: _paragraphCommentatorsCache.referenceLinks(
+            state.book,
+            paragraphIndex,
+          ),
+        );
+    final hasParagraphLinks =
+        currentParagraphLinks().isNotEmpty ||
+        _paragraphCommentatorsCache.isLoading(state.book, paragraphIndex);
     final isCommentatorsTabActive =
         widget.isCommentatorsTabActive?.call() ?? false;
     final shouldShowOpenPaneEntry = shouldShowOpenCommentatorsPaneEntry(
@@ -1318,33 +1318,42 @@ class _CombinedViewState extends State<CombinedView> {
       );
     }
 
-    final showOpenLinksPaneEntry = shouldShowOpenLinksPaneEntry(
-      hasLinks: paragraphLinks.isNotEmpty,
-      isLinksTabActive: widget.isLinksTabActive?.call() ?? false,
-    );
-
-    List<AppContextMenuEntry> buildLinkChildren() => [
-      if (showOpenLinksPaneEntry) ...[
-        AppContextMenuEntry(
-          label: 'פתח קישורים בחלונית צד',
-          onTap: () => widget.onOpenLinksPane?.call(),
+    List<AppContextMenuEntry> buildLinkChildren() {
+      final paragraphLinks = currentParagraphLinks();
+      if (paragraphLinks.isEmpty) {
+        return _paragraphCommentatorsCache.isLoading(state.book, paragraphIndex)
+            ? const [
+                AppContextMenuEntry(label: 'טוען קישורים…', enabled: false),
+              ]
+            : const <AppContextMenuEntry>[];
+      }
+      final showOpenLinksPaneEntry = shouldShowOpenLinksPaneEntry(
+        hasLinks: true,
+        isLinksTabActive: widget.isLinksTabActive?.call() ?? false,
+      );
+      return [
+        if (showOpenLinksPaneEntry) ...[
+          AppContextMenuEntry(
+            label: 'פתח קישורים בחלונית צד',
+            onTap: () => widget.onOpenLinksPane?.call(),
+          ),
+          const AppContextMenuEntry.divider(),
+        ],
+        ...paragraphLinks.map(
+          (link) => buildLinkContextMenuEntry(
+            link: link,
+            removeNikud: state.commentaryRemoveNikud,
+            removePunctuation: state.commentaryRemovePunctuation,
+            maxFontSize: widget.textSize,
+            onTap: () async {
+              final tab = await buildLinkTargetTab(link);
+              if (_disposed || !mounted) return;
+              widget.openBookCallback(tab);
+            },
+          ),
         ),
-        const AppContextMenuEntry.divider(),
-      ],
-      ...paragraphLinks.map(
-        (link) => buildLinkContextMenuEntry(
-          link: link,
-          removeNikud: state.commentaryRemoveNikud,
-          removePunctuation: state.commentaryRemovePunctuation,
-          maxFontSize: widget.textSize,
-          onTap: () async {
-            final tab = await buildLinkTargetTab(link);
-            if (_disposed || !mounted) return;
-            widget.openBookCallback(tab);
-          },
-        ),
-      ),
-    ];
+      ];
+    }
 
     // החיפוש עובד תמיד על טקסט ללא ניקוד וטעמים — מנקים פעם אחת לשימוש
     // בשורת האייקונים, בכיתובי החיפוש ובשאילתת החיפוש בפועל.
@@ -1417,8 +1426,9 @@ class _CombinedViewState extends State<CombinedView> {
       AppContextMenuEntry(
         label: 'קישורים',
         icon: OtzariaIcons.links_24_regular,
-        enabled: paragraphLinks.isNotEmpty,
+        enabled: hasParagraphLinks,
         childrenBuilder: buildLinkChildren,
+        childrenRefreshStream: _paragraphCommentatorsCache.changes,
       ),
       ...() {
         final sourceLink = _siblingController.sourceLinkForLine(
