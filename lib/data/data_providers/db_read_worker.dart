@@ -38,6 +38,11 @@ class DbReadWorkerSuspended implements Exception {
   String toString() => 'DbReadWorkerSuspended';
 }
 
+/// נזרק כשרק ה-worker לא שחרר את הקובץ, כדי שעדכון שכבר הצליח יוכל להמשיך.
+class DbReadWorkerNotReleased extends StateError {
+  DbReadWorkerNotReleased(super.message);
+}
+
 /// תוכן קישור משורות [bookId]: שורה [index2], או כל הטווח עד [index2End]
 /// (1-based, כולל). משותף ל-worker ולמסלול הישיר, כדי שהפלט יהיה זהה.
 Future<String> linkContentFromDbLines(
@@ -73,8 +78,10 @@ class DbReadWorker {
   @visibleForTesting
   static Duration stallTimeout = const Duration(seconds: 10);
 
-  /// תקרה לפקודות ההשהיה/הסגירה, כמו ב-FindRefDbIsolate.
-  static const Duration _lifecycleCommandTimeout = Duration(seconds: 10);
+  // קצר בכוונה: פקודת בקרה ממתינה רק לבקשה שכבר בביצוע, וכל המתנה
+  // מעכבת את עדכון הספרייה ואת הסגירה.
+  @visibleForTesting
+  static Duration lifecycleCommandTimeout = const Duration(seconds: 4);
 
   static Future<DbReadWorker> _instanceOrSpawn() {
     final existing = _instance;
@@ -141,6 +148,8 @@ class DbReadWorker {
     String method,
     Map<String, Object?> args,
   ) async {
+    // קודם ההשהיה: worker תקוע היה שולח את הקורא לפתוח את הקובץ באמצע כתיבה.
+    if (_suspendedForExternalWrite) throw const DbReadWorkerSuspended();
     final service = await _instanceOrSpawn();
     if (service._stalled) {
       throw const DbReadWorkerUnavailable('stalled');
@@ -216,16 +225,24 @@ class DbReadWorker {
 
   /// סוגר את החיבור (הוא ייפתח מחדש בבקשה הבאה). נקרא כשהחיבור הראשי נסגר,
   /// כדי שה-worker לא יחזיק את הקובץ אחרי שה-provider שחרר אותו.
-  static Future<void> closeConnectionIfRunning() async {
+  /// [wait] כבוי ביציאה מהתוכנה: סיום התהליך משחרר את הקובץ ממילא.
+  static Future<void> closeConnectionIfRunning({bool wait = true}) async {
     final service = _instance;
     if (service == null || service._disposed) return;
     final closing = service._send('close', const {});
-    // worker תקוע לא יעכב את היציאה מהתוכנה.
-    if (service._stalled) {
+    if (!wait || service._stalled) {
       closing.ignore();
       return;
     }
     await service._awaitLifecycle(closing, 'close');
+  }
+
+  /// שוכח את הספרים שנפתרו — נקרא מיד אחרי commit של עדכון, כדי שבקשה
+  /// שלפני הסגירה לא תקבל מזהה ספר ישן.
+  static void clearBookCacheIfRunning() {
+    final service = _instance;
+    if (service == null || service._disposed) return;
+    service._send('clearBookCache', const {}).ignore();
   }
 
   @visibleForTesting
@@ -239,7 +256,7 @@ class DbReadWorker {
     String method,
   ) async {
     try {
-      return await request.timeout(_lifecycleCommandTimeout);
+      return await request.timeout(lifecycleCommandTimeout);
     } on TimeoutException {
       request.ignore();
       debugPrint('[DbReadWorker] $method timed out — DB handle may be open');
@@ -415,6 +432,9 @@ void _workerMain(_Bootstrap bootstrap) {
         return null;
       case 'close':
         return closeConnection();
+      case 'clearBookCache':
+        resolvedBooks.clear();
+        return null;
       case 'linkContent':
         final repo = await ensureRepo(args['dbPath'] as String);
         final book = await resolveOfficialBook(
@@ -482,6 +502,7 @@ void _workerMain(_Bootstrap bootstrap) {
   }
 
   // עיבוד סדרתי: פקודת סגירה לא תסגור חיבור באמצע שאילתה בנקודת await.
+  final controls = <Map>[];
   final queue = <Map>[];
   var draining = false;
 
@@ -489,8 +510,13 @@ void _workerMain(_Bootstrap bootstrap) {
     if (draining) return;
     draining = true;
     try {
-      while (queue.isNotEmpty) {
-        final message = queue.removeAt(0);
+      while (controls.isNotEmpty || queue.isNotEmpty) {
+        // מחזור באירועים: פקודת בקרה שכבר הגיעה נקלטת לפני הבקשה הבאה.
+        await Future<void>.delayed(Duration.zero);
+        if (controls.isEmpty && queue.isEmpty) break;
+        final message = controls.isNotEmpty
+            ? controls.removeAt(0)
+            : queue.removeAt(0);
         final reply = await runItem(
           message['method'] as String,
           (message['args'] as Map).cast<String, Object?>(),
@@ -504,7 +530,23 @@ void _workerMain(_Bootstrap bootstrap) {
 
   receivePort.listen((dynamic message) {
     if (message is! Map) return;
-    queue.add(message);
+    final method = message['method'];
+    if (const {
+      'suspend',
+      'resume',
+      'close',
+      'clearBookCache',
+    }.contains(method)) {
+      if (method == 'suspend') {
+        for (final queued in queue) {
+          bootstrap.mainSendPort.send({'id': queued['id'], 'suspended': true});
+        }
+        queue.clear();
+      }
+      controls.add(message);
+    } else {
+      queue.add(message);
+    }
     drain();
   });
 }

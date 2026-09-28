@@ -162,13 +162,14 @@ class SqliteDataProvider {
   bool get isInitialized => _isInitialized;
 
   /// Closes the database connection to free resources
-  Future<void> dispose() async {
+  /// [forAppExit] לא ממתין ל-worker עסוק: התהליך מסתיים ממילא.
+  Future<void> dispose({bool forAppExit = false}) async {
     if (_isInitialized) {
       _repository.database.close();
       _isInitialized = false;
     }
     // ה-worker פותח לפי הנתיב של החיבור הזה, ולכן לא יחזיק את הקובץ אחריו.
-    await DbReadWorker.closeConnectionIfRunning();
+    await DbReadWorker.closeConnectionIfRunning(wait: !forAppExit);
   }
 
   /// מספר ה-write-sessions הפעילים. כשהוא > 0 חיבור ה-RO סגור ו-[initialize]
@@ -223,9 +224,10 @@ class SqliteDataProvider {
     if (!findRefReleased || !readWorkerReleased) {
       // בלי handle סגור אסור להזיז את הקובץ, בייחוד ב-Windows.
       await reopenAfterExternalWrite(reopenDatabase: false);
-      throw StateError(
-        'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה',
-      );
+      final message = 'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה';
+      throw findRefReleased
+          ? DbReadWorkerNotReleased(message)
+          : StateError(message);
     }
   }
 

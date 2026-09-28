@@ -324,6 +324,67 @@ void main() {
     expect(recovered, isNotNull);
   });
 
+  Map<String, Object?> slowTextArgs(String dbPath) => {
+    ...textRangeArgs(dbPath, 'ספר גדול'),
+    'startLine': 0,
+    'endLine': 199999,
+  };
+
+  test('suspend jumps ahead of queued requests and fails them', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 200000);
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+
+    final queued = [
+      for (var i = 0; i < 6; i++)
+        DbReadWorker.request(
+          'textRange',
+          slowTextArgs(dbPath),
+        ).then<Object?>((result) => result, onError: (Object e) => e),
+    ];
+    await Future<void>.delayed(Duration.zero);
+    expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+
+    final results = await Future.wait(queued);
+    expect(
+      results.whereType<DbReadWorkerSuspended>().length,
+      greaterThanOrEqualTo(5),
+    );
+  });
+
+  test('a stalled worker never bypasses a suspension', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 200000);
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+
+    DbReadWorker.stallTimeout = Duration.zero;
+    await expectLater(
+      DbReadWorker.request('textRange', slowTextArgs(dbPath)),
+      throwsA(isA<DbReadWorkerUnavailable>()),
+    );
+    DbReadWorker.stallTimeout = const Duration(seconds: 10);
+
+    final suspending = DbReadWorker.suspendForExternalWrite();
+    await expectLater(
+      DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית')),
+      throwsA(isA<DbReadWorkerSuspended>()),
+    );
+    await suspending;
+  });
+
+  test('closing without waiting does not block on a busy worker', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 200000);
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+
+    var slowDone = false;
+    final slow = DbReadWorker.request(
+      'textRange',
+      slowTextArgs(dbPath),
+    ).whenComplete(() => slowDone = true);
+    await Future<void>.delayed(Duration.zero);
+    await DbReadWorker.closeConnectionIfRunning(wait: false);
+    expect(slowDone, isFalse);
+    await slow;
+  });
+
   group('DatabaseLibraryProvider דרך ה-worker', () {
     late String dbPath;
 

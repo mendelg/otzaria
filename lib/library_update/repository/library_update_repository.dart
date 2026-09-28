@@ -7,6 +7,7 @@ import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/core/error_log_file.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/utils/file/disk_free_space.dart';
 import 'package:otzaria/utils/file/zstd_stream_extractor.dart';
@@ -920,6 +921,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
           onVerifyProgress: onVerifyProgress,
           onApplyProgress: onApplyProgress,
         );
+        DbReadWorker.clearBookCacheIfRunning();
         recovery.finishSuccess(dbPath);
         return booksTouched;
       } catch (_) {
@@ -929,7 +931,12 @@ class LibraryUpdateRepository implements LibraryUpdateService {
         if (concurrentReads) {
           // היציאה מ-WAL דורשת שאין חיבורים אחרים — סוגרים לרגע את ה-RO,
           // אחרת ההמרה נתקעת על מלוא ה-busy_timeout ונכשלת.
-          await SqliteDataProvider.instance.closeForExternalWrite();
+          try {
+            await SqliteDataProvider.instance.closeForExternalWrite();
+          } on DbReadWorkerNotReleased catch (error) {
+            // העדכון כבר נשמר; worker תקוע רק מונע את החזרה ל-DELETE.
+            _logJournalModeFailure('DELETE', error.message);
+          }
           final revertFailure = _trySetJournalMode(dbPath, 'DELETE');
           if (revertFailure != null) {
             _logJournalModeFailure('DELETE', revertFailure);
