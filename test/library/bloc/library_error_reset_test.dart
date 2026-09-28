@@ -44,6 +44,7 @@ void main() {
   late TantivyDataProvider previousIndex;
   late Future<Library>? previousLibrary;
   late _ControlledFiles files;
+  late DataRepository repository;
   late LibraryBloc bloc;
 
   setUp(() async {
@@ -55,7 +56,13 @@ void main() {
     FileSystemData.instance = files;
     TantivyDataProvider.instance = _ReadyIndex();
     DataRepository.instance.library = Future.value(Library(categories: []));
-    bloc = LibraryBloc(hiddenStore: const _EmptyHiddenStore());
+    repository = DataRepository(fileSystemData: files);
+    repository.library = Future.value(Library(categories: []));
+    await repository.library;
+    bloc = LibraryBloc(
+      hiddenStore: const _EmptyHiddenStore(),
+      repository: repository,
+    );
   });
 
   tearDown(() async {

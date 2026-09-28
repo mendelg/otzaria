@@ -19,7 +19,7 @@ import 'package:otzaria/library/models/library.dart';
 /// accessing and manipulating application data from various sources.
 class DataRepository {
   /// Handles file system operations like reading book texts and metadata
-  final FileSystemData _fileSystemData = FileSystemData.instance;
+  final FileSystemData _fileSystemData;
 
   /// Singleton instance of the DataRepository
   static final DataRepository _singleton = DataRepository();
@@ -32,25 +32,50 @@ class DataRepository {
   static Duration attachedAcronymsWait = const Duration(milliseconds: 300);
 
   Future<Library>? _libraryFuture;
+  Library? _lastSuccessfulLibrary;
   @visibleForTesting
   Future<Library>? get cachedLibraryFutureForTesting => _libraryFuture;
-  Future<Library> get library =>
-      _libraryFuture ??= _forgetIfFailed(_getLibrary());
-  set library(Future<Library> value) => _libraryFuture = _forgetIfFailed(value);
 
-  // בנייה שנכשלה לא נשמרת — אחרת כל קורא הבא (גם רענון) יקבל את אותה שגיאה.
-  Future<Library> _forgetIfFailed(Future<Library> future) {
-    future.then<void>(
-      (_) {},
-      onError: (Object _) {
-        if (identical(_libraryFuture, future)) _libraryFuture = null;
+  /// הקטלוג האחרון שהושלם בהצלחה, גם אם בנייה חדשה יותר נכשלה.
+  Library? get lastSuccessfulLibrary => _lastSuccessfulLibrary;
+  Future<Library> get library =>
+      _libraryFuture ??= _trackLibraryFuture(_getLibrary());
+  set library(Future<Library> value) =>
+      _libraryFuture = _trackLibraryFuture(value);
+
+  /// ממתין לבנייה פעילה, או מחזיר את הקטלוג האחרון שהצליח אחרי כשל.
+  Future<Library?> librarySnapshotForRefresh() async {
+    final current = _libraryFuture;
+    if (current == null) return _lastSuccessfulLibrary;
+    try {
+      return await current;
+    } on Object {
+      return _lastSuccessfulLibrary;
+    }
+  }
+
+  Future<Library> _trackLibraryFuture(Future<Library> future) {
+    late final Future<Library> tracked;
+    tracked = future.then<Library>(
+      (library) {
+        if (identical(_libraryFuture, tracked)) {
+          _lastSuccessfulLibrary = library;
+        }
+        return library;
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        if (identical(_libraryFuture, tracked)) _libraryFuture = null;
+        Error.throwWithStackTrace(error, stackTrace);
       },
     );
-    return future;
+    return tracked;
   }
 
   /// לאחר החלפת נתיב ספרייה, הקריאה הבאה חייבת לבנות את העץ מהנתיב החדש.
-  void invalidateLibraryCache() => _libraryFuture = null;
+  void invalidateLibraryCache() {
+    _libraryFuture = null;
+    _lastSuccessfulLibrary = null;
+  }
 
   // Lazy-loaded: only fetched when user actually searches for external books.
   // Previously these ran getAllBooksWithRelations() eagerly at startup,
@@ -79,7 +104,14 @@ class DataRepository {
     _otzarBooksFuture = null;
   }
 
-  DataRepository();
+  DataRepository({FileSystemData? fileSystemData})
+    : _fileSystemData = fileSystemData ?? FileSystemData.instance;
+
+  /// בונה מחדש את הקטלוג ומעדכן את ה-Future המשותף.
+  Future<Library> reloadLibrary() {
+    library = _fileSystemData.getLibrary();
+    return library;
+  }
 
   /// Retrieves the complete library metadata including all available books
   ///
