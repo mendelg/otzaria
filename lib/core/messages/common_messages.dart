@@ -4,6 +4,7 @@ abstract class CommonMessages {
   static const String textCopied = 'הטקסט הועתק ללוח';
   static const String textCopiedShort = 'הטקסט הועתק';
   static const String formattedTextCopied = 'הטקסט המעוצב הועתק ללוח';
+  static const String plainTextCopied = 'הטקסט הועתק ללוח ללא עיצוב';
   static const String copyError = 'שגיאה בהעתקה';
   static const String formattedCopyError = 'שגיאה בהעתקה מעוצבת';
   static const String textCopyError = 'שגיאה בהעתקת הטקסט';

@@ -251,13 +251,39 @@ class CopyUtils {
     return buffer.toString();
   }
 
+  /// פריט לוח: טקסט פשוט, ובלי [plainTextOnly] גם HTML מעוצב לפי הגופן.
+  static DataWriterItem buildClipboardItem({
+    required String plainText,
+    required String htmlText,
+    required String fontFamily,
+    required double fontSize,
+    bool plainTextOnly = false,
+  }) {
+    final item = DataWriterItem();
+    item.add(Formats.plainText(plainText.trimRight()));
+    if (!plainTextOnly) {
+      item.add(
+        Formats.htmlText(
+          buildStyledHtml(
+            htmlText: htmlText,
+            fontFamily: fontFamily,
+            fontSize: fontSize,
+          ),
+        ),
+      );
+    }
+    return item;
+  }
+
   /// העתקת טקסט מעוצב ללוח עם HTML
   /// מטפל בעיצוב HTML עם גופן וגודל, וכתיבה ללוח עם חיווי באפליקציה.
+  /// [plainTextOnly] — טקסט פשוט בלבד, בלי HTML.
   static Future<void> copyStyledToClipboard({
     required String plainText,
     required String htmlText,
     required String fontFamily,
     required double fontSize,
+    bool plainTextOnly = false,
   }) async {
     try {
       final clipboard = SystemClipboard.instance;
@@ -266,18 +292,20 @@ class CopyUtils {
         return;
       }
 
-      final htmlContent = buildStyledHtml(
-        htmlText: htmlText,
-        fontFamily: fontFamily,
-        fontSize: fontSize,
+      await clipboard.write([
+        buildClipboardItem(
+          plainText: plainText,
+          htmlText: htmlText,
+          fontFamily: fontFamily,
+          fontSize: fontSize,
+          plainTextOnly: plainTextOnly,
+        ),
+      ]);
+      UiSnack.show(
+        plainTextOnly
+            ? CommonMessages.plainTextCopied
+            : CommonMessages.formattedTextCopied,
       );
-
-      final item = DataWriterItem();
-      item.add(Formats.plainText(plainText.trimRight())); // טקסט רגיל כגיבוי
-      item.add(Formats.htmlText(htmlContent)); // טקסט עם עיצוב
-
-      await clipboard.write([item]);
-      UiSnack.show(CommonMessages.formattedTextCopied);
     } catch (e) {
       UiSnack.showError(CommonMessages.copyErrorWithDetails(e));
     }

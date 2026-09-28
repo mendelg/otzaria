@@ -2530,6 +2530,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
   Future<void> _copyParagraphByIndex(
     int index, {
     TextDisplayProfile? profile,
+    bool plainTextOnly = false,
   }) async {
     if (index < 0 || index >= widget.content.length) return;
 
@@ -2593,21 +2594,15 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       replaceHolyNames: false,
     );
 
-    final item = DataWriterItem();
-    item.add(Formats.plainText(copyContent.plainText.trimRight()));
-    item.add(Formats.htmlText(_formatTextAsHtml(copyContent.htmlText)));
-
-    await SystemClipboard.instance?.write([item]);
-  }
-
-  /// עיצוב טקסט כ-HTML עם הגדרות הגופן הנוכחיות
-  String _formatTextAsHtml(String text) {
-    final settingsState = context.read<SettingsBloc>().state;
-    return CopyUtils.buildStyledHtml(
-      htmlText: text,
-      fontFamily: widget.fontFamily ?? settingsState.fontFamily,
-      fontSize: widget.fontSize,
-    );
+    await SystemClipboard.instance?.write([
+      CopyUtils.buildClipboardItem(
+        plainText: copyContent.plainText,
+        htmlText: copyContent.htmlText,
+        fontFamily: widget.fontFamily ?? settingsState.fontFamily,
+        fontSize: widget.fontSize,
+        plainTextOnly: plainTextOnly,
+      ),
+    ]);
   }
 
   /// העתקת טקסט מעוצב
@@ -2638,11 +2633,20 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     tab.dynamicCopyRequestNotifier.value = null;
     switch (request.kind) {
       case DynamicShortcutKind.copySelectionWith:
-        _copyFormattedText(null, false, request.profile);
+        _copyFormattedText(
+          null,
+          false,
+          request.profile,
+          request.plainTextOnly,
+        );
       case DynamicShortcutKind.copyParagraphWith:
         final index = _savedSelectedIndex;
         if (index != null) {
-          _copyParagraphByIndex(index, profile: request.profile);
+          _copyParagraphByIndex(
+            index,
+            profile: request.profile,
+            plainTextOnly: request.plainTextOnly,
+          );
         }
       case DynamicShortcutKind.setTextDisplay:
         break;
@@ -2653,6 +2657,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     String? capturedText,
     bool removeNikud = false,
     TextDisplayProfile? profile,
+    bool plainTextOnly = false,
   ]) async {
     // מפרש כבר טיפל בהעתקה - לא נדרוס
     if (widget.isMainText && _commentaryCopyHandled) return;
@@ -2683,6 +2688,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
             : null,
         removeNikud: removeNikud,
         copyProfile: profile,
+        plainTextOnly: plainTextOnly,
       );
     } catch (e) {
       if (mounted) {

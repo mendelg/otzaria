@@ -1158,6 +1158,8 @@
   "העתקת בחירה": "Copy Selection",
   "העתקת פסקה": "Copy Paragraph",
   "שמור גם לספר": "Also save to the book",
+  "ללא עיצוב": "Without formatting",
+  "העתקת טקסט פשוט בלבד, בלי גופן ועיצוב": "Copy plain text only, without font or formatting",
   "פעיל רק כש\"שמירת התאמות לכל ספר\" מופעלת בהגדרות": "Only when \"Save adjustments per book\" is enabled in Settings",
   "צירוף המקשים": "Key Combination",
   "לא הוגדר": "Not set",

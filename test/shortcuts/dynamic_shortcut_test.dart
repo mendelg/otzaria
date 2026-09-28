@@ -71,6 +71,35 @@ void main() {
       expect(text, contains('נשמר לספר'));
     });
 
+    group('ללא עיצוב (issue #1299)', () {
+      const copyPlain = DynamicShortcut(
+        id: 'p',
+        key: 'ctrl+alt+c',
+        kind: DynamicShortcutKind.copySelectionWith,
+        change: DynamicDisplayChange(),
+        plainTextOnly: true,
+      );
+
+      test('JSON הלוך ושוב שומר את הדגל', () {
+        final restored = DynamicShortcut.fromJson(copyPlain.toJson())!;
+        expect(restored.plainTextOnly, isTrue);
+        expect(restored, copyPlain);
+      });
+
+      test('העתקה ללא עיצוב בלבד היא קיצור תקף ומתוארת כך', () {
+        expect(copyPlain.hasEffect, isTrue);
+        expect(copyPlain.describe(), 'העתק בחירה: ללא עיצוב');
+      });
+
+      test('בשינוי תצוגה הדגל חסר משמעות', () {
+        final display = copyPlain.copyWith(
+          kind: DynamicShortcutKind.setTextDisplay,
+        );
+        expect(display.hasEffect, isFalse);
+        expect(display.describe(), isNot(contains('ללא עיצוב')));
+      });
+    });
+
     test('settingKey נושא את הקידומת הסינתטית', () {
       expect(shortcut.settingKey, 'key-shortcut-dynamic-abc');
     });

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 import 'package:otzaria/utils/text/copy_utils.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' show HolyNameStyle;
 
@@ -78,6 +79,25 @@ void main() {
 
       expect(result.plainText, "ויאמר ה'");
       expect(result.htmlText, "<b>ויאמר ה'</b>");
+    });
+  });
+
+  group('CopyUtils.buildClipboardItem', () {
+    DataWriterItem build({required bool plainTextOnly}) =>
+        CopyUtils.buildClipboardItem(
+          plainText: 'שורה',
+          htmlText: '<b>שורה</b>',
+          fontFamily: 'David',
+          fontSize: 20,
+          plainTextOnly: plainTextOnly,
+        );
+
+    test('ברירת המחדל כותבת טקסט פשוט ו-HTML', () {
+      expect(build(plainTextOnly: false).data, hasLength(2));
+    });
+
+    test('ללא עיצוב כותב טקסט פשוט בלבד — issue #1299', () {
+      expect(build(plainTextOnly: true).data, hasLength(1));
     });
   });
 
