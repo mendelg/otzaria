@@ -29,7 +29,7 @@ environment:
   sdk: ">=3.12.0 <4.0.0"
 
 dependencies:
-  sentry_flutter: ^9.30.0
+  sentry_flutter: ^9.30.1
   flutter:
     sdk: flutter
   flutter_bloc: ^9.1.1
@@ -39,7 +39,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_settings_screens: ^0.3.4
-  hive_ce: ^2.20.0
+  hive_ce: ^2.20.1
   path_provider: ^2.1.6
   html: ^0.15.7
   pdfrx: ^2.6.5
@@ -73,7 +73,7 @@ dependencies:
   # they are placed. Already in the graph through `pdf`; declared for direct use.
   bidi: ^2.0.13
   kosher_dart: ^2.0.20
-  archive: ^4.0.9
+  archive: ^4.3.0
   package_info_plus: ^10.2.1
   convert: ^3.1.2
   crypto: ^3.0.7
@@ -92,7 +92,7 @@ dependencies:
   win32: ^6.4.0
   win32_registry: ^3.0.3
   googleapis: ^17.0.0
-  googleapis_auth: ^2.3.3
+  googleapis_auth: ^2.3.4
   characters: ^1.4.1
   collection: ^1.19.1
   otzaria_search_engine: ^0.8.5
@@ -114,7 +114,7 @@ dependencies:
   markdown: ^7.3.1
   flutter_markdown: ^0.7.7+1
   system_fonts: ^1.0.1
-  flutter_quill: ^11.5.1
+  flutter_quill: ^11.6.0
   flutter_inappwebview:
     git:
       url: https://github.com/Otzaria/flutter_inappwebview
@@ -230,7 +230,7 @@ dev_dependencies:
   mockito: ^5.8.1
   mocktail: ^1.0.5
   hooks: ^2.2.0
-  dart_pre_commit: ^6.1.4
+  dart_pre_commit: ^6.1.5
   msix: ^3.18.0
   vm_service: ^15.3.0
 
