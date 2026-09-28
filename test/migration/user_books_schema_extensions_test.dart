@@ -141,6 +141,14 @@ void main() {
         );
       ''');
         setupDb.execute(
+          'CREATE INDEX idx_user_link_source ON '
+          'user_link(sourceTitle, sourceIsUserBook)',
+        );
+        setupDb.execute(
+          'CREATE INDEX idx_user_link_target ON '
+          'user_link(targetTitle, targetIsUserBook)',
+        );
+        setupDb.execute(
           'INSERT INTO user_link (sourceTitle, sourceLineIndex, targetTitle, '
           'targetLineIndex, connectionType) VALUES (?, 11, ?, 4, ?)',
           ['ביאורי יוסף', 'ברכות', 'COMMENTARY'],
@@ -168,6 +176,46 @@ void main() {
         expect(row['sourceTitle'], 'ביאורי יוסף');
         expect(row['anchorStart'], isNull);
         expect(row['source'], isNull);
+
+        final indexes = db
+            .select(
+              "SELECT name FROM sqlite_master WHERE type = 'index' "
+              "AND tbl_name = 'user_link'",
+            )
+            .map((r) => r['name'] as String)
+            .toSet();
+        expect(
+          indexes,
+          containsAll([
+            'idx_user_link_source_line',
+            'idx_user_link_target_line',
+          ]),
+        );
+        expect(indexes, isNot(contains('idx_user_link_source')));
+        expect(indexes, isNot(contains('idx_user_link_target')));
+
+        final sourcePlan = db.select(
+          'EXPLAIN QUERY PLAN SELECT * FROM user_link '
+          'WHERE sourceTitle = ? AND sourceIsUserBook = ? '
+          'AND sourceLineIndex <= ? '
+          'AND COALESCE(sourceLineIndexEnd, sourceLineIndex) >= ?',
+          ['ביאורי יוסף', 1, 20, 10],
+        );
+        expect(
+          sourcePlan.single['detail'],
+          contains('idx_user_link_source_line'),
+        );
+        final targetPlan = db.select(
+          'EXPLAIN QUERY PLAN SELECT * FROM user_link '
+          'WHERE targetTitle = ? AND targetIsUserBook = ? '
+          'AND targetLineIndex <= ? '
+          'AND COALESCE(targetLineIndexEnd, targetLineIndex) >= ?',
+          ['ברכות', 0, 20, 10],
+        );
+        expect(
+          targetPlan.single['detail'],
+          contains('idx_user_link_target_line'),
+        );
       },
     );
 

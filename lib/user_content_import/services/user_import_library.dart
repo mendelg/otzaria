@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
@@ -69,47 +70,74 @@ class UserImportLibrary {
     this.locateBook = locateUserLinkBook,
   });
 
+  Future<T> _serial<T>(Future<T> Function() action) =>
+      DatabaseLibraryProvider.operationQueue.enqueue(action);
+
   /// כל קובצי הייבוא, החדש תחילה, בלי התוכן — הוא נשלף רק בייצוא.
-  Future<List<UserImportFile>> list() async {
+  Future<List<UserImportFile>> list() => _serial(() async {
     final db = await _db.database;
     final rows = db.select(
       'SELECT id, name, originPath, kind, enabled, importedAt '
       'FROM user_import_file ORDER BY importedAt DESC, id DESC',
     );
     return rows.map(_fromRow).toList();
-  }
+  });
 
   /// תוכן הקובץ כפי שיובא, או null אם הוסר בינתיים.
-  Future<String?> contentOf(int id) async {
+  Future<String?> contentOf(int id) => _serial(() async {
     final db = await _db.database;
     final rows = db.select(
       'SELECT content FROM user_import_file WHERE id = ?',
       [id],
     );
     return rows.isEmpty ? null : rows.first['content'] as String;
-  }
+  });
 
   /// שומר ובונה מחדש; אותו שם ומקור דורס את קודמו.
-  Future<UserImportLibraryResult> addFiles(Iterable<String> filePaths) async {
-    final db = await _db.database;
-    if (db.select('SELECT 1 FROM user_import_file LIMIT 1').isEmpty) {
-      await UserContentRepository(_db).captureManualBaseline();
-    }
-    final errors = <String>[];
-    final result = await _changeAndRebuild(() async {
-      await _insertFiles(db, filePaths, errors);
-    });
-    return UserImportLibraryResult(
-      rebuild: result.rebuild,
-      errors: [...errors, ...result.errors],
-    );
-  }
+  Future<UserImportLibraryResult> addFiles(Iterable<String> filePaths) =>
+      _serial(() async {
+        final errors = <String>[];
+        final files = await _readFiles(filePaths, errors);
+        if (errors.isNotEmpty) {
+          return UserImportLibraryResult(
+            rebuild: const UserImportResult(),
+            errors: errors,
+          );
+        }
+        return _changeAndRebuild(() async {
+          final db = await _db.database;
+          if (db.select('SELECT 1 FROM user_import_file LIMIT 1').isEmpty) {
+            await UserContentRepository(_db).captureManualBaseline();
+          }
+          for (final file in files) {
+            db.execute(
+              'INSERT INTO user_import_file '
+              '(name, originPath, kind, content, enabled, importedAt) '
+              'VALUES (?, ?, ?, ?, 1, ?) '
+              'ON CONFLICT(name, originPath) DO UPDATE SET '
+              'kind = excluded.kind, content = excluded.content, '
+              'enabled = 1, importedAt = excluded.importedAt',
+              [
+                file.name,
+                file.path,
+                file.kind.name,
+                file.content,
+                DateTime.now().millisecondsSinceEpoch,
+              ],
+            );
+          }
+        });
+      });
 
-  Future<void> _insertFiles(
-    sqlite3.Database db,
+  Future<
+    List<({String name, String path, UserImportKind kind, String content})>
+  >
+  _readFiles(
     Iterable<String> filePaths,
     List<String> errors,
   ) async {
+    final files =
+        <({String name, String path, UserImportKind kind, String content})>[];
     for (final path in filePaths) {
       final file = File(path);
       final name = _baseName(path);
@@ -129,106 +157,84 @@ class UserImportLibrary {
         errors.add('$name: קריאת הקובץ נכשלה ($e)');
         continue;
       }
-      db.execute(
-        'INSERT INTO user_import_file '
-        '(name, originPath, kind, content, enabled, importedAt) '
-        'VALUES (?, ?, ?, ?, 1, ?) '
-        'ON CONFLICT(name, originPath) DO UPDATE SET '
-        'kind = excluded.kind, content = excluded.content, '
-        'enabled = 1, importedAt = excluded.importedAt',
-        [name, path, kind.name, content, DateTime.now().millisecondsSinceEpoch],
-      );
+      files.add((name: name, path: path, kind: kind, content: content));
     }
+    return files;
   }
 
-  /// ⚠️ שינוי שהבנייה אחריו נכשלה מוחזר לאחור, אחרת קובץ אחד שאינו נקלט
-  /// היה חוסם מעתה את הבנייה האטומית של כל הקבצים.
+  /// שינוי ובנייה מחדש נכתבים יחד, כולל טבלאות הבסיס הידני.
   Future<UserImportLibraryResult> _changeAndRebuild(
     Future<void> Function() change,
   ) async {
-    final snapshot = await _snapshotRows();
-    await change();
-    final UserImportResult rebuild;
+    final db = await _db.database;
+    db.execute('SAVEPOINT user_import_library_change');
     try {
-      rebuild = await rebuildFromEnabled();
+      await change();
+      final rebuild = await _rebuildFromEnabled(db);
+      if (rebuild.errors.isNotEmpty) {
+        db.execute('ROLLBACK TO user_import_library_change');
+        db.execute('RELEASE user_import_library_change');
+        return UserImportLibraryResult(
+          rebuild: const UserImportResult(),
+          errors: rebuild.errors,
+        );
+      }
+      db.execute('RELEASE user_import_library_change');
+      return UserImportLibraryResult(rebuild: rebuild);
     } catch (_) {
-      await _restoreRows(snapshot);
+      db.execute('ROLLBACK TO user_import_library_change');
+      db.execute('RELEASE user_import_library_change');
       rethrow;
     }
-    if (rebuild.errors.isEmpty) {
-      return UserImportLibraryResult(rebuild: rebuild);
-    }
-    // בנייה עם שגיאות לא כתבה דבר, ולכן מספיק להחזיר את הספרייה עצמה.
-    await _restoreRows(snapshot);
-    return UserImportLibraryResult(
-      rebuild: const UserImportResult(),
-      errors: rebuild.errors,
-    );
-  }
-
-  /// מצב הספרייה כפי שהוא, להחזרה אם הייבוא ייכשל.
-  Future<List<Map<String, Object?>>> _snapshotRows() async {
-    final db = await _db.database;
-    return [for (final row in db.select('SELECT * FROM user_import_file')) row];
-  }
-
-  /// מחזיר את הספרייה למצב שב-[snapshot], על מזהיה — כך ששורה שהוחלפה
-  /// בייבוא הכושל חוזרת לתוכנה הקודם ולא מקבלת זהות חדשה בממשק.
-  Future<void> _restoreRows(List<Map<String, Object?>> snapshot) async {
-    final db = await _db.database;
-    db.execute('SAVEPOINT restore_import_files');
-    db.execute('DELETE FROM user_import_file');
-    for (final row in snapshot) {
-      db.execute(
-        'INSERT INTO user_import_file '
-        '(id, name, originPath, kind, content, enabled, importedAt) '
-        'VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [
-          row['id'],
-          row['name'],
-          row['originPath'],
-          row['kind'],
-          row['content'],
-          row['enabled'],
-          row['importedAt'],
-        ],
-      );
-    }
-    db.execute('RELEASE restore_import_files');
   }
 
   /// משהה או מחזיר קובץ. השהיה אינה מוחקת אותו — התוכן נשאר לייצוא ולהחזרה.
-  Future<UserImportLibraryResult> setEnabled(int id, bool enabled) async {
-    final db = await _db.database;
-    return _changeAndRebuild(() async {
+  Future<UserImportLibraryResult> setEnabled(int id, bool enabled) => _serial(
+    () => _changeAndRebuild(() async {
+      final db = await _db.database;
       db.execute('UPDATE user_import_file SET enabled = ? WHERE id = ?', [
         enabled ? 1 : 0,
         id,
       ]);
-    });
-  }
+    }),
+  );
 
   /// מסיר קובץ מהספרייה לצמיתות, והנתונים שלו יורדים איתו בבנייה מחדש.
-  Future<UserImportLibraryResult> remove(int id) async {
-    final db = await _db.database;
-    return _changeAndRebuild(() async {
+  Future<UserImportLibraryResult> remove(int id) => _serial(
+    () => _changeAndRebuild(() async {
+      final db = await _db.database;
       db.execute('DELETE FROM user_import_file WHERE id = ?', [id]);
-    });
-  }
+    }),
+  );
 
   /// מסיר את כל הקבצים ומנקה את כל הנתונים הידניים, גם אלה שקדמו לספרייה.
-  Future<UserImportLibraryResult> removeAll() async {
-    final db = await _db.database;
-    return _changeAndRebuild(() async {
+  Future<UserImportLibraryResult> removeAll() => _serial(
+    () => _changeAndRebuild(() async {
+      final db = await _db.database;
       db.execute('DELETE FROM user_import_file');
       await UserContentRepository(_db).dropManualBaseline();
-    });
-  }
+    }),
+  );
 
-  /// בונה מחדש מהבסיס ומכל הקבצים הפעילים, בטרנזקציה אחת. ⚠️ הניקוי מוזרק
-  /// לתוך הייבוא: ניקוי מוקדם היה מוחק הכול כשקובץ פגום חוסם את הייבוא האטומי.
-  Future<UserImportResult> rebuildFromEnabled() async {
+  /// בונה מחדש מהבסיס ומכל הקבצים הפעילים, בטרנזקציה אחת.
+  Future<UserImportResult> rebuildFromEnabled() => _serial(() async {
     final db = await _db.database;
+    db.execute('SAVEPOINT rebuild_user_content');
+    try {
+      final result = await _rebuildFromEnabled(db);
+      if (result.errors.isNotEmpty) {
+        db.execute('ROLLBACK TO rebuild_user_content');
+      }
+      db.execute('RELEASE rebuild_user_content');
+      return result;
+    } catch (_) {
+      db.execute('ROLLBACK TO rebuild_user_content');
+      db.execute('RELEASE rebuild_user_content');
+      rethrow;
+    }
+  });
+
+  Future<UserImportResult> _rebuildFromEnabled(sqlite3.Database db) async {
     final repo = UserContentRepository(_db);
     Future<void> reset() async {
       await repo.clearAllUserContent();
@@ -245,29 +251,18 @@ class UserImportLibrary {
           content: row['content'] as String,
         ),
     ];
-    db.execute('SAVEPOINT rebuild_user_content');
-    try {
-      final UserImportResult result;
-      if (files.isEmpty) {
-        await reset();
-        result = const UserImportResult();
-      } else {
-        result = await UserContentImporter.importContents(
-          files,
-          _db,
-          resolveRef: resolveRef,
-          sourceExists: sourceExists,
-          locateBook: locateBook,
-          beforeApply: reset,
-        );
-      }
-      db.execute('RELEASE rebuild_user_content');
-      return result;
-    } catch (_) {
-      db.execute('ROLLBACK TO rebuild_user_content');
-      db.execute('RELEASE rebuild_user_content');
-      rethrow;
+    if (files.isEmpty) {
+      await reset();
+      return const UserImportResult();
     }
+    return UserContentImporter.importContents(
+      files,
+      _db,
+      resolveRef: resolveRef,
+      sourceExists: sourceExists,
+      locateBook: locateBook,
+      beforeApply: reset,
+    );
   }
 
   static UserImportFile _fromRow(Map<String, Object?> row) => UserImportFile(

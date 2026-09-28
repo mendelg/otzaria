@@ -1211,6 +1211,12 @@ String formatTextWithParentheses(String text) {
     // תגי HTML עוברים כמכלול - אחרת סוגריים בתוך attribute (למשל
     // style="color:rgb(0,0,0)") נעטפים ב-<small> וההגדרה נהרסת.
     if (text[i] == '<') {
+      final anchorEnd = _linkAnchorElementEnd(text, i);
+      if (anchorEnd != -1) {
+        result.write(text.substring(i, anchorEnd));
+        i = anchorEnd;
+        continue;
+      }
       final tagEnd = _htmlTagEnd(text, i);
       if (tagEnd != -1) {
         result.write(text.substring(i, tagEnd + 1));
@@ -1228,6 +1234,11 @@ String formatTextWithParentheses(String text) {
       // בודקים אם יש סוגר פותח נוסף בפנים
       while (j < text.length && openCount > 0) {
         if (text[j] == '<') {
+          final anchorEnd = _linkAnchorElementEnd(text, j);
+          if (anchorEnd != -1) {
+            j = anchorEnd;
+            continue;
+          }
           final tagEnd = _htmlTagEnd(text, j);
           if (tagEnd != -1) {
             j = tagEnd + 1;
@@ -1274,6 +1285,31 @@ String formatTextWithParentheses(String text) {
   }
 
   return result.toString();
+}
+
+final RegExp _linkAnchorOpeningTag = RegExp(r'^<([a-zA-Z][a-zA-Z0-9:-]*)\b');
+final RegExp _linkAnchorClasses = RegExp(
+  r'''(?:^|\s)class\s*=\s*(["'])(.*?)\1''',
+  caseSensitive: false,
+);
+
+int _linkAnchorElementEnd(String text, int start) {
+  final tagEnd = _htmlTagEnd(text, start);
+  if (tagEnd == -1) return -1;
+  final opening = text.substring(start, tagEnd + 1);
+  if (!opening.contains('link-anchor')) return -1;
+  final tag = _linkAnchorOpeningTag.firstMatch(opening);
+  final classes = _linkAnchorClasses.firstMatch(opening)?.group(2);
+  if (tag == null ||
+      classes == null ||
+      !classes.split(RegExp(r'\s+')).contains('link-anchor')) {
+    return -1;
+  }
+  final close = RegExp(
+    '</${RegExp.escape(tag.group(1)!)}\\s*>',
+    caseSensitive: false,
+  ).allMatches(text, tagEnd + 1).firstOrNull;
+  return close?.end ?? -1;
 }
 
 int _htmlTagEnd(String text, int start) {

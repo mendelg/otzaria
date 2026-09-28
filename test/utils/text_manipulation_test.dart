@@ -1127,6 +1127,28 @@ Future<void> main() async {
       );
     });
 
+    test('סמן link-anchor שומר את הסוגריים שלו ללא small נוסף', () {
+      const marker =
+          '<a class="link-anchor link-anchor-0" '
+          'href="otzaria://anchor?ref=3_0">(א)</a>';
+      expect(formatTextWithParentheses('טקסט $marker'), 'טקסט $marker');
+    });
+
+    test('סמן link-anchor אינו נחשב קינון של סוגריים חיצוניים', () {
+      const input = '(פסקה <a class="link-anchor">(א)</a>)';
+      expect(
+        formatTextWithParentheses(input),
+        '<small>(פסקה <a class="link-anchor">(א)</a>)</small>',
+      );
+    });
+
+    test('סוגריים בתוך קישור רגיל ממשיכים להיות מוקטנים', () {
+      expect(
+        formatTextWithParentheses('<a href="x">(עיין)</a>'),
+        '<a href="x"><small>(עיין)</small></a>',
+      );
+    });
+
     test('סוגר סוגר שנמצא רק בתוך תג אינו נחשב סוגר', () {
       const input = '(אמר <span style="color:rgb(1,2,3);">רש"י</span> שם';
       expect(formatTextWithParentheses(input), input);

@@ -1392,7 +1392,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
     for (final link in widget.tab.links) {
       if (link.index1 > range.endLine) break;
-      if (link.index1 < range.startLine) continue;
+      if (!link.overlapsSourceLines(range.startLine, range.endLine)) continue;
 
       if (LinkTypes.isDependentTextLink(link.connectionType)) {
         commentators.add(utils.getTitleFromPath(link.path2));

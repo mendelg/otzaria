@@ -424,7 +424,7 @@ void main() {
           'מגילה',
           sourceIsUserBook: false,
         )).single;
-        expect(link.connectionType, LinkTypes.linker);
+        expect(link.connectionType, LinkTypes.commentary);
         expect(link.anchorStart, 4);
         expect(link.anchorEnd, 9);
         expect(link.anchorLabel, 'א');

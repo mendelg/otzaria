@@ -1,4 +1,5 @@
 import 'dart:isolate';
+import 'dart:collection';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
@@ -8,11 +9,11 @@ List<Link> mergeLinksByIdentity(
   List<Link> incoming,
 ) {
   final merged = <String, Link>{
-    for (final link in existing) _linkIdentityKey(link): link,
+    for (final link in existing) linkIdentityKey(link): link,
   };
 
   for (final link in incoming) {
-    final key = _linkIdentityKey(link);
+    final key = linkIdentityKey(link);
     final existingLink = merged[key];
     if (existingLink == null ||
         link.baseProvenance >= existingLink.baseProvenance) {
@@ -37,21 +38,109 @@ List<Link> mergeLinksByIdentity(
   return links;
 }
 
-String _linkIdentityKey(Link link) {
-  return '${link.index1}|${link.path2}|${link.index2}|${link.connectionType}|${link.start}|${link.end}';
+String linkIdentityKey(Link link) {
+  final anchors = link.anchorSpans
+      .map((span) => '${span.start}:${span.end}:${span.label}')
+      .join(',');
+  return '${link.index1}|${link.index1End}|${link.path2}|${link.index2}|${link.index2End}|${link.connectionType}|${link.targetSource.wireKey}|${link.targetCategoryId}|${link.start}|${link.end}|${link.anchorStart}|${link.anchorEnd}|${link.anchorLabel}|$anchors';
 }
 
 Map<int, List<Link>> buildLinksByLineMap(List<Link> links) {
-  final linksByLine = <int, List<Link>>{};
-  for (final link in links) {
-    final list = linksByLine[link.index1];
-    if (list == null) {
-      linksByLine[link.index1] = [link];
-    } else {
-      list.add(link);
+  return _LinksByLineMap(links);
+}
+
+typedef _OrderedLink = ({Link link, int order});
+
+class _RangeNode {
+  final _OrderedLink value;
+  final _RangeNode? left;
+  final _RangeNode? right;
+  final int maxEnd;
+
+  _RangeNode(this.value, this.left, this.right)
+    : maxEnd = [
+        value.link.index1End!,
+        if (left != null) left.maxEnd,
+        if (right != null) right.maxEnd,
+      ].reduce((a, b) => a > b ? a : b);
+}
+
+class _LinksByLineMap extends MapBase<int, List<Link>> {
+  final Map<int, List<_OrderedLink>> _starts = {};
+  final List<_OrderedLink> _ranged = [];
+  late final _RangeNode? _ranges;
+
+  _LinksByLineMap(List<Link> links) {
+    for (var i = 0; i < links.length; i++) {
+      final item = (link: links[i], order: i);
+      _starts.putIfAbsent(links[i].index1, () => []).add(item);
+      if ((links[i].index1End ?? links[i].index1) > links[i].index1) {
+        _ranged.add(item);
+      }
+    }
+    _ranged.sort((a, b) => a.link.index1.compareTo(b.link.index1));
+    _ranges = _buildRanges(_ranged, 0, _ranged.length);
+  }
+
+  _RangeNode? _buildRanges(List<_OrderedLink> items, int first, int last) {
+    if (first == last) return null;
+    final middle = (first + last) ~/ 2;
+    return _RangeNode(
+      items[middle],
+      _buildRanges(items, first, middle),
+      _buildRanges(items, middle + 1, last),
+    );
+  }
+
+  void _collect(_RangeNode? node, int line, List<_OrderedLink> result) {
+    if (node == null || node.maxEnd < line) return;
+    if (node.left != null) _collect(node.left, line, result);
+    final link = node.value.link;
+    if (link.index1 < line && link.index1End! >= line) {
+      result.add(node.value);
+    }
+    if (link.index1 < line) _collect(node.right, line, result);
+  }
+
+  @override
+  List<Link>? operator [](Object? key) {
+    if (key is! int) return null;
+    final direct = _starts[key];
+    if (_ranges == null) return direct?.map((item) => item.link).toList();
+    final found = <_OrderedLink>[...?direct];
+    _collect(_ranges, key, found);
+    if (found.isEmpty) return null;
+    found.sort((a, b) => a.order.compareTo(b.order));
+    return found.map((item) => item.link).toList();
+  }
+
+  @override
+  Iterable<int> get keys sync* {
+    final seen = <int>{};
+    for (final line in _starts.keys) {
+      if (seen.add(line)) yield line;
+    }
+    for (final item in _ranged) {
+      for (
+        var line = item.link.index1 + 1;
+        line <= item.link.index1End!;
+        line++
+      ) {
+        if (seen.add(line)) yield line;
+      }
     }
   }
-  return linksByLine;
+
+  @override
+  void operator []=(int key, List<Link> value) =>
+      throw UnsupportedError('Links by line are read-only');
+
+  @override
+  void clear() => throw UnsupportedError('Links by line are read-only');
+
+  @override
+  List<Link>? remove(Object? key) =>
+      throw UnsupportedError('Links by line are read-only');
 }
 
 List<Link> computeVisibleLinks({
@@ -65,6 +154,7 @@ List<Link> computeVisibleLinks({
       : visibleIndices;
 
   final visibleLinks = <Link>[];
+  final seenLinks = <Link>{};
 
   for (final index in targetIndices) {
     final candidates = linksByLine[index + 1] ?? const [];
@@ -73,7 +163,7 @@ List<Link> computeVisibleLinks({
       if (!LinkTypes.isDependentTextLink(link.connectionType) &&
           link.start == null &&
           link.end == null) {
-        visibleLinks.add(link);
+        if (seenLinks.add(link)) visibleLinks.add(link);
       }
     }
   }

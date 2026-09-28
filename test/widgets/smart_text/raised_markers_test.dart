@@ -660,9 +660,7 @@ void main() {
       );
     });
 
-    test('עיצוב סוגריים (<small> בתוך הסימון) מקטין את הציור באותו יחס', () {
-      // processText עוטף "(א)" ב-<small>; הגליף בשורה קטן בהתאם, והציור
-      // חייב להתלבש עליו בדיוק — לא לבלוט מעבר למקום ששמור בשורה.
+    test('סמן עוגן עגול שומר על יחס ההקטנה של עצמו בלבד', () {
       final markers = RaisedMarkers.extract(
         TextRendererService.processText(
           'מילה <a class="link-anchor link-anchor-0" '
@@ -671,10 +669,52 @@ void main() {
         ),
       );
       expect(markers, hasLength(1));
+      expect(markers.single.scale, kLinkAnchorMarkerScale);
+    });
+
+    test('סמן עוגן בתוך סוגריים חיצוניים תואם את גודל הגליף', () {
+      final processed = TextRendererService.processText(
+        '(פסקה <a class="link-anchor link-anchor-0" '
+        'href="otzaria://anchor?ref=0_0">(א)</a>)',
+        const RenderSettings(),
+      );
+      expect(processed, contains('<small>(פסקה <a class="link-anchor'));
+      final markers = RaisedMarkers.extract(processed);
+      expect(markers, hasLength(1));
       expect(
         markers.single.scale,
         closeTo(kLinkAnchorMarkerScale * kHtmlSmallerFontScale, 0.0001),
       );
+    });
+
+    test('תגי גודל מקוננים נסגרים לפני הסמן הבא', () {
+      final markers = RaisedMarkers.extract(
+        '<small><big><a class="link-anchor">(א)</a></big></small> '
+        '<a class="link-anchor">(ב)</a>',
+      );
+      expect(markers, hasLength(2));
+      expect(
+        markers.first.scale,
+        closeTo(
+          kLinkAnchorMarkerScale * kHtmlSmallerFontScale * kHtmlLargerFontScale,
+          0.0001,
+        ),
+      );
+      expect(markers.last.scale, kLinkAnchorMarkerScale);
+    });
+
+    test('הקטנת הורה חלה גם על סימוני הערות', () {
+      final markers = RaisedMarkers.extract(
+        '<small><a class="book-note-marker" href="otzaria://book-note?line=0&note=0">'
+        'א</a><span class="$kFootnoteMarkerClass">ב</span></small>',
+      );
+      expect(markers, hasLength(2));
+      for (final marker in markers) {
+        expect(
+          marker.scale,
+          closeTo(kFootnoteMarkerScale * kHtmlSmallerFontScale, 0.0001),
+        );
+      }
     });
 
     test('ספירת מופעים משותפת בין המשפחות — אותה ספירה שהציור מבצע', () {

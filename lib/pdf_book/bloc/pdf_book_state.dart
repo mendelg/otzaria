@@ -10,7 +10,7 @@ String _outlineNodeSignature(PdfOutlineNode n) =>
     '${n.title}|${n.dest?.pageNumber ?? -1}|[${n.children.map(_outlineNodeSignature).join(',')}]';
 
 String _linkSignature(Link l) =>
-    '${l.index1}|${l.path2}|${l.index2}|${l.index2End}|${l.connectionType}|${l.heRef}|${l.start}|${l.end}|${l.targetCategoryId}|${l.targetFileType}';
+    '${l.index1}|${l.index1End}|${l.path2}|${l.index2}|${l.index2End}|${l.connectionType}|${l.heRef}|${l.start}|${l.end}|${l.anchorStart}|${l.anchorEnd}|${l.anchorLabel}|${l.anchorSpans.map((span) => '${span.start}:${span.end}:${span.label}').join(',')}|${l.targetSource.wireKey}|${l.targetCategoryId}|${l.targetBookId}|${l.targetFileType}';
 
 /// השוואת רשימה לפי תוכן, עם קיצור דרך לאותו מופע — copyWith מעביר את אותה
 /// רשימה, ובלעדיו כל emit (גם פריים של זום) בנה חתימה לכל קישור ולכל צומת.

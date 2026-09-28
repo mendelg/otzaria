@@ -46,6 +46,9 @@ Future<List<Link>> loadUserLinksForBook({
       Link(
         heRef: r.targetRef ?? r.targetTitle,
         index1: r.sourceLineIndex + 1,
+        index1End: r.sourceLineIndexEnd == null
+            ? null
+            : r.sourceLineIndexEnd! + 1,
         path2: r.targetTitle,
         index2: targetLine + 1,
         connectionType: r.connectionType,
@@ -81,6 +84,9 @@ Future<List<Link>> loadUserLinksForBook({
       Link(
         heRef: r.sourceTitle,
         index1: targetLine + 1,
+        index1End: r.targetLineIndexEnd == null
+            ? null
+            : r.targetLineIndexEnd! + 1,
         path2: r.sourceTitle,
         index2: r.sourceLineIndex + 1,
         // כמו ה-inverse של seforim.db: מפרש שקורא את בסיסו רואה אותו כ'מקור'

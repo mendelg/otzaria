@@ -499,7 +499,7 @@ class UserContentImporter {
   }
 
   /// קולט קובץ בפורמט ה-native (`<ספר>_links.json`): ספר הבסיס נגזר משם
-  /// הקובץ, שני הצדדים מאותרים אוטומטית (אישי קודם), ואינדקסי השורות
+  /// הקובץ, שני הצדדים מאותרים לפי כותרת, ואינדקסי השורות
   /// הגולמיים מאומתים מול totalLines של כל ספר — אין פתירת ref.
   static Future<void> _ingestNativeLinks(
     ImportedFile file,
@@ -520,7 +520,18 @@ class UserContentImporter {
       errors.add('$fileName ${err.message} (שורה ${err.lineNumber})');
     }
 
-    final source = await locateBook(baseTitle);
+    final ({bool isUserBook, int? categoryId, int totalLines})? source;
+    try {
+      source = await locateBook(baseTitle);
+    } on AmbiguousUserLinkBookException {
+      errors.add(
+        '$fileName: ספר הבסיס "$baseTitle" קיים גם בספרייה האישית וגם ברשמית',
+      );
+      return;
+    } on UnavailableUserLinkCatalogException {
+      errors.add('$fileName: לא ניתן לבדוק את הספרייה הרשמית');
+      return;
+    }
     if (source == null) {
       errors.add('$fileName: ספר הבסיס "$baseTitle" לא נמצא בספרייה');
       return;
@@ -528,9 +539,22 @@ class UserContentImporter {
 
     final targetCache =
         <String, ({bool isUserBook, int? categoryId, int totalLines})?>{};
+    final ambiguousTargets = <String>{};
     for (final row in parsed.rows) {
+      if (ambiguousTargets.contains(row.targetTitle)) continue;
       if (!targetCache.containsKey(row.targetTitle)) {
-        targetCache[row.targetTitle] = await locateBook(row.targetTitle);
+        try {
+          targetCache[row.targetTitle] = await locateBook(row.targetTitle);
+        } on AmbiguousUserLinkBookException {
+          ambiguousTargets.add(row.targetTitle);
+          errors.add(
+            '$fileName: ספר היעד "${row.targetTitle}" קיים גם בספרייה האישית וגם ברשמית',
+          );
+          continue;
+        } on UnavailableUserLinkCatalogException {
+          errors.add('$fileName: לא ניתן לבדוק את הספרייה הרשמית');
+          return;
+        }
       }
       final target = targetCache[row.targetTitle];
       if (target == null) {
@@ -571,8 +595,11 @@ class UserContentImporter {
       }
       // צמד קבצים דו-כיווני של הכלי מייצר גם רשומת מפרש→בסיס; מנרמלים אותה
       // לכיוון הקנוני (בסיס→מפרש) כך שהיא מתלכדת עם הרשומה מהקובץ של הבסיס.
+      final connectionType = row.connectionType == LinkTypes.linker
+          ? LinkTypes.commentary
+          : row.connectionType;
       final flip =
-          LinkTypes.isDependentTextLink(row.connectionType) &&
+          LinkTypes.isDependentTextLink(connectionType) &&
           source.isUserBook &&
           !target.isUserBook;
       out.add(
@@ -592,7 +619,7 @@ class UserContentImporter {
                 targetLineIndexEnd: row.sourceLineNumberEnd == null
                     ? null
                     : row.sourceLineNumberEnd! - 1,
-                connectionType: row.connectionType,
+                connectionType: connectionType,
               )
             : UserLinkRecord(
                 sourceTitle: baseTitle,
@@ -614,7 +641,7 @@ class UserContentImporter {
                     ? null
                     : row.targetLineNumberEnd! - 1,
                 targetRefEnd: row.targetRefEnd,
-                connectionType: row.connectionType,
+                connectionType: connectionType,
               ),
       );
     }

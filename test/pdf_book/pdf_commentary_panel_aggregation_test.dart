@@ -4,12 +4,14 @@ import 'package:otzaria/pdf_book/view/pdf_commentary_panel.dart';
 
 Link _link({
   required int index1,
+  int? index1End,
   required String path2,
   required String connectionType,
 }) {
   return Link(
     heRef: 'א',
     index1: index1,
+    index1End: index1End,
     path2: path2,
     index2: 1,
     connectionType: connectionType,
@@ -18,6 +20,18 @@ Link _link({
 
 void main() {
   group('aggregateLinkTargetsFromLinks — סיווג יעדים מרשימת קישורים', () {
+    test('maxSourceLine כולל סוף טווח קישור', () {
+      final result = aggregateLinkTargetsFromLinks([
+        _link(
+          index1: 2,
+          index1End: 100,
+          path2: 'רש"י',
+          connectionType: 'COMMENTARY',
+        ),
+      ]);
+      expect(result.maxSourceLine, 100);
+    });
+
     test('מפרשים נספרים פר-כותרת, יעדים אחרים נאספים בנפרד', () {
       final aggregation = aggregateLinkTargetsFromLinks([
         _link(

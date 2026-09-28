@@ -1,9 +1,71 @@
+import 'dart:io';
+
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/core/app_paths.dart';
+import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/user_content_import/models/user_import_models.dart';
+import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
 import 'package:otzaria/user_content_import/services/user_links_loader.dart';
+import 'package:path/path.dart' as p;
+
+import '../test_helpers/memory_cache_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('טווחי מקור נטענים גם כשהחלון מתחיל באמצעם, בשני הכיוונים', () async {
+    await Settings.init(cacheProvider: MemoryCacheProvider());
+    final tempDir = await Directory.systemTemp.createTemp('user_link_ranges');
+    final previousRoot = AppPaths.cachedDataRootPath;
+    await UserBooksDatabaseHolder.instance.close();
+    AppPaths.debugOverrideDataRootPath(p.join(tempDir.path, 'data'));
+    addTearDown(() async {
+      await UserBooksDatabaseHolder.instance.close();
+      AppPaths.debugOverrideDataRootPath(previousRoot);
+      await tempDir.delete(recursive: true);
+    });
+
+    final db = (await UserBooksDatabaseHolder.instance.repository).database;
+    await UserContentRepository(db).upsertUserLink(
+      const UserLinkRecord(
+        sourceTitle: 'בסיס',
+        sourceIsUserBook: false,
+        sourceLineIndex: 1,
+        sourceLineIndexEnd: 8,
+        targetTitle: 'מפרש',
+        targetIsUserBook: true,
+        targetLineIndex: 3,
+        targetLineIndexEnd: 10,
+        connectionType: 'COMMENTARY',
+      ),
+    );
+
+    final forward = await loadUserLinksForBook(
+      bookTitle: 'בסיס',
+      bookCategoryId: null,
+      source: BookSource.official,
+      startLineIndex: 5,
+      endLineIndex: 6,
+    );
+    expect(forward.single.index1, 2);
+    expect(forward.single.index1End, 9);
+    expect(forward.single.overlapsSourceLines(6, 7), isTrue);
+
+    final inverse = await loadUserLinksForBook(
+      bookTitle: 'מפרש',
+      bookCategoryId: null,
+      source: BookSource.user,
+      startLineIndex: 6,
+      endLineIndex: 7,
+    );
+    expect(inverse.single.index1, 4);
+    expect(inverse.single.index1End, 11);
+    expect(inverse.single.overlapsSourceLines(7, 8), isTrue);
+  });
+
   group('dedupeUserLinks', () {
     Link link(int i1, String p2, int i2, {String type = 'COMMENTARY'}) => Link(
       heRef: 'ref',

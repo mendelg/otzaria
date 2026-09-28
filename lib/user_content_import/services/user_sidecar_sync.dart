@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
+import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
 import 'package:otzaria/user_content_import/services/user_content_importer.dart';
@@ -31,10 +33,14 @@ class UserSidecarSync {
   static Future<List<String>> applyForFolder({
     required MyDatabase userDb,
     required String folderPath,
+    SeforimRepository? officialRepository,
   }) async {
     final repo = UserContentRepository(userDb);
     final errors = <String>[];
     final seen = <String>{};
+    final officialStamp = await _officialDatabaseStamp(
+      officialRepository ?? SqliteDataProvider.instance.repository,
+    );
 
     try {
       final dir = Directory(folderPath);
@@ -46,7 +52,15 @@ class UserSidecarSync {
           if (kind == null) continue;
           seen.add(entity.path);
           try {
-            await _applyFile(repo, userDb, entity, kind, errors);
+            await _applyFile(
+              repo,
+              userDb,
+              entity,
+              kind,
+              errors,
+              officialRepository: officialRepository,
+              officialStamp: officialStamp,
+            );
           } catch (e) {
             errors.add('$name: הקליטה נכשלה ($e)');
           }
@@ -89,11 +103,20 @@ class UserSidecarSync {
     MyDatabase userDb,
     File file,
     _SidecarKind kind,
-    List<String> errors,
-  ) async {
+    List<String> errors, {
+    SeforimRepository? officialRepository,
+    String? officialStamp,
+  }) async {
     final name = p.basename(file.path);
     if (kind == _SidecarKind.links) {
-      await _applyLinks(userDb, file, name, errors);
+      await _applyLinks(
+        userDb,
+        file,
+        name,
+        errors,
+        officialRepository: officialRepository,
+        officialStamp: officialStamp,
+      );
       return;
     }
     final content = await readTextFileSmart(file);
@@ -220,28 +243,52 @@ class UserSidecarSync {
     MyDatabase userDb,
     File file,
     String name,
-    List<String> errors,
-  ) async {
+    List<String> errors, {
+    SeforimRepository? officialRepository,
+    String? officialStamp,
+  }) async {
     final repo = UserContentRepository(userDb);
-    final signature = await _fileStamp(file);
+    final stamp = await _fileStamp(file);
+    final catalogStamp = officialStamp ?? 'unavailable';
     // לפני הקריאה: תיקיית links יכולה להכיל אלפי קבצים שלא השתנו.
-    if (await _isUnchanged(repo, file.path, signature)) return;
-    final content = await readTextFileSmart(file);
-
-    final resolvers = userLinkResolversFor(userDb);
-    final result = await UserContentImporter.importContents(
-      [ImportedFile(name: name, content: content)],
-      userDb,
-      resolveRef: resolvers.resolveRef,
-      sourceExists: resolvers.sourceExists,
-      locateBook: resolvers.locateBook,
-      source: file.path,
-    );
-    if (result.errors.isNotEmpty) {
-      errors.addAll(result.errors);
+    final previousSignature = await repo.sidecarSignature(file.path);
+    if (previousSignature != null &&
+        previousSignature ==
+            '$stamp|${await repo.sidecarLinkBookSignature(file.path)}|$catalogStamp') {
       return;
     }
-    await repo.setSidecarSignature(file.path, signature);
+    final content = await readTextFileSmart(file);
+
+    final resolvers = userLinkResolversFor(
+      userDb,
+      officialRepository: officialRepository,
+    );
+    final db = await userDb.database;
+    db.execute('SAVEPOINT apply_sidecar_links');
+    try {
+      final result = await UserContentImporter.importContents(
+        [ImportedFile(name: name, content: content)],
+        userDb,
+        resolveRef: resolvers.resolveRef,
+        sourceExists: resolvers.sourceExists,
+        locateBook: resolvers.locateBook,
+        source: file.path,
+      );
+      if (result.errors.isNotEmpty) {
+        errors.addAll(result.errors);
+        db.execute('ROLLBACK TO apply_sidecar_links');
+      } else {
+        await repo.replaceSidecarLinkBookDependencies(file.path);
+        final signature =
+            '$stamp|${await repo.sidecarLinkBookSignature(file.path)}|$catalogStamp';
+        await repo.setSidecarSignature(file.path, signature);
+      }
+      db.execute('RELEASE apply_sidecar_links');
+    } catch (_) {
+      db.execute('ROLLBACK TO apply_sidecar_links');
+      db.execute('RELEASE apply_sidecar_links');
+      rethrow;
+    }
   }
 
   /// שורות הספר באותה המרה שבה הסורק מפרסר את תוכן העניינים — כך מספרי
@@ -355,6 +402,21 @@ class UserSidecarSync {
   static Future<String> _fileStamp(File file) async {
     final stat = await file.stat();
     return '${stat.size}:${stat.modified.millisecondsSinceEpoch}';
+  }
+
+  static Future<String?> _officialDatabaseStamp(
+    SeforimRepository? repository,
+  ) async {
+    if (repository == null) return null;
+    try {
+      final path = repository.database.path;
+      final stat = await File(path).stat();
+      if (stat.type != FileSystemEntityType.file) return null;
+      return '$path:${stat.size}:${stat.modified.millisecondsSinceEpoch}:'
+          '${stat.changed.millisecondsSinceEpoch}';
+    } on FileSystemException {
+      return null;
+    }
   }
 
   static void _collectParseErrors(

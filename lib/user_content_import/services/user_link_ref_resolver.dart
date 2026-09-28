@@ -1,7 +1,10 @@
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
+import 'package:otzaria/migration/models/book.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart';
 
 /// פותר כתובת (ref) טקסטואלית — כמו "ב ע\"א" בגמרא או "רטו א" בשו"ע — לאינדקס
@@ -94,7 +97,7 @@ Future<bool> _bookExists(
 }
 
 /// מאתר ספר לפי כותרת בשני המסדים — לקבצים בפורמט ה-native שאינם מציינים
-/// אישי/רשמי. אישי נבדק ראשון — ספר אישי בשם זהה גובר. null אם לא נמצא.
+/// אישי/רשמי. כותרת שקיימת בשניהם אינה מספיקה לזיהוי חד-משמעי.
 typedef UserLinkBookLocator =
     Future<({bool isUserBook, int? categoryId, int totalLines})?> Function(
       String title,
@@ -104,22 +107,48 @@ typedef UserLinkBookLocator =
 Future<({bool isUserBook, int? categoryId, int totalLines})?>
 locateUserLinkBook(String title) => _locateIn(_repositoryFor, title);
 
+class AmbiguousUserLinkBookException implements Exception {
+  final String title;
+
+  const AmbiguousUserLinkBookException(this.title);
+}
+
+class UnavailableUserLinkCatalogException implements Exception {
+  const UnavailableUserLinkCatalogException();
+}
+
+@visibleForTesting
+Future<({bool isUserBook, int? categoryId, int totalLines})?>
+locateUserLinkBookInRepositories(
+  String title, {
+  required SeforimRepository? userRepository,
+  required SeforimRepository? officialRepository,
+}) => _locateIn(
+  (isUserBook) async => isUserBook ? userRepository : officialRepository,
+  title,
+);
+
 Future<({bool isUserBook, int? categoryId, int totalLines})?> _locateIn(
   Future<SeforimRepository?> Function(bool isUserBook) repositoryFor,
   String title,
 ) async {
-  for (final isUserBook in const [true, false]) {
-    final repo = await repositoryFor(isUserBook);
-    final book = await repo?.getBookByTitle(title);
-    if (book != null) {
-      return (
-        isUserBook: isUserBook,
-        categoryId: book.categoryId,
-        totalLines: book.totalLines,
-      );
-    }
+  final userBook = await (await repositoryFor(true))?.getBookByTitle(title);
+  Book? officialBook;
+  try {
+    officialBook = await (await repositoryFor(false))?.getBookByTitle(title);
+  } on Exception {
+    throw const UnavailableUserLinkCatalogException();
   }
-  return null;
+  if (userBook != null && officialBook != null) {
+    throw AmbiguousUserLinkBookException(title);
+  }
+  final book = userBook ?? officialBook;
+  if (book == null) return null;
+  return (
+    isUserBook: userBook != null,
+    categoryId: book.categoryId,
+    totalLines: book.totalLines,
+  );
 }
 
 /// שלושת הפותרים מול [userDb] *הנתון* ולא ההולדר הגלובלי (סריקת תיקייה).
@@ -128,10 +157,15 @@ Future<({bool isUserBook, int? categoryId, int totalLines})?> _locateIn(
   UserLinkSourceChecker sourceExists,
   UserLinkBookLocator locateBook,
 })
-userLinkResolversFor(MyDatabase userDb) {
+userLinkResolversFor(
+  MyDatabase userDb, {
+  SeforimRepository? officialRepository,
+}) {
   final userRepo = SeforimRepository(userDb);
+  final locatedBooks =
+      <String, Future<({bool isUserBook, int? categoryId, int totalLines})?>>{};
   Future<SeforimRepository?> repositoryFor(bool isUserBook) async =>
-      isUserBook ? userRepo : await _officialRepository();
+      isUserBook ? userRepo : officialRepository ?? await _officialRepository();
   return (
     resolveRef:
         ({
@@ -152,7 +186,10 @@ userLinkResolversFor(MyDatabase userDb) {
           required isUserBook,
         }) async =>
             _bookExists(await repositoryFor(isUserBook), title, categoryId),
-    locateBook: (title) => _locateIn(repositoryFor, title),
+    locateBook: (title) => locatedBooks.putIfAbsent(
+      title,
+      () => _locateIn(repositoryFor, title),
+    ),
   );
 }
 
@@ -167,6 +204,7 @@ Future<SeforimRepository?> _repositoryFor(bool isUserBook) async {
 
 Future<SeforimRepository?> _officialRepository() async {
   final provider = SqliteDataProvider.instance;
+  if (!provider.isInitialized && !Settings.isInitialized) return null;
   if (!provider.isInitialized) await provider.initialize();
   return provider.repository;
 }

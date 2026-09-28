@@ -944,9 +944,11 @@ class MyDatabase {
           source TEXT
       );
       ''',
-      'CREATE INDEX IF NOT EXISTS idx_user_link_source ON user_link(sourceTitle, sourceIsUserBook);',
+      'CREATE INDEX IF NOT EXISTS idx_user_link_source_line ON user_link(sourceTitle, sourceIsUserBook, sourceLineIndex);',
       'CREATE INDEX IF NOT EXISTS idx_user_link_origin ON user_link(source);',
-      'CREATE INDEX IF NOT EXISTS idx_user_link_target ON user_link(targetTitle, targetIsUserBook);',
+      'CREATE INDEX IF NOT EXISTS idx_user_link_target_line ON user_link(targetTitle, targetIsUserBook, targetLineIndex);',
+      'DROP INDEX IF EXISTS idx_user_link_source;',
+      'DROP INDEX IF EXISTS idx_user_link_target;',
 
       // כותרות חלופיות ('כותרות') לספרים אישיים. נפרדות מ-alt_toc_*: לספר אישי
       // אין שורות במסד, ולכן הערך מצביע על lineIndex ולא על line.id.
@@ -1002,6 +1004,14 @@ class MyDatabase {
           path TEXT PRIMARY KEY,
           signature TEXT NOT NULL
       );
+      ''',
+      '''
+      CREATE TABLE IF NOT EXISTS user_sidecar_link_book (
+          path TEXT NOT NULL,
+          title TEXT NOT NULL,
+          categoryId INTEGER NOT NULL,
+          PRIMARY KEY (path, title, categoryId)
+      ) WITHOUT ROWID;
       ''',
 
       // [content] הוא הקובץ כפי שנקרא: ממנו מייצאים ובונים מחדש, ולכן השהיה

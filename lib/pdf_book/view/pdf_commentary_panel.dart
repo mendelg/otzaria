@@ -69,10 +69,15 @@ bool pdfLinkInVisibleScope(
   int linkIndex1,
   int startLine,
   int endLine,
-  Set<int>? extraLineIndices,
-) {
-  if (linkIndex1 >= startLine && linkIndex1 <= endLine) return true;
-  return extraLineIndices?.contains(linkIndex1) ?? false;
+  Set<int>? extraLineIndices, {
+  int? linkIndex1End,
+}) {
+  final lastLinkLine = linkIndex1End ?? linkIndex1;
+  if (linkIndex1 <= endLine && lastLinkLine >= startLine) return true;
+  return extraLineIndices?.any(
+        (line) => linkIndex1 <= line && line <= lastLinkLine,
+      ) ??
+      false;
 }
 
 /// מפרשי הקטע המוצג *לפני* סינון הסוגים — הבסיס גם לרשימה וגם לצ׳יפים.
@@ -96,6 +101,7 @@ List<Link> pdfScopedCommentaryLinks({
       startLine,
       endLine,
       extraLineIndices,
+      linkIndex1End: link.index1End,
     )) {
       continue;
     }
@@ -171,7 +177,8 @@ LinkTargetsAggregation aggregateLinkTargetsFromLinks(Iterable<Link> links) {
   final nonCommentaryTitles = <String>{};
   var maxSourceLine = 0;
   for (final link in links) {
-    if (link.index1 > maxSourceLine) maxSourceLine = link.index1;
+    final lastLine = link.index1End ?? link.index1;
+    if (lastLine > maxSourceLine) maxSourceLine = lastLine;
     final title = utils.getTitleFromPath(link.path2);
     if (LinkTypes.isDependentTextLink(link.connectionType)) {
       commentators.add(title);
@@ -1961,6 +1968,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         range.startLine,
         range.endLine,
         extraLines,
+        linkIndex1End: link.index1End,
       )) {
         continue;
       }

@@ -3,6 +3,21 @@ import 'package:otzaria/pdf_book/view/pdf_commentary_panel.dart';
 
 void main() {
   group('pdfLinkInVisibleScope', () {
+    test('טווח מקור נכלל גם כששורת ההתחלה מחוץ לחלון', () {
+      expect(
+        pdfLinkInVisibleScope(1, 5, 8, null, linkIndex1End: 6),
+        isTrue,
+      );
+      expect(
+        pdfLinkInVisibleScope(1, 5, 8, const {4}, linkIndex1End: 4),
+        isTrue,
+      );
+      expect(
+        pdfLinkInVisibleScope(1, 5, 8, const {9}, linkIndex1End: 4),
+        isFalse,
+      );
+    });
+
     test('קישור בטווח הראשי נכלל', () {
       expect(pdfLinkInVisibleScope(5, 3, 8, null), isTrue);
       expect(pdfLinkInVisibleScope(3, 3, 8, null), isTrue);

@@ -154,12 +154,7 @@ class CrossWindowTabDrag {
     unawaited(_sendSnapshot(preview, generation));
   }
 
-  /// שולח את צילום הכרטיסיה, אם הוא באמת מכיל משהו.
-  ///
-  /// ⚠️ **צילום שקוף אינו נשלח.** זו לא הגנה תיאורטית: הגרסה הראשונה
-  /// השתמשה ב-`toImageSync`, קיבלה תמונה ריקה, והתצוגה הראתה כרטיסיה
-  /// שקופה — גרוע מהשרטוט שהיא באה להחליף. כאן ההחלטה היא לפי הפיקסלים
-  /// עצמם ולא לפי הנחה על ה-API: אם אין מה להציג, השרטוט נשאר.
+  /// שולח צילום רק אם יש בו פיקסלים גלויים; צילום שקוף משאיר את שרטוט הגרירה.
   Future<void> _sendSnapshot(TabWindowPreview preview, int generation) async {
     final image = preview.image;
     try {
@@ -174,7 +169,7 @@ class CrossWindowTabDrag {
         return;
       }
       if (generation != _dragGeneration) return;
-      await _service.setTabDragImage(
+      final sent = await _service.setTabDragImage(
         rgba,
         image.width,
         image.height,
@@ -182,7 +177,7 @@ class CrossWindowTabDrag {
         targetHeight: preview.targetHeight,
       );
       // המסירה המוקדמת מותרת רק אחרי שהמוק נשלח.
-      if (generation == _dragGeneration) _snapshotSent = true;
+      if (sent && generation == _dragGeneration) _snapshotSent = true;
     } catch (e) {
       debugPrint('צילום הכרטיסיה לגרירה נכשל: $e');
     } finally {
@@ -190,11 +185,7 @@ class CrossWindowTabDrag {
     }
   }
 
-  /// האם יש פיקסל שאינו שקוף לגמרי.
-  ///
-  /// ⚠️ דגימה ולא סריקה מלאה: כרטיסיה ב-DPR 1.5 היא ~10,000 פיקסלים, וזה
-  /// רץ בתחילת כל גרירה. צעד של 97 (ראשוני) מבטיח שהדגימה אינה מתיישרת
-  /// עם דפוס חוזר בתמונה.
+  /// דוגם פיקסלים תחילה, ואז סורק הכול רק אם הדגימה לא מצאה תוכן גלוי.
   static bool _hasVisiblePixels(Uint8List rgba) {
     for (var i = 3; i < rgba.length; i += 4 * 97) {
       if (rgba[i] != 0) return true;

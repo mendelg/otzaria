@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/models/link_types.dart';
@@ -259,6 +262,7 @@ class UserContentRepository {
     db.execute('DELETE FROM user_alt_toc_structure WHERE source = ?', [source]);
     db.execute('DELETE FROM user_book_version WHERE source = ?', [source]);
     db.execute('DELETE FROM user_link WHERE source = ?', [source]);
+    db.execute('DELETE FROM user_sidecar_link_book WHERE path = ?', [source]);
     db.execute('DELETE FROM user_sidecar_file WHERE path = ?', [source]);
   }
 
@@ -270,6 +274,53 @@ class UserContentRepository {
       [path],
     );
     return rows.isEmpty ? null : rows.first['signature'] as String;
+  }
+
+  /// מצב הספרים האישיים בכותרות שקובץ הקישורים מזכיר.
+  /// גם הופעת ספר אישי בכותרת שהייתה רשמית מבטלת את החתימה.
+  Future<String> sidecarLinkBookSignature(String source) async {
+    final db = await _db.database;
+    final rows = db.select(
+      '''
+      SELECT d.title, d.categoryId, b.id, b.lastModified, b.totalLines
+      FROM user_sidecar_link_book d LEFT JOIN book b
+        ON b.title = d.title
+        AND (d.categoryId = -1 OR b.categoryId = d.categoryId)
+      WHERE d.path = ?
+      ORDER BY d.title, d.categoryId, b.id
+    ''',
+      [source],
+    );
+    final state = jsonEncode([
+      for (final row in rows)
+        [
+          row['title'],
+          row['categoryId'],
+          row['id'],
+          row['lastModified'],
+          row['totalLines'],
+        ],
+    ]);
+    return sha256.convert(utf8.encode(state)).toString();
+  }
+
+  /// מעדכן רק בעת קליטת קובץ; בדיקת חתימה בסריקות הבאות קוראת רשימה מצומצמת.
+  Future<void> replaceSidecarLinkBookDependencies(String source) async {
+    final db = await _db.database;
+    db.execute('DELETE FROM user_sidecar_link_book WHERE path = ?', [source]);
+    db.execute(
+      '''
+      INSERT INTO user_sidecar_link_book (path, title, categoryId)
+      SELECT ?, title, -1 FROM (
+        SELECT sourceTitle AS title
+        FROM user_link WHERE source = ?
+        UNION
+        SELECT targetTitle AS title
+        FROM user_link WHERE source = ?
+      )
+    ''',
+      [source, source, source],
+    );
   }
 
   Future<void> setSidecarSignature(String path, String signature) async {

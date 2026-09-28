@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
@@ -255,6 +257,106 @@ void main() {
       final outcome = await library.addFiles([write('משהו.txt', 'תוכן')]);
       expect(outcome.allErrors.single, contains('לא מזוהה'));
       expect(await library.list(), isEmpty);
+    });
+
+    test('בחירה מעורבת עם קובץ חסר או שם לא מוכר אינה משנה דבר', () async {
+      await legacyLink();
+      final valid = linksFile('קישורים.csv');
+      final missing = p.join(tempDir.path, 'חסר.csv');
+      final invalid = write('משהו.txt', 'תוכן');
+
+      final outcome = await library.addFiles([valid, missing, invalid]);
+
+      expect(outcome.allErrors, hasLength(2));
+      expect(await library.list(), isEmpty);
+      expect((await storedLinks()).single.sourceLineIndex, 40);
+      final raw = await db.database;
+      expect(
+        raw.select(
+          "SELECT name FROM sqlite_master WHERE name LIKE 'import_baseline_%'",
+        ),
+        isEmpty,
+      );
+    });
+
+    test('כשל במהלך שינוי משאיר את הספרייה והקישורים כפי שהיו', () async {
+      await library.addFiles([linksFile('קישורים.csv')]);
+      final original = (await library.list()).single;
+      final raw = await db.database;
+      raw.execute(
+        'CREATE TRIGGER fail_import_update BEFORE UPDATE ON '
+        "user_import_file BEGIN SELECT RAISE(FAIL, 'blocked'); END",
+      );
+
+      await expectLater(
+        library.setEnabled(original.id, false),
+        throwsA(isA<Exception>()),
+      );
+
+      expect(DatabaseLibraryProvider.operationQueue.busyCount.value, 0);
+      expect((await library.list()).single.enabled, isTrue);
+      expect(await storedLinks(), hasLength(1));
+    });
+
+    test('כשל ב-removeAll מחזיר גם את טבלאות הבסיס', () async {
+      await legacyLink();
+      await library.addFiles([linksFile('קישורים.csv')]);
+      final raw = await db.database;
+      final baselineBefore = raw.select(
+        'SELECT * FROM import_baseline_user_link',
+      );
+      expect(baselineBefore, hasLength(1));
+      raw.execute(
+        'CREATE TRIGGER fail_import_clear BEFORE DELETE ON '
+        "user_link BEGIN SELECT RAISE(FAIL, 'blocked'); END",
+      );
+
+      await expectLater(library.removeAll(), throwsA(isA<Exception>()));
+
+      expect(await library.list(), hasLength(1));
+      expect(await storedLinks(), hasLength(2));
+      expect(
+        raw.select('SELECT * FROM import_baseline_user_link'),
+        baselineBefore,
+      );
+    });
+
+    test('מופעי ספרייה על אותו מסד מבצעים שינוי ובנייה בזה אחר זה', () async {
+      final entered = Completer<void>();
+      final release = Completer<void>();
+      final slow = UserImportLibrary(
+        db,
+        resolveRef:
+            ({
+              required targetTitle,
+              required targetCategoryId,
+              required targetIsUserBook,
+              required ref,
+            }) async => int.tryParse(ref),
+        sourceExists:
+            ({required title, categoryId, required isUserBook}) async {
+              entered.complete();
+              await release.future;
+              return true;
+            },
+      );
+      final first = slow.addFiles([linksFile('קישורים.csv')]);
+      await entered.future;
+      var secondFinished = false;
+      final second = library.removeAll().then((value) {
+        secondFinished = true;
+        return value;
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(secondFinished, isFalse);
+      expect(DatabaseLibraryProvider.operationQueue.busyCount.value, 2);
+
+      release.complete();
+      expect((await first).ok, isTrue);
+      expect((await second).ok, isTrue);
+      expect(await library.list(), isEmpty);
+      expect(await storedLinks(), isEmpty);
+      expect(DatabaseLibraryProvider.operationQueue.busyCount.value, 0);
     });
 
     test('קובץ שנמחק מהדיסק ממשיך לפעול מהתוכן השמור', () async {

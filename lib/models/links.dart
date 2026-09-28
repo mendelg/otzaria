@@ -59,6 +59,12 @@ class Link {
   /// The index of the first book in the link.
   final int index1;
 
+  /// סוף טווח שורות המקור (1-based, כולל), אם הקישור מכסה כמה שורות.
+  final int? index1End;
+
+  bool overlapsSourceLines(int first, int last) =>
+      index1 <= last && (index1End ?? index1) >= first;
+
   /// The path of the second book in the link.
   final String path2;
 
@@ -128,6 +134,7 @@ class Link {
   Link({
     required this.heRef,
     required this.index1,
+    this.index1End,
     required this.path2,
     required this.index2,
     required this.connectionType,
@@ -394,10 +401,15 @@ class Link {
   /// בונה [Link] משורת `links.json`. סלחני בכוונה: מקבל אינדקסים כמספר או
   /// כמחרוזת (`"3.0"` → `3`), וסוג חיבור ריק הופך ל-`reference`.
   ///
-  /// עוגני-מילה, קישורי-טווח ו-[baseProvenance] מגיעים רק מהמסד ולכן מאופסים.
+  /// עוגני-מילה ו-[baseProvenance] מגיעים רק מהמסד ולכן מאופסים.
   Link.fromJson(Map<String, dynamic> json)
     : heRef = json['heRef_2'].toString(),
       index1 = int.parse(json['line_index_1'].toString().split('.').first),
+      index1End = json['line_index_1_end'] == null
+          ? null
+          : int.tryParse(
+              json['line_index_1_end'].toString().split('.').first,
+            ),
       path2 = json['path_2'].toString(),
       index2 = int.parse(json['line_index_2'].toString().split('.').first),
       connectionType = connectionTypeFromJson(json['Conection Type']),
@@ -419,29 +431,14 @@ class Link {
       linkedAnchorStart = null,
       linkedAnchorEnd = null,
       anchorSpans = const [],
-      // קישורי-טווח מגיעים רק ממסד הנתונים (link_range), לא מקבצי JSON.
+      // סוף טווח היעד מגיע רק ממסד הנתונים (link_range).
       heRefEnd = null,
       index2End = null,
       baseProvenance = 0;
 }
 
-/// Retrieves a list of [Link] objects for the given list of [indexes] and the [links] to be processed.
-///
-/// The [indexes] parameter is a required list of integers representing the indexes of the links to retrieve.
-/// The [links] parameter is a required [Future] of a list of [Link] objects representing the links to be processed.
-/// The [commentatorsToShow] parameter is a required list of [Book] objects representing the commentators to show.
-///
-/// Returns a [Future] of a list of [Link] objects representing the retrieved links.
-///
-/// The function retrieves the list of links by first awaiting the completion of the [links] future.
-/// It then iterates over each index in the [indexes] list and filters the retrieved links based on the following criteria:
-/// - The index of the link should be equal to the current index plus one.
-/// - The connection type of the link should be either "commentary" or "targum".
-/// - The title of the second book in the link should be present in the list of commentators to show.
-/// The filtered links are sorted based on the order of the commentators to show.
-/// The sorted list of links is then returned as a [Future] of a list of [Link] objects.
-/// [typesToShow] — סינון נוסף לפי סוג המפרש (תרגום/מדרש וכו׳). קבוצה ריקה =
-/// הצג את כל הסוגים, כדי שסוג חדש שיתווסף ל-DB יופיע מאליו.
+/// קישורי המפרשים שחופפים לשורות [indexes] (0-based), לפי סדר המפרשים.
+/// [typesToShow] ריקה מציגה את כל סוגי המפרשים.
 Future<List<Link>> getLinksforIndexs({
   required List<int> indexes,
   required List<Link> links,
@@ -458,14 +455,33 @@ Future<List<Link>> getLinksforIndexs({
     return [];
   }
 
-  // יצירת Set לחיפוש מהיר יותר
+  // קישורים נקודתיים נבדקים ב-Set; לטווחים מחפשים את השורה הנראית הראשונה
+  // שאחרי תחילת הטווח בחיפוש בינארי, גם כשהשורות הנראות אינן רציפות.
   final indexSet = indexes.map((i) => i + 1).toSet();
+  final sortedIndexes = indexSet.toList()..sort();
   final commentatorsSet = commentatorsToShow.toSet();
+
+  bool containsSourceLine(Link link) {
+    if (indexSet.contains(link.index1)) return true;
+    final end = link.index1End;
+    if (end == null) return false;
+    var low = 0;
+    var high = sortedIndexes.length;
+    while (low < high) {
+      final mid = (low + high) ~/ 2;
+      if (sortedIndexes[mid] < link.index1) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    return low < sortedIndexes.length && sortedIndexes[low] <= end;
+  }
 
   // סינון אחד במקום לולאה עם סינונים מרובים
   final filteredLinks = links.where((link) {
     // בדיקות מהירות קודם
-    if (!indexSet.contains(link.index1)) return false;
+    if (!containsSourceLine(link)) return false;
     if (!LinkTypes.isDependentTextLink(link.connectionType)) return false;
     if (typesToShow.isNotEmpty &&
         !typesToShow.contains(LinkTypes.canonicalType(link.connectionType))) {

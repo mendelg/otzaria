@@ -88,10 +88,9 @@ void main() {
       final style = continuousStyleOf(marker(0, 'א'), '(א)');
       final around = continuousStyleOf(marker(0, 'א'), 'לפני');
       expect(style.fontSize, lessThan(around.fontSize!));
-      // "(א)" נעטף גם ב-<small> בעיצוב הסוגריים, ולכן ההקטנה מצטברת.
       expect(
         style.fontSize,
-        closeTo(around.fontSize! * kLinkAnchorMarkerScale * (5 / 6), 0.001),
+        closeTo(around.fontSize! * kLinkAnchorMarkerScale, 0.001),
       );
     });
 

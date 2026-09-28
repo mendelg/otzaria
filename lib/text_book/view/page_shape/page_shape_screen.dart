@@ -2323,7 +2323,9 @@ class _CommentaryPaneState extends State<_CommentaryPane> {
 
     // מציאת כל הקישורים לשורה זו והמרה ישירה ל-Set
     final newHighlights = _relevantLinks
-        .where((link) => link.index1 == mainLineNumber)
+        .where(
+          (link) => link.overlapsSourceLines(mainLineNumber, mainLineNumber),
+        )
         .map((link) => link.index2 - 1)
         .toSet();
 
