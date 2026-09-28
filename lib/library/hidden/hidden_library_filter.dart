@@ -1,7 +1,8 @@
 import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/models/library.dart';
 
-/// מחזיר עותק של [library] בלי הספרים והקטגוריות שב-[hidden].
+/// מחזיר עותק של [library] בלי הספרים והקטגוריות שב-[hidden]. [Library.offTreeBooks]
+/// עוברים כמות שהם: העותק מגיע גם לאינדוקס, ו-booksForIndexing מוציא את המוסתרים.
 ///
 /// העותק נבנה מחדש ואינו חולק אובייקטי קטגוריה עם המקור: העץ המקורי משותף
 /// עם גשר התוספים ועם קוד התחזוקה, וההסתרה היא של הממשק בלבד (issue #1448).
@@ -22,6 +23,7 @@ Library filterHiddenFromLibrary(
   for (final category in filtered.subCategories) {
     category.parent = filtered;
   }
+  filtered.offTreeBooks = library.offTreeBooks;
   return filtered;
 }
 
