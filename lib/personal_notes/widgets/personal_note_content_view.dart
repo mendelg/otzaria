@@ -63,11 +63,24 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
   ScrollController? _scrollController;
   List<({String label, String url})> _links = const [];
 
+  AppSelectionAreaState? _host;
+
   @override
   void initState() {
     super.initState();
     _buildContent();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final host = AppSelectionArea.maybeOf(context);
+    if (host == _host) return;
+    _host?.removeSelectionSource(_selectedText);
+    _host = host?..addSelectionSource(_selectedText);
+  }
+
+  String _selectedText() => _controller?.getPlainText() ?? '';
 
   @override
   void didUpdateWidget(PersonalNoteContentView oldWidget) {
@@ -82,6 +95,7 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
 
   @override
   void dispose() {
+    _host?.removeSelectionSource(_selectedText);
     _disposeControllers();
     super.dispose();
   }
@@ -140,8 +154,7 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
     if (controller != null) {
       // בתוך AppSelectionArea תפריט ההעתקה מגיע ממנו; שני אזורי תפריט מקוננים
       // היו פותחים שני תפריטים.
-      final hostHasOwnMenu =
-          context.findAncestorWidgetOfExactType<AppSelectionArea>() != null;
+      final hostHasOwnMenu = _host != null;
       // במגע נשאר התפריט הטבעי של העורך, כמו ב-AppSelectionArea.
       final platform = Theme.of(context).platform;
       final useNativeTouchMenu =
