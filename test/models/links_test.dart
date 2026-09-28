@@ -588,4 +588,28 @@ void main() {
       expect(restored.end, original.end);
     });
   });
+
+  group('Link.fromJson — Conection Type', () {
+    Link parse(Map<String, dynamic> extra) => Link.fromJson({
+      'heRef_2': 'בראשית א, א',
+      'line_index_1': 1,
+      'path_2': 'בראשית.txt',
+      'line_index_2': 2,
+      ...extra,
+    });
+
+    test('מפתח חסר → reference, לא "null"', () {
+      expect(parse({}).connectionType, 'reference');
+    });
+
+    for (final value in [null, '', '   ']) {
+      test('ערך ${value == null ? 'null' : '"$value"'} → reference', () {
+        expect(parse({'Conection Type': value}).connectionType, 'reference');
+      });
+    }
+
+    test('ערך קיים נשמר כמות שהוא', () {
+      expect(parse({'Conection Type': 'targum'}).connectionType, 'targum');
+    });
+  });
 }

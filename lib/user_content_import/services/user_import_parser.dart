@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/models/link_types.dart';
+import 'package:otzaria/models/links.dart' show Link;
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart'
     show getTitleFromPath;
@@ -453,11 +455,14 @@ class UserImportParser {
         errors.add(ImportRowError(n, 'חסר path_2'));
         continue;
       }
-      // בפורמט ה-native סוג ריק משמעו commentary (כמו Link.fromJson).
-      final rawType = _str(item['Conection Type']) ?? 'commentary';
-      final type = _connectionType(rawType);
+      final type = _nativeConnectionType(item['Conection Type']);
       if (type == null) {
-        errors.add(ImportRowError(n, 'סוג קישור לא מוכר: "$rawType"'));
+        errors.add(
+          ImportRowError(
+            n,
+            'סוג קישור לא מוכר: "${item['Conection Type']}"',
+          ),
+        );
         continue;
       }
       rows.add(
@@ -520,6 +525,16 @@ class UserImportParser {
     final upper = trimmed.toUpperCase();
     if (kHebrewConnectionTypes.values.contains(upper)) return upper;
     return null;
+  }
+
+  /// סוג native מוכר (ריק → reference, כמו [Link.fromJson]); לא מוכר → null.
+  static String? _nativeConnectionType(Object? raw) {
+    final value = Link.connectionTypeFromJson(raw).trim();
+    final hebrew = kHebrewConnectionTypes[value];
+    if (hebrew != null) return hebrew;
+    final normalized = LinkTypes.normalize(value);
+    final type = kNativeConnectionTypeAliases[normalized] ?? normalized;
+    return kNativeConnectionTypes.contains(type) ? type : null;
   }
 
   static bool _parseBool(String raw) {

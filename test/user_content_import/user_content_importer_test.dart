@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
+import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
 import 'package:otzaria/user_content_import/services/user_content_importer.dart';
@@ -432,6 +433,41 @@ void main() {
         );
         expect(stored.single.targetTitle, 'הכי גרסינן מגילה');
         expect(stored.single.targetRef, 'הכי גרסינן מגילה ב., א');
+      });
+
+      test('סוג תלוי-טקסט מורחב מתהפך למפרש; סוג הפניה נשאר', () async {
+        final f = writeCsv(
+          'הכי גרסינן מגילה_links.json',
+          '[{"line_index_1": 5, "line_index_2": 3, "path_2": "מגילה.txt", '
+              '"Conection Type": "midrash"},'
+              '{"line_index_1": 6, "line_index_2": 4, "path_2": "מגילה.txt", '
+              '"Conection Type": "law"}]',
+        );
+        final result = await UserContentImporter.importFiles(
+          [f],
+          db,
+          locateBook: fakeLocator,
+        );
+        expect(result.errors, isEmpty);
+        expect(result.linksApplied, 2);
+
+        final flipped = await repo.forwardUserLinks(
+          'מגילה',
+          sourceIsUserBook: false,
+        );
+        expect(flipped.single.connectionType, LinkTypes.midrash);
+        expect(flipped.single.targetTitle, 'הכי גרסינן מגילה');
+        expect(
+          await repo.userCommentatorTitles('מגילה', sourceIsUserBook: false),
+          ['הכי גרסינן מגילה'],
+        );
+
+        final kept = await repo.forwardUserLinks(
+          'הכי גרסינן מגילה',
+          sourceIsUserBook: true,
+        );
+        expect(kept.single.connectionType, LinkTypes.law);
+        expect(kept.single.targetTitle, 'מגילה');
       });
 
       test('שורה מעבר ל-totalLines → שגיאה, אין כתיבה', () async {

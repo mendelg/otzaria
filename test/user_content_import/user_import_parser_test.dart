@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/models/link_types.dart';
+import 'package:otzaria/models/links.dart';
 import 'package:otzaria/user_content_import/services/user_import_parser.dart';
 
 void main() {
@@ -89,6 +93,16 @@ void main() {
       expect(result.rows.single.connectionType, 'TARGUM');
     });
 
+    test('סוגי ה-native המורחבים אינם נקלטים ב-CSV (רק חמש התוויות)', () {
+      const csv =
+          'מקור,ספר_יעד,סוג\n'
+          '5,ברכות,midrash\n'
+          '6,ברכות,\n';
+      final result = UserImportParser.parseLinks(csv);
+      expect(result.rows, isEmpty);
+      expect(result.errors.length, 2);
+    });
+
     test('מספר שורה לא חוקי / סוג לא מוכר → שגיאות', () {
       const csv =
           'מקור,ספר_יעד,סוג\n'
@@ -150,11 +164,169 @@ void main() {
       expect(result.rows[1].connectionType, 'REFERENCE');
     });
 
-    test('סוג ריק → commentary (כמו Link.fromJson)', () {
+    test('סוג חסר → REFERENCE (כמו Link.fromJson)', () {
       const json = '[{"line_index_1": 1, "line_index_2": 2, "path_2": "ספר"}]';
       final result = UserImportParser.parseNativeLinksJson(json);
-      expect(result.rows.single.connectionType, 'COMMENTARY');
+      expect(result.errors, isEmpty);
+      expect(result.rows.single.connectionType, LinkTypes.reference);
       expect(result.rows.single.targetTitle, 'ספר');
+    });
+
+    for (final (label, value) in [
+      ('ריק', '""'),
+      ('רווחים בלבד', '"   "'),
+      ('null', 'null'),
+    ]) {
+      test('סוג $label → REFERENCE, כמו Link.fromJson', () {
+        final json =
+            '[{"line_index_1": 1, "line_index_2": 2, "path_2": "ספר", '
+            '"Conection Type": $value}]';
+        final result = UserImportParser.parseNativeLinksJson(json);
+        expect(result.errors, isEmpty);
+        final type = result.rows.single.connectionType;
+        expect(type, LinkTypes.reference);
+        // אותו פאנל כמו בקריאת אותו קובץ ב-Link.fromJson.
+        expect(
+          LinkTypes.normalize(
+            Link.fromJson(
+              jsonDecode(json)[0] as Map<String, dynamic>,
+            ).connectionType,
+          ),
+          type,
+        );
+        expect(LinkTypes.isDependentTextLink(type), isFalse);
+      });
+    }
+
+    test('כל ערכי ה-Conection Type של כלי Link-Notes נקלטים', () {
+      // ערכי ה-<select> שב-Link-Notes/index.html → הסוג שנשמר.
+      const expected = {
+        'commentary': LinkTypes.commentary,
+        'super_commentary': LinkTypes.superCommentary,
+        'targum': LinkTypes.targum,
+        'midrash': LinkTypes.midrash,
+        'parshanut': LinkTypes.parshanut,
+        'dibur_hamatchil': LinkTypes.diburHamatchil,
+        'reference': LinkTypes.reference,
+        'quotation': LinkTypes.quotation,
+        'quotation_auto': LinkTypes.quotation,
+        'quotation_auto_tanakh': LinkTypes.quotation,
+        'explication': LinkTypes.explication,
+        'related passage': LinkTypes.related,
+        'related': LinkTypes.related,
+        'allusion': LinkTypes.allusion,
+        'mesorat hashas': LinkTypes.mesoratHashas,
+        'ein mishpat': LinkTypes.einMishpat,
+        'ein mishpat / ner mitsvah': LinkTypes.einMishpat,
+        'mishnah in talmud': LinkTypes.mishnahInTalmud,
+        'law': LinkTypes.law,
+        'footnotes': LinkTypes.footnotes,
+        'liturgy': LinkTypes.liturgy,
+        'linker': LinkTypes.linker,
+        'summary': LinkTypes.summary,
+        'sifrei mitzvot': LinkTypes.sifreiMitzvot,
+        'sifrei mitsvot': LinkTypes.sifreiMitzvot,
+        'none': LinkTypes.other,
+        '': LinkTypes.reference,
+      };
+      final json = jsonEncode([
+        for (final raw in expected.keys)
+          {
+            'line_index_1': 1,
+            'line_index_2': 2,
+            'path_2': 'ספר.txt',
+            'Conection Type': raw,
+          },
+      ]);
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.errors, isEmpty);
+      expect(
+        [for (final r in result.rows) r.connectionType],
+        expected.values.toList(),
+      );
+    });
+
+    test('סוגים מלאים של ה-DB נקלטים בכל רישיות ובכל מפריד', () {
+      const raws = [
+        'SUPER_COMMENTARY',
+        'Super Commentary',
+        'super-commentary',
+        'ELUCIDATION',
+        'ellucidation',
+        'sifrei mitzvot',
+        'ESSAY',
+        'other',
+        'source',
+      ];
+      final json = jsonEncode([
+        for (final raw in raws)
+          {
+            'line_index_1': 1,
+            'line_index_2': 2,
+            'path_2': 'ספר',
+            'Conection Type': raw,
+          },
+      ]);
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.errors, isEmpty);
+      expect(
+        [for (final r in result.rows) r.connectionType],
+        [
+          LinkTypes.superCommentary,
+          LinkTypes.superCommentary,
+          LinkTypes.superCommentary,
+          LinkTypes.elucidation,
+          LinkTypes.elucidation,
+          LinkTypes.sifreiMitzvot,
+          LinkTypes.essay,
+          LinkTypes.other,
+          LinkTypes.source,
+        ],
+      );
+    });
+
+    test('סוגי תלוי-טקסט יוצאים תלויי-טקסט, השאר — הפניה', () {
+      final json = jsonEncode([
+        for (final raw in ['midrash', 'footnotes', 'explication', 'law'])
+          {
+            'line_index_1': 1,
+            'line_index_2': 2,
+            'path_2': 'ספר',
+            'Conection Type': raw,
+          },
+      ]);
+      final rows = UserImportParser.parseNativeLinksJson(json).rows;
+      expect(
+        [for (final r in rows) LinkTypes.isDependentTextLink(r.connectionType)],
+        [
+          true,
+          true,
+          true,
+          false,
+        ],
+      );
+    });
+
+    test('תוויות עבריות עדיין נקלטות בפורמט ה-native', () {
+      const json =
+          '[{"line_index_1": 1, "line_index_2": 2, "path_2": "ספר", '
+          '"Conection Type": "תרגום"}]';
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.rows.single.connectionType, LinkTypes.targum);
+    });
+
+    test('סוג לא מוכר → שגיאת שורה, שורות תקינות נקלטות', () {
+      const json =
+          '['
+          '{"line_index_1": 1, "line_index_2": 2, "path_2": "ספר", '
+          '"Conection Type": "no such type"},'
+          '{"line_index_1": 1, "line_index_2": 2, "path_2": "ספר", '
+          '"Conection Type": "midrash"}'
+          ']';
+      final result = UserImportParser.parseNativeLinksJson(json);
+      expect(result.rows.single.connectionType, LinkTypes.midrash);
+      expect(result.errors.single.lineNumber, 1);
+      expect(result.errors.single.message, contains('no such type'));
     });
 
     test('path_2 עם רכיבי-נתיב → הכותרת היא שם הקובץ בלבד', () {

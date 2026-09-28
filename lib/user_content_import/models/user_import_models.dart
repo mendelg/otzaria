@@ -5,6 +5,7 @@
 library;
 
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/models/link_types.dart';
 
 /// שמות הדורות הקנוניים שמותר להזין בקובץ הדורות.
 ///
@@ -27,6 +28,48 @@ const Map<String, String> kHebrewConnectionTypes = {
   'הפניה': 'REFERENCE',
   'מקור': 'SOURCE',
   'אחר': 'OTHER',
+};
+
+/// סוגי ה-native המותרים — ערכי ה-ConnectionType של מחולל ה-DB.
+const Set<String> kNativeConnectionTypes = {
+  LinkTypes.commentary,
+  LinkTypes.superCommentary,
+  LinkTypes.targum,
+  LinkTypes.reference,
+  LinkTypes.source,
+  LinkTypes.midrash,
+  LinkTypes.quotation,
+  LinkTypes.mesoratHashas,
+  LinkTypes.einMishpat,
+  LinkTypes.diburHamatchil,
+  LinkTypes.parshanut,
+  LinkTypes.mishnahInTalmud,
+  LinkTypes.related,
+  LinkTypes.other,
+  LinkTypes.linker,
+  LinkTypes.sifreiMitzvot,
+  LinkTypes.essay,
+  LinkTypes.allusion,
+  LinkTypes.liturgy,
+  LinkTypes.elucidation,
+  LinkTypes.explication,
+  LinkTypes.law,
+  LinkTypes.summary,
+  LinkTypes.footnotes,
+};
+
+/// כינויים (אחרי [LinkTypes.normalize]) שהמחולל מקבל ו-Link-Notes פולט.
+const Map<String, String> kNativeConnectionTypeAliases = {
+  'NONE': LinkTypes.other,
+  'SUPERCOMMENTARY': LinkTypes.superCommentary,
+  'QUOTATION_AUTO': LinkTypes.quotation,
+  'QUOTATION_AUTO_TANAKH': LinkTypes.quotation,
+  'RELATED_PASSAGE': LinkTypes.related,
+  'EIN_MISHPAT_/_NER_MITSVAH': LinkTypes.einMishpat,
+  'EIN_MISHPAT_/_NER_MITZVAH': LinkTypes.einMishpat,
+  'SIFREI_MITSVOT': LinkTypes.sifreiMitzvot,
+  'ELLUCIDATION': LinkTypes.elucidation,
+  'FOOTNOTE': LinkTypes.footnotes,
 };
 
 /// שמות מבנה שמקבלים את תצוגת המבנה הרשמי המקביל: סימנים/סעיפים מוצגים
@@ -262,7 +305,7 @@ class ParsedNativeLink {
   /// הכתובת העברית של היעד (heRef_2) — להצגה בלבד.
   final String? targetRef;
 
-  /// שם connection_type ב-DB.
+  /// שם connection_type ב-DB (אחד מ-[kNativeConnectionTypes]).
   final String connectionType;
 
   const ParsedNativeLink({
