@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/widgets/personal_note_content_view.dart';
@@ -55,11 +56,14 @@ void main() {
     expect(
       find.byType(AdaptiveTextSelectionToolbar),
       findsNothing,
-      reason: 'תפריט Flutter של העורך אסור שיופיע לצד תפריט אוצריא (issue #1271)',
+      reason:
+          'תפריט Flutter של העורך אסור שיופיע לצד תפריט אוצריא (issue #1271)',
     );
   });
 
-  testWidgets('בלי AppSelectionArea תפריט ההעתקה של העורך נשאר זמין', (
+  // בחלונית הצד של ההערות אין מארח עם תפריט, ונפתח תפריט Flutter של העורך
+  // במקום תפריט אוצריא (issue #1590).
+  testWidgets('בלי AppSelectionArea נפתח תפריט ההעתקה של אוצריא', (
     tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
@@ -72,6 +76,48 @@ void main() {
     await rightClickText(tester);
     debugDefaultTargetPlatformOverride = null;
 
-    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+    expect(find.text('העתק'), findsOneWidget, reason: 'תפריט אוצריא');
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+  });
+
+  testWidgets('בלי AppSelectionArea "העתק" מעתיק את הטקסט שנבחר בהערה', (
+    tester,
+  ) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PersonalNoteContentView(note: note())),
+      ),
+    );
+    final text = find.text('תוכן ההערה לבדיקה', findRichText: true);
+    await tester.tapAt(tester.getCenter(text), kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(tester.getCenter(text), kind: PointerDeviceKind.mouse);
+    await tester.pumpAndSettle();
+
+    await rightClickText(tester);
+    await tester.tap(find.text('העתק'));
+    await tester.pumpAndSettle();
+    debugDefaultTargetPlatformOverride = null;
+
+    expect(copied, isNotNull);
+    expect('תוכן ההערה לבדיקה', contains(copied!));
+    expect(copied, isNotEmpty);
   });
 }
