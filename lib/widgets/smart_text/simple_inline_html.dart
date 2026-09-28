@@ -27,7 +27,21 @@ class SimpleInlineHtml {
   static final RegExp _entityRegex = RegExp(
     r'&[a-zA-Z]{2,10};|&#x?[0-9a-fA-F]{1,6};',
   );
-  static final RegExp _whitespaceRegex = RegExp(r'\s+');
+  // רווח ASCII בלבד, כמו ב-HTML וב-fwfh: NBSP ו-U+2009 אינם מתכווצים.
+  static final RegExp _whitespaceRegex = RegExp(r'[\t\n\f\r ]+');
+  static final RegExp _leadingWhitespaceRegex = RegExp(r'^[\t\n\f\r ]+');
+  static final RegExp _trailingWhitespaceRegex = RegExp(r'[\t\n\f\r ]+$');
+
+  /// עוגני המפרשים הריקים של שו"ע/טור (`<i data-commentator=…></i>`) — אין
+  /// להם תוכן ואין מי שקורא אותם מהעץ המרונדר, ולכן אינם מציירים דבר.
+  static final RegExp _emptyDataElementRegex = RegExp(
+    r'<i(?: data-[a-z]+="[^"<>]*")+></i>',
+  );
+
+  /// span של מקרא על פי המסורה (`mam-kq`, `mam-spi-pe`…) — אין לו עיצוב.
+  static final RegExp _mamSpanOpenRegex = RegExp(
+    r'^<span class="mam-[a-z-]+">$',
+  );
 
   /// תגי הפתיחה של סימונים מורמים, כפי שנפלטים מ-`_fixFootnoteMarkers`
   /// (מחרוזות קבועות, ולכן השוואה מדויקת). כל span אחר עדיין מפיל ל-HtmlWidget.
@@ -56,12 +70,17 @@ class SimpleInlineHtml {
 
   /// מנסה להמיר את [html]. מחזיר null אם נדרש HtmlWidget.
   static TextSpan? tryParse(String html, TextStyle baseStyle) {
-    if (html.contains('&') && _entityRegex.hasMatch(html)) return null;
+    if (html.contains('&')) {
+      html = html.replaceAll('&nbsp;', ' ').replaceAll('&thinsp;', ' ');
+      if (_entityRegex.hasMatch(html)) return null;
+    }
+    if (html.contains('<i ')) {
+      html = html.replaceAll(_emptyDataElementRegex, '');
+    }
 
     // המקרה הנפוץ ביותר: שורה בלי שום תג.
     if (!html.contains('<')) {
-      final collapsed = html.replaceAll(_whitespaceRegex, ' ').trim();
-      return TextSpan(text: collapsed);
+      return TextSpan(text: _trim(html.replaceAll(_whitespaceRegex, ' ')));
     }
 
     var bold = 0, italic = 0, underline = 0, big = 0, small = 0;
@@ -137,6 +156,10 @@ class SimpleInlineHtml {
         }
         continue;
       }
+      if (_mamSpanOpenRegex.hasMatch(rawTag)) {
+        spanStack.add(_SpanKind.plain);
+        continue;
+      }
       final highlightOpen = _searchHighlightOpens[rawTag];
       if (highlightOpen != null) {
         // הדגשה בתוך הדגשה אינה נפלטת; ירושת הצבע והרקע שם אינה מאומתת.
@@ -156,6 +179,8 @@ class SimpleInlineHtml {
             raisedSups = math.max(0, raisedSups - 1);
           case _SpanKind.highlight:
             highlight = null;
+          case _SpanKind.plain:
+            break;
         }
         continue;
       }
@@ -197,7 +222,7 @@ class SimpleInlineHtml {
   }
 
   static final RegExp _wholeLineHeadingRegex = RegExp(
-    r'^\s*<h([1-6])>(.*)</h\1>\s*$',
+    r'^[\t\n\f\r ]*<h([1-6])>(.*)</h\1>[\t\n\f\r ]*$',
     dotAll: true,
   );
 
@@ -243,27 +268,53 @@ class SimpleInlineHtml {
     return SimpleHeading(style, span);
   }
 
+  static String _trim(String text) => text
+      .replaceFirst(_leadingWhitespaceRegex, '')
+      .replaceFirst(_trailingWhitespaceRegex, '');
+
   /// מדמה את כללי הרווחים של HTML: רווחים צמודים ל-<br> ולקצוות הפסקה נבלעים.
   static void _normalizeWhitespace(List<_Segment> segments) {
+    // רווח שאחרי רווח מתכווץ גם מעבר לגבול תג (`<b>א </b> ב`).
+    var afterSpace = false;
+    for (final segment in segments) {
+      if (segment.isBreak) {
+        afterSpace = false;
+        continue;
+      }
+      if (afterSpace && segment.text.startsWith(' ')) {
+        segment.text = segment.text.substring(1);
+      }
+      if (segment.text.isNotEmpty) afterSpace = segment.text.endsWith(' ');
+    }
     for (var i = 0; i < segments.length; i++) {
       if (!segments[i].isBreak) continue;
       if (i > 0 && !segments[i - 1].isBreak) {
-        segments[i - 1].text = segments[i - 1].text.trimRight();
+        segments[i - 1].text = segments[i - 1].text.replaceFirst(
+          _trailingWhitespaceRegex,
+          '',
+        );
       }
       if (i + 1 < segments.length && !segments[i + 1].isBreak) {
-        segments[i + 1].text = segments[i + 1].text.trimLeft();
+        segments[i + 1].text = segments[i + 1].text.replaceFirst(
+          _leadingWhitespaceRegex,
+          '',
+        );
       }
     }
 
     while (segments.isNotEmpty) {
       final first = segments.first;
-      first.text = first.isBreak ? '' : first.text.trimLeft();
+      first.text = first.isBreak
+          ? ''
+          : first.text.replaceFirst(_leadingWhitespaceRegex, '');
       if (first.text.isNotEmpty) break;
       segments.removeAt(0);
     }
     while (segments.isNotEmpty) {
       final last = segments.last;
-      last.text = last.isBreak ? '' : last.text.trimRight();
+      last.text = last.isBreak
+          ? ''
+          : last.text.replaceFirst(_trailingWhitespaceRegex, '');
       if (last.text.isNotEmpty) break;
       segments.removeLast();
     }
@@ -279,7 +330,7 @@ class SimpleHeading {
   const SimpleHeading(this.style, this.span);
 }
 
-enum _SpanKind { footnote, raisedSup, highlight }
+enum _SpanKind { footnote, raisedSup, highlight, plain }
 
 class _Highlight {
   final Color color;
