@@ -58,15 +58,41 @@ class PersonalNoteContentView extends StatefulWidget {
 }
 
 class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
+  final _editorKey = GlobalKey();
   quill.QuillController? _controller;
   FocusNode? _focusNode;
   ScrollController? _scrollController;
   List<({String label, String url})> _links = const [];
 
+  AppSelectionAreaState? _host;
+
   @override
   void initState() {
     super.initState();
     _buildContent();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final host = AppSelectionArea.maybeOf(context);
+    if (host == _host) return;
+    _host?.removeSelectionSource(_selectedText);
+    _host = host
+      ?..addSelectionSource(
+        _selectedText,
+        containsPosition: _selectionSourceContainsPosition,
+      );
+  }
+
+  String _selectedText() => _controller?.getPlainText() ?? '';
+
+  bool _selectionSourceContainsPosition(Offset position) {
+    final renderObject = _editorKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return false;
+    return (Offset.zero & renderObject.size).contains(
+      renderObject.globalToLocal(position),
+    );
   }
 
   @override
@@ -82,6 +108,7 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
 
   @override
   void dispose() {
+    _host?.removeSelectionSource(_selectedText);
     _disposeControllers();
     super.dispose();
   }
@@ -140,14 +167,14 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
     if (controller != null) {
       // בתוך AppSelectionArea תפריט ההעתקה מגיע ממנו; שני אזורי תפריט מקוננים
       // היו פותחים שני תפריטים.
-      final hostHasOwnMenu =
-          context.findAncestorWidgetOfExactType<AppSelectionArea>() != null;
+      final hostHasOwnMenu = _host != null;
       // במגע נשאר התפריט הטבעי של העורך, כמו ב-AppSelectionArea.
       final platform = Theme.of(context).platform;
       final useNativeTouchMenu =
           platform == TargetPlatform.android || platform == TargetPlatform.iOS;
       final useOwnMenu = !hostHasOwnMenu && !useNativeTouchMenu;
       Widget editor = quill.QuillEditor(
+        key: _editorKey,
         controller: controller,
         focusNode: _focusNode!,
         scrollController: _scrollController!,

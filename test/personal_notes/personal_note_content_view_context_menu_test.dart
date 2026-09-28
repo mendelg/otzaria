@@ -121,9 +121,7 @@ void main() {
     });
   }
 
-  testWidgets('העתקה שומרת בדיוק על טווח הבחירה של Quill', (
-    tester,
-  ) async {
+  testWidgets('העתקה שומרת בדיוק על טווח הבחירה של Quill', (tester) async {
     await onPlatform(TargetPlatform.windows, () async {
       final clipboardWrites = <String>[];
       mockClipboard(tester, clipboardWrites);
@@ -140,6 +138,36 @@ void main() {
           .controller;
       final selectedText = controller.getPlainText();
       expect(controller.selection.isCollapsed, isFalse);
+      expect(selectedText, isNotEmpty);
+      expect(selectedText, isNot(noteText));
+
+      await rightClickText(tester);
+      await tester.tap(find.text('העתק'));
+      await tester.pumpAndSettle();
+
+      expect(clipboardWrites, [selectedText]);
+    });
+  });
+
+  // עורך Quill אינו מדווח ל-SelectionArea, ובלי רישום הבחירה "העתק" של תיבת
+  // הריחוף נשאר מושבת (issue #1595).
+  testWidgets('בתוך AppSelectionArea "העתק" מעתיק את הבחירה של Quill', (
+    tester,
+  ) async {
+    await onPlatform(TargetPlatform.windows, () async {
+      final clipboardWrites = <String>[];
+      mockClipboard(tester, clipboardWrites);
+      await pumpNote(tester, withSelectionArea: true);
+
+      final text = find.text(noteText, findRichText: true);
+      await tester.tapAt(tester.getCenter(text), kind: PointerDeviceKind.mouse);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tapAt(tester.getCenter(text), kind: PointerDeviceKind.mouse);
+      await tester.pumpAndSettle();
+      final selectedText = tester
+          .state<quill.QuillEditorState>(find.byType(quill.QuillEditor))
+          .controller
+          .getPlainText();
       expect(selectedText, isNotEmpty);
       expect(selectedText, isNot(noteText));
 

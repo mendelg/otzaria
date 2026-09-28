@@ -6,10 +6,7 @@ import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 void main() {
-  Widget buildHarness({
-    required Widget child,
-    TargetPlatform? platform,
-  }) {
+  Widget buildHarness({required Widget child, TargetPlatform? platform}) {
     return MaterialApp(
       locale: const Locale('he', 'IL'),
       theme: ThemeData(platform: platform ?? TargetPlatform.windows),
@@ -120,6 +117,121 @@ void main() {
     await tester.tap(find.text('העתק'));
     await tester.pump();
     expect(clipboardText, text);
+  });
+
+  testWidgets('מקור בחירה מועתק כשהלחיצה עליו, גם כשיש בחירה חיצונית', (
+    tester,
+  ) async {
+    String? clipboardText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await tester.pumpWidget(
+      buildHarness(
+        child: const Column(
+          children: [Text('בחירה חיצונית'), Text('הערה פנימית')],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const sourceText = 'בחירת Quill';
+    String selectionSource() => sourceText;
+    final sourceBounds = tester.getRect(find.text('הערה פנימית'));
+    tester
+        .state<AppSelectionAreaState>(find.byType(AppSelectionArea))
+        .addSelectionSource(
+          selectionSource,
+          containsPosition: sourceBounds.contains,
+        );
+    await selectAll(tester);
+
+    await rightClickAt(tester, sourceBounds.center);
+    await tester.tap(find.text('העתק'));
+    await tester.pump();
+
+    expect(clipboardText, sourceText);
+  });
+
+  testWidgets('לחיצה מחוץ למקור נוסף מעתיקה את בחירת SelectionArea', (
+    tester,
+  ) async {
+    String? clipboardText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    const text = 'טקסט לבחירה חיצונית';
+    await tester.pumpWidget(buildHarness(child: const Text(text)));
+    await tester.pumpAndSettle();
+
+    String selectionSource() => 'בחירת Quill';
+    tester
+        .state<AppSelectionAreaState>(find.byType(AppSelectionArea))
+        .addSelectionSource(selectionSource, containsPosition: (_) => false);
+    await selectAll(tester);
+
+    await rightClickAt(tester, tester.getCenter(find.text(text)));
+    await tester.tap(find.text('העתק'));
+    await tester.pump();
+
+    expect(clipboardText, text);
+  });
+
+  testWidgets('מקור ריק בלחיצה לא מעתיק בחירה חיצונית ישנה', (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        child: const Column(
+          children: [Text('בחירה חיצונית'), Text('עורך ריק')],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    String selectionSource() => '';
+    final sourceBounds = tester.getRect(find.text('עורך ריק'));
+    tester
+        .state<AppSelectionAreaState>(find.byType(AppSelectionArea))
+        .addSelectionSource(
+          selectionSource,
+          containsPosition: sourceBounds.contains,
+        );
+    await selectAll(tester);
+
+    await rightClickAt(tester, sourceBounds.center);
+
+    final copyItem = tester.widget<MenuItemButton>(
+      find.ancestor(
+        of: find.text('העתק'),
+        matching: find.byType(MenuItemButton),
+      ),
+    );
+    expect(copyItem.onPressed, isNull);
   });
 
   testWidgets('ב-Android לחיצה ארוכה משתמשת בבחירה ובתפריט המגע המקוריים', (

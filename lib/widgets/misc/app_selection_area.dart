@@ -17,18 +17,40 @@ class AppSelectionArea extends StatefulWidget {
   final Widget child;
 
   @override
-  State<AppSelectionArea> createState() => _AppSelectionAreaState();
+  State<AppSelectionArea> createState() => AppSelectionAreaState();
+
+  static AppSelectionAreaState? maybeOf(BuildContext context) =>
+      context.findAncestorStateOfType<AppSelectionAreaState>();
 }
 
-class _AppSelectionAreaState extends State<AppSelectionArea> {
+class AppSelectionAreaState extends State<AppSelectionArea> {
   String? _selectedText;
+  final _selectionSources = <String Function(), bool Function(Offset)>{};
+
+  /// מקור בחירה נוסף עם בדיקת מיקום בקואורדינטות גלובליות.
+  void addSelectionSource(
+    String Function() source, {
+    required bool Function(Offset) containsPosition,
+  }) => _selectionSources[source] = containsPosition;
+
+  void removeSelectionSource(String Function() source) =>
+      _selectionSources.remove(source);
 
   bool get _hasSelection =>
       _selectedText != null && _selectedText!.trim().isNotEmpty;
 
-  Future<void> _copySelection() async {
-    if (!_hasSelection) return;
-    await Clipboard.setData(ClipboardData(text: _selectedText!));
+  String? _textToCopyAt(Offset position) {
+    for (final entry in _selectionSources.entries) {
+      if (entry.value(position)) {
+        final text = entry.key();
+        return text.trim().isEmpty ? null : text;
+      }
+    }
+    return _hasSelection ? _selectedText : null;
+  }
+
+  Future<void> _copy(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
     UiSnack.show(CommonMessages.textCopiedShort);
   }
 
@@ -67,14 +89,17 @@ class _AppSelectionAreaState extends State<AppSelectionArea> {
                   ) ??
                   true;
             },
-            menuBuilder: (menuContext, _) => [
-              AppContextMenuEntry(
-                label: 'העתק',
-                icon: FluentIcons.copy_24_regular,
-                enabled: _hasSelection,
-                onTap: _copySelection,
-              ),
-            ],
+            menuBuilder: (menuContext, position) {
+              final text = _textToCopyAt(position);
+              return [
+                AppContextMenuEntry(
+                  label: 'העתק',
+                  icon: FluentIcons.copy_24_regular,
+                  enabled: text != null,
+                  onTap: () => _copy(text!),
+                ),
+              ];
+            },
             child: widget.child,
           ),
         ),
