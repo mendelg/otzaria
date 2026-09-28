@@ -5,6 +5,7 @@ import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/utils/note_anchor_utils.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart';
 import 'package:otzaria/text_book/utils/inline_section_markers.dart';
+import 'package:otzaria/text_book/utils/link_anchor_markers.dart';
 import 'package:otzaria/text_book/utils/note_inline_render.dart';
 import 'package:otzaria/text_book/utils/numbered_note_markers.dart';
 
@@ -330,6 +331,49 @@ void main() {
     expect(noteStart, greaterThan(0));
     expect('אבג'.allMatches(html.substring(0, noteStart)).length, 13);
     expect(html.substring(noteStart), startsWith('$noteOpenאבג</a>'));
+  });
+
+  test('סמן עוגן גלוי באמצע שורה אינו מסיט הערה על מופע חוזר', () {
+    final raw = List.filled(30, 'אבג').join(' ');
+    final selected = computeAnchorForSelection(
+      rawLine: raw,
+      selectedText: 'אבג',
+      selectionColumnHint: 52,
+    )!;
+    final markerLink = Link(
+      heRef: 'מפרש, א',
+      index1: 1,
+      path2: 'ספר יעד.txt',
+      index2: 3,
+      connectionType: 'COMMENTARY',
+      anchorStart: 4,
+      anchorLabel: 'א',
+    );
+    final html = render(
+      raw,
+      notes: [
+        _note(
+          anchorText: 'אבג',
+          anchorPrefix: selected.prefix,
+          anchorSuffix: selected.suffix,
+          anchorStart: selected.start,
+          anchorEnd: selected.end,
+        ),
+      ],
+      links: [_inlineLink(0, 3)],
+      transform: (h) => injectLinkAnchorMarkers(
+        rawLine: h,
+        anchorLinks: [markerLink],
+        styleIndexByCommentator: {'ספר יעד.txt': 0},
+        lineIndex: 3,
+      ),
+    );
+
+    final noteStart = html.indexOf(noteOpen);
+    expect(html, contains('class="link-anchor link-anchor-0"'));
+    expect('אבג'.allMatches(html.substring(0, noteStart)).length, 13);
+    expect(html.substring(noteStart), startsWith('$noteOpenאבג</a>'));
+    expect(_maxAnchorDepthOfWellFormed(html), 1);
   });
 
   test('שורה שכבר סומנה אינה מסומנת שוב', () {

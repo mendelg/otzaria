@@ -50,7 +50,11 @@ bool _isBreakTag(String s, int start, int end) {
 }
 
 /// מקרין שורה גולמית (HTML+ניקוד) למחרוזת מנורמלת עם מפת אינדקסים חזרה.
-LineProjection projectLine(String rawLine, {bool keepPunctuation = false}) {
+LineProjection projectLine(
+  String rawLine, {
+  bool keepPunctuation = false,
+  bool omitInjectedAnchorMarkers = false,
+}) {
   final buffer = StringBuffer();
   final rawIndex = <int>[];
   bool inTag = false;
@@ -76,6 +80,19 @@ LineProjection projectLine(String rawLine, {bool keepPunctuation = false}) {
   for (int i = 0; i < rawLine.length; i++) {
     final ch = rawLine[i];
     final code = rawLine.codeUnitAt(i);
+
+    if (omitInjectedAnchorMarkers && !inTag && ch == '<') {
+      final isAnchor = rawLine.startsWith('<a class="link-anchor ', i);
+      final isSpan = rawLine.startsWith('<span class="link-anchor ', i);
+      if (isAnchor || isSpan) {
+        final closingTag = isAnchor ? '</a>' : '</span>';
+        final end = rawLine.indexOf(closingTag, i);
+        if (end >= 0) {
+          i = end + closingTag.length - 1;
+          continue;
+        }
+      }
+    }
 
     if (inTag) {
       if (ch == '>') {
@@ -254,7 +271,10 @@ NoteAnchorRange? locateAnchor({
   final needle = normalizeAnchorText(anchorText);
   if (needle.isEmpty) return null;
 
-  final p = projectLine(rawLine);
+  final p = projectLine(
+    rawLine,
+    omitInjectedAnchorMarkers: hintSourceLine != null,
+  );
   final occurrences = _allOccurrences(p.normalized, needle);
   if (occurrences.isEmpty) return null;
 

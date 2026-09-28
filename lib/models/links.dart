@@ -355,6 +355,8 @@ class Link {
     if (value == null || value.trim().isEmpty) {
       return defaultJsonConnectionType;
     }
+    final hebrew = LinkTypes.hebrewConnectionTypes[value.trim()];
+    if (hebrew != null) return hebrew;
     return LinkTypes.nativeConnectionTypeAliases[LinkTypes.normalize(value)] ??
         value;
   }

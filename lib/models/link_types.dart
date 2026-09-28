@@ -29,6 +29,15 @@ class LinkTypes {
   static const String essay = 'ESSAY';
   static const String none = 'NONE';
 
+  /// תוויות עבריות המותרות בקובצי קישורים של המשתמש.
+  static const Map<String, String> hebrewConnectionTypes = {
+    'פירוש': commentary,
+    'תרגום': targum,
+    'הפניה': reference,
+    'מקור': source,
+    'אחר': other,
+  };
+
   /// כינויי סוגים בקובצי native; סוגים שאינם במפה נשמרים כמות שהם.
   static const Map<String, String> nativeConnectionTypeAliases = {
     'NONE': other,

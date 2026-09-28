@@ -622,6 +622,12 @@ void main() {
       expect(LinkTypes.isDependentTextLink(footnotes.connectionType), isTrue);
     });
 
+    test('סוג עברי בקובץ native מסווג כמו בייבוא קישורים', () {
+      final targum = parse({'Conection Type': 'תרגום'});
+      expect(targum.connectionType, LinkTypes.targum);
+      expect(LinkTypes.isDependentTextLink(targum.connectionType), isTrue);
+    });
+
     test('סוג עתידי לא מוכר נשמר כמות שהוא', () {
       expect(
         parse({'Conection Type': 'future_kind'}).connectionType,

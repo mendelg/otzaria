@@ -18,18 +18,6 @@ const Set<String> kCanonicalEraNames = {
   'מחברי זמננו',
 };
 
-/// מיפוי תווית-סוג בעברית (בקובץ הקישורים) לשם connection_type ב-DB.
-///
-/// פירוש/תרגום הם תלויי-טקסט (מוצגים בפאנל המפרשים); הפניה/מקור מוצגים
-/// בפאנל הקישורים. ראה [LinkTypes].
-const Map<String, String> kHebrewConnectionTypes = {
-  'פירוש': 'COMMENTARY',
-  'תרגום': 'TARGUM',
-  'הפניה': 'REFERENCE',
-  'מקור': 'SOURCE',
-  'אחר': 'OTHER',
-};
-
 /// סוגי ה-native המותרים — ערכי ה-ConnectionType של מחולל ה-DB.
 const Set<String> kNativeConnectionTypes = {
   LinkTypes.commentary,
@@ -217,7 +205,7 @@ class ParsedUserLink {
   /// כתובת היעד כפי שנכתבה (ref), אם צוינה.
   final String? targetRef;
 
-  /// שם connection_type ב-DB (אחד מערכי [kHebrewConnectionTypes]).
+  /// שם connection_type ב-DB (אחד מערכי [LinkTypes.hebrewConnectionTypes]).
   final String connectionType;
 
   /// האם ספר היעד הוא ספר אישי (מפריד בין מרחבי ה-id).

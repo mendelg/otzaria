@@ -520,18 +520,16 @@ class UserImportParser {
   static String? _connectionType(String raw) {
     final trimmed = raw.trim();
     if (trimmed.isEmpty) return null;
-    final hebrew = kHebrewConnectionTypes[trimmed];
+    final hebrew = LinkTypes.hebrewConnectionTypes[trimmed];
     if (hebrew != null) return hebrew;
     final upper = trimmed.toUpperCase();
-    if (kHebrewConnectionTypes.values.contains(upper)) return upper;
+    if (LinkTypes.hebrewConnectionTypes.values.contains(upper)) return upper;
     return null;
   }
 
   /// סוג native מוכר (ריק → reference, כמו [Link.fromJson]); לא מוכר → null.
   static String? _nativeConnectionType(Object? raw) {
     final value = Link.connectionTypeFromJson(raw).trim();
-    final hebrew = kHebrewConnectionTypes[value];
-    if (hebrew != null) return hebrew;
     final normalized = LinkTypes.normalize(value);
     final type =
         LinkTypes.nativeConnectionTypeAliases[normalized] ?? normalized;
