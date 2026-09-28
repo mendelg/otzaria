@@ -465,10 +465,9 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
   final rangeEndJoin = _rangeEndJoinClause(hasLinkRanges, panelSide: 0);
 
   if (hasRange) {
-    // כשיש טווח: מוצאים תחילה את ה-line IDs בטווח דרך idx_line_book_index,
-    // ואז מחפשים links לפי targetLineId דרך idx_link_target_line — הרבה יותר
-    // יעיל מאשר לסרוק את כל ה-links של הספר (עשרות אלפים לספרי בסיס כגון
-    // תורה / ש"ס) ולסנן לפי lineIndex בדיעבד.
+    // קודם שורות החלון דרך idx_line_book_index, ואז הקישורים לפיהן דרך
+    // idx_link_target_line. אסור `AND l.targetBookId = ?` (מחזיר את המתכנן
+    // ל-idx_link_target_book), ו-CROSS JOIN נועל את הסדר מול idx_link_type.
     final coverageArm = hasLinkRanges
         ? '''
           UNION ALL
@@ -481,7 +480,6 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
       bookId,
       startLineIndex,
       endLineIndex,
-      bookId,
       if (hasLinkRanges) ...[bookId, startLineIndex, endLineIndex],
       ...types,
     ];
@@ -491,7 +489,6 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
           WHERE l.targetLineId IN (
             SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
           )
-            AND l.targetBookId = ?
           $coverageArm
         )
         SELECT
@@ -507,7 +504,7 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
           $provenanceSelect
           $connectionTypeExpr as connectionTypeName
         FROM anchors a
-        JOIN link l ON l.id = a.linkId
+        CROSS JOIN link l ON l.id = a.linkId
         JOIN line tl ON tl.id = a.anchorLineId
         JOIN line sl ON l.sourceLineId = sl.id
         JOIN book sb ON l.sourceBookId = sb.id
@@ -872,9 +869,12 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
         )
         .toMapList();
 
+    // סריקה יורדת של שורות הספר עוצרת בשורה המקושרת הראשונה; MAX על קישורי
+    // הספר סורק את כולם (עד 300ms).
     final maxRows = db.select(
-      'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
-      'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
+      'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
+      'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id) '
+      'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx',
       [bookId],
     ).toMapList();
     final maxSourceLineIndex = maxRows.isEmpty

@@ -101,15 +101,6 @@ class LineDao {
     return _mapToLine(result.first);
   }
 
-  Future<List<Line>> selectByHeRefLike(String heRefPattern, int limit) async {
-    final db = await database;
-    return db
-        .select(_queries['selectByHeRefLike']!, [heRefPattern, limit])
-        .toMapList()
-        .map((row) => _mapToLine(row))
-        .toList();
-  }
-
   /// זוגות (lineIndex, heRef) של כל השורות בעלות heRef בספר, בסדר השורות.
   /// מסלול רזה — בלי content — לרזולוציית הפניה לרמת שורה.
   Future<List<({int lineIndex, String heRef})>> selectRefsByBookId(

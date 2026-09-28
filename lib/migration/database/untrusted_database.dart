@@ -42,7 +42,21 @@ ReadOnlyDbTarget trustedDbTarget(String path) =>
 /// פותח את [target] לקריאה בלבד: מסד מצורף — מוקשח, אחרת פתיחה רגילה.
 Database openReadOnlyTarget(ReadOnlyDbTarget target) => target.untrusted
     ? openUntrustedReadOnlyDatabase(target.path, immutable: target.immutable)
-    : sqlite3.open(target.path, mode: OpenMode.readOnly);
+    : _openTrustedReadOnlyDatabase(target.path);
+
+/// כוונון הקריאה של החיבור הראשי ב-SeforimRepository (mmap רק למסד מהימן).
+Database _openTrustedReadOnlyDatabase(String path) {
+  final db = sqlite3.open(path, mode: OpenMode.readOnly);
+  try {
+    db.execute('PRAGMA query_only=ON');
+    db.execute('PRAGMA temp_store=MEMORY');
+    db.execute('PRAGMA mmap_size=67108864'); // 64MB
+  } catch (_) {
+    db.close();
+    rethrow;
+  }
+  return db;
+}
 
 /// מקשיח חיבור קיים למסד שאינו בשליטת התוכנה: defensive, בלי סכמה "מהימנה"
 /// ובלי טעינת הרחבות. חל גם על חיבור כתיבה (החלת יומן על עותק מיובא).
