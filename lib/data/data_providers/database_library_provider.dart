@@ -413,6 +413,30 @@ void _flattenRawRecursive(
 
 // ──────────────────────────────────────────────────────────────────────────
 
+/// הקישורים שצד היעד שלהם בחלון (linkId, targetLineId). פרמטרים: (bookId, start, end).
+/// seforim.db: idx_link_target_line מכסה רק בלי תנאי ספר; מצורף: רק (targetBookId, targetLineId).
+@visibleForTesting
+String inverseWindowLinksSql(DbCapabilities capabilities) =>
+    capabilities.hasIndex('idx_link_target_line')
+    ? '''
+          SELECT l.id, l.targetLineId FROM link l
+          WHERE l.targetLineId IN (
+            SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
+          )'''
+    : '''
+          SELECT l.id, l.targetLineId FROM line w
+          CROSS JOIN link l
+            ON l.targetLineId = w.id AND l.targetBookId = w.bookId
+          WHERE w.bookId = ? AND w.lineIndex BETWEEN ? AND ?''';
+
+/// הקישורים שצד המקור שלהם בחלון `win(id, bookId)`. CROSS JOIN והספר כעמודה של w:
+/// seforim.db בוחר ב-idx_link_source_line, מסד מצורף ב-(sourceBookId, sourceLineId).
+@visibleForTesting
+const forwardWindowLinksSql = '''
+          SELECT l.id, l.sourceLineId FROM win w
+          CROSS JOIN link l
+            ON l.sourceLineId = w.id AND l.sourceBookId = w.bookId''';
+
 /// טוען קישורי "מקור" (SOURCE וירטואלי) לספר כ-target: הופך source↔target כדי
 /// שספר מפרש יציג את מקורו. ב-v3 הקישור נשמר בכיוון קנוני אחד בלבד.
 /// שורות ה-anchors כוללות גם שורות מכוסות של קישורי-טווח (link_coverage,
@@ -465,9 +489,7 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
   final rangeEndJoin = _rangeEndJoinClause(hasLinkRanges, panelSide: 0);
 
   if (hasRange) {
-    // קודם שורות החלון דרך idx_line_book_index, ואז הקישורים לפיהן דרך
-    // idx_link_target_line. אסור `AND l.targetBookId = ?` (מחזיר את המתכנן
-    // ל-idx_link_target_book), ו-CROSS JOIN נועל את הסדר מול idx_link_type.
+    final windowLinksArm = inverseWindowLinksSql(capabilities);
     final coverageArm = hasLinkRanges
         ? '''
           UNION ALL
@@ -485,10 +507,7 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
     ];
     return db.select('''
         WITH anchors(linkId, anchorLineId) AS (
-          SELECT l.id, l.targetLineId FROM link l
-          WHERE l.targetLineId IN (
-            SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
-          )
+          $windowLinksArm
           $coverageArm
         )
         SELECT
@@ -869,11 +888,12 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
         )
         .toMapList();
 
-    // סריקה יורדת של שורות הספר עוצרת בשורה המקושרת הראשונה; MAX על קישורי
-    // הספר סורק את כולם (עד 300ms).
+    // סריקה יורדת של שורות הספר עוצרת בשורה המקושרת הראשונה. תנאי הספר נדרש
+    // למסד מצורף, שבו רק (sourceBookId, sourceLineId) מאונדקס.
     final maxRows = db.select(
       'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
-      'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id) '
+      'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
+      'AND l.sourceBookId = sl.bookId) '
       'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx',
       [bookId],
     ).toMapList();
@@ -972,17 +992,13 @@ List<Map<String, dynamic>> _loadBookLinksRowsInRangeInIsolate({
           SELECT lc.linkId, lc.lineId FROM link_coverage lc
           WHERE lc.side = 0 AND lc.lineId IN (SELECT id FROM win)'''
         : '';
-    // כמו בזרוע ההפוכה: קודם שורות החלון דרך idx_line_book_index, ואז הקישורים
-    // לפיהן דרך idx_link_source_line. משיכת כל קישורי הספר עלתה 500ms לחלון.
-    // אסור להוסיף כאן `AND l.sourceBookId = ?` — הוא מיותר (שורת המקור כבר
-    // בחלון) ומחזיר את המתכנן ל-idx_link_source_book, כלומר לאיטיות המקורית.
     final rows = db.select('''
-        WITH win(id) AS (
-          SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
+        WITH win(id, bookId) AS (
+          SELECT id, bookId FROM line
+          WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
         ),
         anchors(linkId, anchorLineId) AS (
-          SELECT l.id, l.sourceLineId FROM link l
-          WHERE l.sourceLineId IN (SELECT id FROM win)
+          $forwardWindowLinksSql
           $coverageArm
         )
         SELECT

@@ -44,14 +44,14 @@ ORDER BY b.orderIndex, b.title;
 --
 -- הטווח מסונן לפי `sl.lineIndex` של שורת המקור (לא לפי id), כדי להתיישר עם
 -- ה-`segment` של ערכי ה-TOC (=`line.lineIndex`). אינדקס `idx_line_book_index`
--- על `line(bookId, lineIndex)` משרת את הסינון; CROSS JOIN נועל את הסדר.
--- אסור `l.sourceBookId = ?`: המתכנן יבחר ב-idx_link_source_book (פי 40 איטי).
+-- על `line(bookId, lineIndex)` משרת את הסינון. CROSS JOIN מ-sl + הספר כעמודה
+-- (לא `= ?`): seforim.db בוחר ב-idx_link_source_line, מצורף ב-(sourceBookId, sourceLineId).
 -- פרמטרים: (sourceBookId, startLineIndex, endLineIndex).
 selectCommentatorsByLineRange:
 SELECT l.targetBookId, b.title AS targetBookTitle, a.name AS author,
        COUNT(*) AS linkCount, MIN(tl.lineIndex) AS targetLineIndex
 FROM line sl
-CROSS JOIN link l ON l.sourceLineId = sl.id
+CROSS JOIN link l ON l.sourceLineId = sl.id AND l.sourceBookId = sl.bookId
 JOIN connection_type ct ON l.connectionTypeId = ct.id
 JOIN book b ON l.targetBookId = b.id
 JOIN line tl ON l.targetLineId = tl.id
@@ -74,7 +74,7 @@ ORDER BY b.orderIndex, b.title;
 --   `minTargetLineIndex`/`maxTargetLineIndex` — קצות טווח המפרש על פני כל הקטע;
 --      כשאין התאמה מדויקת מציגים את כל התוכן שבטווח זה.
 -- מסנן את `excludeBookId` (ספר המפרש שממנו הגיע המשתמש).
--- סדר הצירוף כמו ב-selectCommentatorsByLineRange (מונע idx_link_source_book).
+-- הצירוף ל-link כמו ב-selectCommentatorsByLineRange.
 -- פרמטרים: (exactLine, sourceBookId, startLineIndex, endLineIndex, excludeBookId).
 selectCommentaryLinksByLineRange:
 SELECT l.targetBookId, b.title AS targetBookTitle,
@@ -84,7 +84,7 @@ SELECT l.targetBookId, b.title AS targetBookTitle,
        MAX(tl.lineIndex) AS maxTargetLineIndex,
        MIN(CASE WHEN sl.lineIndex = ? THEN tl.lineIndex END) AS exactTargetLineIndex
 FROM line sl
-CROSS JOIN link l ON l.sourceLineId = sl.id
+CROSS JOIN link l ON l.sourceLineId = sl.id AND l.sourceBookId = sl.bookId
 JOIN connection_type ct ON l.connectionTypeId = ct.id
 JOIN book b ON l.targetBookId = b.id
 JOIN line tl ON l.targetLineId = tl.id
