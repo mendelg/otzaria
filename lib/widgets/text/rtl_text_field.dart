@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'dart:io';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -175,6 +176,8 @@ class _RtlTextFieldState extends State<RtlTextField> {
     setState(() => _cursorVisible = visible);
   }
 
+  PointerDeviceKind? _lastPointerKind;
+
   @override
   Widget build(BuildContext context) {
     final bool isRtl = Directionality.of(context) == TextDirection.rtl;
@@ -189,8 +192,27 @@ class _RtlTextFieldState extends State<RtlTextField> {
       expands: widget.expands,
       focusNode: _effectiveFocusNode,
       decoration: widget.decoration,
-      contextMenuBuilder: (context, editableTextState) =>
-          const SizedBox.shrink(),
+      contextMenuBuilder: (context, editableTextState) {
+        // לחיצה ימנית פותחת את התפריט מה-Listener; במגע Flutter מבקש כאן את
+        // התפריט שלו אחרי לחיצה ארוכה, ובמקומו נפתח שלנו.
+        if (_lastPointerKind
+            case PointerDeviceKind.touch ||
+                PointerDeviceKind.stylus ||
+                PointerDeviceKind.invertedStylus) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            editableTextState.hideToolbar(false);
+            _showContextMenu(
+              this.context,
+              editableTextState.contextMenuAnchors.primaryAnchor,
+              _effectiveController,
+              // תפריט שלוקח פוקוס מוחק את ידיות הבחירה, והמקלדת נסגרת ונפתחת.
+              requestFocus: false,
+            );
+          });
+        }
+        return const SizedBox.shrink();
+      },
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
       autofocus: shouldUseAutofocus,
@@ -284,6 +306,7 @@ class _RtlTextFieldState extends State<RtlTextField> {
     // עטיפה בטיפול בתפריט הקשר
     return Listener(
       onPointerDown: (event) {
+        _lastPointerKind = event.kind;
         if (event.buttons == 2) {
           _showContextMenu(context, event.position, _effectiveController);
         }
@@ -347,8 +370,9 @@ class _RtlTextFieldState extends State<RtlTextField> {
   void _showContextMenu(
     BuildContext context,
     Offset position,
-    TextEditingController controller,
-  ) {
+    TextEditingController controller, {
+    bool requestFocus = true,
+  }) {
     final selection = controller.selection;
     final textAtMenuOpen = controller.text;
     final hasSelection = selection.isValid && !selection.isCollapsed;
@@ -393,6 +417,7 @@ class _RtlTextFieldState extends State<RtlTextField> {
         Offset.zero & overlay.size,
       ),
       items: menuItems,
+      requestFocus: requestFocus,
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: AppTokens.borderRadiusAll),
       color: Theme.of(context).colorScheme.surface,
