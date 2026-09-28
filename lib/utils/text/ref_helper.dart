@@ -1,4 +1,5 @@
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/models/book_source.dart';
@@ -27,7 +28,21 @@ Future<String?> refFromDbLine(TextBook book, int index) async {
       AttachedBookSource(:final slug) =>
         await AttachedLibraryRegistry.instance.repositoryFor(slug),
     };
-    return await repository?.getLineBreadcrumb(bookId, index);
+    if (repository == null) return null;
+    final dbPath = SqliteDataProvider.instance.dbPath;
+    if (book.source.isOfficial && dbPath.isNotEmpty) {
+      try {
+        return await DbReadWorker.batched('breadcrumb', {
+              'dbPath': dbPath,
+              'bookId': bookId,
+              'lineIndex': index,
+            })
+            as String?;
+      } catch (_) {
+        // worker לא זמין או מושהה — החיבור הראשי עונה כמו קודם.
+      }
+    }
+    return await repository.getLineBreadcrumb(bookId, index);
   } catch (_) {
     return null;
   }

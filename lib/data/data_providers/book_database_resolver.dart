@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
@@ -124,7 +123,6 @@ class BookDatabaseResolver {
     return _loadRepositoryCandidates(preferSource: preferSource);
   }
 
-  @visibleForTesting
   static Future<ResolvedDbBookRecord?> resolveBookInCandidates({
     required String title,
     required List<ResolvedBookRepositoryCandidate> candidates,

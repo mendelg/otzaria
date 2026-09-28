@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
@@ -166,6 +167,8 @@ class SqliteDataProvider {
       _repository.database.close();
       _isInitialized = false;
     }
+    // ה-worker פותח לפי הנתיב של החיבור הזה, ולכן לא יחזיק את הקובץ אחריו.
+    await DbReadWorker.closeConnectionIfRunning();
   }
 
   /// מספר ה-write-sessions הפעילים. כשהוא > 0 חיבור ה-RO סגור ו-[initialize]
@@ -215,8 +218,9 @@ class SqliteDataProvider {
     await dispose();
     // ל-worker של ה-isolate יש handle RO משלו על אותו קובץ; בלי סגירה
     // *ממתינה* המחיקה/החלפה של ה-DB נכשלת (ב-Windows) או נתקעת על busy.
-    final released = await FindRefDbIsolate.suspendForExternalWrite();
-    if (!released) {
+    final findRefReleased = await FindRefDbIsolate.suspendForExternalWrite();
+    final readWorkerReleased = await DbReadWorker.suspendForExternalWrite();
+    if (!findRefReleased || !readWorkerReleased) {
       // בלי handle סגור אסור להזיז את הקובץ, בייחוד ב-Windows.
       await reopenAfterExternalWrite(reopenDatabase: false);
       throw StateError(
@@ -248,6 +252,7 @@ class SqliteDataProvider {
       // ב-finally: worker שנשאר מושהה אחרי כשל פתיחה יחזיר שגיאה לכל TOC
       // וקטלוג עד סוף ה-session.
       await FindRefDbIsolate.resumeAfterExternalWrite();
+      await DbReadWorker.resumeAfterExternalWrite();
       // משחררים את הקוראים הממתינים. ה-finally מבטיח שחרור גם אם הפתיחה-מחדש
       // נכשלה (אחרת היו נתקעים לנצח).
       final gate = _externalWriteGate;
