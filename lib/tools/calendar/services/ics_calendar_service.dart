@@ -128,7 +128,7 @@ class IcsCalendarService {
   /// [sourceId] — מזהה מנוי; אירועי מנוי מתויגים בו כדי שרענון יחליף אותם.
   /// null = ייבוא חד-פעמי מקובץ. אירוע פגום מדולג ולא מפיל את השאר.
   static List<CustomEvent> parseIcs(String icsText, {String? sourceId}) {
-    final lines = _unfoldLines(icsText.replaceFirst('﻿', ''));
+    final lines = _unfoldLines(icsText.replaceFirst('\ufeff', ''));
     final events = <CustomEvent>[];
     Map<String, _IcsProperty>? current;
 

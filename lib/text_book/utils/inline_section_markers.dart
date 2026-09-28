@@ -43,7 +43,7 @@ final RegExp _bracketPrefix = RegExp(r'^\s*\[[^\]]*\]\s*');
 /// תווית כותרת נושא לתצוגה: בלי BOM ובלי קידומת בסוגריים ("[סימן א] ")
 /// שמשכפלת את כותרת הסימן הגלויה.
 String cleanSectionHeadingLabel(String label) =>
-    label.replaceAll('﻿', '').replaceFirst(_bracketPrefix, '').trim();
+    label.replaceAll('\ufeff', '').replaceFirst(_bracketPrefix, '').trim();
 
 final RegExp _regularHeadingLine = RegExp(r'^\s*<h[2-6]\b');
 

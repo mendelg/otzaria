@@ -62,7 +62,7 @@ const Map<String, String> _namedEntities = {
   'rdquo': '”',
   'bull': '•',
   'middot': '·',
-  'shy': '­',
+  'shy': '\u00ad',
   'deg': '°',
 };
 

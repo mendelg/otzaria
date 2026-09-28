@@ -40,10 +40,10 @@ const Map<String, String> _characterControlWords = {
   'emspace': ' ',
   'enspace': ' ',
   'qmspace': ' ',
-  'zwj': '‍',
-  'zwnj': '‌',
-  'ltrmark': '‎',
-  'rtlmark': '‏',
+  'zwj': '\u200d',
+  'zwnj': '\u200c',
+  'ltrmark': '\u200e',
+  'rtlmark': '\u200f',
 };
 
 /// ממיר מסמך RTF לטקסט של אוצריא.
