@@ -382,7 +382,67 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     await DbReadWorker.closeConnectionIfRunning(wait: false);
     expect(slowDone, isFalse);
-    await slow;
+    await slow.then<Object?>((result) => result, onError: (Object e) => e);
+  });
+
+  test('close fails queued requests and never reopens until allowed', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 200000);
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+
+    final queued = [
+      for (var i = 0; i < 6; i++)
+        DbReadWorker.request(
+          'textRange',
+          slowTextArgs(dbPath),
+        ).then<Object?>((result) => result, onError: (Object e) => e),
+    ];
+    await Future<void>.delayed(Duration.zero);
+    final closing = DbReadWorker.closeConnectionIfRunning();
+    final results = await Future.wait(queued);
+    await closing;
+    expect(
+      results.whereType<DbReadWorkerSuspended>().length,
+      greaterThanOrEqualTo(5),
+    );
+    await expectLater(
+      DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית')),
+      throwsA(isA<DbReadWorkerSuspended>()),
+    );
+    // אילו בקשה בתור הייתה פותחת מחדש את החיבור, המחיקה הייתה נכשלת ב-Windows.
+    await File(dbPath).delete();
+
+    final replacement = await seedDb('replacement');
+    DbReadWorker.allowReopen();
+    expect(
+      await DbReadWorker.request(
+        'textRange',
+        textRangeArgs(replacement, 'בראשית'),
+      ),
+      isNotNull,
+    );
+  });
+
+  test('suspend stops a batch that is already running', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 200000);
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+
+    final batch = [
+      for (var i = 0; i < 6; i++)
+        DbReadWorker.batched(
+          'textRange',
+          slowTextArgs(dbPath),
+        ).then<Object?>((result) => result, onError: (Object e) => e),
+    ];
+    // הבקשה כבר נשלחה כהודעת batch אחת, כך שה-suspend אינו מוצא אותה בתור.
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+    await File(dbPath).delete();
+
+    final results = await Future.wait(batch);
+    expect(
+      results.whereType<DbReadWorkerSuspended>().length,
+      greaterThanOrEqualTo(5),
+    );
   });
 
   group('DatabaseLibraryProvider דרך ה-worker', () {
@@ -466,6 +526,39 @@ void main() {
         await File(dbPath).delete();
         await SqliteDataProvider.instance.reopenAfterExternalWrite(
           reopenDatabase: false,
+        );
+      },
+    );
+
+    test(
+      'an unreleased worker stays suspended when releaseOnFailure is false',
+      () async {
+        final provider = DatabaseLibraryProvider.instance;
+        expect(await provider.getLinkContent(link('מפרש', 2)), isNotEmpty);
+
+        DbReadWorker.lifecycleCommandTimeout = Duration.zero;
+        try {
+          await expectLater(
+            SqliteDataProvider.instance.closeForExternalWrite(
+              releaseOnFailure: false,
+            ),
+            throwsA(isA<DbReadWorkerNotReleased>()),
+          );
+        } finally {
+          DbReadWorker.lifecycleCommandTimeout = const Duration(seconds: 4);
+        }
+        await expectLater(
+          DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית')),
+          throwsA(isA<DbReadWorkerSuspended>()),
+        );
+
+        await SqliteDataProvider.instance.reopenAfterExternalWrite();
+        expect(
+          await DbReadWorker.request(
+            'textRange',
+            textRangeArgs(dbPath, 'בראשית'),
+          ),
+          isNotNull,
         );
       },
     );

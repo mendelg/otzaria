@@ -944,7 +944,9 @@ void main() {
         dataRootProvider: () async => tmp.path,
         nowTimestamp: () => '2026-09-28T00:00:00Z',
       );
-      await DbReadWorker.request('close', const {});
+      // ה-dispose שב-setUp חוסם את ה-worker עד אתחול; כאן רק מעירים אותו.
+      DbReadWorker.allowReopen();
+      await DbReadWorker.request('open', const {});
       DbReadWorker.lifecycleCommandTimeout = Duration.zero;
       try {
         final result = await repository.applyDeltaPlan(
@@ -960,6 +962,7 @@ void main() {
 
         expect(result.appliedSteps, 1);
         expect(const LocalDbVersionReader().read(dbPath).dbVersion, 2);
+        expect(_journalMode(dbPath), 'delete');
       } finally {
         DbReadWorker.lifecycleCommandTimeout = const Duration(seconds: 4);
         await DbReadWorker.resumeAfterExternalWrite();

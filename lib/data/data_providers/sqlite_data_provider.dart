@@ -133,6 +133,7 @@ class SqliteDataProvider {
       _repository = SeforimRepository(database);
       await _repository.ensureInitialized();
       _isInitialized = true;
+      DbReadWorker.allowReopen();
     } on SqliteException catch (e) {
       // SQLITE_CANTOPEN (code 14): the native library cannot open the file.
       // On Android this happens when the DB is in Scoped Storage and sqlite3
@@ -163,13 +164,16 @@ class SqliteDataProvider {
 
   /// Closes the database connection to free resources
   /// [forAppExit] לא ממתין ל-worker עסוק: התהליך מסתיים ממילא.
-  Future<void> dispose({bool forAppExit = false}) async {
+  Future<void> dispose({bool forAppExit = false}) =>
+      _dispose(waitForWorker: !forAppExit);
+
+  Future<void> _dispose({required bool waitForWorker}) async {
     if (_isInitialized) {
       _repository.database.close();
       _isInitialized = false;
     }
     // ה-worker פותח לפי הנתיב של החיבור הזה, ולכן לא יחזיק את הקובץ אחריו.
-    await DbReadWorker.closeConnectionIfRunning(wait: !forAppExit);
+    await DbReadWorker.closeConnectionIfRunning(wait: waitForWorker);
   }
 
   /// מספר ה-write-sessions הפעילים. כשהוא > 0 חיבור ה-RO סגור ו-[initialize]
@@ -211,19 +215,24 @@ class SqliteDataProvider {
   /// חיבור RO מתנגש בזמן שהאיזולייט כותב.
   /// יש לקרוא ל-[reopenAfterExternalWrite] לאחר שהאיזולייט סיים.
   /// זורק [StateError] אם שחרור ה-handle של ה-worker לא אומת.
-  Future<void> closeForExternalWrite() async {
+  /// [releaseOnFailure]=false משאיר את השער סגור גם כשהשחרור נכשל; הקורא
+  /// חייב אז לקרוא ל-[reopenAfterExternalWrite] בעצמו.
+  Future<void> closeForExternalWrite({bool releaseOnFailure = true}) async {
     // נוצר *לפני* הגדלת המונה, כך שקורא מקביל שיראה _activeWriteSessions > 0
     // תמיד יראה גם gate להמתין עליו.
     _externalWriteGate ??= Completer<void>();
     _activeWriteSessions++;
-    await dispose();
+    // ה-suspend שאחריו סוגר גם הוא את חיבור ה-worker וממתין לו - המתנה אחת מספיקה.
+    await _dispose(waitForWorker: false);
     // ל-worker של ה-isolate יש handle RO משלו על אותו קובץ; בלי סגירה
     // *ממתינה* המחיקה/החלפה של ה-DB נכשלת (ב-Windows) או נתקעת על busy.
     final findRefReleased = await FindRefDbIsolate.suspendForExternalWrite();
     final readWorkerReleased = await DbReadWorker.suspendForExternalWrite();
     if (!findRefReleased || !readWorkerReleased) {
       // בלי handle סגור אסור להזיז את הקובץ, בייחוד ב-Windows.
-      await reopenAfterExternalWrite(reopenDatabase: false);
+      if (releaseOnFailure) {
+        await reopenAfterExternalWrite(reopenDatabase: false);
+      }
       final message = 'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה';
       throw findRefReleased
           ? DbReadWorkerNotReleased(message)

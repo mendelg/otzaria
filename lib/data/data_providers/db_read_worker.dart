@@ -72,6 +72,7 @@ class DbReadWorker {
   static DbReadWorker? _instance;
   static Future<DbReadWorker>? _spawnFuture;
   static bool _suspendedForExternalWrite = false;
+  static bool _closedUntilReopen = false;
 
   /// בקשה שלא נענתה בזמן הזה מסמנת את ה-worker כתקוע; עד שיענה, הבקשות
   /// הולכות למסלול הישיר (חיבור חדש), כמו לפני שה-worker היה קיים.
@@ -149,7 +150,9 @@ class DbReadWorker {
     Map<String, Object?> args,
   ) async {
     // קודם ההשהיה: worker תקוע היה שולח את הקורא לפתוח את הקובץ באמצע כתיבה.
-    if (_suspendedForExternalWrite) throw const DbReadWorkerSuspended();
+    if (_suspendedForExternalWrite || _closedUntilReopen) {
+      throw const DbReadWorkerSuspended();
+    }
     final service = await _instanceOrSpawn();
     if (service._stalled) {
       throw const DbReadWorkerUnavailable('stalled');
@@ -227,6 +230,7 @@ class DbReadWorker {
   /// כדי שה-worker לא יחזיק את הקובץ אחרי שה-provider שחרר אותו.
   /// [wait] כבוי ביציאה מהתוכנה: סיום התהליך משחרר את הקובץ ממילא.
   static Future<void> closeConnectionIfRunning({bool wait = true}) async {
+    _closedUntilReopen = true;
     final service = _instance;
     if (service == null || service._disposed) return;
     final closing = service._send('close', const {});
@@ -239,6 +243,15 @@ class DbReadWorker {
 
   /// שוכח את הספרים שנפתרו — נקרא מיד אחרי commit של עדכון, כדי שבקשה
   /// שלפני הסגירה לא תקבל מזהה ספר ישן.
+  /// מתיר שוב פתיחת חיבור אחרי [closeConnectionIfRunning]; נקרא רק אחרי אתחול
+  /// מוצלח של ה-provider, כדי שקורא מקביל לא יפתח קובץ שמוחלף.
+  static void allowReopen() {
+    _closedUntilReopen = false;
+    final service = _instance;
+    if (service == null || service._disposed) return;
+    service._send('open', const {}).ignore();
+  }
+
   static void clearBookCacheIfRunning() {
     final service = _instance;
     if (service == null || service._disposed) return;
@@ -246,7 +259,10 @@ class DbReadWorker {
   }
 
   @visibleForTesting
-  static void disposeForTesting() => _instance?._tearDown();
+  static void disposeForTesting() {
+    _closedUntilReopen = false;
+    _instance?._tearDown();
+  }
 
   Future<Object?> _lifecycle(String method, Map<String, Object?> args) =>
       _awaitLifecycle(_send(method, args), method);
@@ -368,6 +384,7 @@ void _workerMain(_Bootstrap bootstrap) {
   String? openPath;
   SeforimRepository? repository;
   var suspended = false;
+  var closed = false;
   final resolvedBooks = <String, db_models.Book?>{};
 
   bool closeConnection() {
@@ -385,7 +402,7 @@ void _workerMain(_Bootstrap bootstrap) {
   }
 
   Future<SeforimRepository> ensureRepo(String path) async {
-    if (suspended) throw const _Suspended();
+    if (suspended || closed) throw const _Suspended();
     final current = repository;
     if (current != null && openPath == path) return current;
     closeConnection();
@@ -431,7 +448,11 @@ void _workerMain(_Bootstrap bootstrap) {
         suspended = false;
         return null;
       case 'close':
+        closed = true;
         return closeConnection();
+      case 'open':
+        closed = false;
+        return null;
       case 'clearBookCache':
         resolvedBooks.clear();
         return null;
@@ -483,15 +504,19 @@ void _workerMain(_Bootstrap bootstrap) {
   ) async {
     try {
       if (method == 'batch') {
-        return {
-          'result': [
-            for (final item in (args['items'] as List).cast<Map>())
-              await runItem(
-                item['method'] as String,
-                (item['args'] as Map).cast<String, Object?>(),
-              ),
-          ],
-        };
+        final results = <Map<String, Object?>>[];
+        for (final item in (args['items'] as List).cast<Map>()) {
+          // השאילתות סינכרוניות: בלי ויתור על תור האירועים suspend/close שהגיע
+          // לא ייקלט עד סוף ה-batch.
+          if (results.isNotEmpty) await Future<void>.delayed(Duration.zero);
+          results.add(
+            await runItem(
+              item['method'] as String,
+              (item['args'] as Map).cast<String, Object?>(),
+            ),
+          );
+        }
+        return {'result': results};
       }
       return {'result': await dispatch(method, args)};
     } on _Suspended {
@@ -535,9 +560,14 @@ void _workerMain(_Bootstrap bootstrap) {
       'suspend',
       'resume',
       'close',
+      'open',
       'clearBookCache',
     }.contains(method)) {
-      if (method == 'suspend') {
+      if (method == 'suspend' || method == 'close') {
+        // הדגל נקבע כבר כאן, כדי שגם פריטי batch שרץ כעת לא יתחילו שאילתה חדשה
+        // ולא יפתחו מחדש את החיבור לפני שהפקודה עצמה מבוצעת.
+        if (method == 'suspend') suspended = true;
+        if (method == 'close') closed = true;
         for (final queued in queue) {
           bootstrap.mainSendPort.send({'id': queued['id'], 'suspended': true});
         }
