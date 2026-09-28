@@ -1495,9 +1495,9 @@ jobs:
           name: otzaria-linux-raw${{ matrix.arch == 'aarch64' && '-arm64' || '' }}
           path: linux-build/*
 
-      # ‏build-library-index.yml שבמאגר SeforimLibrary בונה את אינדקס הספרייה
+      # build-library-index.yml שבמאגר SeforimLibrary בונה את אינדקס הספרייה
       # מחבילת ה-raw הזו, וחותם באיזו גרסת otzaria_search_engine נבנה. הנעילה
-      # אינה ב-git (‏flutter pub get פותר אותה בכל בנייה), ולכן היא נוסעת לשם
+      # אינה ב-git (flutter pub get פותר אותה בכל בנייה), ולכן היא נוסעת לשם
       # כארטיפקט לצד החבילה — הבנייה כאן מסרבת לאינדקס שנבנה בגרסה אחרת.
       - name: Upload index build inputs
         if: matrix.target == 'raw' && matrix.arch == 'x86_64'
@@ -1582,7 +1582,7 @@ jobs:
           EOF
 
           # gzip הביא את החבילה ל-2.5GB, מעל מגבלת 2 GiB לקובץ ב-GitHub Releases.
-          # ‏--long=27 הוא חלון שכל zstd מחלץ בלי דגלים נוספים.
+          # --long=27 הוא חלון שכל zstd מחלץ בלי דגלים נוספים.
           pack_full_bundle() {
             tar -C full_installer -cf - otzaria-linux-full | zstd -19 -T0 --long=27 -o "$1"
             [ "$(stat -c '%s' "$1")" -lt 2147483648 ] \
@@ -1602,7 +1602,7 @@ jobs:
           # ותוצאתה נקבעת רק ע"י seforim.db ומנוע החיפוש — שניהם אינם משתנים
           # בין בניות של האפליקציה.
           #
-          # כרכי התלמוד המצורפים אינם מאונדקסים ממילא — ‏isIndexableBook מחריגה
+          # כרכי התלמוד המצורפים אינם מאונדקסים ממילא — isIndexableBook מחריגה
           # אותם מאז 9b67127, כי הטקסט שלהם כבר באינדקס מה-DB. הם כן נוכחים
           # בבניית האינדקס בצד השני, כי catalogueOrder הוא מיקום בעץ הקטלוג
           # כולו; הסקריפט מאמת שזה אותו ארכיון תלמוד בדיוק.
@@ -2766,7 +2766,7 @@ jobs:
           GITHUB_ASSET_LIMIT=2147483648
           PART_SIZE=1992294400
 
-          # x64 ו-ARM64; המאונדקס (‎-windows-full-indexed.exe‎) קטן ואינו נתפס כאן.
+          # x64 ו-ARM64; המאונדקס (-windows-full-indexed.exe) קטן ואינו נתפס כאן.
           for installer in release-files/otzaria-*-windows-full.exe release-files/otzaria-*-windows_arm64-full.exe; do
             name=$(basename "$installer")
             size=$(stat -c '%s' "$installer")

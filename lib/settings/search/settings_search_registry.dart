@@ -79,7 +79,7 @@ class SettingsSearchRegistry extends ChangeNotifier {
 
   /// גלילה לאנכור והבזק קצר. נקראת מהטאב לאחר build.
   /// כשהטאב עוד לא נבנה, ה-context לא זמין מיד — לכן ננסה כמה פעמים
-  /// (עד ~720ms) לפני ויתור, כדי לכסות bui­ld איטי או anchors שעוד
+  /// (עד ~720ms) לפני ויתור, כדי לכסות build איטי או anchors שעוד
   /// לא נכנסו לעץ.
   Future<void> scrollAndHighlight(String cardId) async {
     BuildContext? ctx;

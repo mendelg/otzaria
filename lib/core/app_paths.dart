@@ -415,7 +415,7 @@ class AppPaths {
       // נתיב בעברית.
       await File(
         p.join(await getDataRootPath(), libraryPathRecordFileName),
-      ).writeAsString('﻿$path');
+      ).writeAsString('\ufeff$path');
     } catch (e) {
       debugPrint('Failed to record library path for uninstaller: $e');
     }
