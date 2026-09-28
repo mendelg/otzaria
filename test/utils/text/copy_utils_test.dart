@@ -4,6 +4,71 @@ import 'package:otzaria/utils/file/toc_parser.dart';
 import 'package:otzaria/utils/text/copy_utils.dart';
 
 void main() {
+  group('CopyUtils.extractCurrentPath — גיבוי מתוך תוכן העניינים', () {
+    Future<String> pathAt(String content, int index) {
+      final toc = TocParser.parseEntriesFromContent(content);
+      return CopyUtils.extractCurrentPath(_TocBook(toc), index);
+    }
+
+    test('דילוג מרמה 2 לרמה 4 שומר גם את הפרק וגם את הסעיף', () async {
+      expect(
+        await pathAt('<h1>ספר</h1>\n<h2>פרק א</h2>\n<h4>סעיף א</h4>\nטקסט', 3),
+        'פרק א, סעיף א',
+      );
+    });
+
+    test('מעבר לפרק חדש אינו מחזיר כותרת מהמקטע הקודם', () async {
+      const content =
+          '<h1>ספר</h1>\n<h3>הקדמה</h3>\n<h2>פרק א</h2>\n'
+          '<h4>סעיף א</h4>\n<h2>פרק ב</h2>\n<h4>סעיף ב</h4>\nטקסט';
+      expect(await pathAt(content, 6), 'פרק ב, סעיף ב');
+    });
+
+    test('ספר שמתחיל ברמה 2 אינו זקוק לכותרת שורש', () async {
+      expect(await pathAt('<h2>פרק</h2>\n<h4>סעיף</h4>\nטקסט', 2), 'פרק, סעיף');
+    });
+
+    test('לפני הכותרת הראשונה אין נתיב', () async {
+      expect(await pathAt('טקסט\n<h2>פרק</h2>', 0), '');
+    });
+
+    test('כמה כותרות באותה שורה בוחרות את הכותרת העמוקה', () async {
+      final root = TocEntry(text: 'ספר', index: 0);
+      final chapter = TocEntry(
+        text: 'פרק',
+        index: 0,
+        level: 2,
+        parent: root,
+      );
+      chapter.children.add(
+        TocEntry(text: 'סעיף', index: 0, level: 3, parent: chapter),
+      );
+      root.children.add(chapter);
+
+      expect(
+        await CopyUtils.extractCurrentPath(_TocBook([root]), 0),
+        'פרק, סעיף',
+      );
+    });
+
+    test('העתקה עם כותרות כוללת את כל הנתיב', () async {
+      final path = await pathAt(
+        '<h1>ספר</h1>\n<h2>פרק א</h2>\n<h4>סעיף א</h4>\nטקסט',
+        3,
+      );
+      expect(
+        CopyUtils.formatTextWithHeaders(
+          originalText: 'טקסט',
+          copyWithHeaders: 'book_and_path',
+          copyHeaderFormat: 'separate_line_before',
+          bookName: 'ספר',
+          currentPath: path,
+        ),
+        'ספר, פרק א, סעיף א\nטקסט',
+      );
+    });
+  });
+
   group('CopyUtils.referencePath — גזירת נתיב מ-reference של תוצאת חיפוש', () {
     test('reference שאינו פותח בשם הספר מוחזר כמות שהוא', () {
       expect(
@@ -120,7 +185,6 @@ void main() {
     });
 
     test('דילוג ברמות בעץ מקובץ לא משבש את סדר הכותרות', () async {
-      // h4 אחרי h2 נתלית בעץ תחת ה-h3 של הפרק הקודם.
       final book = _TocBook(
         TocParser.parseEntriesFromContent(
           '<h1>ספר</h1>\n<h2>פרק א</h2>\n<h3>הלכה א</h3>\nטקסט\n'
@@ -129,6 +193,28 @@ void main() {
       );
       expect(await CopyUtils.extractCurrentPath(book, 5), 'פרק ב');
       expect(await CopyUtils.extractCurrentPath(book, 7), 'פרק ב, סעיף א');
+    });
+
+    test('הנתיב נשאר נכון גם כש-parentId במסד מצביע למקטע קודם', () async {
+      final root = TocEntry(text: 'ספר', index: 0);
+      final introduction = TocEntry(
+        text: 'הקדמה',
+        index: 1,
+        level: 3,
+        parent: root,
+      );
+      introduction.children.add(
+        TocEntry(text: 'סעיף', index: 5, level: 4, parent: introduction),
+      );
+      root.children.addAll([
+        introduction,
+        TocEntry(text: 'פרק ב', index: 4, level: 2, parent: root),
+      ]);
+
+      expect(
+        await CopyUtils.extractCurrentPath(_TocBook([root]), 6),
+        'פרק ב, סעיף',
+      );
     });
   });
 

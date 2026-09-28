@@ -66,30 +66,22 @@ class TocParser {
 
   static List<TocEntry> _buildHierarchy(List<_Header> headers) {
     final List<TocEntry> roots = [];
-    final Map<int, TocEntry> parents = {};
+    // שרשרת הכותרות הפתוחות: ההורה הוא הקודמת הקרובה שרמתה נמוכה יותר.
+    final List<TocEntry> open = [];
 
     for (final h in headers) {
-      if (h.level <= 1) {
-        final root = TocEntry(text: h.text, index: h.index, level: 1);
-        roots.add(root);
-        parents[1] = root;
-        continue;
+      while (open.isNotEmpty && open.last.level >= h.level) {
+        open.removeLast();
       }
-
-      final parent = parents[h.level - 1];
+      final parent = open.isEmpty ? null : open.last;
       final entry = TocEntry(
         text: h.text,
         index: h.index,
         level: h.level,
         parent: parent,
       );
-      if (parent != null) {
-        parent.children.add(entry);
-      } else {
-        // No known parent at level-1, treat as root to avoid losing headers
-        roots.add(entry);
-      }
-      parents[h.level] = entry;
+      (parent?.children ?? roots).add(entry);
+      open.add(entry);
     }
 
     return roots;
