@@ -27,8 +27,6 @@ import 'package:otzaria/text_book/view/page_shape/utils/page_shape_workspace_sco
 import 'package:otzaria/tools/dictionary/widgets/laaz_commentary_subblock.dart';
 import 'package:otzaria/utils/navigation/talmud_bavli_open_format.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
-import 'package:otzaria/models/link_types.dart';
-import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/services/target_line_links_service.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/books.dart';
@@ -1802,16 +1800,30 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     Offset tapPosition,
     String? capturedText,
   ) {
-    if (widget.isMainText && state.availableCommentators.isNotEmpty) {
-      _prefetchParagraphCommentators(state, index);
-    }
+    // גם לקישורים: linksByLine מכסה רק את חלון הטעינה סביב האזור הנראה.
+    if (widget.isMainText) _prefetchParagraphCommentators(state, index);
     List<AppContextMenuEntry> commentatorItems = [];
     if (!widget.isMainText && widget.bookTitle != null) {
       commentatorItems = _buildCommentatorSwitchMenu(state);
     }
 
-    final lineLinks = state.linksByLine[index + 1] ?? const <Link>[];
+    List<Link> currentLineLinks() => paragraphReferenceLinks(
+      linksByLine: state.linksByLine,
+      paragraphIndex: index,
+      queriedLinks: _paragraphCommentatorsCache.referenceLinks(
+        state.book,
+        index,
+      ),
+    );
     List<AppContextMenuEntry> buildLinksItems() {
+      final sortedLinks = currentLineLinks();
+      if (sortedLinks.isEmpty) {
+        return _paragraphCommentatorsCache.isLoading(state.book, index)
+            ? const [
+                AppContextMenuEntry(label: 'טוען קישורים…', enabled: false),
+              ]
+            : const <AppContextMenuEntry>[];
+      }
       final items = <AppContextMenuEntry>[];
       if (widget.onOpenSidebarTab != null) {
         items.add(
@@ -1823,16 +1835,6 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         );
         items.add(const AppContextMenuEntry.divider());
       }
-      final sortedLinks = CommentaryService.sortLinksByEraSync(
-        lineLinks
-            .where(
-              (link) =>
-                  !LinkTypes.isDependentTextLink(link.connectionType) &&
-                  link.start == null &&
-                  link.end == null,
-            )
-            .toList(),
-      );
       items.addAll(
         sortedLinks.map(
           (link) => buildLinkContextMenuEntry(
@@ -1851,12 +1853,9 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       return items;
     }
 
-    final hasLinkItems = lineLinks.any(
-      (link) =>
-          !LinkTypes.isDependentTextLink(link.connectionType) &&
-          link.start == null &&
-          link.end == null,
-    );
+    final hasLinkItems =
+        currentLineLinks().isNotEmpty ||
+        _paragraphCommentatorsCache.isLoading(state.book, index);
 
     final entries = <AppContextMenuEntry>[];
 
@@ -1957,6 +1956,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
           icon: OtzariaIcons.links_24_regular,
           enabled: hasLinkItems,
           childrenBuilder: buildLinksItems,
+          childrenRefreshStream: _paragraphCommentatorsCache.changes,
         ),
       );
     } else {

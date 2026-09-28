@@ -13,6 +13,8 @@ import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
+import 'package:otzaria/text_book/text_book_repository.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_event.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
@@ -2349,7 +2351,23 @@ class _TestTextBookBloc extends Bloc<TextBookEvent, TextBookState>
   }
 
   @override
+  final TextBookRepository repository = _NoLinksTextBookRepository();
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// שאילתת הפסקה של תפריט ההקשר בלי IO אמיתי (שנתקע תחת FakeAsync).
+class _NoLinksTextBookRepository extends TextBookRepository {
+  _NoLinksTextBookRepository() : super(fileSystem: FileSystemData());
+
+  @override
+  Future<List<Link>> getBookLinksInRange(
+    TextBook book, {
+    required int startIndex,
+    required int endIndex,
+    Iterable<String>? targetBookTitles,
+  }) async => const [];
 }
 
 class _TestPersonalNotesBloc
