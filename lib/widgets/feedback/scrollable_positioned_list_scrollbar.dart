@@ -196,7 +196,8 @@ class _ScrollablePositionedListScrollbarState
   void _updateScrollPosition() {
     if (!mounted) return;
 
-    final positions = widget.itemPositionsListener.itemPositions.value;
+    // הערך הוא Iterable עצל שמסנן מחדש בכל מעבר; עוברים עליו כאן כמה פעמים.
+    final positions = widget.itemPositionsListener.itemPositions.value.toList();
     if (positions.isEmpty || widget.itemCount == 0) return;
 
     // האינדקסים הראשון והאחרון הנראים והקצוות שלהם — מהם נגזרים גובה האגודל
@@ -297,20 +298,26 @@ class _ScrollablePositionedListScrollbarState
     // המסילה יוצאת מהעץ, ו-MouseRegion שהוסר אינו מקבל onExit שיסתיר את התווית.
     if (!canScroll && _canScroll) _hideLabel();
 
+    // מתעדכן גם בגרירה: באזור של פריטים גבוהים האינדקס המקסימלי עולה, ובלעדיו
+    // הגרירה לא מגיעה לסוף הספר. אינו משתתף ב-build ולכן בלי setState.
+    _maxScrollableIndex = maxScrollableIndex;
+
+    final thumbChanged =
+        !_isDragging &&
+        (!_nearlyEqual(_thumbHeight, newHeight) ||
+            !_nearlyEqual(_thumbPosition, newPosition));
+    if (canScroll == _canScroll && !thumbChanged) return;
     setState(() {
       _canScroll = canScroll;
-      // _maxScrollableIndex חייב להתעדכן גם תוך כדי גרירה: כשהמשתמש גורר
-      // לתוך אזור עם פריטים גדולים יותר (לדוגמה — אזור שבו מפרש פתוח, או
-      // כותרות עם הרבה תוכן) מספר הפריטים הגלויים יורד והאינדקס המקסימלי
-      // שאליו אפשר לקפוץ עולה. בלי עדכון, שלב הגרירה הבא יחזיר אינדקס
-      // יעד מבוסס על ערך ישן ולא יגיע לסוף הספר.
-      _maxScrollableIndex = maxScrollableIndex;
       if (!_isDragging) {
         _thumbHeight = newHeight;
         _thumbPosition = newPosition;
       }
     });
   }
+
+  // הרשימה מדווחת מיקומים בכל פריים; שינוי תת-פיקסלי באגודל אינו מצדיק בנייה.
+  static bool _nearlyEqual(double a, double b) => (a - b).abs() < 1e-5;
 
   // הופך את מיקום האגודל (0.0–(1.0 - _thumbHeight)) ליעד רציף בטווח
   // [0, _maxScrollableIndex] — אינדקס פריט ועוד החלק שנגלל בתוכו. שימוש

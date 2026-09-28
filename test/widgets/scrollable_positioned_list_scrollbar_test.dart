@@ -1886,4 +1886,45 @@ void main() {
       reason: 'פריט מחוץ לחלון הנראה = יש מה לגלול',
     );
   });
+
+  testWidgets('דיווח מיקומים שאינו משנה את האגודל אינו בונה את הסרגל מחדש', (
+    tester,
+  ) async {
+    final listener = ItemPositionsListener.create();
+    final positions =
+        listener.itemPositions as ValueNotifier<Iterable<ItemPosition>>;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ScrollablePositionedListScrollbar(
+            scrollController: ItemScrollController(),
+            itemPositionsListener: listener,
+            itemCount: 10,
+            child: const _ScrollableStub(),
+          ),
+        ),
+      ),
+    );
+    positions.value = const [
+      ItemPosition(index: 0, itemLeadingEdge: 0, itemTrailingEdge: 0.5),
+      ItemPosition(index: 1, itemLeadingEdge: 0.5, itemTrailingEdge: 1.0),
+    ];
+    await tester.pump();
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    // מופע חדש עם אותם ערכים — כמו ה-Iterable העצל שהרשימה מציבה בכל פריים.
+    positions.value = [
+      const ItemPosition(index: 0, itemLeadingEdge: 0, itemTrailingEdge: 0.5),
+      const ItemPosition(index: 1, itemLeadingEdge: 0.5, itemTrailingEdge: 1.0),
+    ];
+    expect(tester.binding.hasScheduledFrame, isFalse);
+
+    positions.value = const [
+      ItemPosition(index: 4, itemLeadingEdge: 0, itemTrailingEdge: 0.5),
+      ItemPosition(index: 5, itemLeadingEdge: 0.5, itemTrailingEdge: 1.0),
+    ];
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    await tester.pump();
+  });
 }
