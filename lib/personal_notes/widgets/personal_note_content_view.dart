@@ -1,10 +1,15 @@
 import 'dart:convert';
 
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
+import 'package:otzaria/core/messages/common_messages.dart';
+import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/utils/note_link_detection.dart';
 import 'package:otzaria/widgets/dialogs/app_dialogs.dart';
+import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// מציג את ההערות של שורה בחלון קריאה ממורכז.
@@ -133,16 +138,21 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
   Widget build(BuildContext context) {
     final controller = _controller;
     if (controller != null) {
-      // בתוך AppSelectionArea תפריט ההעתקה מגיע ממנו — תפריט Flutter של
-      // העורך היה נפתח לצדו (issue #1271).
+      // בתוך AppSelectionArea תפריט ההעתקה מגיע ממנו; שני אזורי תפריט מקוננים
+      // היו פותחים שני תפריטים.
       final hostHasOwnMenu =
           context.findAncestorWidgetOfExactType<AppSelectionArea>() != null;
-      final editor = quill.QuillEditor(
+      // במגע נשאר התפריט הטבעי של העורך, כמו ב-AppSelectionArea.
+      final platform = Theme.of(context).platform;
+      final useNativeTouchMenu =
+          platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+      final useOwnMenu = !hostHasOwnMenu && !useNativeTouchMenu;
+      Widget editor = quill.QuillEditor(
         controller: controller,
         focusNode: _focusNode!,
         scrollController: _scrollController!,
         config: quill.QuillEditorConfig(
-          contextMenuBuilder: hostHasOwnMenu
+          contextMenuBuilder: hostHasOwnMenu || useOwnMenu
               ? (context, _) => const SizedBox.shrink()
               : null,
           autoFocus: false,
@@ -155,6 +165,26 @@ class _PersonalNoteContentViewState extends State<PersonalNoteContentView> {
           onLaunchUrl: widget.onLinkTap,
         ),
       );
+
+      if (useOwnMenu) {
+        editor = AppContextMenuRegion(
+          menuBuilder: (_, _) {
+            final selected = controller.getPlainText();
+            return [
+              AppContextMenuEntry(
+                label: 'העתק',
+                icon: FluentIcons.copy_24_regular,
+                enabled: selected.trim().isNotEmpty,
+                onTap: () async {
+                  await Clipboard.setData(ClipboardData(text: selected));
+                  UiSnack.show(CommonMessages.textCopiedShort);
+                },
+              ),
+            ];
+          },
+          child: editor,
+        );
+      }
 
       return DefaultTextStyle(
         style: widget.textStyle ?? Theme.of(context).textTheme.bodyMedium!,

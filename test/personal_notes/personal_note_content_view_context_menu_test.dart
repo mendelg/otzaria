@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/widgets/personal_note_content_view.dart';
+import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// issue #1271 — בתיבת הריחוף של הערה (עטופה ב-AppSelectionArea) לחיצה ימנית
@@ -119,5 +120,19 @@ void main() {
     expect(copied, isNotNull);
     expect('תוכן ההערה לבדיקה', contains(copied!));
     expect(copied, isNotEmpty);
+  });
+
+  testWidgets('במגע בלי AppSelectionArea נשאר התפריט הטבעי של העורך', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: PersonalNoteContentView(note: note())),
+      ),
+    );
+    debugDefaultTargetPlatformOverride = null;
+
+    expect(find.byType(AppContextMenuRegion), findsNothing);
   });
 }
