@@ -492,7 +492,12 @@ void main() {
           ),
         );
 
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(
+          () =>
+              bloc.state is TextBookLoaded &&
+              repository.getBookLinksInRangeCalls >= 1,
+          description: 'טעינת תוכן וקישורים בצורת הדף',
+        );
 
         expect(repository.getBookLinksInRangeCalls, 1);
         expect((bloc.state as TextBookLoaded).visibleIndices, const [10]);
@@ -504,8 +509,13 @@ void main() {
         expect((bloc.state as TextBookLoaded).visibleIndices, const [10]);
 
         bloc.add(const UpdateVisibleIndecies([10, 11, 12]));
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded &&
+              state.visibleIndices.length == 3 &&
+              state.visibleIndices.first == 10 &&
+              state.visibleIndices.last == 12;
+        }, description: 'עדכון visibleIndices תקין');
         expect((bloc.state as TextBookLoaded).visibleIndices, const [
           10,
           11,
@@ -1400,7 +1410,10 @@ void main() {
             loadCommentators: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(
+          () => bloc.state is TextBookLoaded,
+          description: 'טעינה ראשונית לפני שינוי הניקוד',
+        );
 
         // המשתמש מפעיל הסרת ניקוד ידנית
         bloc.add(
@@ -1409,7 +1422,10 @@ void main() {
             patch: TextDisplayPatch(nikud: MarkVisibility.hide),
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded && state.removeNikud;
+        }, description: 'הסתרת ניקוד ידנית');
         expect((bloc.state as TextBookLoaded).removeNikud, isTrue);
 
         // רענון בגין שינוי הגדרות ניקוד גלובליות – מצפה להחיל ערך חדש
@@ -1423,7 +1439,10 @@ void main() {
             loadCommentators: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded && !state.removeNikud;
+        }, description: 'החלת הגדרת הניקוד החדשה');
 
         expect(
           (bloc.state as TextBookLoaded).removeNikud,
@@ -1452,7 +1471,10 @@ void main() {
             loadCommentators: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(
+          () => bloc.state is TextBookLoaded,
+          description: 'טעינה ראשונית לפני שינוי הפיסוק',
+        );
         expect((bloc.state as TextBookLoaded).removePunctuation, isFalse);
 
         // המשתמש מסתיר פיסוק ידנית
@@ -1462,7 +1484,10 @@ void main() {
             patch: TextDisplayPatch(punctuation: MarkVisibility.hide),
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded && state.removePunctuation;
+        }, description: 'הסתרת פיסוק ידנית');
         expect((bloc.state as TextBookLoaded).removePunctuation, isTrue);
 
         // רענון בגין שינוי גופן – מצפה שהסתרת הפיסוק תישמר
@@ -1506,7 +1531,10 @@ void main() {
             loadCommentators: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(
+          () => bloc.state is TextBookLoaded,
+          description: 'טעינה ראשונית לפני איפוס הפיסוק',
+        );
 
         bloc.add(
           const ApplyDisplayPatch(
@@ -1514,7 +1542,10 @@ void main() {
             patch: TextDisplayPatch(punctuation: MarkVisibility.hide),
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded && state.removePunctuation;
+        }, description: 'הסתרת פיסוק לפני איפוס הגדרות');
         expect((bloc.state as TextBookLoaded).removePunctuation, isTrue);
 
         // המסלול של _resetPerBookSettings – בלי הדגל, הפיסוק חוזר לברירת מחדל
@@ -1527,7 +1558,10 @@ void main() {
             loadCommentators: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded && !state.removePunctuation;
+        }, description: 'איפוס הגדרות הפיסוק');
 
         expect(
           (bloc.state as TextBookLoaded).removePunctuation,
@@ -1794,7 +1828,10 @@ void main() {
               loadCommentators: false,
             ),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await _waitFor(
+            () => bloc.state is TextBookLoaded,
+            description: 'טעינה ראשונית לפני הדגשה מקישור',
+          );
 
           bloc.add(
             const UpdateSearchText(
@@ -1804,7 +1841,10 @@ void main() {
               spacingValues: {},
             ),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 30));
+          await _waitFor(() {
+            final state = bloc.state;
+            return state is TextBookLoaded && state.searchText == 'שאלה ישנה';
+          }, description: 'עדכון שאילתת החיפוש הקודמת');
 
           bloc.add(
             const ApplyMarkHighlight(
@@ -1812,7 +1852,12 @@ void main() {
               scrollToIndex: 7,
             ),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 30));
+          await _waitFor(() {
+            final state = bloc.state;
+            return state is TextBookLoaded &&
+                state.highlightText == 'בראשית' &&
+                state.searchText.isEmpty;
+          }, description: 'הדגשת הטקסט מקישור');
 
           final state = bloc.state as TextBookLoaded;
           expect(state.highlightText, 'בראשית');
@@ -1840,7 +1885,10 @@ void main() {
               loadCommentators: false,
             ),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await _waitFor(
+            () => bloc.state is TextBookLoaded,
+            description: 'טעינה ראשונית לפני ניקוי הדגשה',
+          );
 
           bloc.add(
             const ApplyMarkHighlight(
@@ -1848,10 +1896,17 @@ void main() {
               permanentHighlightLine: 3,
             ),
           );
-          await Future<void>.delayed(const Duration(milliseconds: 30));
+          await _waitFor(() {
+            final state = bloc.state;
+            return state is TextBookLoaded && state.permanentHighlightLine == 3;
+          }, description: 'הגדרת הדגשה קבועה');
 
           bloc.add(const ApplyMarkHighlight());
-          await Future<void>.delayed(const Duration(milliseconds: 30));
+          await _waitFor(() {
+            final state = bloc.state;
+            return state is TextBookLoaded &&
+                state.permanentHighlightLine == null;
+          }, description: 'ניקוי ההדגשה הקבועה');
 
           final state = bloc.state as TextBookLoaded;
           expect(state.permanentHighlightLine, isNull);
@@ -1875,7 +1930,10 @@ void main() {
             loadCommentators: false,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await _waitFor(
+          () => bloc.state is TextBookLoaded,
+          description: 'טעינה ראשונית לפני הדגשה ריקה',
+        );
 
         bloc.add(
           const ApplyMarkHighlight(
@@ -1883,7 +1941,12 @@ void main() {
             permanentHighlightLine: 5,
           ),
         );
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+        await _waitFor(() {
+          final state = bloc.state;
+          return state is TextBookLoaded &&
+              state.highlightText.isEmpty &&
+              state.permanentHighlightLine == 5;
+        }, description: 'החלת הדגשה ריקה');
 
         final state = bloc.state as TextBookLoaded;
         expect(state.highlightText, '');
