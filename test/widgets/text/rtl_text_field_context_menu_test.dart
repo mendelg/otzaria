@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -75,30 +76,29 @@ void main() {
     return controller;
   }
 
-  testWidgets(
-    'הדבקה דרך תפריט ההקשר מעדכנת את הטקסט ומפעילה onChanged',
-    (tester) async {
-      mockClipboard(tester, initialText: 'ראשית');
-      final changes = <String>[];
-      final controller = await pumpField(tester, onChanged: changes.add);
-      controller.selection = const TextSelection.collapsed(offset: 0);
-      await tester.pump();
+  testWidgets('הדבקה דרך תפריט ההקשר מעדכנת את הטקסט ומפעילה onChanged', (
+    tester,
+  ) async {
+    mockClipboard(tester, initialText: 'ראשית');
+    final changes = <String>[];
+    final controller = await pumpField(tester, onChanged: changes.add);
+    controller.selection = const TextSelection.collapsed(offset: 0);
+    await tester.pump();
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
-      await tester.tap(find.text('הדבק'));
-      await tester.pumpAndSettle();
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await tester.tap(find.text('הדבק'));
+    await tester.pumpAndSettle();
 
-      expect(controller.text, 'ראשית');
-      expect(
-        changes,
-        contains('ראשית'),
-        reason:
-            'הדבקה דרך לחצן ימני חייבת להפעיל onChanged כמו הקלדה רגילה, '
-            'אחרת שדה חיפוש המבוסס על onChanged (כמו חיפוש הספרייה) ימשיך '
-            'להריץ חיפוש לפי הטקסט הישן',
-      );
-    },
-  );
+    expect(controller.text, 'ראשית');
+    expect(
+      changes,
+      contains('ראשית'),
+      reason:
+          'הדבקה דרך לחצן ימני חייבת להפעיל onChanged כמו הקלדה רגילה, '
+          'אחרת שדה חיפוש המבוסס על onChanged (כמו חיפוש הספרייה) ימשיך '
+          'להריץ חיפוש לפי הטקסט הישן',
+    );
+  });
 
   testWidgets(
     'הדבקה באמצע טקסט קיים משלבת נכון ומעדכנת onChanged עם הטקסט המלא',
@@ -124,31 +124,27 @@ void main() {
     },
   );
 
-  testWidgets(
-    'הדבקה על טקסט נבחר מחליפה את הבחירה ומעדכנת onChanged',
-    (tester) async {
-      mockClipboard(tester, initialText: 'חדש');
-      final changes = <String>[];
-      final controller = await pumpField(
-        tester,
-        text: 'אבגדה',
-        onChanged: changes.add,
-      );
-      // בוחר "בגד" (offset 1..4).
-      controller.selection = const TextSelection(
-        baseOffset: 1,
-        extentOffset: 4,
-      );
-      await tester.pump();
+  testWidgets('הדבקה על טקסט נבחר מחליפה את הבחירה ומעדכנת onChanged', (
+    tester,
+  ) async {
+    mockClipboard(tester, initialText: 'חדש');
+    final changes = <String>[];
+    final controller = await pumpField(
+      tester,
+      text: 'אבגדה',
+      onChanged: changes.add,
+    );
+    // בוחר "בגד" (offset 1..4).
+    controller.selection = const TextSelection(baseOffset: 1, extentOffset: 4);
+    await tester.pump();
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
-      await tester.tap(find.text('הדבק'));
-      await tester.pumpAndSettle();
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await tester.tap(find.text('הדבק'));
+    await tester.pumpAndSettle();
 
-      expect(controller.text, 'אחדשה');
-      expect(changes.last, 'אחדשה');
-    },
-  );
+    expect(controller.text, 'אחדשה');
+    expect(changes.last, 'אחדשה');
+  });
 
   testWidgets(
     'הדבקה משתמשת בבחירה העדכנית כשה-controller משתנה בזמן שהתפריט פתוח',
@@ -175,206 +171,263 @@ void main() {
     },
   );
 
-  testWidgets(
-    'גזירה מעתיקה ללוח, מסירה את הטקסט הנבחר ומפעילה onChanged',
-    (tester) async {
-      String? clipboardText;
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('גזירה מעתיקה ללוח, מסירה את הטקסט הנבחר ומפעילה onChanged', (
+    tester,
+  ) async {
+    String? clipboardText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        (call) async {
-          if (call.method == 'Clipboard.setData') {
-            clipboardText = (call.arguments as Map)['text'] as String?;
-          }
-          return null;
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          null,
-        ),
-      );
+        null,
+      ),
+    );
 
-      final changes = <String>[];
-      final controller = await pumpField(
-        tester,
-        text: 'אבגדה',
-        onChanged: changes.add,
-      );
-      controller.selection = const TextSelection(
-        baseOffset: 1,
-        extentOffset: 4,
-      );
-      await tester.pump();
+    final changes = <String>[];
+    final controller = await pumpField(
+      tester,
+      text: 'אבגדה',
+      onChanged: changes.add,
+    );
+    controller.selection = const TextSelection(baseOffset: 1, extentOffset: 4);
+    await tester.pump();
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
-      await tester.tap(find.text('גזור'));
-      await tester.pumpAndSettle();
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await tester.tap(find.text('גזור'));
+    await tester.pumpAndSettle();
 
-      expect(clipboardText, 'בגד');
-      expect(controller.text, 'אה');
-      expect(
-        changes,
-        contains('אה'),
-        reason: 'גזירה משנה את הטקסט ולכן חייבת גם היא להפעיל onChanged',
-      );
-    },
-  );
+    expect(clipboardText, 'בגד');
+    expect(controller.text, 'אה');
+    expect(
+      changes,
+      contains('אה'),
+      reason: 'גזירה משנה את הטקסט ולכן חייבת גם היא להפעיל onChanged',
+    );
+  });
 
-  testWidgets(
-    'העתקה אינה משנה את הטקסט ולכן אינה מפעילה onChanged',
-    (tester) async {
-      String? clipboardText;
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('העתקה אינה משנה את הטקסט ולכן אינה מפעילה onChanged', (
+    tester,
+  ) async {
+    String? clipboardText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        (call) async {
-          if (call.method == 'Clipboard.setData') {
-            clipboardText = (call.arguments as Map)['text'] as String?;
-          }
-          return null;
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          null,
-        ),
-      );
+        null,
+      ),
+    );
 
-      final changes = <String>[];
-      final controller = await pumpField(
-        tester,
-        text: 'אבגדה',
-        onChanged: changes.add,
-      );
-      controller.selection = const TextSelection(
-        baseOffset: 1,
-        extentOffset: 4,
-      );
-      await tester.pump();
+    final changes = <String>[];
+    final controller = await pumpField(
+      tester,
+      text: 'אבגדה',
+      onChanged: changes.add,
+    );
+    controller.selection = const TextSelection(baseOffset: 1, extentOffset: 4);
+    await tester.pump();
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
-      await tester.tap(find.text('העתק'));
-      await tester.pumpAndSettle();
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await tester.tap(find.text('העתק'));
+    await tester.pumpAndSettle();
 
-      expect(clipboardText, 'בגד');
-      expect(controller.text, 'אבגדה');
-      expect(changes, isEmpty);
-    },
-  );
+    expect(clipboardText, 'בגד');
+    expect(controller.text, 'אבגדה');
+    expect(changes, isEmpty);
+  });
 
-  testWidgets(
-    '"בחר הכל" בוחר את כל הטקסט ואינו מפעיל onChanged',
-    (tester) async {
-      final changes = <String>[];
-      final controller = await pumpField(
-        tester,
-        text: 'אבגדה',
-        onChanged: changes.add,
-      );
-      await tester.pump();
+  testWidgets('"בחר הכל" בוחר את כל הטקסט ואינו מפעיל onChanged', (
+    tester,
+  ) async {
+    final changes = <String>[];
+    final controller = await pumpField(
+      tester,
+      text: 'אבגדה',
+      onChanged: changes.add,
+    );
+    await tester.pump();
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
-      await tester.tap(find.text('בחר הכל'));
-      await tester.pumpAndSettle();
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await tester.tap(find.text('בחר הכל'));
+    await tester.pumpAndSettle();
 
-      expect(controller.selection.baseOffset, 0);
-      expect(controller.selection.extentOffset, 5);
-      expect(changes, isEmpty);
-    },
-  );
+    expect(controller.selection.baseOffset, 0);
+    expect(controller.selection.extentOffset, 5);
+    expect(changes, isEmpty);
+  });
 
-  testWidgets(
-    'התפריט מציג "גזור"/"העתק" רק כשיש בחירה פעילה',
-    (tester) async {
-      final controller = await pumpField(tester, text: 'אבגדה');
-      controller.selection = const TextSelection.collapsed(offset: 2);
-      await tester.pump();
+  testWidgets('התפריט מציג "גזור"/"העתק" רק כשיש בחירה פעילה', (tester) async {
+    final controller = await pumpField(tester, text: 'אבגדה');
+    controller.selection = const TextSelection.collapsed(offset: 2);
+    await tester.pump();
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
 
-      expect(find.text('גזור'), findsNothing);
-      expect(find.text('העתק'), findsNothing);
-      expect(find.text('הדבק'), findsOneWidget);
-      expect(find.text('בחר הכל'), findsOneWidget);
-    },
-  );
+    expect(find.text('גזור'), findsNothing);
+    expect(find.text('העתק'), findsNothing);
+    expect(find.text('הדבק'), findsOneWidget);
+    expect(find.text('בחר הכל'), findsOneWidget);
+  });
 
-  testWidgets(
-    'התפריט אינו מציג "בחר הכל" כששדה החיפוש ריק',
-    (tester) async {
-      await pumpField(tester, text: '');
+  testWidgets('התפריט אינו מציג "בחר הכל" כששדה החיפוש ריק', (tester) async {
+    await pumpField(tester, text: '');
 
-      await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
 
-      expect(find.text('בחר הכל'), findsNothing);
-      expect(find.text('הדבק'), findsOneWidget);
-    },
-  );
+    expect(find.text('בחר הכל'), findsNothing);
+    expect(find.text('הדבק'), findsOneWidget);
+  });
 
-  testWidgets(
-    'לחיצה ימנית ללא פוקוס מכווצת את הבחירה הפנימית של Flutter, '
-    'אך גזירה עדיין פועלת על הבחירה שהייתה כשהתפריט נפתח',
-    (tester) async {
-      String? clipboardText;
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+  testWidgets('לחיצה ימנית ללא פוקוס מכווצת את הבחירה הפנימית של Flutter, '
+      'אך גזירה עדיין פועלת על הבחירה שהייתה כשהתפריט נפתח', (tester) async {
+    String? clipboardText;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
-        (call) async {
-          if (call.method == 'Clipboard.setData') {
-            clipboardText = (call.arguments as Map)['text'] as String?;
-          }
-          return null;
-        },
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          null,
-        ),
-      );
+        null,
+      ),
+    );
 
-      final controller = TextEditingController(text: 'אבגדה');
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Directionality(
-              textDirection: TextDirection.rtl,
-              child: RtlTextField(controller: controller),
-            ),
+    final controller = TextEditingController(text: 'אבגדה');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Directionality(
+            textDirection: TextDirection.rtl,
+            child: RtlTextField(controller: controller),
           ),
         ),
-      );
-      await tester.pump();
-      // בכוונה בלי פוקוס: מדמה מצב בו כבר קיימת בחירה (למשל מגרירת עכבר
-      // קודמת) אבל הפוקוס עבר משדה זה הלאה לפני הלחיצה הימנית.
-      controller.selection = const TextSelection(
-        baseOffset: 1,
-        extentOffset: 4,
-      );
-      await tester.pump();
+      ),
+    );
+    await tester.pump();
+    // בכוונה בלי פוקוס: מדמה מצב בו כבר קיימת בחירה (למשל מגרירת עכבר
+    // קודמת) אבל הפוקוס עבר משדה זה הלאה לפני הלחיצה הימנית.
+    controller.selection = const TextSelection(baseOffset: 1, extentOffset: 4);
+    await tester.pump();
 
+    await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
+
+    // מוודא שהתרחיש שגילינו אכן קיים ברמת Flutter: לחיצה ימנית בלי פוקוס
+    // מפעילה גם את הזיהוי המובנה ל-secondary tap, שמכווץ את הבחירה
+    // הקיימת למיקום הלחיצה (ראו onSecondaryTap ב-text_selection.dart).
+    expect(
+      controller.selection.isCollapsed,
+      isTrue,
+      reason: 'מוודא שתנאי המרוץ שגרם לבאג עדיין קיים ברמת Flutter עצמו',
+    );
+
+    await tester.tap(find.text('גזור'));
+    await tester.pumpAndSettle();
+
+    expect(
+      clipboardText,
+      'בגד',
+      reason:
+          'גזירה חייבת לפעול על הבחירה שנלכדה בפתיחת התפריט, לא על מה '
+          'שהתכווץ לאחר מכן על ידי הטיפול הפנימי של Flutter בלחיצה ימנית',
+    );
+    expect(controller.text, 'אה');
+  });
+
+  // במגע התפריט נפתח בלחיצה ארוכה; בלי זה אין בשדה שום תפריט, לא של Flutter
+  // ולא שלנו.
+  for (final platform in [
+    TargetPlatform.android,
+    TargetPlatform.iOS,
+    TargetPlatform.windows,
+  ]) {
+    testWidgets('לחיצה ארוכה במגע ב-$platform פותחת את תפריט אוצריא', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        mockClipboard(tester, initialText: 'מודבק');
+        await pumpField(tester, text: 'שלום עולם');
+
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.byType(TextField)),
+          kind: PointerDeviceKind.touch,
+        );
+        await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(find.text('הדבק'), findsOneWidget, reason: 'תפריט אוצריא');
+        expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
+  testWidgets('לחיצה ימנית בעכבר פותחת תפריט אחד בלבד', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    try {
+      await pumpField(tester, text: 'שלום עולם');
       await rightClickAt(tester, tester.getCenter(find.byType(TextField)));
 
-      // מוודא שהתרחיש שגילינו אכן קיים ברמת Flutter: לחיצה ימנית בלי פוקוס
-      // מפעילה גם את הזיהוי המובנה ל-secondary tap, שמכווץ את הבחירה
-      // הקיימת למיקום הלחיצה (ראו onSecondaryTap ב-text_selection.dart).
+      expect(find.text('הדבק'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
+  testWidgets('גזירה מתפריט המגע מסירה את המילה ששמורה בבחירה', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      mockClipboard(tester);
+      final controller = await pumpField(tester, text: 'שלום עולם');
+      final gesture = await tester.startGesture(
+        // RTL: המילה הראשונה בקצה הימני של השדה.
+        tester.getRect(find.byType(EditableText)).centerRight -
+            const Offset(15, 0),
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      final selected = controller.selection.textInside(controller.text);
+      expect(selected, isNotEmpty, reason: 'לחיצה ארוכה בוחרת מילה');
       expect(
-        controller.selection.isCollapsed,
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
         isTrue,
-        reason: 'מוודא שתנאי המרוץ שגרם לבאג עדיין קיים ברמת Flutter עצמו',
+        reason: 'בלי פוקוס נמחקות ידיות הבחירה',
       );
 
       await tester.tap(find.text('גזור'));
       await tester.pumpAndSettle();
 
-      expect(
-        clipboardText,
-        'בגד',
-        reason:
-            'גזירה חייבת לפעול על הבחירה שנלכדה בפתיחת התפריט, לא על מה '
-            'שהתכווץ לאחר מכן על ידי הטיפול הפנימי של Flutter בלחיצה ימנית',
-      );
-      expect(controller.text, 'אה');
-    },
-  );
+      expect(controller.text, isNot(contains(selected)));
+      expect(controller.text.length, 'שלום עולם'.length - selected.length);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }
