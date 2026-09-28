@@ -212,4 +212,66 @@ Future<void> main() async {
       expect(find.byTooltip('התוצאה הבאה'), findsNothing);
     });
   }, skip: engineReady ? false : searchEngineSkipReason);
+
+  testWidgets('טעינה חוזרת מעבירה את מאזין התוצאות ל-searcher החדש', (
+    tester,
+  ) async {
+    final settingsBloc = _MockSettingsBloc();
+    whenListen(
+      settingsBloc,
+      const Stream<SettingsState>.empty(),
+      initialState: SettingsState.initial(),
+    );
+    final pdfBookBloc = _MockPdfBookBloc();
+    whenListen(
+      pdfBookBloc,
+      const Stream<PdfBookState>.empty(),
+      initialState: PdfBookLoaded(
+        book: PdfBook(title: 'ספר בדיקה', path: '/nonexistent/test.pdf'),
+        currentPageNumber: 1,
+        totalPages: 12,
+        isLoading: false,
+      ),
+    );
+    final searchController = TextEditingController();
+    final focusNode = FocusNode();
+    final controller = _FakeReadyController();
+    final first = _ControlledSearcher(controller);
+    final second = _ControlledSearcher(controller);
+    addTearDown(settingsBloc.close);
+    addTearDown(pdfBookBloc.close);
+    addTearDown(searchController.dispose);
+    addTearDown(focusNode.dispose);
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+
+    Widget view(_ControlledSearcher searcher) => MaterialApp(
+      home: MultiBlocProvider(
+        providers: [
+          BlocProvider<SettingsBloc>.value(value: settingsBloc),
+          BlocProvider<PdfBookBloc>.value(value: pdfBookBloc),
+        ],
+        child: Scaffold(
+          body: SizedBox(
+            width: 400,
+            child: PdfBookSearchView(
+              textSearcher: searcher,
+              searchController: searchController,
+              focusNode: focusNode,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(view(first));
+    first.current = [_match(2)];
+    await _notify(tester, first);
+    expect(find.text('נמצאו 1 תוצאות'), findsOneWidget);
+
+    await tester.pumpWidget(view(second));
+    second.current = [_match(3), _match(4)];
+    await _notify(tester, second);
+    expect(find.text('נמצאו 2 תוצאות'), findsOneWidget);
+  });
 }

@@ -382,6 +382,24 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _initializeBookPath();
   }
 
+  @override
+  void didUpdateWidget(covariant PdfBookSearchView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.textSearcher, widget.textSearcher)) return;
+    oldWidget.textSearcher.removeListener(_onTextSearcherMatchesChanged);
+    widget.textSearcher.addListener(_onTextSearcherMatchesChanged);
+    _pdfHighlightDebounce?.cancel();
+    _searchGeneration++;
+    _lastPdfHighlightSource = '';
+    _lastAdvancedHighlightPattern = null;
+    _mappedMatches = const [];
+    _searchResults = [];
+    _pageTitles.clear();
+    _isSearching = false;
+    _searchErrorMessage = null;
+    _pendingSimpleSearchScrollFor = null;
+  }
+
   /// מחילה קונפיגורציית חיפוש שהגיעה מפתיחת תוצאה בספר שכבר פתוח.
   void _onIncomingSearchConfiguration() {
     final notifier = widget.incomingSearchConfiguration;
