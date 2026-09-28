@@ -1,0 +1,78 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/data_providers/book_composite_key.dart';
+import 'package:otzaria/data/data_providers/library_provider.dart';
+import 'package:otzaria/data/data_providers/library_provider_manager.dart';
+import 'package:otzaria/models/link_types.dart';
+import 'package:otzaria/models/links.dart';
+import 'package:otzaria/settings/engine/settings_bloc.dart';
+import 'package:otzaria/settings/engine/settings_event.dart';
+import 'package:otzaria/settings/engine/settings_state.dart';
+import 'package:otzaria/text_display/models/text_display_profile.dart';
+import 'package:otzaria/widgets/commentary/commentary_content.dart';
+
+class _Provider extends Fake implements LibraryProvider {
+  @override
+  Future<String> getLinkContent(Link link) async =>
+      List.filled(40, 'מילה ארוכה בפירוש').join(' ');
+}
+
+class _TestSettingsBloc extends Bloc<SettingsEvent, SettingsState>
+    implements SettingsBloc {
+  _TestSettingsBloc() : super(SettingsState.initial()) {
+    on<SettingsEvent>((event, emit) {});
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+void main() {
+  final manager = LibraryProviderManager.instance;
+  tearDown(manager.resetForTesting);
+
+  // פריט מפרש שנבנה מחדש בגלילה למעלה: אם הוא מתחיל בשלד טעינה קצר וגדל
+  // אחריו, הוא דוחף את הרשימה חזרה למטה (issue #1588).
+  testWidgets('מפרש שתוכנו כבר נטען נבנה מיד בגובהו הסופי', (tester) async {
+    manager.seedMappingsForTesting(
+      mapping: <BookCompositeKey, LibraryProvider>{},
+      providers: <LibraryProvider>[_Provider()],
+    );
+    final link = Link(
+      heRef: 'רש"י על סוכה, מד., א',
+      index1: 1,
+      path2: 'רש"י על סוכה',
+      index2: 9101,
+      connectionType: LinkTypes.commentary,
+    );
+    await link.content;
+    final settings = _TestSettingsBloc();
+    addTearDown(settings.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BlocProvider<SettingsBloc>.value(
+          value: settings,
+          child: Scaffold(
+            body: SingleChildScrollView(
+              child: CommentaryContent(
+                link: link,
+                fontSize: 18,
+                openBookCallback: (_) {},
+                displayProfile: TextDisplayProfile.defaults,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final firstFrame = tester.getSize(find.byType(CommentaryContent)).height;
+    await tester.pumpAndSettle();
+
+    expect(
+      firstFrame,
+      tester.getSize(find.byType(CommentaryContent)).height,
+    );
+  });
+}

@@ -7,21 +7,27 @@ class AppFutureBuilder<T> extends StatelessWidget {
   final Widget? loadingWidget;
   final Widget Function(BuildContext context, Object error)? errorBuilder;
 
+  /// ערך שכבר ידוע: מוצג מיד, בלי פריים טעינה עד שה-Future מדווח.
+  final T? initialData;
+
   const AppFutureBuilder({
     super.key,
     required this.future,
     required this.builder,
     this.loadingWidget,
     this.errorBuilder,
+    this.initialData,
   });
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<T>(
       future: future,
+      initialData: initialData,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting ||
-            snapshot.connectionState == ConnectionState.none) {
+        if (initialData == null &&
+            (snapshot.connectionState == ConnectionState.waiting ||
+                snapshot.connectionState == ConnectionState.none)) {
           return loadingWidget ?? const Center(child: LoadingIndicator());
         }
 
