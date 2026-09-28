@@ -148,6 +148,16 @@ class Link {
 
   static final LinkedHashMap<String, Future<String>> _contentCache =
       LinkedHashMap<String, Future<String>>();
+  static final Map<String, String> _loadedContent = {};
+
+  // המפתח כולל את זהות היעד (אישי/רשמי+קטגוריה) כדי ששני קישורים לאותה
+  // כותרת ואינדקס — אחד אישי ואחד רשמי — לא יחזירו זה את תוכן זה.
+  String get _contentKey =>
+      '$path2:$index2:${index2End ?? ''}:${targetSource.wireKey}:'
+      '${targetCategoryId ?? ''}';
+
+  /// התוכן כפי שכבר נטען דרך [content], או null אם טרם נטען.
+  String? get loadedContent => _loadedContent[_contentKey];
 
   /// Returns the content of the link as a [Future] of [String].
   /// The result is cached per (path2, index2) so repeated calls are instant.
@@ -157,11 +167,7 @@ class Link {
         StateError('Invalid link reference for commentary content'),
       );
     }
-    // המפתח כולל את זהות היעד (אישי/רשמי+קטגוריה) כדי ששני קישורים לאותה
-    // כותרת ואינדקס — אחד אישי ואחד רשמי — לא יחזירו זה את תוכן זה.
-    final key =
-        '$path2:$index2:${index2End ?? ''}:${targetSource.wireKey}:'
-        '${targetCategoryId ?? ''}';
+    final key = _contentKey;
     final cached = _contentCache.remove(key);
     if (cached != null) {
       _contentCache[key] = cached;
@@ -176,9 +182,14 @@ class Link {
     }
 
     future.then((content) {
-      if (content.startsWith('שגיאה')) evictFailure();
+      if (content.startsWith('שגיאה')) {
+        evictFailure();
+      } else if (identical(_contentCache[key], future)) {
+        _loadedContent[key] = content;
+      }
     }, onError: (_) => evictFailure());
     if (_contentCache.length > _maxContentCacheEntries) {
+      _loadedContent.remove(_contentCache.keys.first);
       _contentCache.remove(_contentCache.keys.first);
     }
     return future;

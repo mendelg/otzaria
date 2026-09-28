@@ -175,6 +175,9 @@ class _CommentaryContentState extends State<CommentaryContent>
       },
       child: AppFutureBuilder<String>(
         future: content,
+        // פריט שנבנה מחדש בגלילה למעלה: שלד טעינה היה מקצר אותו לפריים אחד,
+        // והגדילה אחריו דוחפת את הרשימה למטה.
+        initialData: widget.link.loadedContent,
         loadingWidget: _buildSkeletonLoading(context),
         errorBuilder: (context, error) => Center(
           child: Text('שגיאה בטעינת הפרשן: $error'),
