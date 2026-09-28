@@ -1,4 +1,4 @@
-﻿part of 'library_update_bloc.dart';
+part of 'library_update_bloc.dart';
 
 enum LibraryUpdateStatus {
   /// מצב מנוחה — אין פעולה פעילה.

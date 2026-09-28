@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 /// בודק האם הטקסט גולש מעבר למספר השורות המרבי ברוחב הנתון.
 bool textOverflows({

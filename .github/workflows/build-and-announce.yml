@@ -1801,6 +1801,13 @@ jobs:
           echo "Disk space after cleanup:"
           df -h
 
+      # ברירת המחדל ב-ubuntu-26.04 היא JDK 25, ו-Gradle 8.x אינו רץ עליו.
+      - name: Set up Java
+        uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:

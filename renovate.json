@@ -5,7 +5,7 @@
     ":approveMajorUpdates",
     ":enableVulnerabilityAlerts"
   ],
-  "baseBranches": [
+  "baseBranchPatterns": [
     "dev"
   ],
   "timezone": "Asia/Jerusalem",
