@@ -39,6 +39,7 @@ class PdfShapedFont extends PdfFont {
     required this.fontBytes,
     this.defaultScript = 'hebr',
     this.defaultRtl = true,
+    this.faceIndex = 0,
   }) : super.create(document, subtype: '/Type0') {
     _file = PdfObjectStream(document, isBinary: true);
     _toUnicode = PdfObjectStream(document);
@@ -57,11 +58,12 @@ class PdfShapedFont extends PdfFont {
   final String defaultScript;
   final bool defaultRtl;
 
-  /// The complete font file, embedded as-is.
-  ///
-  /// Embedding the whole font rather than a subset keeps glyph ids valid: a
-  /// glyph a GSUB rule produced has no character to subset it by.
+  /// The font file. Only drawn glyphs are embedded, subset by glyph id: a glyph
+  /// a GSUB rule produced has no character to subset it by.
   final Uint8List fontBytes;
+
+  /// The face of a collection that [shaper] was registered from.
+  final int faceIndex;
 
   late final PdfObjectStream _file;
   late final PdfObjectStream _toUnicode;
@@ -75,7 +77,11 @@ class PdfShapedFont extends PdfFont {
   /// Set immediately before a `drawString` call and read back by [putText].
   /// `drawString` calls `putText` synchronously on the same isolate, so no
   /// other emission can interleave.
-  _PendingSegment? _pending;
+  _PendingLine? _pending;
+
+  /// Runs already attributed in [_glyphText]. The shaper caches runs, so the
+  /// same word arrives as the same object every time it is drawn.
+  final Set<ShapedRun> _recordedRuns = Set.identity();
 
   @override
   String get fontName {
@@ -166,11 +172,6 @@ class PdfShapedFont extends PdfFont {
       glyphId < shaper.glyphAdvances.length ? shaper.glyphAdvances[glyphId] : 0;
 
   /// Draws a shaped run with `x`, `y` as the origin of its first pen position.
-  ///
-  /// The run is split wherever the vertical offset changes, because a `TJ`
-  /// array can only move the pen horizontally; each part is drawn with its own
-  /// text rise. Marks usually sit on the baseline offset zero, so a word is
-  /// normally one part.
   void drawShapedRun(
     PdfGraphics canvas,
     ShapedRun run, {
@@ -178,62 +179,63 @@ class PdfShapedFont extends PdfFont {
     required double y,
     required double fontSize,
     PdfTextRenderingMode mode = PdfTextRenderingMode.fill,
+  }) => drawShapedRuns(
+    canvas,
+    [PlacedShapedRun(run, x)],
+    y: y,
+    fontSize: fontSize,
+    mode: mode,
+  );
+
+  /// Draws runs sharing a baseline (a line's words) as one text object: gaps
+  /// become `TJ` adjustments and a mark's vertical offset a `Ts` change.
+  void drawShapedRuns(
+    PdfGraphics canvas,
+    List<PlacedShapedRun> runs, {
+    required double y,
+    required double fontSize,
+    PdfTextRenderingMode mode = PdfTextRenderingMode.fill,
   }) {
-    if (run.isEmpty) {
+    final first = runs.indexWhere((placed) => placed.run.isNotEmpty);
+    if (first < 0) {
       return;
     }
-    _recordGlyphText(run);
-
-    final unitScale = fontSize / run.unitsPerEm;
-    var segmentStart = 0;
-    var penUnits = 0;
-    var segmentPenUnits = 0;
-
-    void flush(int end) {
-      if (end <= segmentStart) {
-        return;
-      }
-      // Ts הוא מצב טקסט שנשאר בתוקף עד שנכתב שוב; בלי אפס מפורש כל מה
-      // שמצויר אחרי סימן מורם נשאר מורם.
-      final rise = run.yOffset(segmentStart) * unitScale;
-      _pending = _PendingSegment(run, segmentStart, end);
-      try {
-        canvas.drawString(
-          this,
-          fontSize,
-          '',
-          x + segmentPenUnits * unitScale,
-          y,
-          mode: mode,
-          rise: rise,
-        );
-      } finally {
-        _pending = null;
-      }
+    for (final placed in runs) {
+      _recordGlyphText(placed.run);
     }
 
-    for (var index = 0; index < run.glyphCount; index++) {
-      if (run.yOffset(index) != run.yOffset(segmentStart)) {
-        flush(index);
-        segmentStart = index;
-        segmentPenUnits = penUnits;
-      }
-      penUnits += run.xAdvance(index);
+    final originX = runs[first].x;
+    final glyphScale = _pdfGlyphSpace / fontSize;
+    final line = _PendingLine(
+      [
+        for (final placed in runs.skip(first))
+          (placed.run, (placed.x - originX) * glyphScale),
+      ],
+      fontSize: fontSize,
+    );
+    _pending = line;
+    try {
+      canvas.drawString(
+        this,
+        fontSize,
+        '',
+        originX,
+        y,
+        mode: mode,
+        rise: line.initialRise,
+      );
+    } finally {
+      _pending = null;
     }
-    flush(run.glyphCount);
   }
 
-  /// Writes the body of a `TJ` array.
-  ///
-  /// With a segment pending, the glyphs come from the shaped run. Without one,
-  /// the text is shaped here, which is what happens when this font is used with
-  /// a widget that draws strings itself. That path is only correct for text the
-  /// widget layer has not reordered, so prefer [drawShapedRun].
+  /// Writes the body of a `TJ` array. Without a pending line (a widget drawing
+  /// strings itself) the text is shaped here, correct only if not reordered.
   @override
   void putText(PdfStream stream, String text) {
     final pending = _pending;
     if (pending != null) {
-      _writeSegment(stream, pending);
+      _writeLine(stream, pending);
       return;
     }
     final run = _shapeForMetrics(text);
@@ -241,39 +243,68 @@ class PdfShapedFont extends PdfFont {
       return;
     }
     _recordGlyphText(run);
-    _writeSegment(stream, _PendingSegment(run, 0, run.glyphCount));
+    _writeLine(stream, _PendingLine([(run, 0)]));
   }
 
-  void _writeSegment(PdfStream stream, _PendingSegment segment) {
-    final run = segment.run;
-    final scale = _pdfGlyphSpace / run.unitsPerEm;
+  void _writeLine(PdfStream stream, _PendingLine line) {
+    final unitsToGlyphSpace = _pdfGlyphSpace / unitsPerEm;
+    final fontSize = line.fontSize;
+    // The viewer advances by the rounded width declared in `/W`. Tracking the
+    // pen in the same integers keeps rounding from accumulating along a line.
+    var cursor = 0;
+    var rise = line.initialRise;
+    var hexOpen = false;
 
-    // Positions are relative to the segment's pen start, which the caller
-    // already applied through `Td`.
-    var penUnits = 0;
-    for (var index = segment.start; index < segment.end; index++) {
-      final origin = (penUnits + run.xOffset(index)) * scale;
-      // A `TJ` number displaces the pen by its negation, so the adjustment
-      // needed to reach this glyph's origin is the negated gap.
-      final adjustment = origin - segment.cursor;
-      if (adjustment.abs() > 0.0005) {
-        stream.putString(_formatNumber(-adjustment));
-        stream.putByte(0x20);
+    void closeHex() {
+      if (hexOpen) {
+        stream.putByte(0x3e); // '>'
+        hexOpen = false;
       }
-      stream.putByte(0x3c); // '<'
-      stream.putString(
-        run.glyphId(index).toRadixString(16).padLeft(4, '0'),
-      );
-      stream.putByte(0x3e); // '>'
+    }
 
-      // The viewer advances by the width declared in `/W`, not by the shaped
-      // advance, so the cursor must follow the declared width.
-      segment.cursor = origin + _advanceOf(run.glyphId(index)) * scale;
-      penUnits += run.xAdvance(index);
+    for (final (run, start) in line.runs) {
+      var penUnits = 0;
+      for (var index = 0; index < run.glyphCount; index++) {
+        if (fontSize != null) {
+          final glyphRise = run.yOffset(index) * fontSize / unitsPerEm;
+          if (glyphRise != rise) {
+            // Ts is text state: it can change between TJ arrays inside one
+            // text object, and it stays in force until written again.
+            closeHex();
+            stream.putString(']TJ ${_formatRise(glyphRise)} Ts [');
+            rise = glyphRise;
+          }
+        }
+        final origin =
+            (start + (penUnits + run.xOffset(index)) * unitsToGlyphSpace)
+                .round();
+        final adjustment = origin - cursor;
+        if (adjustment != 0) {
+          closeHex();
+          // A `TJ` number displaces the pen by its negation.
+          stream.putString('${-adjustment}');
+        }
+        if (!hexOpen) {
+          stream.putByte(0x3c); // '<'
+          hexOpen = true;
+        }
+        final glyph = run.glyphId(index);
+        stream.putString(glyph.toRadixString(16).padLeft(4, '0'));
+        cursor = origin + _declaredWidth(glyph);
+        penUnits += run.xAdvance(index);
+      }
+    }
+    closeHex();
+    // Whatever is drawn next may not set its own rise.
+    if (rise != 0) {
+      stream.putString(']TJ 0 Ts [');
     }
   }
 
-  static String _formatNumber(double value) {
+  int _declaredWidth(int glyphId) =>
+      (_advanceOf(glyphId) * _pdfGlyphSpace / unitsPerEm).round();
+
+  static String _formatRise(double value) {
     final rounded = value.roundToDouble();
     if ((value - rounded).abs() < 0.0005) {
       return rounded.toInt().toString();
@@ -289,6 +320,9 @@ class PdfShapedFont extends PdfFont {
   /// rule combined or split characters, and the whole cluster is attributed to
   /// the glyph that carries the advance so extraction yields the text once.
   void _recordGlyphText(ShapedRun run) {
+    if (!_recordedRuns.add(run)) {
+      return;
+    }
     for (final cluster in run.clusters()) {
       final source = run.text.substring(cluster.textStart, cluster.textEnd);
       final characters = source.runes.toList();
@@ -334,18 +368,19 @@ class PdfShapedFont extends PdfFont {
   void prepare() {
     super.prepare();
 
-    _file.buf.putBytes(fontBytes);
+    final embedded = _embeddedFont();
+    _file.buf.putBytes(embedded);
     if (_isCff) {
       _file.params['/Subtype'] = const PdfName('/OpenType');
     } else {
-      _file.params['/Length1'] = PdfNum(fontBytes.length);
+      _file.params['/Length1'] = PdfNum(embedded.length);
     }
 
-    _buildDescriptor();
+    final base = PdfName('/$_subsetTag+$fontName');
+    _buildDescriptor(base);
     _buildWidths();
     _buildToUnicode();
 
-    final base = PdfName('/$fontName');
     params['/BaseFont'] = base;
     params['/Encoding'] = const PdfName('/Identity-H');
     params['/ToUnicode'] = _toUnicode.ref();
@@ -358,7 +393,7 @@ class PdfShapedFont extends PdfFont {
         // CIDFontType0 has no CIDToGIDMap: the CFF maps CIDs to glyphs itself.
         if (!_isCff) '/CIDToGIDMap': const PdfName('/Identity'),
         '/DW': const PdfNum(0),
-        '/W': PdfArray([const PdfNum(0), _widths.ref()]),
+        '/W': _widths.ref(),
         '/CIDSystemInfo': PdfDict.values({
           '/Registry': PdfString.fromString('Adobe'),
           '/Ordering': PdfString.fromString('Identity'),
@@ -368,7 +403,32 @@ class PdfShapedFont extends PdfFont {
     ]);
   }
 
-  void _buildDescriptor() {
+  Uint8List _embeddedFont() {
+    try {
+      return subsetFontForPdf(fontBytes, _glyphText.keys, faceIndex: faceIndex);
+    } on FormatException {
+      // A user font the shaper reads can still break a table rule the subsetter
+      // checks; the whole file is what it would render from anyway.
+      return fontBytes;
+    }
+  }
+
+  /// Six capitals derived from the glyph set, the PDF convention that marks an
+  /// embedded font as a subset and keeps two different subsets apart.
+  String get _subsetTag {
+    var hash = 0x811C9DC5;
+    for (final glyph in _glyphText.keys.toList()..sort()) {
+      hash = ((hash ^ glyph) * 0x01000193) & 0xFFFFFFFF;
+    }
+    final letters = StringBuffer();
+    for (var index = 0; index < 6; index++) {
+      letters.writeCharCode(0x41 + hash % 26);
+      hash ~/= 26;
+    }
+    return letters.toString();
+  }
+
+  void _buildDescriptor(PdfName fontName) {
     final metrics = shaper.metrics;
     final scale = _pdfGlyphSpace / unitsPerEm;
 
@@ -386,7 +446,7 @@ class PdfShapedFont extends PdfFont {
     }
 
     _descriptor.params
-      ..['/FontName'] = PdfName('/$fontName')
+      ..['/FontName'] = fontName
       ..[_isCff ? '/FontFile3' : '/FontFile2'] = _file.ref()
       ..['/Flags'] = PdfNum(flags)
       ..['/FontBBox'] = PdfArray.fromNum(<int>[
@@ -408,10 +468,21 @@ class PdfShapedFont extends PdfFont {
       ..['/StemV'] = PdfNum((metrics.weightClass / 5).round().clamp(1, 500));
   }
 
+  /// Declares widths for the drawn glyphs only, as runs of consecutive ids:
+  /// `first [w1 w2 ...]`. Everything else falls back to `/DW` 0.
   void _buildWidths() {
-    final scale = _pdfGlyphSpace / unitsPerEm;
-    for (final advance in shaper.glyphAdvances) {
-      _widths.params.add(PdfNum((advance * scale).round()));
+    final glyphs = _glyphText.keys.toList()..sort();
+    var index = 0;
+    while (index < glyphs.length) {
+      final first = glyphs[index];
+      final widths = <PdfNum>[];
+      while (index < glyphs.length && glyphs[index] == first + widths.length) {
+        widths.add(PdfNum(_declaredWidth(glyphs[index])));
+        index++;
+      }
+      _widths.params
+        ..add(PdfNum(first))
+        ..add(PdfArray(widths));
     }
   }
 
@@ -464,13 +535,32 @@ class PdfShapedFont extends PdfFont {
   static String _utf16Hex(String text) => text.codeUnits.map(_hex4).join();
 }
 
-class _PendingSegment {
-  _PendingSegment(this.run, this.start, this.end);
+/// A shaped run and the x of its first pen position, in points.
+class PlacedShapedRun {
+  const PlacedShapedRun(this.run, this.x);
 
   final ShapedRun run;
-  final int start;
-  final int end;
+  final double x;
+}
 
-  /// Where the PDF pen sits, in glyph space relative to the segment start.
-  double cursor = 0;
+class _PendingLine {
+  _PendingLine(this.runs, {this.fontSize})
+    : initialRise = fontSize == null ? 0 : _firstRise(runs, fontSize);
+
+  /// Each run with its start in glyph space, relative to the line's origin.
+  final List<(ShapedRun, double)> runs;
+
+  /// Null when the size is unknown, which drops vertical offsets.
+  final double? fontSize;
+
+  final double initialRise;
+
+  static double _firstRise(List<(ShapedRun, double)> runs, double fontSize) {
+    for (final (run, _) in runs) {
+      if (run.isNotEmpty) {
+        return run.yOffset(0) * fontSize / run.unitsPerEm;
+      }
+    }
+    return 0;
+  }
 }

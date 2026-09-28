@@ -844,7 +844,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
 
     if (rasterPages.isEmpty) return sourcePdf;
 
-    final output = pw.Document(compress: false);
+    final output = pw.Document();
     final cells = rows * cols;
     final cellHeight = sheetFormat.height / rows;
 
@@ -1039,10 +1039,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     final fallbackHandle = fallbackShaper.handle;
 
     final result = await Isolate.run(() async {
-      final pdfData = pw.Document(
-        compress: false,
-        pageMode: PdfPageMode.outlines,
-      );
+      final pdfData = pw.Document(pageMode: PdfPageMode.outlines);
       final shapedFonts = [
         PdfShapedFont(
           pdfData.document,
