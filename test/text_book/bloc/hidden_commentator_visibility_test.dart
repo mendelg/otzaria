@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -8,6 +9,7 @@ import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
+import 'package:otzaria/library/hidden/hidden_titles.dart';
 import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
@@ -262,12 +264,10 @@ void main() {
     await store.save(
       const HiddenLibrarySelection(categoryPaths: {'/מוסתרת'}),
     );
-    final failedLibrary = Future<Library>.error(
-      StateError('library unavailable'),
-    );
-    failedLibrary.ignore();
-    DataRepository.instance.library = failedLibrary;
     await bloc.close();
+    final libraryLoad = Completer<Library>();
+    DataRepository.instance.library = libraryLoad.future;
+    final hiddenTitles = currentHiddenBookTitles();
     final openedBook = TextBook(title: 'ספר פתוח');
     bloc = TextBookBloc(
       repository: _Repository(),
@@ -283,6 +283,9 @@ void main() {
         loadCommentators: false,
       ),
     );
+
+    libraryLoad.completeError(StateError('library unavailable'));
+    expect(await hiddenTitles, isEmpty);
 
     final result = await _waitFor(bloc, (_) => true);
     expect(result.book, same(openedBook));

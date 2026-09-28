@@ -3,10 +3,8 @@ import 'package:otzaria/tabs/models/pdf_tab.dart';
 
 /// Tab שמציג מפרשים של ספר PDF בכרטסייה עצמאית.
 ///
-/// בעת פתיחה רגילה (מהספר החי) חולק את ה-state עם [sourceTab] הפעיל.
-/// בעת שחזור מהפעלה קודמת נבנה [sourceTab] חדש מתוך הנתונים השמורים
-/// (נתיב + עמוד + מפרשים פעילים), והמסך טוען בעצמו את ה-headings/links
-/// החסרים. במצב זה הטאב הוא הבעלים של ה-sourceTab ומשחרר אותו ב-dispose.
+/// [PdfCommentatorsTab.of] נותן לכרטיסייה עותק משלה של מצב הספר, כמו כרטיסיית
+/// הטקסט: מיקום ובחירת מפרשים משלה, והיא לא נגררת אחרי הדפדוף בספר.
 class PdfCommentatorsTab extends OpenedTab {
   final PdfBookTab sourceTab;
   SourceTabOwnership? _sourceTabOwnership;
@@ -18,6 +16,21 @@ class PdfCommentatorsTab extends OpenedTab {
     if (disposeSourceTabOnDispose) {
       _sourceTabOwnership = SourceTabOwnership(sourceTab)..retain();
     }
+  }
+
+  /// כרטיסייה חדשה מתוך ספר פתוח. בלי העותק היא חלקה עם הספר את המפרשים
+  /// הפעילים ואת רשימת הקישורים, ושדרוג הרשימה המלאה שלה כיבה את חלון הקישורים.
+  factory PdfCommentatorsTab.of(PdfBookTab book) {
+    final copiedSource = OpenedTab.from(book) as PdfBookTab;
+    copiedSource.activeCommentators = Set<String>.of(book.activeCommentators);
+    copiedSource.pdfHeadings = book.pdfHeadings;
+    copiedSource.currentTextLineNumber = book.currentTextLineNumber;
+    copiedSource.currentTextLineNumberEnd = book.currentTextLineNumberEnd;
+    copiedSource.currentTitle.value = book.currentTitle.value;
+    return PdfCommentatorsTab(
+      sourceTab: copiedSource,
+      disposeSourceTabOnDispose: true,
+    );
   }
 
   /// שחזור מ-JSON — בונה sourceTab חדש מהנתונים השמורים.
@@ -39,29 +52,9 @@ class PdfCommentatorsTab extends OpenedTab {
     )..isPinned = json['isPinned'] ?? false;
   }
 
-  /// המקור והשכפול חייבים לקבל [sourceTab] נפרד: קודם שניהם הצביעו על אותו
-  /// [PdfBookTab], ו-[dispose] של האחד שחרר את הבקרים של השני.
+  /// לכל שכפול [sourceTab] משלו: [dispose] של אחד משחרר את הבקרים שלו.
   @override
-  OpenedTab clone() {
-    // `OpenedTab.from` מעביר פרמטרי קונסטרוקטור בלבד. ארבעת השדות הבאים
-    // נקבעים אחרי הבנייה, ובלעדיהם הכרטיסייה המשוכפלת נפתחת בלי בחירת
-    // המפרשים — רגרסיה שהמשתמש רואה. [fromJson] למעלה עושה בדיוק את אותו
-    // דבר עבור activeCommentators.
-    final copiedSource = OpenedTab.from(sourceTab) as PdfBookTab;
-    copiedSource.activeCommentators = Set<String>.of(
-      sourceTab.activeCommentators,
-    );
-    copiedSource.pdfHeadings = sourceTab.pdfHeadings;
-    copiedSource.currentTextLineNumber = sourceTab.currentTextLineNumber;
-    copiedSource.currentTextLineNumberEnd = sourceTab.currentTextLineNumberEnd;
-
-    return PdfCommentatorsTab(
-      sourceTab: copiedSource,
-      // השכפול הוא הבעלים של ה-sourceTab שנוצר כאן; בלי זה הבקרים
-      // וה-ValueNotifier-ים שלו לא משוחררים לעולם.
-      disposeSourceTabOnDispose: true,
-    )..isPinned = isPinned;
-  }
+  OpenedTab clone() => PdfCommentatorsTab.of(sourceTab)..isPinned = isPinned;
 
   /// יורש את הבעלות על [sourceTab] כשטאב הספר שהחזיק אותו נסגר.
   ///

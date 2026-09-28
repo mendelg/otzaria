@@ -43,6 +43,8 @@ dependencies:
   path_provider: ^2.1.6
   html: ^0.15.7
   pdfrx: ^2.6.5
+  # FPDF_ImportNPagesToOne: הדפסת כמה עמודים בגיליון נשארת וקטורית.
+  pdfium_dart: ^0.3.1
   url_launcher: ^6.3.2
   flutter_widget_from_html: ^0.17.4
   scrollable_positioned_list: ^0.3.8
@@ -66,7 +68,7 @@ dependencies:
   pdf: ^3.13.1
   # OpenType shaping, so nikud and te'amim reach a PDF as vector text
   # rather than as an image of text.
-  opentype_shaper: ^0.1.1
+  opentype_shaper: ^0.2.0
   # The Unicode bidi algorithm, used to order the runs of a mixed line before
   # they are placed. Already in the graph through `pdf`; declared for direct use.
   bidi: ^2.0.13
@@ -124,13 +126,19 @@ dependencies:
   wakelock_plus: ^1.8.0
 
 dependency_overrides:
-  # TODO: להחזיר ל-pub.dev כשיתמזג וישוחרר espresso3389/pdfrx#724 (עיגון התצוגה
-  # באותו פריים כשגודל עמוד משתנה). עד אז הפורק palmoni5, מוצמד לקומיט.
+  # TODO: להחזיר ל-pub.dev רק אחרי שכל ה-PR ימוזגו וישוחררו: espresso3389/pdfrx#724,
+  # #729, #730, #731 ו-#732. עד אז שתי החבילות מוצמדות לאותו קומיט בפורק;
+  # pdfrx_engine נדרש עבור Pdfrx.normalizeHebrewText.
   pdfrx:
     git:
       url: https://github.com/palmoni5/pdfrx
-      ref: 57ee62fe8127d654b63e6b2f84e2028025b7eec9
+      ref: 75089f96d3f9dbcb4dcfc73ebbb0b07dc98df3ac
       path: packages/pdfrx
+  pdfrx_engine:
+    git:
+      url: https://github.com/palmoni5/pdfrx
+      ref: 75089f96d3f9dbcb4dcfc73ebbb0b07dc98df3ac
+      path: packages/pdfrx_engine
   # TODO: להחזיר ל-pub.dev כשיתמזג וישוחרר MaikuB/flutter_local_notifications#2826
   # (קריאות WinRT ב-thread ייעודי). עד אז הפורק Otzaria, מוצמד לקומיט.
   # בהסרה: למחוק גם את core.longpaths מ-workflows של Windows - הוא נדרש

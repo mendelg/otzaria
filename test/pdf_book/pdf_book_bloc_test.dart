@@ -12,6 +12,7 @@ import 'package:otzaria/models/links.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_bloc.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_event.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_state.dart';
+import 'package:otzaria/pdf_book/utils/pdf_viewer_activity.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
@@ -447,6 +448,23 @@ void main() {
         isA<PdfBookLoaded>().having((s) => s.showZoomBar, 'showZoomBar', false),
       ],
     );
+
+    test('הסתרת פס הזום אחרי שהזום התייצב שומרת הגדרות פר-ספר', () async {
+      final events = <Object?>[];
+      final previousObserver = Bloc.observer;
+      Bloc.observer = _EventRecorder(events);
+      addTearDown(() => Bloc.observer = previousObserver);
+
+      final bloc = _makeBloc(_tab());
+      addTearDown(bloc.close);
+      bloc
+        ..seed(_loaded(showZoomBar: false))
+        ..add(const SetShowZoomBar(true));
+
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      expect(events, contains(isA<SavePerBookSettings>()));
+      expect((bloc.state as PdfBookLoaded).showZoomBar, isFalse);
+    });
 
     blocTest<PdfBookBloc, PdfBookState>(
       'SetShowZoomBar מחוץ ל-Loaded → מוזנח',
@@ -1079,7 +1097,11 @@ void main() {
         _tab(path: existingPdfPath),
         loadTimeout: const Duration(milliseconds: 50),
       ),
-      act: (b) => b.add(const LoadPdfDocument()),
+      act: (b) async {
+        b.add(const LoadPdfDocument());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        b.add(const LoadProgressed(documentOpened: true));
+      },
       wait: const Duration(milliseconds: 150),
       expect: () => [isA<PdfBookLoading>(), isA<PdfBookError>()],
       verify: (b) {
@@ -1090,6 +1112,51 @@ void main() {
     );
 
     blocTest<PdfBookBloc, PdfBookState>(
+      'פתיחה נייטיב איטית — מודיעים ומחכים, בלי retry שמעמיד פתיחה שנייה בתור',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 50),
+      ),
+      act: (b) => b.add(const LoadPdfDocument()),
+      wait: const Duration(milliseconds: 80),
+      expect: () => [
+        isA<PdfBookLoading>().having((s) => s.isSlow, 'isSlow', false),
+        isA<PdfBookLoading>().having((s) => s.isSlow, 'isSlow', true),
+      ],
+    );
+
+    blocTest<PdfBookBloc, PdfBookState>(
+      'פתיחה שלא הסתיימה גם אחרי ההודעה — כפתור, בלי retry אוטומטי',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 50),
+      ),
+      act: (b) => b.add(const LoadPdfDocument()),
+      wait: const Duration(milliseconds: 150),
+      expect: () => [
+        isA<PdfBookLoading>(),
+        isA<PdfBookLoading>(),
+        isA<PdfBookError>().having((s) => s.autoRetry, 'autoRetry', false),
+      ],
+    );
+
+    blocTest<PdfBookBloc, PdfBookState>(
+      'פתיחה איטית שהסתיימה אחרי הכפתור — ההצלחה המאוחרת גוברת',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 30),
+      ),
+      act: (b) async {
+        b.add(const LoadPdfDocument());
+        await b.stream.firstWhere((s) => s is PdfBookError);
+        b.add(DocumentReady(documentRef: _FakeDocumentRef(), totalPages: 5));
+      },
+      wait: const Duration(milliseconds: 50),
+      skip: 3,
+      expect: () => [isA<PdfBookLoaded>()],
+    );
+
+    blocTest<PdfBookBloc, PdfBookState>(
       'אחרי שני timeouts (auto-retry + show-button) → PdfBookError עם autoRetry=false',
       build: () => _makeBloc(
         _tab(path: existingPdfPath),
@@ -1097,8 +1164,10 @@ void main() {
       ),
       act: (b) async {
         b.add(const LoadPdfDocument());
-        // מחכה לiriyah הראשונה (auto-retry)
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        b.add(const LoadProgressed(documentOpened: true));
+        // מחכה לירייה הראשונה (auto-retry)
+        await Future<void>.delayed(const Duration(milliseconds: 70));
         // מדמה את מה שה-BlocListener בscreen יעשה
         b.add(const RetryLoad());
         // מחכה לiriyah השנייה (show button)
@@ -1133,6 +1202,102 @@ void main() {
         isA<PdfBookLoading>(),
         isA<PdfBookLoaded>(),
       ],
+    );
+
+    test('שער הקורא-קודם מוחזק בדיוק כל עוד הבלוק ב-PdfBookLoading', () async {
+      final activity = PdfViewerActivity.instance.loadingCount;
+      final before = activity.value;
+      final bloc = _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(seconds: 30),
+      );
+      bloc.add(const LoadPdfDocument());
+      await bloc.stream.firstWhere((s) => s is PdfBookLoading);
+      expect(activity.value, before + 1);
+
+      bloc.add(DocumentReady(documentRef: _FakeDocumentRef(), totalPages: 5));
+      await bloc.stream.firstWhere((s) => s is PdfBookLoaded);
+      expect(activity.value, before);
+      await bloc.close();
+      expect(activity.value, before);
+    });
+
+    test('סגירת בלוק באמצע טעינה משחררת את השער', () async {
+      final activity = PdfViewerActivity.instance.loadingCount;
+      final before = activity.value;
+      final bloc = _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(seconds: 30),
+      );
+      bloc.add(const LoadPdfDocument());
+      await bloc.stream.firstWhere((s) => s is PdfBookLoading);
+      await bloc.close();
+      expect(activity.value, before);
+    });
+
+    blocTest<PdfBookBloc, PdfBookState>(
+      'LoadWatchdogPaused עוצר את ה-watchdog — דיאלוג סיסמה פתוח לא נחשב תקיעה',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 50),
+      ),
+      act: (b) async {
+        b.add(const LoadPdfDocument());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        b.add(const LoadWatchdogPaused());
+      },
+      wait: const Duration(milliseconds: 150),
+      expect: () => [isA<PdfBookLoading>()],
+    );
+
+    blocTest<PdfBookBloc, PdfBookState>(
+      'LoadProgressed מאתחל את הספירה — טעינה שמתקדמת לא נזרקת',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 80),
+      ),
+      act: (b) async {
+        b.add(const LoadPdfDocument());
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        b.add(const LoadProgressed());
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      },
+      wait: Duration.zero,
+      expect: () => [isA<PdfBookLoading>()],
+    );
+
+    blocTest<PdfBookBloc, PdfBookState>(
+      'אחרי LoadProgressed ה-watchdog עדיין יורה אם הטעינה נתקעת',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 50),
+      ),
+      act: (b) async {
+        b.add(const LoadPdfDocument());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        b.add(const LoadWatchdogPaused());
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        b.add(const LoadProgressed(documentOpened: true));
+      },
+      wait: const Duration(milliseconds: 150),
+      expect: () => [isA<PdfBookLoading>(), isA<PdfBookError>()],
+    );
+
+    blocTest<PdfBookBloc, PdfBookState>(
+      'LoadProgressed אחרי שהטעינה הסתיימה לא מפעיל watchdog',
+      build: () => _makeBloc(
+        _tab(path: existingPdfPath),
+        loadTimeout: const Duration(milliseconds: 50),
+      ),
+      act: (b) async {
+        b.add(const LoadPdfDocument());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        b.add(DocumentReady(documentRef: _FakeDocumentRef(), totalPages: 5));
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        b.add(const LoadProgressed());
+      },
+      wait: const Duration(milliseconds: 150),
+      expect: () => [isA<PdfBookLoading>(), isA<PdfBookLoaded>()],
     );
 
     blocTest<PdfBookBloc, PdfBookState>(
@@ -1216,5 +1381,17 @@ extension _BlocSeed<S> on BlocBase<S> {
   void seed(S state) {
     // ignore: invalid_use_of_visible_for_testing_member
     emit(state);
+  }
+}
+
+class _EventRecorder extends BlocObserver {
+  _EventRecorder(this.events);
+
+  final List<Object?> events;
+
+  @override
+  void onEvent(Bloc<dynamic, dynamic> bloc, Object? event) {
+    super.onEvent(bloc, event);
+    events.add(event);
   }
 }

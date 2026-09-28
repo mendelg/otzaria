@@ -20,6 +20,7 @@ import 'package:otzaria/personal_notes/utils/personal_notes_book_key.dart';
 import 'package:otzaria/printing/print_content_models.dart';
 import 'package:otzaria/printing/serial_latest_runner.dart';
 import 'package:otzaria/printing/printing_helpers.dart';
+import 'package:otzaria/printing/pdf_sheet_composer.dart';
 import 'package:opentype_shaper/opentype_shaper.dart';
 import 'package:otzaria/printing/shaped_text/pdf_shaped_font.dart';
 import 'package:otzaria/printing/shaped_text/shaped_text_layout.dart';
@@ -666,7 +667,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     }
 
     try {
-      return await _createNUpPdfFromRaster(
+      return await _createNUpPdf(
         base,
         sheetFormat: _effectivePageFormat(format),
         pagesPerSheet: _pagesPerSheet,
@@ -674,7 +675,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
         endPage: endPage,
       );
     } catch (e, st) {
-      debugPrint('[PRINT] raster failed: $e\n$st');
+      debugPrint('[PRINT] N-up failed: $e\n$st');
       if (mounted) {
         UiSnack.showError(
           hasPageRange
@@ -743,7 +744,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     return bytes;
   }
 
-  Future<Uint8List> _createNUpPdfFromRaster(
+  Future<Uint8List> _createNUpPdf(
     Uint8List sourcePdf, {
     required PdfPageFormat sheetFormat,
     required int pagesPerSheet,
@@ -752,7 +753,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
   }) async {
     // הסדרה של כל פעולות ה-pdfrx: שני openData במקביל תוקעים את ה-worker היחיד.
     return _withRasterLock(
-      () => _rasterizeNUp(
+      () => _composeNUp(
         sourcePdf,
         sheetFormat: sheetFormat,
         pagesPerSheet: pagesPerSheet,
@@ -780,7 +781,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     }
   }
 
-  Future<Uint8List> _rasterizeNUp(
+  Future<Uint8List> _composeNUp(
     Uint8List sourcePdf, {
     required PdfPageFormat sheetFormat,
     required int pagesPerSheet,
@@ -795,102 +796,36 @@ class _PrintingScreenState extends State<PrintingScreen> {
     final hasRange = startPage > 1 || endPage != null;
     if (rows == 1 && cols == 1 && !hasRange) return sourcePdf;
 
-    final dpi = switch (pagesPerSheet) {
-      4 => 72.0,
-      2 => 96.0,
-      _ => 120.0,
-    };
-    final rasterPages = <Uint8List>[];
     final doc = await _openPdfInMemory(sourcePdf, 'nup');
-
-    // Update total page count on first open and clamp page range
-    if (_totalPdfPages == 0 && widget.createPdfOverride != null && mounted) {
-      final count = doc.pages.length;
-      setState(() {
-        _totalPdfPages = count;
-        _pdfStartPage = _pdfStartPage.clamp(1, count);
-        _pdfEndPage = _pdfEndPage == 0 ? count : _pdfEndPage.clamp(1, count);
-      });
-    }
-
     try {
-      final scale = dpi / 72.0;
-      final firstIdx = max(0, min(startPage - 1, doc.pages.length - 1));
+      final pageCount = doc.pages.length;
+      if (_totalPdfPages == 0 && widget.createPdfOverride != null && mounted) {
+        setState(() {
+          _totalPdfPages = pageCount;
+          _pdfStartPage = _pdfStartPage.clamp(1, pageCount);
+          _pdfEndPage = _pdfEndPage == 0
+              ? pageCount
+              : _pdfEndPage.clamp(1, pageCount);
+        });
+      }
+      final firstIdx = max(0, min(startPage - 1, pageCount - 1));
       final lastIdx = max(
         firstIdx,
-        min((endPage ?? doc.pages.length) - 1, doc.pages.length - 1),
+        min((endPage ?? pageCount) - 1, pageCount - 1),
       );
-      for (var i = firstIdx; i <= lastIdx; i++) {
-        final page = doc.pages[i];
-        final pdfImage = await page.render(
-          fullWidth: page.width * scale,
-          fullHeight: page.height * scale,
-          backgroundColor: AppColors.pageWhite.toARGB32(),
-        );
-        if (pdfImage == null) continue;
-        final uiImage = await pdfImage.createImage();
-        pdfImage.dispose();
-        final byteData = await uiImage.toByteData(
-          format: ui.ImageByteFormat.png,
-        );
-        uiImage.dispose();
-        if (byteData == null) continue;
-        rasterPages.add(byteData.buffer.asUint8List());
-      }
+      return await composePdfSheets(
+        doc,
+        firstIndex: firstIdx,
+        lastIndex: lastIdx,
+        rows: rows,
+        cols: cols,
+        sheetWidth: sheetFormat.width,
+        sheetHeight: sheetFormat.height,
+      );
     } finally {
       // חובה await — ראה ההסבר ב-_rasterizePdfToImagesLocked.
       await doc.dispose();
     }
-
-    if (rasterPages.isEmpty) return sourcePdf;
-
-    final output = pw.Document(compress: false);
-    final cells = rows * cols;
-    final cellHeight = sheetFormat.height / rows;
-
-    for (var i = 0; i < rasterPages.length; i += cells) {
-      final chunk = rasterPages.sublist(
-        i,
-        min(i + cells, rasterPages.length),
-      );
-
-      output.addPage(
-        pw.Page(
-          pageFormat: sheetFormat,
-          margin: pw.EdgeInsets.zero,
-          textDirection: pw.TextDirection.rtl,
-          build: (context) {
-            return pw.Column(
-              children: List.generate(rows, (row) {
-                return pw.SizedBox(
-                  height: cellHeight,
-                  child: pw.Row(
-                    children: List.generate(cols, (col) {
-                      final indexInChunk = row * cols + col;
-                      if (indexInChunk >= chunk.length) {
-                        return pw.Expanded(child: pw.SizedBox());
-                      }
-                      final image = pw.MemoryImage(chunk[indexInChunk]);
-                      return pw.Expanded(
-                        child: pw.Align(
-                          alignment: pw.Alignment.centerRight,
-                          child: pw.Image(
-                            image,
-                            fit: pw.BoxFit.contain,
-                          ),
-                        ),
-                      );
-                    }),
-                  ),
-                );
-              }),
-            );
-          },
-        ),
-      );
-    }
-
-    return output.save();
   }
 
   Future<Uint8List> createPdf(PdfPageFormat format) async {
@@ -1039,10 +974,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
     final fallbackHandle = fallbackShaper.handle;
 
     final result = await Isolate.run(() async {
-      final pdfData = pw.Document(
-        compress: false,
-        pageMode: PdfPageMode.outlines,
-      );
+      final pdfData = pw.Document(pageMode: PdfPageMode.outlines);
       final shapedFonts = [
         PdfShapedFont(
           pdfData.document,
@@ -2586,7 +2518,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
   }
 
   /// בונה את הגיליון מספר [sheetIndex] כפי שיודפס בפועל — עמוד יחיד, או פריסת
-  /// [rows]x[cols] של N-up ביישור לימין (RTL), תואם ל-_rasterizeNUp.
+  /// [rows]x[cols] של N-up (הראשון מימין, כל עמוד ממורכז בתאו), תואם ל-_composeNUp.
   /// משותף לתצוגה הראשית ולחלונית התצוגות המוקטנות.
   Widget _buildSheet(
     int sheetIndex,
@@ -2622,8 +2554,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
                     return const Expanded(child: SizedBox());
                   }
                   return Expanded(
-                    child: Align(
-                      alignment: Alignment.centerRight,
+                    child: Center(
                       child: Image.memory(
                         chunk[idx],
                         fit: BoxFit.contain,

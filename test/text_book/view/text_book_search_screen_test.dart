@@ -32,7 +32,9 @@ Future<void> main() async {
     await Settings.init(cacheProvider: MemoryCacheProvider());
   });
 
-  testWidgets('תו בודד אינו מריץ חיפוש בהתאמה חלקית', (tester) async {
+  testWidgets('תו בודד מריץ חיפוש גם בהתאמה חלקית (issue #1546)', (
+    tester,
+  ) async {
     await InBookSearchPreferences.saveWholeWord(false);
     addTearDown(() => InBookSearchPreferences.saveWholeWord(false));
 
@@ -80,20 +82,8 @@ Future<void> main() async {
     await tester.pump(kSearchFieldDebounce + const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(queries, isEmpty);
-    // אין "אין תוצאות" על שאילתה שלא רצה בכלל.
-    expect(find.text('אין תוצאות'), findsNothing);
-    // הספר אינו מודגש על תו בודד.
-    expect(
-      textBookBloc.events.whereType<UpdateSearchText>().last.text,
-      isEmpty,
-    );
-
-    await tester.enterText(find.byType(TextField).first, 'שמ');
-    await tester.pump(kSearchFieldDebounce + const Duration(milliseconds: 50));
-    await tester.pump(const Duration(milliseconds: 100));
-
-    expect(queries, ['שמ']);
+    expect(queries, ['ש']);
+    expect(textBookBloc.events.whereType<UpdateSearchText>().last.text, 'ש');
   });
 
   testWidgets('מתג "מילים שלמות" מריץ את החיפוש מחדש ומעדכן את ההדגשה', (

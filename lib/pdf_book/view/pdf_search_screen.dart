@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -30,6 +31,7 @@ import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/text_book/utils/search_query_sync.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/navigation/search_pane_base.dart';
+import 'package:otzaria/widgets/navigation/search_result_nav_button.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart';
@@ -153,6 +155,45 @@ class PdfBookSearchView extends StatefulWidget {
   static bool hasSearchableText(Iterable<String> pageTexts) =>
       pageTexts.any(_searchableLetter.hasMatch);
 
+  /// שורת ההקשר של ההתאמה, מוגבלת גם כששכבת הטקסט חסרה ירידות שורה.
+  @visibleForTesting
+  static String matchLineSnippet(PdfPageTextRange match, String fallback) {
+    final text = match.pageText.fullText;
+    if (match.start < 0 || match.end < match.start || match.end > text.length) {
+      return fallback;
+    }
+    const maxChars = 240;
+    final leftLimit = (match.start - 80).clamp(0, text.length);
+    final rightLimit = (leftLimit + maxChars).clamp(0, text.length);
+    var lineStart = match.start;
+    while (lineStart > leftLimit && text.codeUnitAt(lineStart - 1) != 10) {
+      lineStart--;
+    }
+    var lineEnd = match.end.clamp(lineStart, rightLimit);
+    while (lineEnd < rightLimit && text.codeUnitAt(lineEnd) != 10) {
+      lineEnd++;
+    }
+    final line = text.substring(lineStart, lineEnd).trim();
+    if (line.isEmpty) return fallback;
+    final before = lineStart > 0 && text.codeUnitAt(lineStart - 1) != 10;
+    final after = lineEnd < text.length && text.codeUnitAt(lineEnd) != 10;
+    return '${before ? '…' : ''}$line${after ? '…' : ''}';
+  }
+
+  /// כמה מ-[previous] נשארות בראש [matches]: ה-searcher מודיע אחרי כל עמוד
+  /// עם רשימה מצטברת חדשה, ולכן ממפים רק את מה שנוסף; חיפוש חדש מחזיר 0.
+  @visibleForTesting
+  static int keptMatchCount(
+    List<PdfPageTextRange> previous,
+    List<PdfPageTextRange> matches,
+  ) {
+    if (previous.isEmpty || matches.length < previous.length) return 0;
+    final extendsPrevious =
+        identical(matches.first, previous.first) &&
+        identical(matches[previous.length - 1], previous.last);
+    return extendsPrevious ? previous.length : 0;
+  }
+
   /// העמודים שנדגמים לבדיקת קיום טקסט: העמוד שהמשתמש רואה ועוד שניים
   /// פרושׂים על הספר — עמוד בודד עלול להיות שער או לוח תמונות.
   @visibleForTesting
@@ -222,6 +263,11 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
   bool _isSearching = false;
   List<SearchResult> _searchResults = [];
+  List<PdfPageTextRange> _mappedMatches = const [];
+  List<SearchResult>? _groupedSource;
+  final List<dynamic> _groupedItems = [];
+  int _groupedCount = 0;
+  int? _lastGroupedPage;
 
   /// מוצגת במקום "אין תוצאות" הגנרי: כשל מנוע/FFI או ספר שאינו באינדקס.
   String? _searchErrorMessage;
@@ -351,6 +397,37 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _initializeBookPath();
   }
 
+  @override
+  void didUpdateWidget(covariant PdfBookSearchView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.outline, widget.outline)) {
+      _pageTitles.clear();
+      _groupedSource = null;
+    }
+    if (identical(oldWidget.textSearcher, widget.textSearcher)) return;
+    oldWidget.textSearcher.removeListener(_onTextSearcherMatchesChanged);
+    widget.textSearcher.addListener(_onTextSearcherMatchesChanged);
+    _pdfHighlightDebounce?.cancel();
+    _searchGeneration++;
+    _lastPdfHighlightSource = '';
+    _lastAdvancedHighlightPattern = null;
+    _mappedMatches = const [];
+    _searchResults = [];
+    _pageTitles.clear();
+    _isSearching = false;
+    _searchErrorMessage = null;
+    _pendingSimpleSearchScrollFor = null;
+    if (!_isSimpleSearch &&
+        _searchableQuery(widget.searchController.text) != null) {
+      final generation = _searchGeneration;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchGeneration == generation) {
+          unawaited(_searchTextUpdated());
+        }
+      });
+    }
+  }
+
   /// מחילה קונפיגורציית חיפוש שהגיעה מפתיחת תוצאה בספר שכבר פתוח.
   void _onIncomingSearchConfiguration() {
     final notifier = widget.incomingSearchConfiguration;
@@ -411,25 +488,28 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
       if (mounted) {
         setState(() {
           final query = widget.searchController.text;
-          _searchResults =
-              widget.textSearcher.matches
-                  .map(
-                    (m) => SearchResult(
-                      id: BigInt.zero,
-                      title: widget.bookTitle ?? '',
-                      reference: '', // Populated by _pageTitles in build
-                      // Use query as text so it appears in the list and is highlighted.
-                      // Ideally we would fetch the surrounding text but that requires async page loading.
-                      text: query,
-                      segment: BigInt.from(m.pageNumber - 1),
-                      isPdf: true,
-                      filePath: widget.pdfFilePath ?? '',
-                      mergedCount: 1,
-                      merged: const [],
-                    ),
-                  )
-                  .toList()
-                ..sort((a, b) => a.segment.compareTo(b.segment));
+          final matches = widget.textSearcher.matches;
+          final keptCount = _searchResults.length == _mappedMatches.length
+              ? PdfBookSearchView.keptMatchCount(_mappedMatches, matches)
+              : 0;
+          if (keptCount == 0) _searchResults = [];
+          for (var i = keptCount; i < matches.length; i++) {
+            _searchResults.add(
+              SearchResult(
+                // בחיפוש הפשוט: אינדקס ההתאמה ב-searcher, לניווט למקומה המדויק.
+                id: BigInt.from(i),
+                title: widget.bookTitle ?? '',
+                reference: '', // Populated by _pageTitles in build
+                text: PdfBookSearchView.matchLineSnippet(matches[i], query),
+                segment: BigInt.from(matches[i].pageNumber - 1),
+                isPdf: true,
+                filePath: widget.pdfFilePath ?? '',
+                mergedCount: 1,
+                merged: const [],
+              ),
+            );
+          }
+          _mappedMatches = matches;
           _isSearching = widget.textSearcher.isSearching;
         });
         // גלילה לעמוד הנוכחי בסיום החיפוש — רק אם השאילתה הממתינה עדיין
@@ -496,7 +576,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
   Future<bool> _checkTextLayer(int generation) async {
     final pdfState = context.read<PdfBookBloc>().state;
     final pages = PdfBookSearchView.textLayerProbePages(
-      currentPage: pdfState is PdfBookLoaded ? pdfState.currentPageNumber : 1,
+      currentPage: pdfState is PdfBookLoaded ? _currentPage(pdfState) : 1,
       totalPages: pdfState is PdfBookLoaded ? pdfState.totalPages : 1,
     );
 
@@ -514,6 +594,59 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     return false;
   }
 
+  /// הקודמת/הבאה, ועצירה בזמן סריקה — רק בחיפוש הפשוט, שבו כל תוצאה היא התאמה.
+  Widget? _buildResultToolbar() {
+    if (!_isSimpleSearch) return null;
+    final searcher = widget.textSearcher;
+    final isScanning = _isSearching;
+    if (_searchResults.isEmpty && !isScanning) return null;
+    final current = searcher.currentIndex;
+    final hasResults = _searchResults.isNotEmpty;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isScanning) ...[
+          SearchResultNavButton(
+            icon: FluentIcons.stop_24_regular,
+            tooltip: 'עצור את החיפוש',
+            onPressed: searcher.stopTextSearch,
+          ),
+          const SizedBox(width: 4),
+        ],
+        SearchResultNavButton(
+          icon: FluentIcons.chevron_up_24_regular,
+          tooltip: 'התוצאה הקודמת',
+          onPressed: hasResults && (current ?? 0) > 0
+              ? () => unawaited(searcher.goToPrevMatch())
+              : null,
+        ),
+        const SizedBox(width: 4),
+        SearchResultNavButton(
+          icon: FluentIcons.chevron_down_24_regular,
+          tooltip: 'התוצאה הבאה',
+          onPressed:
+              hasResults &&
+                  (current == null || current < _searchResults.length - 1)
+              ? () => unawaited(searcher.goToNextMatch())
+              : null,
+        ),
+      ],
+    );
+  }
+
+  String? _resultCountString() {
+    if (_searchResults.isEmpty) return null;
+    final current = widget.textSearcher.currentIndex;
+    if (_isSimpleSearch && current != null && current < _searchResults.length) {
+      return 'תוצאה ${current + 1} מתוך ${_searchResults.length}';
+    }
+    return 'נמצאו ${_searchResults.length} תוצאות';
+  }
+
+  /// ‏currentPageNumber ב-state נקבע בפתיחה בלבד; העמוד המוצג בפועל נמצא בקונטרולר.
+  int _currentPage(PdfBookLoaded state) =>
+      widget.textSearcher.controller?.pageNumber ?? state.currentPageNumber;
+
   void _scheduleScrollToCurrentPage() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -526,7 +659,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
       final visualIdx = PdfBookSearchView.computeTargetVisualIndexForTesting(
         resultsPageNumbersSorted: resultsPageNumbers,
-        currentPage: pdfState.currentPageNumber,
+        currentPage: _currentPage(pdfState),
       );
 
       if (!_resultsScrollController.isAttached) return;
@@ -613,12 +746,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     if (utils.hasNikud(query)) {
       query = utils.removeVolwels(query);
     }
-    return InBookSearchRouting.isSearchableQuery(
-          query,
-          wholeWord: _isSimpleSearch ? _wholeWord : true,
-        )
-        ? query
-        : null;
+    return query.isEmpty ? null : query;
   }
 
   Future<void> _searchTextUpdated() async {
@@ -686,9 +814,11 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
         wholeWord: _wholeWord,
       );
       _lastPdfHighlightSource = literal?.source ?? query;
+      // שדה החיפוש כבר ממתין להפסקת ההקלדה; השהיית pdfrx הייתה מוסיפה עוד 500ms.
       widget.textSearcher.startTextSearch(
         literal?.regExp ?? query,
         goToFirstMatch: false,
+        searchImmediately: true,
       );
       return;
     }
@@ -756,43 +886,44 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
   @override
   Widget build(BuildContext context) {
-    final Map<int, List<SearchResult>> resultsByPage = {};
-    for (final result in _searchResults) {
-      final pageNumber = _getPdfPageNumber(result);
-      resultsByPage.putIfAbsent(pageNumber, () => []).add(result);
+    if (!identical(_groupedSource, _searchResults)) {
+      _groupedSource = _searchResults;
+      _groupedItems.clear();
+      _groupedCount = 0;
+      _lastGroupedPage = null;
     }
 
-    final List<dynamic> items = [];
-    for (final entry
-        in resultsByPage.entries.toList()
-          ..sort((a, b) => a.key.compareTo(b.key))) {
-      items.add(entry.key);
-      items.addAll(entry.value);
-
-      if (!_pageTitles.containsKey(entry.key)) {
-        () async {
-          final title = await refFromPageNumber(
-            entry.key,
-            widget.outline,
-            widget.bookTitle,
-          );
-          if (!mounted) return;
-          setState(() {
-            _pageTitles[entry.key] = title;
-          });
-        }();
+    // pdfrx סורק לפי עמוד; תוצאות המנוע ממוינות לפני ההשמה.
+    for (var i = _groupedCount; i < _searchResults.length; i++) {
+      final result = _searchResults[i];
+      final page = _getPdfPageNumber(result);
+      if (page != _lastGroupedPage) {
+        _groupedItems.add(page);
+        _lastGroupedPage = page;
+        _pageTitles.putIfAbsent(
+          page,
+          () => referenceFromPageNumber(page, widget.outline, widget.bookTitle),
+        );
       }
+      _groupedItems.add(result);
     }
+    _groupedCount = _searchResults.length;
+    final items = _groupedItems;
 
     return SearchPaneBase(
       searchController: widget.searchController,
       focusNode: widget.focusNode,
       progressWidget: _isSearching
-          ? const LinearProgressIndicator(minHeight: 4)
+          ? LinearProgressIndicator(
+              minHeight: 4,
+              // המנוע אינו מדווח התקדמות; החיפוש הפשוט עובר עמוד-עמוד.
+              value: _isSimpleSearch
+                  ? widget.textSearcher.searchProgress
+                  : null,
+            )
           : null,
-      resultCountString: _searchResults.isNotEmpty
-          ? 'נמצאו ${_searchResults.length} תוצאות'
-          : null,
+      resultCountString: _resultCountString(),
+      resultToolbar: _buildResultToolbar(),
       resultsWidget: NavTreeFocusGroup(
         child: ScrollablePositionedList.builder(
           itemScrollController: _resultsScrollController,
@@ -829,12 +960,21 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
               isGroupStart: isGroupStart,
               isGroupEnd: isGroupEnd,
               child: SearchResultTile(
-                key: ValueKey('${result.segment}_${result.text.hashCode}'),
+                key: ValueKey(
+                  '${result.segment}_${result.id}_${result.text.hashCode}',
+                ),
                 result: result,
                 onTap: () async {
                   final pageNumber = _getPdfPageNumber(result);
                   final controller = widget.textSearcher.controller;
-                  if (controller != null &&
+                  final matchIndex = result.id.toInt();
+                  if (_isSimpleSearch &&
+                      matchIndex < widget.textSearcher.matches.length &&
+                      widget.textSearcher.matches[matchIndex].pageNumber ==
+                          pageNumber) {
+                    // גלילה למקום ההתאמה בעמוד וסימונה כהתאמה הנוכחית.
+                    await widget.textSearcher.goToMatchOfIndex(matchIndex);
+                  } else if (controller != null &&
                       controller.isReady &&
                       controller.layout.pageLayouts.isNotEmpty) {
                     final layout = controller.layout;

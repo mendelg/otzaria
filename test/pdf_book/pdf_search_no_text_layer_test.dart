@@ -32,8 +32,15 @@ class _FakeDocument extends Fake implements PdfDocument {
 /// קונטרולר "מוכן" בלי PdfViewer אמיתי — [PdfTextSearcher] דורש מסמך חי
 /// בבנייה, ו-useDocument מוחזר null כדי שהחיפוש לא יגע ב-pdfium.
 class _FakeReadyController extends PdfViewerController {
+  _FakeReadyController({this.visiblePage});
+
+  final int? visiblePage;
+
   @override
   bool get isReady => true;
+
+  @override
+  int? get pageNumber => visiblePage;
 
   @override
   PdfDocument get document => _FakeDocument();
@@ -158,6 +165,28 @@ void main() {
     expect(find.text('אין תוצאות'), findsNothing);
     // העמוד המוצג נדגם ראשון, ולא רק עמוד 1 שעלול להיות שער ריק.
     expect(textSearcher.requestedPages.first, 3);
+  });
+
+  testWidgets('הדגימה מתחילה מהעמוד המוצג בפועל ולא מעמוד הפתיחה שב-state', (
+    tester,
+  ) async {
+    final searchController = TextEditingController(text: 'אשר');
+    final focusNode = FocusNode();
+    final textSearcher = _FakeTextSearcher(
+      _FakeReadyController(visiblePage: 7),
+      _scannedOnlyPageText,
+    );
+    addTearDown(searchController.dispose);
+    addTearDown(focusNode.dispose);
+    addTearDown(textSearcher.dispose);
+
+    await _pumpSearchView(tester, textSearcher, searchController, focusNode);
+    textSearcher.notifyListeners();
+    await tester.pump();
+    await tester.pump();
+
+    // ה-state נשאר בעמוד הפתיחה (3); המשתמש גלל לעמוד 7.
+    expect(textSearcher.requestedPages.first, 7);
   });
 
   testWidgets('ספר עם טקסט עברי ובלי התאמות נשאר ב"אין תוצאות"', (

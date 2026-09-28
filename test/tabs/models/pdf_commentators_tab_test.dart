@@ -15,6 +15,37 @@ void main() {
   });
 
   group('PdfCommentatorsTab', () {
+    test('of — עותק משלה של מצב הספר: הספר ממשיך בלעדיה', () {
+      final book =
+          PdfBookTab(
+              book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),
+              pageNumber: 7,
+            )
+            ..activeCommentators.add('רש"י')
+            ..currentTextLineNumber = 40
+            ..currentTextLineNumberEnd = 55;
+      book.currentTitle.value = 'פרק ב';
+      addTearDown(book.dispose);
+
+      final tab = PdfCommentatorsTab.of(book);
+      final copy = tab.sourceTab;
+      expect(copy, isNot(same(book)));
+      expect(copy.pageNumber, 7);
+      expect(copy.currentTitle.value, 'פרק ב');
+      expect(copy.currentTextLineNumber, 40);
+      expect(copy.currentTextLineNumberEnd, 55);
+
+      copy.activeCommentators.add('תוספות');
+      book.currentTitle.value = 'פרק ג';
+      expect(book.activeCommentators, {'רש"י'});
+      expect(copy.currentTitle.value, 'פרק ב');
+
+      tab.dispose();
+      // הכרטיסייה משחררת את העותק שלה בלבד.
+      book.currentTitle.value = 'פרק ד';
+      expect(book.currentTitle.value, 'פרק ד');
+    });
+
     test('title נגזר מה-sourceTab', () {
       final sourceTab = PdfBookTab(
         book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),

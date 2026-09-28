@@ -9,6 +9,33 @@ import 'package:otzaria/settings/services/per_book_settings_service.dart';
 String _outlineNodeSignature(PdfOutlineNode n) =>
     '${n.title}|${n.dest?.pageNumber ?? -1}|[${n.children.map(_outlineNodeSignature).join(',')}]';
 
+String _linkSignature(Link l) =>
+    '${l.index1}|${l.path2}|${l.index2}|${l.index2End}|${l.connectionType}|${l.heRef}|${l.start}|${l.end}|${l.targetCategoryId}|${l.targetFileType}';
+
+/// השוואת רשימה לפי תוכן, עם קיצור דרך לאותו מופע — copyWith מעביר את אותה
+/// רשימה, ובלעדיו כל emit (גם פריים של זום) בנה חתימה לכל קישור ולכל צומת.
+final class _ContentKey<T> {
+  const _ContentKey(this.items, this.signature);
+
+  final List<T>? items;
+  final String Function(T) signature;
+
+  @override
+  bool operator ==(Object other) {
+    if (other is! _ContentKey<T>) return false;
+    final a = items, b = other.items;
+    if (identical(a, b)) return true;
+    if (a == null || b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (signature(a[i]) != signature(b[i])) return false;
+    }
+    return true;
+  }
+
+  @override
+  int get hashCode => items?.length ?? -1;
+}
+
 /// Base class for PDF book states
 sealed class PdfBookState extends Equatable {
   const PdfBookState();
@@ -64,6 +91,9 @@ class PdfBookLoading extends PdfBookState {
   final SearchMatchPolicy matchPolicy;
   final PdfLayoutMode layoutMode;
 
+  /// הפתיחה עדיין רצה אחרי ה-timeout הראשון; ה-UI מודיע שהטעינה נמשכת.
+  final bool isSlow;
+
   const PdfBookLoading({
     required this.book,
     this.searchText = '',
@@ -74,10 +104,24 @@ class PdfBookLoading extends PdfBookState {
     this.searchDistance = 0,
     this.matchPolicy = SearchMatchPolicy.standard,
     this.layoutMode = PdfLayoutMode.regularView,
+    this.isSlow = false,
   });
 
+  PdfBookLoading copyWith({bool? isSlow}) => PdfBookLoading(
+    book: book,
+    searchText: searchText,
+    searchOptions: searchOptions,
+    alternativeWords: alternativeWords,
+    spacingValues: spacingValues,
+    searchMode: searchMode,
+    searchDistance: searchDistance,
+    matchPolicy: matchPolicy,
+    layoutMode: layoutMode,
+    isSlow: isSlow ?? this.isSlow,
+  );
+
   @override
-  List<Object?> get props => [book.title];
+  List<Object?> get props => [book.title, isSlow];
 }
 
 /// Document failed to load
@@ -292,13 +336,8 @@ class PdfBookLoaded extends PdfBookState {
     isLoading,
     loadSucceeded,
     pdfHeadings,
-    links
-        .map(
-          (l) =>
-              '${l.index1}|${l.path2}|${l.index2}|${l.index2End}|${l.connectionType}|${l.heRef}|${l.start}|${l.end}|${l.targetCategoryId}|${l.targetFileType}',
-        )
-        .toList(growable: false),
-    outline?.map(_outlineNodeSignature).toList(growable: false),
+    _ContentKey<Link>(links, _linkSignature),
+    _ContentKey<PdfOutlineNode>(outline, _outlineNodeSignature),
     documentRef,
   ];
 }

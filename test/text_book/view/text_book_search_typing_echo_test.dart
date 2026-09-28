@@ -91,8 +91,8 @@ void main() {
       expect(fieldText(tester), 'אבג');
 
       // המשתמש מחליף את הטקסט באות הראשונה של מילה חדשה.
-      await tester.enterText(find.byType(TextField), 'ד');
-      expect(fieldText(tester), 'ד');
+      await tester.enterText(find.byType(TextField), 'דָּ');
+      expect(fieldText(tester), 'דָּ');
 
       // הדיבאונס של השדה מעביר את ההקלדה ל-BLoC; ה-state המהדהד חוזר לחלונית.
       await tester.pump(kSearchFieldDebounce);
@@ -103,14 +103,13 @@ void main() {
         isA<TextBookLoaded>().having(
           (s) => s.searchText,
           'searchText',
-          '',
-          // אות בודדת בהתאמה חלקית אינה שאילתה — ה-BLoC מקבל ריק. זה ההד
-          // שנחשב בטעות לשינוי חיצוני.
+          'ד',
+          // ה-BLoC מקבל את השאילתה בלי ניקוד — ההד שנחשב בטעות לשינוי חיצוני.
         ),
       );
       expect(
         fieldText(tester),
-        'ד',
+        'דָּ',
         reason: 'ההד של ההקלדה אסור לו לדרוס את מה שהמשתמש הקליד',
       );
     });

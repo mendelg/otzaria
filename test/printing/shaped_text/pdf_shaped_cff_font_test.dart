@@ -2,7 +2,6 @@
 /// CIDFontType0 עם `/FontFile3`. בלי זה הקורא מפרש מבנה אחר מזה שקיבל.
 library;
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -11,39 +10,20 @@ import 'package:opentype_shaper/opentype_shaper.dart';
 import 'package:otzaria/printing/shaped_text/pdf_shaped_font.dart';
 import 'package:pdf/pdf.dart';
 
-const String _pointedWord = 'שָׁ֖לֹם';
+import '../../support/shaper_test_init.dart';
 
-String? _findNativeLibrary() {
-  final name = Platform.isWindows
-      ? 'opentype_shaper.dll'
-      : Platform.isMacOS
-      ? 'libopentype_shaper.dylib'
-      : 'libopentype_shaper.so';
-  for (final profile in const ['release', 'debug']) {
-    final candidate = File('C:/opentype_shaper/rust/target/$profile/$name');
-    if (candidate.existsSync()) return candidate.absolute.path;
-  }
-  return null;
-}
+const String _pointedWord = 'שָׁ֖לֹם';
 
 /// קובץ הגופן של חבילת `otzaria_ashurit`, דרך מפת החבילות של הבדיקה.
 File? _packagedFont(String name) {
-  final config = File('.dart_tool/package_config.json');
-  if (!config.existsSync()) return null;
-  final packages =
-      (jsonDecode(config.readAsStringSync()) as Map)['packages'] as List;
-  for (final package in packages.cast<Map<String, dynamic>>()) {
-    if (package['name'] != 'otzaria_ashurit') continue;
-    // בלי הלוכסן בסוף, resolve היה מחליף את הסיפא של שורש החבילה.
-    final root = Uri.parse('${package['rootUri']}/');
-    final file = File.fromUri(root.resolve('lib/$name'));
-    return file.existsSync() ? file : null;
-  }
-  return null;
+  final root = resolvedTestPackageRoot('otzaria_ashurit');
+  if (root == null) return null;
+  final file = File('${root.path}/lib/$name');
+  return file.existsSync() ? file : null;
 }
 
 void main() {
-  final libraryPath = _findNativeLibrary();
+  final libraryPath = findNativeShaperLibrary();
   final font = _packagedFont('OtzariaAshurit-Regular.otf');
 
   final skipReason = libraryPath == null

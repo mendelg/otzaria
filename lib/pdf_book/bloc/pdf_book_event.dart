@@ -1,3 +1,5 @@
+import 'dart:ui' show Offset;
+
 import 'package:equatable/equatable.dart';
 import 'package:otzaria/models/pdf_headings.dart';
 import 'package:otzaria/models/links.dart';
@@ -52,6 +54,29 @@ class DocumentLoadFailed extends PdfBookEvent {
 /// Request to retry loading after a previous failure (`PdfBookError`).
 class RetryLoad extends PdfBookEvent {
   const RetryLoad();
+}
+
+/// The load advanced (document opened, password entered): restart the watchdog.
+class LoadProgressed extends PdfBookEvent {
+  /// pdfium finished opening the file; only then can a stall be retried.
+  final bool documentOpened;
+
+  const LoadProgressed({this.documentOpened = false});
+
+  @override
+  List<Object?> get props => [documentOpened];
+}
+
+/// The native open is still running past the first timeout: tell the user,
+/// keep waiting.
+class LoadSlow extends PdfBookEvent {
+  const LoadSlow();
+}
+
+/// The load waits on the user (password dialog): stop the watchdog until
+/// [LoadProgressed].
+class LoadWatchdogPaused extends PdfBookEvent {
+  const LoadWatchdogPaused();
 }
 
 /// Load PDF headings and links for commentary
@@ -141,6 +166,17 @@ class ZoomOut extends PdfBookEvent {
 /// Reset zoom to 1.0
 class ResetZoom extends PdfBookEvent {
   const ResetZoom();
+}
+
+/// Zoom to [zoom] around the document point [center] (fit page / fit width).
+class FitZoom extends PdfBookEvent {
+  final double zoom;
+  final Offset center;
+
+  const FitZoom({required this.zoom, required this.center});
+
+  @override
+  List<Object?> get props => [zoom, center];
 }
 
 /// Set layout mode directly

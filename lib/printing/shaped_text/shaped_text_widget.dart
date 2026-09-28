@@ -43,6 +43,7 @@ class ShapedText extends pw.Widget with pw.SpanningWidget {
   final double? heightFactor;
 
   ShapedTextBlock? _block;
+  double? _blockWidth;
   final _ShapedTextContext _context = _ShapedTextContext();
   var _firstLine = 0;
   var _lastLine = 0;
@@ -59,8 +60,18 @@ class ShapedText extends pw.Widget with pw.SpanningWidget {
   );
 
   /// The height this text needs at `maxWidth`, without laying it into a page.
-  double measureHeight(double maxWidth) =>
-      _layout.layout(text, maxWidth: maxWidth).height;
+  double measureHeight(double maxWidth) => _blockFor(maxWidth).height;
+
+  /// A spanning widget is laid out once per page it reaches; without this the
+  /// whole text would be broken into lines again on every one of them.
+  ShapedTextBlock _blockFor(double maxWidth) {
+    final cached = _block;
+    if (cached != null && _blockWidth == maxWidth) {
+      return cached;
+    }
+    _blockWidth = maxWidth;
+    return _block = _layout.layout(text, maxWidth: maxWidth);
+  }
 
   @override
   void layout(
@@ -71,12 +82,14 @@ class ShapedText extends pw.Widget with pw.SpanningWidget {
     final maxWidth = constraints.hasBoundedWidth
         ? constraints.maxWidth
         : constraints.constrainWidth();
-    final block = _block = _layout.layout(text, maxWidth: maxWidth);
+    final block = _blockFor(maxWidth);
     final firstLine = _context.startLine.clamp(0, block.lines.length);
     var lastLine = block.lines.length;
     if (constraints.maxHeight.isFinite) {
+      // Zero lines when none fits: MultiPage then moves the rest to the next
+      // page, where forcing one would draw it into space the page lacks.
       final fittingLines = (constraints.maxHeight / block.lineHeight).floor();
-      lastLine = firstLine + (fittingLines < 1 ? 1 : fittingLines);
+      lastLine = firstLine + fittingLines;
       if (lastLine > block.lines.length) lastLine = block.lines.length;
     }
     _firstLine = firstLine;
@@ -124,14 +137,25 @@ class ShapedText extends pw.Widget with pw.SpanningWidget {
       final visibleIndex = index - _firstLine;
       final baseline =
           top - visibleIndex * block.lineHeight - block.baselineOffset;
-      for (final segment in block.lines[index].segments) {
-        fonts[segment.fontIndex].drawShapedRun(
+      final segments = block.lines[index].segments;
+      // One text object per stretch of the line that uses the same font.
+      var start = 0;
+      while (start < segments.length) {
+        final fontIndex = segments[start].fontIndex;
+        var end = start + 1;
+        while (end < segments.length && segments[end].fontIndex == fontIndex) {
+          end++;
+        }
+        fonts[fontIndex].drawShapedRuns(
           canvas,
-          segment.run,
-          x: box!.left + segment.x,
+          [
+            for (final segment in segments.sublist(start, end))
+              PlacedShapedRun(segment.run, box!.left + segment.x),
+          ],
           y: baseline,
           fontSize: fontSize,
         );
+        start = end;
       }
     }
   }

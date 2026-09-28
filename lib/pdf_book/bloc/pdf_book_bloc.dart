@@ -5,9 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/models/books.dart';
-import 'package:otzaria/models/pdf_headings.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_event.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_state.dart';
+import 'package:otzaria/pdf_book/utils/pdf_viewer_activity.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
@@ -47,6 +47,10 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
   /// 0 → הירייה הבאה תהיה auto-retry; 1+ → הירייה הבאה תציג כפתור.
   int _watchdogFiredCount = 0;
 
+  /// pdfium פתח את הקובץ בניסיון הנוכחי. לפני כן ניסיון חוזר רק נעמד בתור
+  /// ה-worker מאחורי הפתיחה שעדיין רצה, ולכן איטיות אינה סיבה לנסות שוב.
+  bool _documentOpened = false;
+
   PdfBookBloc({
     required this.tab,
     required PdfBookInitial initialState,
@@ -62,6 +66,9 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     on<DocumentReady>(_onDocumentReady);
     on<DocumentLoadFailed>(_onDocumentLoadFailed);
     on<RetryLoad>(_onRetryLoad);
+    on<LoadProgressed>(_onLoadProgressed);
+    on<LoadWatchdogPaused>(_onLoadWatchdogPaused);
+    on<LoadSlow>(_onLoadSlow);
     on<LoadHeadingsAndLinks>(_onLoadHeadingsAndLinks);
 
     // Navigation events
@@ -77,6 +84,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     on<ZoomIn>(_onZoomIn);
     on<ZoomOut>(_onZoomOut);
     on<ResetZoom>(_onResetZoom);
+    on<FitZoom>(_onFitZoom);
     on<SetLayoutMode>(_onSetLayoutMode);
     on<SetShowZoomBar>(_onSetShowZoomBar);
 
@@ -108,9 +116,19 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
   }
 
   @override
+  void onChange(Change<PdfBookState> change) {
+    super.onChange(change);
+    final wasLoading = change.currentState is PdfBookLoading;
+    final isLoading = change.nextState is PdfBookLoading;
+    if (!wasLoading && isLoading) PdfViewerActivity.instance.begin();
+    if (wasLoading && !isLoading) PdfViewerActivity.instance.end();
+  }
+
+  @override
   Future<void> close() {
     _zoomBarTimer?.cancel();
     _loadWatchdog?.cancel();
+    if (state is PdfBookLoading) PdfViewerActivity.instance.end();
     return super.close();
   }
 
@@ -118,19 +136,19 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     _loadWatchdog?.cancel();
     // הירייה הראשונה (count==0): מפעיל retry שקט אחרי _autoRetryDelay.
     // הירייה השנייה ואילך: מציג כפתור "נסה שוב" אחרי _showButtonDelay.
-    final isAutoRetry = _watchdogFiredCount == 0;
-    final timeout = isAutoRetry ? _autoRetryDelay : _showButtonDelay;
+    final isFirstFire = _watchdogFiredCount == 0;
+    final timeout = isFirstFire ? _autoRetryDelay : _showButtonDelay;
     _loadWatchdog = Timer(timeout, () {
       if (isClosed) return;
-      if (state is PdfBookLoading) {
-        _watchdogFiredCount++;
-        add(
-          DocumentLoadFailed(
-            'הטעינה ארכה זמן רב מדי',
-            autoRetry: isAutoRetry,
-          ),
-        );
+      if (state is! PdfBookLoading) return;
+      _watchdogFiredCount++;
+      if (isFirstFire && !_documentOpened) {
+        add(const LoadSlow());
+        return;
       }
+      add(
+        DocumentLoadFailed('הטעינה ארכה זמן רב מדי', autoRetry: isFirstFire),
+      );
     });
   }
 
@@ -149,12 +167,13 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     if (initial is! PdfBookInitial) return;
 
     final book = _resolvePdfBookPath(initial.book);
-    if (!File(book.path).existsSync()) {
+    if (!await File(book.path).exists()) {
       emit(PdfBookError(book: book, message: 'הספר איננו קיים'));
       return;
     }
 
     _watchdogFiredCount = 0;
+    _documentOpened = false;
     emit(
       PdfBookLoading(
         book: book,
@@ -180,9 +199,6 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     } catch (_) {}
     if (isClosed || state is! PdfBookLoading) return;
     _startLoadWatchdog();
-
-    // Load headings and links in background
-    _loadHeadingsAndLinks(book);
   }
 
   PdfBook _resolvePdfBookPath(PdfBook book) {
@@ -214,32 +230,6 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
       source: book.source,
       externalLibraryId: book.externalLibraryId,
     );
-  }
-
-  Future<void> _loadHeadingsAndLinks(PdfBook book) async {
-    try {
-      debugPrint('=== Loading PDF Headings ===');
-      debugPrint('Book title: ${book.title}');
-
-      // הקישורים עצמם נטענים ב-PdfBookScreen (חלון סביב המיקום הנוכחי) —
-      // הטעינה המלאה שהייתה כאן רצה במקביל אליה ושכפלה את כל קישורי הספר.
-      final headings = await PdfHeadings.loadFromDatabase(
-        book.title,
-        categoryId: book.categoryId,
-        filePath: book.filePath,
-        preferSource: book.source,
-      );
-      if (headings != null) {
-        debugPrint('✅ Loaded ${headings.headingsMap.length} headings');
-      }
-
-      if (!isClosed) {
-        add(LoadHeadingsAndLinks(headings: headings));
-      }
-    } catch (e, stackTrace) {
-      debugPrint('❌ Error loading PDF headings: $e');
-      debugPrint('Stack trace: $stackTrace');
-    }
   }
 
   void _onDocumentReady(
@@ -278,6 +268,17 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
       searchDistance = current.searchDistance;
       matchPolicy = current.matchPolicy;
       layoutMode = current.layoutMode;
+    } else if (current is PdfBookError && !current.autoRetry) {
+      // הפתיחה האיטית הסתיימה אחרי שהוצג "נסה שוב": ההצלחה המאוחרת גוברת.
+      book = current.book;
+      searchText = tab.searchText;
+      searchOptions = tab.searchOptions;
+      alternativeWords = tab.alternativeWords;
+      spacingValues = tab.spacingValues;
+      searchMode = tab.searchMode;
+      searchDistance = tab.searchDistance;
+      matchPolicy = tab.matchPolicy;
+      layoutMode = tab.savedLayoutMode ?? PdfLayoutMode.regularView;
     } else if (current is PdfBookLoaded) {
       // Already loaded, just update
       emit(
@@ -340,7 +341,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     if (current is! PdfBookError) return;
 
     final book = _resolvePdfBookPath(current.book);
-    if (!File(book.path).existsSync()) {
+    if (!await File(book.path).exists()) {
       emit(PdfBookError(book: book, message: 'הספר איננו קיים'));
       return;
     }
@@ -351,6 +352,7 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     if (!current.autoRetry) {
       _watchdogFiredCount = 0;
     }
+    _documentOpened = false;
 
     emit(
       PdfBookLoading(
@@ -366,7 +368,25 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
       ),
     );
     _startLoadWatchdog();
-    _loadHeadingsAndLinks(book);
+  }
+
+  void _onLoadProgressed(LoadProgressed event, Emitter<PdfBookState> emit) {
+    if (event.documentOpened) _documentOpened = true;
+    if (state is PdfBookLoading) _startLoadWatchdog();
+  }
+
+  void _onLoadSlow(LoadSlow event, Emitter<PdfBookState> emit) {
+    final current = state;
+    if (current is! PdfBookLoading) return;
+    emit(current.copyWith(isSlow: true));
+    _startLoadWatchdog();
+  }
+
+  void _onLoadWatchdogPaused(
+    LoadWatchdogPaused event,
+    Emitter<PdfBookState> emit,
+  ) {
+    _cancelLoadWatchdog();
   }
 
   void _onDocumentLoadFailed(
@@ -585,6 +605,19 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
     add(const SavePerBookSettings());
   }
 
+  void _onFitZoom(FitZoom event, Emitter<PdfBookState> emit) {
+    if (!pdfController.isReady) return;
+    final current = state;
+    if (current is! PdfBookLoaded) return;
+
+    pdfController.setZoom(event.center, event.zoom, duration: Duration.zero);
+    tab.savedZoom = event.zoom;
+
+    emit(current.copyWith(zoom: event.zoom, showZoomBar: true));
+    _startZoomBarTimer(emit);
+    add(const SavePerBookSettings());
+  }
+
   void _onResetZoom(
     ResetZoom event,
     Emitter<PdfBookState> emit,
@@ -657,6 +690,8 @@ class PdfBookBloc extends Bloc<PdfBookEvent, PdfBookState> {
       if (current is PdfBookLoaded && current.showZoomBar) {
         // Can't emit here directly - need to use add()
         add(const SetShowZoomBar(false));
+        // הזום התייצב — כך נשמר גם זום מגלגלת/צביטה, ולא רק מכפתורי הסרגל.
+        add(const SavePerBookSettings());
       }
     });
   }

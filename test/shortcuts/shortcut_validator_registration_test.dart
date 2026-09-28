@@ -63,6 +63,21 @@ void main() {
       }
     });
 
+    test('מעבר בין התאמות החיפוש ב-PDF — F3 / Shift+F3', () {
+      const findKeys = {
+        ShortcutValidator.findNextKey: ('f3', 'תוצאת החיפוש הבאה (PDF)'),
+        ShortcutValidator.findPreviousKey: (
+          'shift+f3',
+          'תוצאת החיפוש הקודמת (PDF)',
+        ),
+      };
+      for (final entry in findKeys.entries) {
+        expect(ShortcutValidator.shortcutKeys, contains(entry.key));
+        expect(ShortcutValidator.defaultShortcuts[entry.key], entry.value.$1);
+        expect(ShortcutValidator.shortcutNames[entry.key], entry.value.$2);
+      }
+    });
+
     test('פתיחת כרטיסיית מפרשים — ללא ברירת מחדל (המשתמש יבחר)', () {
       expect(
         ShortcutValidator

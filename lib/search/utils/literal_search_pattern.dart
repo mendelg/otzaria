@@ -64,12 +64,37 @@ String? stripWordBoundaryWrapper(String source) {
 
 final Map<String, LiteralSearchPattern?> _cache = {};
 
+/// אורך השאילתה המינימלי להתאמה בתוך מילה.
+const int _minPartialMatchChars = 2;
+
+const Map<String, String> _finalToRegularLetter = {
+  'ך': 'כ',
+  'ם': 'מ',
+  'ן': 'נ',
+  'ף': 'פ',
+  'ץ': 'צ',
+};
+
+/// הביטוי בלי גבולות המילה. אות סופית בסוף השאילתה מתאימה גם לצורה הרגילה,
+/// שבה היא כתובה באמצע מילה: "מלך" מוצא את "המלכים".
+String? _partialPhrase(String q, String source) {
+  final phrase = stripWordBoundaryWrapper(source);
+  final regular = _finalToRegularLetter[q[q.length - 1]];
+  if (phrase == null || regular == null) return phrase;
+
+  final altQuery = '${q.substring(0, q.length - 1)}$regular';
+  final altSource = engine.generateLiteralHighlightPattern(query: altQuery);
+  final altPhrase = altSource == null
+      ? null
+      : stripWordBoundaryWrapper(altSource);
+  return altPhrase == null ? phrase : '(?:$phrase|$altPhrase)';
+}
+
 /// בונה (עם קאש) תבנית ליטרלית לשאילתה, לאחר נרמול.
 /// מחזיר `null` לשאילתה ריקה/רק-רווחים.
 ///
-/// [wholeWord] `false` מסיר את גבולות המילה שהמנוע מוסיף, כך ש"שמים" מתאים
-/// גם בתוך "השמים" — התנהגות Ctrl+F הרגילה. כל השאר (ניקוד, גרש/גרשיים,
-/// המפריד בין מילים) זהה בשני המצבים.
+/// [wholeWord] `false` מסיר את גבולות המילה, כך ש"שמים" מתאים גם בתוך "השמים".
+/// שאילתה של תו אחד נשארת במילים שלמות: בתוך מילה היא מתאימה כמעט לכל דבר.
 ///
 /// חובה להיקרא ב-isolate הראשי בלבד — קורא למנוע (flutter_rust_bridge)
 /// שקשור אליו. ב-isolate worker יש לקמפל דרך [compileLiteralPattern].
@@ -78,7 +103,8 @@ LiteralSearchPattern? buildLiteralPattern(
   bool wholeWord = true,
 }) {
   final q = normalizeLiteralQuery(query);
-  final cacheKey = '${wholeWord ? 'w' : 'p'}|$q';
+  final partial = !wholeWord && q.length >= _minPartialMatchChars;
+  final cacheKey = '${partial ? 'p' : 'w'}|$q';
   if (_cache.containsKey(cacheKey)) return _cache[cacheKey];
 
   // בונים לפני עדכון ה-cache: אם המנוע זורק, ה-cache נשאר עקבי ולא מקבל
@@ -87,9 +113,9 @@ LiteralSearchPattern? buildLiteralPattern(
   if (q.isNotEmpty) {
     final source = engine.generateLiteralHighlightPattern(query: q);
     if (source != null) {
-      final effective = wholeWord
-          ? source
-          : (stripWordBoundaryWrapper(source) ?? source);
+      final effective = partial
+          ? (_partialPhrase(q, source) ?? source)
+          : source;
       try {
         result = LiteralSearchPattern(
           effective,

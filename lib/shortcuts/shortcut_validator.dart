@@ -76,6 +76,10 @@ class ShortcutValidator {
   static const String zoomOutKey = 'key-shortcut-zoom-out';
   static const String zoomResetKey = 'key-shortcut-zoom-reset';
 
+  /// מעבר בין התאמות החיפוש בתוך ספר PDF פתוח.
+  static const String findNextKey = 'key-shortcut-find-next';
+  static const String findPreviousKey = 'key-shortcut-find-previous';
+
   static const String _openPluginKeyPrefix = 'key-shortcut-open-plugin-';
 
   /// מפתח הגדרת הקיצור לפתיחת תוסף לפי מזההו (deep-link
@@ -199,6 +203,8 @@ class ShortcutValidator {
     zoomInKey,
     zoomOutKey,
     zoomResetKey,
+    findNextKey,
+    findPreviousKey,
     'key-shortcut-calendar-toggle-times',
     'key-shortcut-calendar-toggle-events',
     'key-shortcut-calendar-today',
@@ -271,6 +277,8 @@ class ShortcutValidator {
     zoomInKey: 'ctrl+equal',
     zoomOutKey: 'ctrl+minus',
     zoomResetKey: 'ctrl+0',
+    findNextKey: 'f3',
+    findPreviousKey: 'shift+f3',
     'key-shortcut-calendar-toggle-times': 'ctrl+t',
     'key-shortcut-calendar-toggle-events': 'ctrl+e',
     'key-shortcut-calendar-today': 'ctrl+d',
@@ -333,6 +341,8 @@ class ShortcutValidator {
     zoomInKey: 'הגדלת הטקסט / התצוגה',
     zoomOutKey: 'הקטנת הטקסט / התצוגה',
     zoomResetKey: 'איפוס גודל הטקסט / התצוגה',
+    findNextKey: 'תוצאת החיפוש הבאה (PDF)',
+    findPreviousKey: 'תוצאת החיפוש הקודמת (PDF)',
     'key-shortcut-calendar-toggle-times': 'לוח שנה: פתיחה/סגירה זמני היום',
     'key-shortcut-calendar-toggle-events': 'לוח שנה: פתיחה/סגירה אירועים',
     'key-shortcut-calendar-today': 'לוח שנה: מעבר להיום',

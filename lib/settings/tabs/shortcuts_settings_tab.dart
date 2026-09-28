@@ -812,6 +812,18 @@ class ShortcutsSettingsTab extends StatelessWidget {
               allShortcuts: _shortcutsList,
             ),
             _ShortcutTile(
+              settingKey: ShortcutValidator.findNextKey,
+              label: context.settingsText('תוצאת החיפוש הבאה (PDF)'),
+              icon: FluentIcons.chevron_down_24_regular,
+              allShortcuts: _shortcutsList,
+            ),
+            _ShortcutTile(
+              settingKey: ShortcutValidator.findPreviousKey,
+              label: context.settingsText('תוצאת החיפוש הקודמת (PDF)'),
+              icon: FluentIcons.chevron_up_24_regular,
+              allShortcuts: _shortcutsList,
+            ),
+            _ShortcutTile(
               settingKey: 'key-shortcut-open-commentators-tab',
               label: context.settingsText('פתח כרטיסיית מפרשים'),
               icon: FluentIcons.open_24_regular,

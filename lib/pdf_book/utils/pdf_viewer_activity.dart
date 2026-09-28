@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-/// שער "הקורא קודם": סופר את טאבי ה-PDF שממתינים לייצוב עמוד היעד, כדי
+/// שער "הקורא קודם": סופר טאבי PDF בטעינה (PdfBookLoading ב-PdfBookBloc), כדי
 /// שעבודת רקע על PDF (outline, אינדוקס) תפנה את ה-worker היחיד של pdfrx.
 class PdfViewerActivity {
   PdfViewerActivity._();

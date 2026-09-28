@@ -294,7 +294,7 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
       }
       if (tab is PdfBookTab) {
         tabsBloc.add(
-          AddTab(PdfCommentatorsTab(sourceTab: tab), insertAdjacent: true),
+          AddTab(PdfCommentatorsTab.of(tab), insertAdjacent: true),
         );
         return KeyEventResult.handled;
       }

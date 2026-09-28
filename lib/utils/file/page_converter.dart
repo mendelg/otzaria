@@ -13,6 +13,9 @@ import 'package:pdfrx/pdfrx.dart';
 // A cache for the generated page maps to avoid rebuilding them on every conversion.
 final _pageMapCache = <String, PageMap>{};
 
+/// מהדורת הטקסט של כל PDF, לפי מופע הספרייה — טעינה מחדש של הספרייה מתחילה נקי.
+final _companionTextBooks = Expando<Map<String, TextBook?>>();
+
 typedef PdfAnchorsReader =
     Future<List<({int page, String ref})>> Function(
       String pdfPath,
@@ -203,12 +206,12 @@ Future<int?> pdfToTextPage(
   List<PdfOutlineNode> outline,
   int pdfPage,
 ) async {
-  final textBook =
-      (await DataRepository.instance.library).getCompanionBook(
-            pdfBook,
-            TextBook,
-          )
-          as TextBook?;
+  final library = await DataRepository.instance.library;
+  // נקרא בכל מעבר עמוד; החיפוש בלי מלווה סורק את כל הספרייה, וגם "אין" נשמר.
+  final textBook = (_companionTextBooks[library] ??= {}).putIfAbsent(
+    '${pdfBook.path}::${pdfBook.title}',
+    () => library.getCompanionBook(pdfBook, TextBook) as TextBook?,
+  );
   if (textBook == null) {
     return null;
   }

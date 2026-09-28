@@ -9,11 +9,20 @@ class ThumbnailsView extends StatefulWidget {
   const ThumbnailsView({
     required this.documentRef,
     required this.controller,
+    this.onNavigateToPage,
+    this.shownPagesFor,
     super.key,
   });
 
   final PdfDocumentRef? documentRef;
   final PdfViewerController? controller;
+
+  /// ניווט של המסך (שומר זום ונעילת זוגות); בלעדיו goToPage מאפס את הזום.
+  final Future<void> Function(int pageNumber)? onNavigateToPage;
+
+  /// העמודים שמוצגים יחד עם [pageNumber] — בתצוגת ספר כל הכפולה מודגשת.
+  final ({int startPage, int endPageExclusive}) Function(int pageNumber)?
+  shownPagesFor;
 
   @override
   State<ThumbnailsView> createState() => _ThumbnailsViewState();
@@ -25,6 +34,9 @@ class _ThumbnailsViewState extends State<ThumbnailsView>
   bool _isManuallyScrolling = false;
   int? _lastScrolledPage;
   int? _lastKnownPage;
+
+  /// גובה הפריט (250) ועוד השוליים (8 מכל צד) — גם לגלילה אל העמוד הנוכחי.
+  static const double _itemExtent = 266;
 
   @override
   bool get wantKeepAlive => true;
@@ -82,7 +94,7 @@ class _ThumbnailsViewState extends State<ThumbnailsView>
     if (currentPage == null || _lastScrolledPage == currentPage) return;
     if (!_scrollController.hasClients) return;
 
-    const itemExtent = 266.0; // container height + margin
+    const itemExtent = _itemExtent;
     final viewportHeight = _scrollController.position.viewportDimension;
     final target =
         itemExtent * (currentPage - 1) -
@@ -115,12 +127,21 @@ class _ThumbnailsViewState extends State<ThumbnailsView>
         child: ListView.builder(
           key: const PageStorageKey('pdfThumbnails'),
           controller: _scrollController,
+          itemExtent: _itemExtent,
           itemCount: document?.pages.length ?? 0,
           itemBuilder: (context, index) {
+            final currentPage = _currentPage;
+            final shown = currentPage == null
+                ? null
+                : widget.shownPagesFor?.call(currentPage) ??
+                      (
+                        startPage: currentPage,
+                        endPageExclusive: currentPage + 1,
+                      );
             final isSelected =
-                widget.controller != null &&
-                widget.controller!.isReady &&
-                widget.controller!.pageNumber == index + 1;
+                shown != null &&
+                index + 1 >= shown.startPage &&
+                index + 1 < shown.endPageExclusive;
             return Container(
               margin: const EdgeInsets.all(8),
               height: 250,
@@ -138,10 +159,12 @@ class _ThumbnailsViewState extends State<ThumbnailsView>
                   SizedBox(
                     height: 220,
                     child: InkWell(
-                      onTap: () => widget.controller?.goToPage(
-                        pageNumber: index + 1,
-                        anchor: PdfPageAnchor.top,
-                      ),
+                      onTap: () =>
+                          widget.onNavigateToPage?.call(index + 1) ??
+                          widget.controller?.goToPage(
+                            pageNumber: index + 1,
+                            anchor: PdfPageAnchor.top,
+                          ),
                       child: PdfPageView(
                         document: document,
                         pageNumber: index + 1,

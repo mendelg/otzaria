@@ -560,7 +560,16 @@ void main() {
     expect(tabsBloc.recordedEvents, hasLength(1));
     final event = tabsBloc.recordedEvents.single as AddTab;
     expect(event.tab, isA<PdfCommentatorsTab>());
-    expect((event.tab as PdfCommentatorsTab).sourceTab, same(tab));
+    final opened = event.tab as PdfCommentatorsTab;
+    addTearDown(opened.dispose);
+    // עותק משלה, כמו כרטיסיית הטקסט: לא נגררת אחרי הספר ולא משנה אותו.
+    expect(opened.sourceTab, isNot(same(tab)));
+    expect(opened.sourceTab.book.path, tab.book.path);
+    expect(opened.sourceTab.currentTextLineNumber, 10);
+    expect(
+      opened.sourceTab.activeCommentators,
+      isNot(same(tab.activeCommentators)),
+    );
   });
 }
 

@@ -66,6 +66,28 @@ void main() {
     expect(find.text('7/125'), findsOneWidget);
   });
 
+  testWidgets('הזנת עמוד עוברת בניווט של המסך (שומר זום), מוגבלת לטווח', (
+    tester,
+  ) async {
+    final requested = <int>[];
+    await tester.pumpWidget(
+      _wrap(
+        PageNumberDisplay(
+          controller: _StaleController(page: 3),
+          onNavigateToPage: (page) async => requested.add(page),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('3/125'));
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.enterText(find.byType(TextField), '400');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(requested, [125]);
+  });
+
   testWidgets('לפני העמוד הראשון שדווח, ה-controller הוא המקור', (
     tester,
   ) async {

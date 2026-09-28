@@ -9,6 +9,8 @@ import 'package:otzaria/printing/shaped_text/shaped_text_widget.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../support/shaper_test_init.dart';
+
 /// Ordinary pointed Hebrew words, repeated to fill several lines.
 const List<String> _words = [
   'שָׁלוֹם',
@@ -25,21 +27,6 @@ String buildParagraph(int wordCount) => [
   for (var index = 0; index < wordCount; index++) _words[index % _words.length],
 ].join(' ');
 
-String? _findNativeLibrary() {
-  final name = Platform.isWindows
-      ? 'opentype_shaper.dll'
-      : Platform.isMacOS
-      ? 'libopentype_shaper.dylib'
-      : 'libopentype_shaper.so';
-  for (final profile in const ['release', 'debug']) {
-    final candidate = File('C:/opentype_shaper/rust/target/$profile/$name');
-    if (candidate.existsSync()) {
-      return candidate.absolute.path;
-    }
-  }
-  return null;
-}
-
 Uint8List? _readFont() {
   for (final path in const [
     'fonts/TaameyDavidCLM-Medium.ttf',
@@ -54,7 +41,7 @@ Uint8List? _readFont() {
 }
 
 void main() {
-  final libraryPath = _findNativeLibrary();
+  final libraryPath = findNativeShaperLibrary();
   final fontBytes = _readFont();
   final skipReason = libraryPath == null
       ? 'the native shaper is not built'
@@ -202,6 +189,54 @@ void main() {
       expect(bytes.length, greaterThan(1000));
     });
 
+    // Regression: with less room than the padding, a line was forced onto the
+    // page anyway and printed over the line above it.
+    test('moves a line that has no room left to the next page', () async {
+      ShaperLibrary.path = libraryPath;
+      final shaper = ShaperFont.register(fontBytes!);
+      addTearDown(shaper.dispose);
+
+      const format = PdfPageFormat.a5;
+      const margin = 24.0;
+      final painted = <(int, double)>[];
+      final document = pw.Document();
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: format,
+          margin: const pw.EdgeInsets.all(margin),
+          build: (context) {
+            final pdfFont = PdfShapedFont(
+              context.document,
+              shaper: shaper,
+              fontBytes: fontBytes,
+            );
+            return [
+              // Leaves 10pt, less than the 16pt of padding below.
+              pw.SizedBox(height: format.height - 2 * margin - 10),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(8),
+                child: _PaintRecorder(
+                  painted,
+                  buildParagraph(2),
+                  fonts: [pdfFont],
+                  fontSize: 16,
+                ),
+              ),
+            ];
+          },
+        ),
+      );
+      await document.save();
+
+      expect(document.document.pdfPageList.pages, hasLength(2));
+      final onFirstPage = painted.where((entry) => entry.$1 == 1);
+      expect(onFirstPage.every((entry) => entry.$2 == 0), isTrue);
+      expect(
+        painted.where((entry) => entry.$1 == 2 && entry.$2 > 0),
+        hasLength(1),
+      );
+    });
+
     test('renders a multi-line document for inspection', () async {
       ShaperLibrary.path = libraryPath;
       final shaper = ShaperFont.register(fontBytes!);
@@ -247,4 +282,22 @@ void main() {
       expect(text, contains('/Identity-H'));
     });
   }, skip: skipReason);
+}
+
+/// Records, for every paint, the page and the height of the lines drawn.
+class _PaintRecorder extends ShapedText {
+  _PaintRecorder(
+    this.painted,
+    super.text, {
+    required super.fonts,
+    required super.fontSize,
+  });
+
+  final List<(int, double)> painted;
+
+  @override
+  void paint(pw.Context context) {
+    painted.add((context.pageNumber, box!.height));
+    super.paint(context);
+  }
 }
