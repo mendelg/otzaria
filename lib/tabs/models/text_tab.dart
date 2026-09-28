@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/utils/ui/reading_left_pane_policy.dart';
+import 'package:otzaria/widgets/lists/jump_aware_item_scroll_controller.dart';
 
 /// Represents a tab that contains a text book.
 ///
@@ -65,7 +66,8 @@ class TextBookTab extends OpenedTab {
   /// The bloc that manages the text book state and logic.
   late final TextBookBloc bloc;
 
-  final ItemScrollController scrollController = ItemScrollController();
+  final JumpAwareItemScrollController scrollController =
+      JumpAwareItemScrollController();
   final ItemPositionsListener positionsListener =
       ItemPositionsListener.create();
   // בקרים נוספים עבור תצוגה מפוצלת או רשימות מקבילות

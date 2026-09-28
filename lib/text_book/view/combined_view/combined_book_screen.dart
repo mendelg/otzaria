@@ -716,6 +716,11 @@ class _CombinedViewState extends State<CombinedView> {
     setState(() {});
   }
 
+  void _clearSelectionBeforeJump() {
+    if (_savedSelectedText.value == null) return;
+    _selectionAreaKey.currentState?.selectableRegion.clearSelection();
+  }
+
   void _clearSelectionState() {
     _pendingSelectionClear = false;
     widget.selectionSyncController?.clear(_selectionOwner);
@@ -811,6 +816,9 @@ class _CombinedViewState extends State<CombinedView> {
 
     // האזנה לשינויים במיקומי הפריטים כדי לאפס את הבחירה בגלילה
     widget.tab.positionsListener.itemPositions.addListener(_onScroll);
+    widget.tab.scrollController.addBeforeJumpListener(
+      _clearSelectionBeforeJump,
+    );
     // עדכון האינדקס ב-tab בזמן אמת
     widget.tab.positionsListener.itemPositions.addListener(_updateTabIndex);
     widget.tab.dynamicCopyRequestNotifier.addListener(_onDynamicCopyRequest);
@@ -992,6 +1000,9 @@ class _CombinedViewState extends State<CombinedView> {
     _cancelPendingAnchorHover();
     LinkPreviewOverlay.dismiss();
     widget.tab.positionsListener.itemPositions.removeListener(_onScroll);
+    widget.tab.scrollController.removeBeforeJumpListener(
+      _clearSelectionBeforeJump,
+    );
     widget.tab.positionsListener.itemPositions.removeListener(_updateTabIndex);
     _savedSelectedText.dispose();
     _savedSelectedIndex.dispose();
@@ -2212,14 +2223,29 @@ class _CombinedViewState extends State<CombinedView> {
                                               }
                                             }
                                             return SmoothWheelScroll(
-                                              child: ScrollPositionReanchor(
-                                                preferredIndex:
-                                                    _selectedItemIndex(state),
-                                                scrollController:
-                                                    widget.tab.scrollController,
-                                                positionsListener: widget
-                                                    .tab
-                                                    .positionsListener,
+                                              child: ValueListenableBuilder(
+                                                valueListenable:
+                                                    _savedSelectedText,
+                                                builder:
+                                                    (
+                                                      context,
+                                                      selected,
+                                                      list,
+                                                    ) => ScrollPositionReanchor(
+                                                      // עיגון הוא קפיצה, והיה מנקה את הבחירה.
+                                                      enabled: selected == null,
+                                                      preferredIndex:
+                                                          _selectedItemIndex(
+                                                            state,
+                                                          ),
+                                                      scrollController: widget
+                                                          .tab
+                                                          .scrollController,
+                                                      positionsListener: widget
+                                                          .tab
+                                                          .positionsListener,
+                                                      child: list!,
+                                                    ),
                                                 child: buildOuterList(
                                                   state,
                                                   noteMap,
