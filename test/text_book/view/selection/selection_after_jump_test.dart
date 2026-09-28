@@ -18,6 +18,7 @@ import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_book/view/combined_view/combined_book_screen.dart';
+import 'package:otzaria/widgets/lists/scroll_position_reanchor.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../../test_helpers/memory_cache_provider.dart';
@@ -153,6 +154,7 @@ void main() {
     WidgetTester tester, {
     required double scrolledBy,
     required Future<void> Function(TextBookTab tab) move,
+    required Object expected,
   }) async {
     final tab = await pumpView(tester);
     if (scrolledBy > 0) {
@@ -179,7 +181,7 @@ void main() {
     await move(tab);
     await tester.pumpAndSettle();
 
-    expect(selected(), anyOf(isEmpty, 'מילה8'));
+    expect(selected(), expected);
   }
 
   for (final scrolledBy in [0.0, 150.0]) {
@@ -188,6 +190,7 @@ void main() {
         tester,
         scrolledBy: scrolledBy,
         move: (tab) async => tab.scrollController.jumpTo(index: 50),
+        expected: isEmpty,
       );
     });
     testWidgets('scrollTo אחרי גלילה של $scrolledBy', (tester) async {
@@ -200,24 +203,32 @@ void main() {
             duration: const Duration(milliseconds: 300),
           ),
         ),
+        expected: isEmpty,
       );
     });
   }
 
-  testWidgets('עיגון מחדש אחרי גלילה של יותר ממסך', (tester) async {
+  // מעבר למסך שלם ומנוחה מפעילים עיגון מחדש; בחזרה הבחירה על אותה מילה.
+  testWidgets('גלילה של יותר ממסך וחזרה שומרת את הבחירה', (tester) async {
+    Future<void> scrollBy(TextBookTab tab, double offset) async {
+      unawaited(
+        tab.mainOffsetController.animateScroll(
+          offset: offset,
+          duration: const Duration(milliseconds: 100),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.pump(ScrollPositionReanchor.idleDelay * 2);
+    }
+
     await selectThenMove(
       tester,
       scrolledBy: 150,
       move: (tab) async {
-        unawaited(
-          tab.mainOffsetController.animateScroll(
-            offset: 600,
-            duration: const Duration(milliseconds: 100),
-          ),
-        );
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(milliseconds: 500));
+        await scrollBy(tab, 520);
+        await scrollBy(tab, -520);
       },
+      expected: 'מילה8',
     );
   });
 }
