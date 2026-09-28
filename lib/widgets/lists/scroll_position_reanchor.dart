@@ -141,7 +141,9 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
   }
 
   void _reanchor() {
-    if (!mounted || !widget.scrollController.isAttached) return;
+    if (!mounted || !widget.enabled || !widget.scrollController.isAttached) {
+      return;
+    }
     final anchor = reanchorTargetPosition(
       widget.positionsListener.itemPositions.value,
     );
