@@ -196,6 +196,68 @@ AND NOT EXISTS (SELECT 1 FROM link_suppressed_side ss WHERE ss.linkId = l.id AND
 GROUP BY l.targetBookId, b.title, b.categoryId
 ORDER BY b.orderIndex, b.title''';
 
+String _breadcrumbSql(String join) =>
+    'WITH RECURSIVE chain(id, parentId, textId, level) AS ('
+    '  SELECT te.id, te.parentId, te.textId, te.level '
+    '  FROM line l '
+    '  JOIN line_toc lt ON lt.lineId = l.id '
+    '  JOIN tocEntry te ON te.id = lt.tocEntryId '
+    '  WHERE l.bookId = ? AND l.lineIndex = ? '
+    '  UNION ALL '
+    '  SELECT te.id, te.parentId, te.textId, te.level '
+    '  FROM tocEntry te JOIN chain c ON te.id = c.parentId'
+    ') '
+    'SELECT t.text FROM chain c $join tocText t ON t.id = c.textId '
+    'WHERE c.level > 0 ORDER BY c.level';
+
+/// ספר אחד עם עץ כותרות בשלוש רמות, בתוך tocText גדול משל ספרים אחרים.
+void _buildTocFixture(sqlite3.Database db) {
+  db.execute('''
+    CREATE TABLE line (id INTEGER PRIMARY KEY, bookId INTEGER NOT NULL,
+      lineIndex INTEGER NOT NULL);
+    CREATE INDEX idx_line_book_index ON line(bookId, lineIndex);
+    CREATE TABLE tocText (id INTEGER PRIMARY KEY, text TEXT NOT NULL UNIQUE);
+    CREATE INDEX idx_toc_text ON tocText(text);
+    CREATE TABLE tocEntry (id INTEGER PRIMARY KEY, bookId INTEGER NOT NULL,
+      parentId INTEGER, textId INTEGER NOT NULL, level INTEGER NOT NULL);
+    CREATE INDEX idx_toc_book ON tocEntry(bookId);
+    CREATE TABLE line_toc (lineId INTEGER PRIMARY KEY,
+      tocEntryId INTEGER NOT NULL);
+    CREATE INDEX idx_linetoc_toc ON line_toc(tocEntryId);
+  ''');
+  for (var i = 1; i <= 500; i++) {
+    db.execute('INSERT INTO tocText VALUES (?, ?)', [i, 'toc $i']);
+  }
+  db.execute('INSERT INTO tocEntry VALUES (1, 1, NULL, 400, 0)');
+  var entryId = 1;
+  for (var chapter = 0; chapter < 4; chapter++) {
+    final chapterId = ++entryId;
+    db.execute('INSERT INTO tocEntry VALUES (?, 1, 1, ?, 1)', [
+      chapterId,
+      10 + chapter,
+    ]);
+    for (var section = 0; section < 3; section++) {
+      final sectionId = ++entryId;
+      db.execute('INSERT INTO tocEntry VALUES (?, 1, ?, ?, 2)', [
+        sectionId,
+        chapterId,
+        100 + chapter * 3 + section,
+      ]);
+      for (var k = 0; k < 2; k++) {
+        final lineIndex = (chapter * 3 + section) * 2 + k;
+        db.execute('INSERT INTO line VALUES (?, 1, ?)', [
+          lineIndex + 1,
+          lineIndex,
+        ]);
+        db.execute('INSERT INTO line_toc VALUES (?, ?)', [
+          lineIndex + 1,
+          k == 0 ? sectionId : chapterId,
+        ]);
+      }
+    }
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -344,6 +406,35 @@ void main() {
       expect(pragma(attached, 'mmap_size'), 0);
     } finally {
       attached.close();
+    }
+  });
+
+  test('שביל הכותרות של שורה זהה לנוסח הקודם, עם sqlite_stat1 ובלעדיה', () {
+    final tocDb = sqlite3.sqlite3.openInMemory();
+    try {
+      _buildTocFixture(tocDb);
+      final oldSql = _breadcrumbSql('JOIN');
+      final newSql = _breadcrumbSql('CROSS JOIN');
+      void expectSame() {
+        for (var lineIndex = 0; lineIndex < 25; lineIndex++) {
+          final params = [1, lineIndex];
+          expect(
+            tocDb.select(newSql, params).map((r) => r['text']).toList(),
+            tocDb.select(oldSql, params).map((r) => r['text']).toList(),
+            reason: 'line $lineIndex',
+          );
+        }
+      }
+
+      expectSame();
+      tocDb.execute('ANALYZE');
+      expectSame();
+      expect(
+        _plan(tocDb, newSql, [1, 0]),
+        contains('SEARCH t USING INTEGER PRIMARY KEY'),
+      );
+    } finally {
+      tocDb.close();
     }
   });
 }

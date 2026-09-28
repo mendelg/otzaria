@@ -1316,7 +1316,8 @@ class SeforimRepository {
       '  SELECT te.id, te.parentId, te.textId, te.level '
       '  FROM tocEntry te JOIN chain c ON te.id = c.parentId'
       ') '
-      'SELECT t.text FROM chain c JOIN tocText t ON t.id = c.textId '
+      // CROSS JOIN: עם sqlite_stat1 המתכנן סורק את כל tocText במקום חיפוש לפי id.
+      'SELECT t.text FROM chain c CROSS JOIN tocText t ON t.id = c.textId '
       'WHERE c.level > 0 ORDER BY c.level',
       [bookId, lineIndex],
     );
