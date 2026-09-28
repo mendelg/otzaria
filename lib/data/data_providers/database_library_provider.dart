@@ -413,26 +413,22 @@ void _flattenRawRecursive(
 
 // ──────────────────────────────────────────────────────────────────────────
 
-/// הקישורים שצד היעד שלהם בחלון (linkId, targetLineId). פרמטרים: (bookId, start, end).
-/// seforim.db: idx_link_target_line מכסה רק בלי תנאי ספר; מצורף: רק (targetBookId, targetLineId).
+/// חלון הקישורים ההפוך ל-seforim.db הרשמי בלבד: IN על idx_link_target_line.
+/// פרמטרים: (bookId, start, end).
 @visibleForTesting
-String inverseWindowLinksSql(DbCapabilities capabilities) =>
-    capabilities.hasIndex('idx_link_target_line')
-    ? '''
-          SELECT l.id, l.targetLineId FROM link l
+const officialInverseWindowLinksSql = '''SELECT l.id, l.targetLineId FROM link l
           WHERE l.targetLineId IN (
             SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
-          )'''
-    : '''
-          SELECT l.id, l.targetLineId FROM line w
-          CROSS JOIN link l
-            ON l.targetLineId = w.id AND l.targetBookId = w.bookId
-          WHERE w.bookId = ? AND w.lineIndex BETWEEN ? AND ?''';
+          )''';
 
-/// הקישורים שצד המקור שלהם בחלון `win(id, bookId)`. CROSS JOIN והספר כעמודה של w:
-/// seforim.db בוחר ב-idx_link_source_line, מסד מצורף ב-(sourceBookId, sourceLineId).
+/// win+anchors הישירים ל-seforim.db הרשמי בלבד: CROSS JOIN מקבע את win כחיצוני על
+/// idx_link_source_line; במסד בלי אינדקס מתאים זו סריקה מלאה של link לכל שורה.
 @visibleForTesting
-const forwardWindowLinksSql = '''
+const officialForwardWindowSql = '''win(id, bookId) AS (
+          SELECT id, bookId FROM line
+          WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
+        ),
+        anchors(linkId, anchorLineId) AS (
           SELECT l.id, l.sourceLineId FROM win w
           CROSS JOIN link l
             ON l.sourceLineId = w.id AND l.sourceBookId = w.bookId''';
@@ -447,6 +443,7 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
   int bookId, {
   int? startLineIndex,
   int? endLineIndex,
+  bool official = false,
 }) {
   final hasSuppressedSide = capabilities.hasLinkSuppressedSide;
   final dependentTypes = LinkTypes.dependentTextTypes.toList();
@@ -489,7 +486,14 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
   final rangeEndJoin = _rangeEndJoinClause(hasLinkRanges, panelSide: 0);
 
   if (hasRange) {
-    final windowLinksArm = inverseWindowLinksSql(capabilities);
+    // מסד שאינו הרשמי נשאר בדיוק עם השאילתה המקורית (ראו officialForwardWindowSql).
+    final windowLinksArm = official
+        ? officialInverseWindowLinksSql
+        : '''SELECT l.id, l.targetLineId FROM link l
+          WHERE l.targetLineId IN (
+            SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
+          )
+            AND l.targetBookId = ?''';
     final coverageArm = hasLinkRanges
         ? '''
           UNION ALL
@@ -502,6 +506,7 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
       bookId,
       startLineIndex,
       endLineIndex,
+      if (!official) bookId,
       if (hasLinkRanges) ...[bookId, startLineIndex, endLineIndex],
       ...types,
     ];
@@ -523,7 +528,7 @@ List<Map<String, dynamic>> _loadInverseSourceRows(
           $provenanceSelect
           $connectionTypeExpr as connectionTypeName
         FROM anchors a
-        CROSS JOIN link l ON l.id = a.linkId
+        ${official ? 'CROSS JOIN' : 'JOIN'} link l ON l.id = a.linkId
         JOIN line tl ON tl.id = a.anchorLineId
         JOIN line sl ON l.sourceLineId = sl.id
         JOIN book sb ON l.sourceBookId = sb.id
@@ -767,6 +772,7 @@ List<Map<String, dynamic>> _loadBookLinksRowsInIsolate({
 ({List<Map<String, dynamic>> rows, int? maxSourceLineIndex})
 _loadBookLinkTargetsSummaryRowsInIsolate({
   required ReadOnlyDbTarget target,
+  required bool official,
   required String title,
   required int categoryId,
 }) {
@@ -891,10 +897,13 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
     // סריקה יורדת של שורות הספר עוצרת בשורה המקושרת הראשונה. תנאי הספר נדרש
     // למסד מצורף, שבו רק (sourceBookId, sourceLineId) מאונדקס.
     final maxRows = db.select(
-      'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
-      'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
-      'AND l.sourceBookId = sl.bookId) '
-      'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx',
+      official
+          ? 'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
+                'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
+                'AND l.sourceBookId = sl.bookId) '
+                'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx'
+          : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
+                'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
       [bookId],
     ).toMapList();
     final maxSourceLineIndex = maxRows.isEmpty
@@ -915,12 +924,14 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
 Future<({List<Map<String, dynamic>> rows, int? maxSourceLineIndex})>
 _runBookLinkTargetsSummaryInIsolate({
   required ReadOnlyDbTarget target,
+  required bool official,
   required String title,
   required int categoryId,
 }) {
   return Isolate.run(
     () => _loadBookLinkTargetsSummaryRowsInIsolate(
       target: target,
+      official: official,
       title: title,
       categoryId: categoryId,
     ),
@@ -929,6 +940,7 @@ _runBookLinkTargetsSummaryInIsolate({
 
 List<Map<String, dynamic>> _loadBookLinksRowsInRangeInIsolate({
   required ReadOnlyDbTarget target,
+  required bool official,
   required String title,
   required int categoryId,
   required String fileType,
@@ -992,13 +1004,16 @@ List<Map<String, dynamic>> _loadBookLinksRowsInRangeInIsolate({
           SELECT lc.linkId, lc.lineId FROM link_coverage lc
           WHERE lc.side = 0 AND lc.lineId IN (SELECT id FROM win)'''
         : '';
-    final rows = db.select('''
-        WITH win(id, bookId) AS (
-          SELECT id, bookId FROM line
-          WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
+    final windowSql = official
+        ? officialForwardWindowSql
+        : '''win(id) AS (
+          SELECT id FROM line WHERE bookId = ? AND lineIndex BETWEEN ? AND ?
         ),
         anchors(linkId, anchorLineId) AS (
-          $forwardWindowLinksSql
+          SELECT l.id, l.sourceLineId FROM link l
+          WHERE l.sourceLineId IN (SELECT id FROM win)''';
+    final rows = db.select('''
+        WITH $windowSql
           $coverageArm
         )
         SELECT
@@ -1033,6 +1048,7 @@ List<Map<String, dynamic>> _loadBookLinksRowsInRangeInIsolate({
         bookId,
         startLineIndex: startLineIndex,
         endLineIndex: endLineIndex,
+        official: official,
       ),
     ];
   } finally {
@@ -1279,6 +1295,7 @@ Future<List<Map<String, Object?>>> _runBookLinksInIsolate({
 /// ראה ההסבר ב-[_runAlternativeStructuresInIsolate].
 Future<List<Map<String, Object?>>> _runBookLinksInRangeInIsolate({
   required ReadOnlyDbTarget target,
+  required bool official,
   required String title,
   required int categoryId,
   required String fileType,
@@ -1289,6 +1306,7 @@ Future<List<Map<String, Object?>>> _runBookLinksInRangeInIsolate({
   return Isolate.run(
     () => _loadBookLinksRowsInRangeInIsolate(
       target: target,
+      official: official,
       title: title,
       categoryId: categoryId,
       fileType: fileType,
@@ -1944,6 +1962,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
   static List<Map<String, dynamic>> loadBookLinksRowsInRangeForTesting({
     required String dbPath,
     bool untrusted = false,
+    bool official = false,
     required String title,
     required int categoryId,
     required String fileType,
@@ -1953,6 +1972,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
   }) {
     return _loadBookLinksRowsInRangeInIsolate(
       target: (path: dbPath, untrusted: untrusted, immutable: false),
+      official: official,
       title: title,
       categoryId: categoryId,
       fileType: fileType,
@@ -1967,11 +1987,13 @@ class DatabaseLibraryProvider implements LibraryProvider {
   loadBookLinkTargetsSummaryRowsForTesting({
     required String dbPath,
     bool untrusted = false,
+    bool official = false,
     required String title,
     required int categoryId,
   }) {
     return _loadBookLinkTargetsSummaryRowsInIsolate(
       target: (path: dbPath, untrusted: untrusted, immutable: false),
+      official: official,
       title: title,
       categoryId: categoryId,
     );
@@ -4276,6 +4298,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
       },
       () => _runBookLinksInRangeInIsolate(
         target: target,
+        official: source is OfficialBookSource,
         title: title,
         categoryId: categoryId,
         fileType: fileType,
@@ -4339,6 +4362,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
     try {
       final result = await _runBookLinkTargetsSummaryInIsolate(
         target: target,
+        official: source is OfficialBookSource,
         title: title,
         categoryId: categoryId,
       );

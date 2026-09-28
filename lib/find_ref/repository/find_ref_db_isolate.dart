@@ -660,7 +660,7 @@ void _workerMain(_Bootstrap bootstrap) {
     if (suspended) return null;
     if (repository != null) return repository;
     try {
-      final db = MyDatabase.withPath(dbPath, readOnly: true);
+      final db = MyDatabase.withPath(dbPath, readOnly: true, official: true);
       final repo = SeforimRepository(db);
       await repo.ensureInitialized();
       repository = repo;

@@ -44,10 +44,29 @@ ORDER BY b.orderIndex, b.title;
 --
 -- הטווח מסונן לפי `sl.lineIndex` של שורת המקור (לא לפי id), כדי להתיישר עם
 -- ה-`segment` של ערכי ה-TOC (=`line.lineIndex`). אינדקס `idx_line_book_index`
--- על `line(bookId, lineIndex)` משרת את הסינון. CROSS JOIN מ-sl + הספר כעמודה
--- (לא `= ?`): seforim.db בוחר ב-idx_link_source_line, מצורף ב-(sourceBookId, sourceLineId).
+-- על `line(bookId, lineIndex)` משרת את הסינון.
 -- פרמטרים: (sourceBookId, startLineIndex, endLineIndex).
 selectCommentatorsByLineRange:
+SELECT l.targetBookId, b.title AS targetBookTitle, a.name AS author,
+       COUNT(*) AS linkCount, MIN(tl.lineIndex) AS targetLineIndex
+FROM link l
+JOIN connection_type ct ON l.connectionTypeId = ct.id
+JOIN book b ON l.targetBookId = b.id
+JOIN line sl ON l.sourceLineId = sl.id
+JOIN line tl ON l.targetLineId = tl.id
+LEFT JOIN book_author ba ON b.id = ba.bookId
+LEFT JOIN author a ON ba.authorId = a.id
+WHERE l.sourceBookId = ?
+AND ct.name IN ('COMMENTARY', 'SUPER_COMMENTARY', 'TARGUM', 'MIDRASH', 'PARSHANUT', 'DIBUR_HAMATCHIL', 'ELUCIDATION', 'FOOTNOTES')
+AND sl.lineIndex >= ?
+AND sl.lineIndex < ?
+/*LINK_VISIBILITY_FILTER*/
+GROUP BY l.targetBookId, b.title, a.name
+ORDER BY b.orderIndex, b.title;
+
+-- גרסה ל-seforim.db הרשמי בלבד (LinkDao בוחר לפי isOfficial): CROSS JOIN מקבע את sl
+-- כחיצוני על idx_link_source_line; במסד בלי אינדקס כזה זו סריקה מלאה של link לכל שורה.
+selectCommentatorsByLineRangeOfficial:
 SELECT l.targetBookId, b.title AS targetBookTitle, a.name AS author,
        COUNT(*) AS linkCount, MIN(tl.lineIndex) AS targetLineIndex
 FROM line sl
@@ -74,9 +93,31 @@ ORDER BY b.orderIndex, b.title;
 --   `minTargetLineIndex`/`maxTargetLineIndex` — קצות טווח המפרש על פני כל הקטע;
 --      כשאין התאמה מדויקת מציגים את כל התוכן שבטווח זה.
 -- מסנן את `excludeBookId` (ספר המפרש שממנו הגיע המשתמש).
--- הצירוף ל-link כמו ב-selectCommentatorsByLineRange.
 -- פרמטרים: (exactLine, sourceBookId, startLineIndex, endLineIndex, excludeBookId).
 selectCommentaryLinksByLineRange:
+SELECT l.targetBookId, b.title AS targetBookTitle,
+       b.categoryId AS targetCategoryId, NULL AS targetFileType,
+       MIN(ct.name) AS connectionType,
+       MIN(tl.lineIndex) AS minTargetLineIndex,
+       MAX(tl.lineIndex) AS maxTargetLineIndex,
+       MIN(CASE WHEN sl.lineIndex = ? THEN tl.lineIndex END) AS exactTargetLineIndex
+FROM link l
+JOIN connection_type ct ON l.connectionTypeId = ct.id
+JOIN book b ON l.targetBookId = b.id
+JOIN line sl ON l.sourceLineId = sl.id
+JOIN line tl ON l.targetLineId = tl.id
+WHERE l.sourceBookId = ?
+AND ct.name IN ('COMMENTARY', 'SUPER_COMMENTARY', 'TARGUM', 'MIDRASH', 'PARSHANUT', 'DIBUR_HAMATCHIL', 'FOOTNOTES')
+AND sl.lineIndex >= ?
+AND sl.lineIndex < ?
+AND l.targetBookId != ?
+/*LINK_VISIBILITY_FILTER*/
+GROUP BY l.targetBookId, b.title, b.categoryId
+ORDER BY b.orderIndex, b.title;
+
+-- גרסה ל-seforim.db הרשמי בלבד (LinkDao בוחר לפי isOfficial): CROSS JOIN מקבע את sl
+-- כחיצוני על idx_link_source_line; במסד בלי אינדקס כזה זו סריקה מלאה של link לכל שורה.
+selectCommentaryLinksByLineRangeOfficial:
 SELECT l.targetBookId, b.title AS targetBookTitle,
        b.categoryId AS targetCategoryId, NULL AS targetFileType,
        MIN(ct.name) AS connectionType,

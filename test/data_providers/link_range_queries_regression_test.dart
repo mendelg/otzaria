@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/data/data_providers/link_visibility_sql.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
+import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
@@ -20,7 +21,8 @@ int _lineId(int bookId, int lineIndex) => bookId * 1000 + lineIndex;
 
 /// צורת האינדקסים על link: של seforim.db, או רק המורכבים שמומלצים למסד מצורף
 /// (docs/personal_databases.md). בשתיהן בלי sqlite_stat1.
-enum _Shape { seforim, attached }
+/// bare: מסד מצורף בלי שום אינדקס על link.
+enum _Shape { seforim, attached, bare }
 
 const _seforimLinkIndexes = '''
     CREATE INDEX idx_link_source_book ON link(sourceBookId);
@@ -59,9 +61,14 @@ void _buildFixture(sqlite3.Database db, _Shape shape) {
     CREATE TABLE author (id INTEGER PRIMARY KEY, name TEXT);
     CREATE TABLE book_author (bookId INTEGER, authorId INTEGER);
   ''');
-  db.execute(
-    shape == _Shape.seforim ? _seforimLinkIndexes : _attachedLinkIndexes,
-  );
+  switch (shape) {
+    case _Shape.seforim:
+      db.execute(_seforimLinkIndexes);
+    case _Shape.attached:
+      db.execute(_attachedLinkIndexes);
+    case _Shape.bare:
+      break;
+  }
   final books = {
     _baseBook: 'base',
     _commentaryA: 'commentary-a',
@@ -178,45 +185,6 @@ void _expectNoLinkScan(String plan, {required String reason}) {
   expect(plan, isNot(contains('idx_link_target_book')), reason: reason);
 }
 
-const _oldCommentatorsByLineRange = '''
-SELECT l.targetBookId, b.title AS targetBookTitle, a.name AS author,
-       COUNT(*) AS linkCount, MIN(tl.lineIndex) AS targetLineIndex
-FROM link l
-JOIN connection_type ct ON l.connectionTypeId = ct.id
-JOIN book b ON l.targetBookId = b.id
-JOIN line sl ON l.sourceLineId = sl.id
-JOIN line tl ON l.targetLineId = tl.id
-LEFT JOIN book_author ba ON b.id = ba.bookId
-LEFT JOIN author a ON ba.authorId = a.id
-WHERE l.sourceBookId = ?
-AND ct.name IN ('COMMENTARY', 'SUPER_COMMENTARY', 'TARGUM', 'MIDRASH', 'PARSHANUT', 'DIBUR_HAMATCHIL', 'ELUCIDATION', 'FOOTNOTES')
-AND sl.lineIndex >= ?
-AND sl.lineIndex < ?
-AND NOT EXISTS (SELECT 1 FROM link_suppressed_side ss WHERE ss.linkId = l.id AND ss.side = 0)
-GROUP BY l.targetBookId, b.title, a.name
-ORDER BY b.orderIndex, b.title''';
-
-const _oldCommentaryLinksByLineRange = '''
-SELECT l.targetBookId, b.title AS targetBookTitle,
-       b.categoryId AS targetCategoryId, NULL AS targetFileType,
-       MIN(ct.name) AS connectionType,
-       MIN(tl.lineIndex) AS minTargetLineIndex,
-       MAX(tl.lineIndex) AS maxTargetLineIndex,
-       MIN(CASE WHEN sl.lineIndex = ? THEN tl.lineIndex END) AS exactTargetLineIndex
-FROM link l
-JOIN connection_type ct ON l.connectionTypeId = ct.id
-JOIN book b ON l.targetBookId = b.id
-JOIN line sl ON l.sourceLineId = sl.id
-JOIN line tl ON l.targetLineId = tl.id
-WHERE l.sourceBookId = ?
-AND ct.name IN ('COMMENTARY', 'SUPER_COMMENTARY', 'TARGUM', 'MIDRASH', 'PARSHANUT', 'DIBUR_HAMATCHIL', 'FOOTNOTES')
-AND sl.lineIndex >= ?
-AND sl.lineIndex < ?
-AND l.targetBookId != ?
-AND NOT EXISTS (SELECT 1 FROM link_suppressed_side ss WHERE ss.linkId = l.id AND ss.side = 0)
-GROUP BY l.targetBookId, b.title, b.categoryId
-ORDER BY b.orderIndex, b.title''';
-
 String _breadcrumbSql(String join) =>
     'WITH RECURSIVE chain(id, parentId, textId, level) AS ('
     '  SELECT te.id, te.parentId, te.textId, te.level '
@@ -318,117 +286,128 @@ void main() {
   const windows = [(0, 0), (0, 9), (3, 17), (18, 25), (30, 39), (0, 39)];
 
   for (final shape in _Shape.values) {
-    final untrusted = shape == _Shape.attached;
-
-    test('${shape.name}: חלון הקישורים זהה לטעינת כל הספר המסוננת לחלון', () {
-      for (final title in ['commentary-a', 'commentary-b', 'base']) {
-        final all = DatabaseLibraryProvider.loadBookLinksRowsForTesting(
-          dbPath: paths[shape]!,
-          untrusted: untrusted,
-          title: title,
-          categoryId: 7,
-          fileType: 'txt',
-        );
-        for (final (start, end) in windows) {
-          final ranged =
-              DatabaseLibraryProvider.loadBookLinksRowsInRangeForTesting(
-                dbPath: paths[shape]!,
-                untrusted: untrusted,
-                title: title,
-                categoryId: 7,
-                fileType: 'txt',
-                startLineIndex: start,
-                endLineIndex: end,
-              );
-          final expected = all.where((r) {
-            final index = r['sourceLineIndex'] as int;
-            return index >= start && index <= end;
-          });
-          expect(
-            _canonical(ranged),
-            _canonical(expected),
-            reason: '$title [$start, $end]',
-          );
-        }
-      }
-    });
-
-    test('${shape.name}: קישורי החלון נשלפים בלי לסרוק את link', () {
-      final db = dbs[shape]!;
-      final inverse = inverseWindowLinksSql(DbCapabilities.probe(db));
-      final inversePlan = _plan(
-        db,
-        'WITH anchors(linkId, anchorLineId) AS ($inverse) '
-        'SELECT * FROM anchors',
-        [_commentaryA, 0, 10],
-      );
-      final forwardPlan = _plan(
-        db,
-        'WITH win(id, bookId) AS (SELECT id, bookId FROM line '
-        'WHERE bookId = ? AND lineIndex BETWEEN ? AND ?), '
-        'anchors(linkId, anchorLineId) AS ($forwardWindowLinksSql) '
-        'SELECT * FROM anchors',
-        [_baseBook, 0, 10],
-      );
-      _expectNoLinkScan(inversePlan, reason: 'inverse');
-      _expectNoLinkScan(forwardPlan, reason: 'forward');
-      if (shape == _Shape.attached) {
-        expect(inversePlan, contains('idx_link_target'));
-        expect(forwardPlan, contains('idx_link_source'));
-      } else {
-        expect(inversePlan, contains('COVERING INDEX idx_link_target_line'));
-        expect(forwardPlan, contains('idx_link_source_line'));
-      }
-    });
+    final untrusted = shape != _Shape.seforim;
 
     test(
-      '${shape.name}: שאילתות המפרשים לטווח זהות לנוסח הקודם בלי סריקת link',
+      '${shape.name}: חלון הקישורים זהה לסינון הספר המלא, רשמי ולא רשמי',
       () {
-        final db = dbs[shape]!;
-        final commentators = linkQuery(db, 'selectCommentatorsByLineRange');
-        final commentaryLinks = linkQuery(
-          db,
-          'selectCommentaryLinksByLineRange',
-        );
-        for (final (start, end) in windows) {
-          final exact = start + 1;
-          final rangeParams = [_baseBook, start, end + 1];
-          final linkParams = [exact, _baseBook, start, end + 1, _commentaryB];
-          final newCommentators = db.select(commentators, rangeParams);
-          expect(newCommentators, isNotEmpty);
-          expect(
-            _canonical(newCommentators),
-            _canonical(db.select(_oldCommentatorsByLineRange, rangeParams)),
+        for (final title in ['commentary-a', 'commentary-b', 'base']) {
+          final all = DatabaseLibraryProvider.loadBookLinksRowsForTesting(
+            dbPath: paths[shape]!,
+            untrusted: untrusted,
+            title: title,
+            categoryId: 7,
+            fileType: 'txt',
           );
-          expect(
-            _canonical(db.select(commentaryLinks, linkParams)),
-            _canonical(db.select(_oldCommentaryLinksByLineRange, linkParams)),
-          );
-        }
-
-        for (final (sql, params) in [
-          (commentators, [_baseBook, 0, 10]),
-          (commentaryLinks, [1, _baseBook, 0, 10, _commentaryB]),
-        ]) {
-          final plan = _plan(db, sql, params);
-          _expectNoLinkScan(plan, reason: sql);
-          expect(plan, contains('idx_line_book_index'));
-          expect(
-            plan,
-            contains(
-              shape == _Shape.seforim
-                  ? 'idx_link_source_line'
-                  : 'idx_link_source (sourceBookId=? AND sourceLineId=?)',
-            ),
-          );
+          for (final official in [true, false]) {
+            for (final (start, end) in windows) {
+              final ranged =
+                  DatabaseLibraryProvider.loadBookLinksRowsInRangeForTesting(
+                    dbPath: paths[shape]!,
+                    untrusted: untrusted,
+                    official: official,
+                    title: title,
+                    categoryId: 7,
+                    fileType: 'txt',
+                    startLineIndex: start,
+                    endLineIndex: end,
+                  );
+              final expected = all.where((r) {
+                final index = r['sourceLineIndex'] as int;
+                return index >= start && index <= end;
+              });
+              expect(
+                _canonical(ranged),
+                _canonical(expected),
+                reason: '$title [$start, $end] official=$official',
+              );
+            }
+          }
         }
       },
     );
 
     test(
-      '${shape.name}: השורה המקושרת הגבוהה בסיכום זהה ל-MAX על קישורי הספר',
-      () {
+      '${shape.name}: שאילתות המפרשים הרשמיות מחזירות כמו המקוריות',
+      () async {
         final db = dbs[shape]!;
+        for (final name in [
+          'selectCommentatorsByLineRange',
+          'selectCommentaryLinksByLineRange',
+        ]) {
+          expect(linkQuery(db, name), isNot(contains('CROSS JOIN')));
+          expect(linkQuery(db, '${name}Official'), contains('CROSS JOIN'));
+        }
+        for (final (start, end) in windows) {
+          final exact = start + 1;
+          final rangeParams = [_baseBook, start, end + 1];
+          final linkParams = [exact, _baseBook, start, end + 1, _commentaryB];
+          final commentators = db.select(
+            linkQuery(db, 'selectCommentatorsByLineRange'),
+            rangeParams,
+          );
+          expect(commentators, isNotEmpty);
+          expect(
+            _canonical(
+              db.select(
+                linkQuery(db, 'selectCommentatorsByLineRangeOfficial'),
+                rangeParams,
+              ),
+            ),
+            _canonical(commentators),
+          );
+          expect(
+            _canonical(
+              db.select(
+                linkQuery(db, 'selectCommentaryLinksByLineRangeOfficial'),
+                linkParams,
+              ),
+            ),
+            _canonical(
+              db.select(
+                linkQuery(db, 'selectCommentaryLinksByLineRange'),
+                linkParams,
+              ),
+            ),
+          );
+        }
+
+        Future<List<String>> viaDao({required bool official}) async {
+          final database = shape == _Shape.seforim
+              ? MyDatabase.withPath(
+                  paths[shape]!,
+                  readOnly: true,
+                  official: official,
+                )
+              : MyDatabase.untrusted(paths[shape]!);
+          try {
+            await database.database;
+            return _canonical([
+              ...await database.linkDao.selectCommentatorsByLineRange(
+                _baseBook,
+                0,
+                40,
+              ),
+              ...await database.linkDao.selectCommentaryLinksByLineRange(
+                _baseBook,
+                0,
+                40,
+                _commentaryB,
+                1,
+              ),
+            ]);
+          } finally {
+            database.close();
+          }
+        }
+
+        expect(await viaDao(official: true), await viaDao(official: false));
+      },
+    );
+
+    test('${shape.name}: שורת המקור האחרונה עם קישור שווה ל-MAX', () {
+      final db = dbs[shape]!;
+      for (final official in [true, false]) {
         for (final (bookId, title) in [
           (_baseBook, 'base'),
           (_commentaryA, 'commentary-a'),
@@ -443,28 +422,61 @@ void main() {
               DatabaseLibraryProvider.loadBookLinkTargetsSummaryRowsForTesting(
                 dbPath: paths[shape]!,
                 untrusted: untrusted,
+                official: official,
                 title: title,
                 categoryId: 7,
               );
-          expect(summary.maxSourceLineIndex, expected, reason: title);
+          expect(
+            summary.maxSourceLineIndex,
+            expected,
+            reason: '$title official=$official',
+          );
         }
-        final base =
-            DatabaseLibraryProvider.loadBookLinkTargetsSummaryRowsForTesting(
-              dbPath: paths[shape]!,
-              untrusted: untrusted,
-              title: 'base',
-              categoryId: 7,
-            );
-        expect(base.maxSourceLineIndex, lessThan(_linesPerBook - 1));
-      },
-    );
+      }
+    });
   }
 
+  test('seforim: החלון הרשמי נשען על האינדקסים של seforim.db', () {
+    final db = dbs[_Shape.seforim]!;
+    final inversePlan = _plan(
+      db,
+      'WITH anchors(linkId, anchorLineId) AS ($officialInverseWindowLinksSql) '
+      'SELECT * FROM anchors',
+      [_commentaryA, 0, 10],
+    );
+    final forwardPlan = _plan(
+      db,
+      'WITH $officialForwardWindowSql) SELECT * FROM anchors',
+      [_baseBook, 0, 10],
+    );
+    _expectNoLinkScan(inversePlan, reason: 'inverse');
+    _expectNoLinkScan(forwardPlan, reason: 'forward');
+    expect(inversePlan, contains('COVERING INDEX idx_link_target_line'));
+    expect(forwardPlan, contains('idx_link_source_line'));
+
+    for (final (sql, params) in [
+      (
+        linkQuery(db, 'selectCommentatorsByLineRangeOfficial'),
+        [_baseBook, 0, 10],
+      ),
+      (
+        linkQuery(db, 'selectCommentaryLinksByLineRangeOfficial'),
+        [1, _baseBook, 0, 10, _commentaryB],
+      ),
+    ]) {
+      final plan = _plan(db, sql, params);
+      _expectNoLinkScan(plan, reason: sql);
+      expect(plan, contains('idx_line_book_index'));
+      expect(plan, contains('idx_link_source_line'));
+    }
+  });
+
   test(
-    'בלי sqlite_stat1 הנוסח הישן של המפרשים בוחר ב-idx_link_source_book',
+    'בלי sqlite_stat1 השאילתה המקורית בוחרת ב-idx_link_source_book',
     () {
+      final db = dbs[_Shape.seforim]!;
       expect(
-        _plan(dbs[_Shape.seforim]!, _oldCommentatorsByLineRange, [
+        _plan(db, linkQuery(db, 'selectCommentatorsByLineRange'), [
           _baseBook,
           0,
           10,

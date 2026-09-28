@@ -18,6 +18,10 @@ class LinkDao {
 
   Future<DbCapabilities> get _capabilities => _db.capabilities;
 
+  /// גרסת Official מניחה את האינדקסים של seforim.db; במסד אחר היא סורקת את כל link.
+  String _forDb(String queryName) =>
+      _db.isOfficial ? '${queryName}Official' : queryName;
+
   /// שאילתה עם מסנן הנראות, או null כשאין במסד קישורים.
   Future<String?> _visibilityAwareQuery(String queryName) async {
     final query = _queries[queryName]!;
@@ -86,7 +90,9 @@ class LinkDao {
     int startLineIndex,
     int endLineIndex,
   ) async {
-    final query = await _visibilityAwareQuery('selectCommentatorsByLineRange');
+    final query = await _visibilityAwareQuery(
+      _forDb('selectCommentatorsByLineRange'),
+    );
     if (query == null) return const [];
     final db = await database;
     return db.select(
@@ -112,7 +118,7 @@ class LinkDao {
     int exactSourceLineIndex,
   ) async {
     final query = await _visibilityAwareQuery(
-      'selectCommentaryLinksByLineRange',
+      _forDb('selectCommentaryLinksByLineRange'),
     );
     if (query == null) return const [];
     final db = await database;
