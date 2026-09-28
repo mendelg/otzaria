@@ -296,28 +296,16 @@ class MultiWindowService {
     }
   }
 
-  /// מחליף את הכרטיסיה המשורטטת בתמונה **אמיתית** שלה.
-  ///
-  /// ⚠️ שרטוט מחדש ב-GDI אינו יכול להיות זהה: הוא אינו יודע את הגופן, את
-  /// אייקון סוג הכרטיסיה, את כפתור ה-X או את סימון הבחירה. הבקשה הייתה
-  /// שהגרירה תיראה כמו בכרום — כלומר הכרטיסיה עצמה.
-  ///
-  /// [rgba] הוא `ImageByteFormat.rawRgba`, שהוא **מוכפל-מראש** — בדיוק מה
-  /// ש-`AlphaBlend` מצפה לו אחרי החלפת אדום וכחול.
-  /// ⚠️ **גודל היעד נפרד מגודל הצילום, ובמכוון.** מה שנגרר הוא מוק של
-  /// החלון שייפתח — כרטיסיה והתוכן שלה — כלומר בגודל חלון מלא. צילום כזה
-  /// בפיקסלים פיזיים הוא מיליוני פיקסלים, והעברתו בערוץ בתחילת כל גרירה
-  /// היא עשרות MB ולפניהם קריאת פיקסלים מה-GPU. לכן הצילום קטן יותר
-  /// (ראו `previewCaptureRatio`), ו-GDI מותח אותו ל-[targetWidth] ×
-  /// [targetHeight].
-  Future<void> setTabDragImage(
+  /// שולח צילום RGBA מוקטן לתצוגת הגרירה; GDI מותח אותו לגודל חלון היעד.
+  /// הפיקסלים מוכפלים מראש כנדרש ב־AlphaBlend.
+  Future<bool> setTabDragImage(
     Uint8List rgba,
     int width,
     int height, {
     int? targetWidth,
     int? targetHeight,
   }) async {
-    if (!canDragTabsOut) return;
+    if (!canDragTabsOut) return false;
     try {
       await channel.invokeMethod<void>('setTabDragImage', {
         'bytes': rgba,
@@ -326,8 +314,10 @@ class MultiWindowService {
         'targetWidth': ?targetWidth,
         'targetHeight': ?targetHeight,
       });
+      return true;
     } catch (e) {
       debugPrint('setTabDragImage failed: $e');
+      return false;
     }
   }
 

@@ -480,13 +480,26 @@ class CommentaryService {
   }) {
     if (activeCommentators.isEmpty || indexes.isEmpty) return false;
 
-    final indexSet = indexes.map((i) => i + 1).toSet();
+    final sortedIndexes = indexes.map((i) => i + 1).toSet().toList()..sort();
     final commentatorsSet = activeCommentators.toSet();
     String? lastPath;
     String? lastTitle;
 
     return links.any((link) {
-      if (!indexSet.contains(link.index1)) return false;
+      var low = 0;
+      var high = sortedIndexes.length;
+      while (low < high) {
+        final middle = (low + high) ~/ 2;
+        if (sortedIndexes[middle] < link.index1) {
+          low = middle + 1;
+        } else {
+          high = middle;
+        }
+      }
+      if (low == sortedIndexes.length ||
+          !link.overlapsSourceLines(sortedIndexes[low], sortedIndexes[low])) {
+        return false;
+      }
       if (!LinkTypes.isDependentTextLink(link.connectionType)) return false;
       if (link.path2 != lastPath) {
         lastPath = link.path2;

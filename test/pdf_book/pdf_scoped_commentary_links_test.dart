@@ -8,11 +8,13 @@ import 'package:otzaria/pdf_book/view/pdf_commentary_panel.dart';
 /// אם שני הצדדים יגזרו אחרת, צ׳יפ יוצג לסוג שאינו ברשימה (או להיפך).
 Link _link({
   required int index1,
+  int? index1End,
   required String path2,
   String connectionType = 'COMMENTARY',
 }) => Link(
   heRef: 'הפניה',
   index1: index1,
+  index1End: index1End,
   path2: path2,
   index2: 1,
   connectionType: connectionType,
@@ -36,6 +38,23 @@ List<Link> scoped({
 
 void main() {
   group('pdfScopedCommentaryLinks — סינון לפי טווח', () {
+    test('טווח שמתחיל קודם ונחתך בתחום הגלוי נכלל', () {
+      expect(
+        scoped(links: [_link(index1: 5, index1End: 12, path2: 'רש"י')]),
+        hasLength(1),
+      );
+    });
+
+    test('שורת extra באמצע טווח מקושרת', () {
+      expect(
+        scoped(
+          links: [_link(index1: 40, index1End: 60, path2: 'רש"י')],
+          extra: const {50},
+        ),
+        hasLength(1),
+      );
+    });
+
     test('קישור בטווח נכלל', () {
       final links = [_link(index1: 12, path2: 'רש"י')];
       expect(scoped(links: links), hasLength(1));

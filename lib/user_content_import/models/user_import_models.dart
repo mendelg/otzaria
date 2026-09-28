@@ -7,6 +7,19 @@ library;
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/link_types.dart';
 
+/// קובץ ייבוא אחרי שתוכנו נקרא. הייבוא עובד על הצורה הזו ולא על [File], כדי
+/// שאותו מסלול ישרת גם קובץ שנבחר עכשיו וגם קובץ ששמור בספריית הייבוא.
+class ImportedFile {
+  /// שם הקובץ בלבד (בלי נתיב) — הוא שקובע את סוג התוכן.
+  final String name;
+  final String content;
+
+  const ImportedFile({required this.name, required this.content});
+}
+
+/// סוג התוכן שקובץ ייבוא נושא, לפי שמו. משמש להצגה ולקיבוץ בהגדרות.
+enum UserImportKind { links, generations, headings, versions }
+
 /// שמות הדורות הקנוניים שמותר להזין בקובץ הדורות.
 ///
 /// "שאר מפרשים" אינו ברשימה — הוא משמעו "בלי דור" ואין טעם לייבא אותו.
@@ -44,6 +57,38 @@ const Set<String> kNativeConnectionTypes = {
   LinkTypes.law,
   LinkTypes.summary,
   LinkTypes.footnotes,
+};
+
+/// נגזר מ-[LinkTypes.hebrewLabels], כך שסוג חדש ב-DB נתמך בייבוא מיד.
+/// [LinkTypes.altToc] מוחרג: הוא תוצר תוכן-עניינים חלופי ולא נשמר ב-user_link.
+final Set<String> kImportableConnectionTypes = Set.unmodifiable(
+  LinkTypes.hebrewLabels.keys.where((type) => type != LinkTypes.altToc),
+);
+
+/// תווית עברית (כפי שמוצגת בפאנל הקישורים) ← connection_type ב-DB.
+/// הכינויים של [kLegacyHebrewConnectionTypes] גוברים על תווית רשמית זהה.
+final Map<String, String> kHebrewConnectionTypes =
+    _buildHebrewConnectionTypes();
+
+Map<String, String> _buildHebrewConnectionTypes() {
+  final byLabel = <String, String>{};
+  for (final entry in LinkTypes.hebrewLabels.entries) {
+    if (!kImportableConnectionTypes.contains(entry.key)) continue;
+    // putIfAbsent ולא השמה: תווית משותפת נפתרת לסוג הראשון בסדר ההכרזה.
+    byLabel.putIfAbsent(entry.value, () => entry.key);
+  }
+  byLabel.addAll(kLegacyHebrewConnectionTypes);
+  return Map.unmodifiable(byLabel);
+}
+
+/// כינויים שאינם התווית הרשמית ("הפניה" = "עיון", "אחר" = "לא מסווג"), כדי
+/// שקובצי CSV קיימים של משתמשים ימשיכו להיקלט.
+const Map<String, String> kLegacyHebrewConnectionTypes = {
+  'פירוש': LinkTypes.commentary,
+  'תרגום': LinkTypes.targum,
+  'הפניה': LinkTypes.reference,
+  'מקור': LinkTypes.source,
+  'אחר': LinkTypes.other,
 };
 
 /// שמות מבנה שמקבלים את תצוגת המבנה הרשמי המקביל: סימנים/סעיפים מוצגים
@@ -248,6 +293,18 @@ class UserLinkRecord {
   final bool targetIsUserBook;
   final String? targetRef;
   final int? targetLineIndex;
+
+  /// אופסט עוגן בצד המקור, כפי שנכתב ב-native JSON (תווים גולמיים).
+  final int? anchorStart;
+  final int? anchorEnd;
+
+  /// אות העוגן שנגזרה מ-heRef_2, למשל "א".
+  final String? anchorLabel;
+
+  /// סוף טווח שורות בצד המקור/היעד, באינדקס 0-based.
+  final int? sourceLineIndexEnd;
+  final int? targetLineIndexEnd;
+  final String? targetRefEnd;
   final String connectionType;
 
   const UserLinkRecord({
@@ -260,8 +317,35 @@ class UserLinkRecord {
     this.targetIsUserBook = false,
     this.targetRef,
     this.targetLineIndex,
+    this.anchorStart,
+    this.anchorEnd,
+    this.anchorLabel,
+    this.sourceLineIndexEnd,
+    this.targetLineIndexEnd,
+    this.targetRefEnd,
     required this.connectionType,
   });
+
+  /// עותק שבו שדות תצוגה וטווח *חסרים* מושלמים מ-[other]; ערך קיים לעולם
+  /// אינו נדרס. משמש במיזוג שני הצדדים של אותו קישור.
+  UserLinkRecord fillMissingFrom(UserLinkRecord other) => UserLinkRecord(
+    sourceTitle: sourceTitle,
+    sourceCategoryId: sourceCategoryId,
+    sourceIsUserBook: sourceIsUserBook,
+    sourceLineIndex: sourceLineIndex,
+    targetTitle: targetTitle,
+    targetCategoryId: targetCategoryId,
+    targetIsUserBook: targetIsUserBook,
+    targetRef: targetRef ?? other.targetRef,
+    targetLineIndex: targetLineIndex,
+    anchorStart: anchorStart,
+    anchorEnd: anchorEnd ?? other.anchorEnd,
+    anchorLabel: anchorLabel ?? other.anchorLabel,
+    sourceLineIndexEnd: sourceLineIndexEnd ?? other.sourceLineIndexEnd,
+    targetLineIndexEnd: targetLineIndexEnd ?? other.targetLineIndexEnd,
+    targetRefEnd: targetRefEnd ?? other.targetRefEnd,
+    connectionType: connectionType,
+  );
 }
 
 /// שורת קישור בפורמט ה-native של אוצריא (קובצי `<ספר>_links.json` מתיקיית
@@ -279,6 +363,16 @@ class ParsedNativeLink {
   /// הכתובת העברית של היעד (heRef_2) — להצגה בלבד.
   final String? targetRef;
 
+  /// אופסטי עוגן בצד המקור, כפי שנכתבו בקובץ (תווים גולמיים).
+  final int? anchorStart;
+  final int? anchorEnd;
+  final String? anchorLabel;
+
+  /// קצות טווח אופציונליים, 1-based בקובץ ו-0-based לאחר הפענוח.
+  final int? sourceLineNumberEnd;
+  final int? targetLineNumberEnd;
+  final String? targetRefEnd;
+
   /// שם connection_type ב-DB (אחד מ-[kNativeConnectionTypes]).
   final String connectionType;
 
@@ -287,6 +381,12 @@ class ParsedNativeLink {
     required this.targetTitle,
     required this.targetLineNumber,
     this.targetRef,
+    this.anchorStart,
+    this.anchorEnd,
+    this.anchorLabel,
+    this.sourceLineNumberEnd,
+    this.targetLineNumberEnd,
+    this.targetRefEnd,
     required this.connectionType,
   });
 }

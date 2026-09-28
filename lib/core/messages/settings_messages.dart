@@ -242,4 +242,9 @@ abstract class SettingsMessages {
   static const String attachedLibrariesRescanned = 'המסדים נבדקו מחדש';
   static String attachedLibraryError(Object error) =>
       'שגיאה בטיפול במסד: $error';
+
+  // ── קובצי ייבוא (user_import_files_dialog) ──────────────────────────────
+
+  static String importFileExported(String path) => 'הקובץ יוצא אל $path';
+  static const String importFileMissing = 'הקובץ כבר אינו בספריית הייבוא';
 }

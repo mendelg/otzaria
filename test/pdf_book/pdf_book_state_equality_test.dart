@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_state.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -78,6 +79,55 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('טווח מקור או מקור ספר היעד שונה — המצב שונה', () {
+    expect(
+      _state(links: [_link(1, 'א')]),
+      isNot(
+        _state(
+          links: [
+            Link(
+              heRef: 'א',
+              index1: 1,
+              index1End: 3,
+              path2: 'רש"י.txt',
+              index2: 1,
+              connectionType: 'commentary',
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(
+      _state(links: [_link(1, 'א')]),
+      isNot(
+        _state(
+          links: [
+            Link(
+              heRef: 'א',
+              index1: 1,
+              path2: 'רש"י.txt',
+              index2: 1,
+              connectionType: 'commentary',
+              targetSource: BookSource.user,
+            ),
+          ],
+        ),
+      ),
+    );
+  });
+
+  test('מיקום עוגן שונה באותה כמות קישורים — המצב שונה', () {
+    Link anchored(int start) => Link(
+      heRef: 'א',
+      index1: 1,
+      path2: 'רש"י.txt',
+      index2: 1,
+      connectionType: 'commentary',
+      anchorStart: start,
+    );
+    expect(_state(links: [anchored(2)]), isNot(_state(links: [anchored(5)])));
   });
 
   test('outline חסר מול ריק — שונה', () {

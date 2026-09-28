@@ -14,6 +14,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/services.dart' as services;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/windowing/cross_window_tab_drag.dart';
 import 'package:otzaria/core/windowing/drag_preview_colors.dart';
@@ -232,7 +233,10 @@ void main() {
     // ⚠️ המתנה **אמיתית**, ולא `FakeAsync`. המסירה נתלית על טיימר תקופתי
     // שכל פעימה שלו היא קריאת ערוץ, והתשובה חוזרת דרך ה-messenger
     // האסינכרוני — כלומר זמן מדומה לא היה מקדם את המסלול שנבדק.
-    const settle = Duration(milliseconds: 260);
+    //
+    // ⚠️ ארוכה מ-`_snapshotGracePolls`: הבדיקות אינן שולחות מוק, ובלי זה היו
+    // מודדות את ההמתנה לו במקום את המסירה.
+    const settle = Duration(milliseconds: 620);
 
     const colors = DragPreviewColors(
       tab: Color(0xFF202020),
@@ -562,6 +566,88 @@ void main() {
             'צילום שמגיע אחרי `dragOutToSystem` אינו מורכב, ומזייף '
             'את חישוב ה-snapped',
       );
+    });
+
+    // ⚠️ מרגע שהלולאה המודאלית רצה `SetImage` מדלג על `Compose`, ולכן מסירה
+    // לפני שהמוק נשלח משאירה את השרטוט (רק ראש הכרטיסיה).
+    test('יציאה מהירה אינה מוסרת למערכת לפני שהמוק נשלח', () async {
+      runner.cursorTarget = (slot: null, isSelf: false, isShellTray: false);
+      final gate = Completer<void>();
+      runner.systemDragGate = gate;
+
+      drag.begin(firstTab(), colors, tabsBloc: tabsBloc, cancelDrag: () {});
+      // שתי פעימות בחוץ, בלי מוק: המסירה ממתינה.
+      await Future<void>.delayed(const Duration(milliseconds: 140));
+      expect(
+        runner.systemDragCalls,
+        0,
+        reason: 'הגרירה נמסרה למערכת לפני שהיה מה להציג',
+      );
+
+      drag.applySnapshot(
+        TabWindowPreview(
+          image: await opaqueImage(),
+          targetWidth: 1100,
+          targetHeight: 760,
+        ),
+        1,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+
+      expect(runner.setImageCalls, 1);
+      expect(
+        runner.systemDragCalls,
+        1,
+        reason: 'המסירה לא יצאה לדרך אחרי המוק',
+      );
+      expect(runner.imageArrivedAfterHandOff, isFalse);
+      gate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    });
+
+    test(
+      'מוק שלא מגיע אינו תוקע את הגרירה — המסירה יוצאת אחרי חלון החסד',
+      () async {
+        // צילום שנכשל (תת-עץ בלי שכבת ציור) לא יגיע לעולם. תצוגה בגודל
+        // השרטוט היא פשרה סבירה; גרירה שאינה נמסרת אינה.
+        runner.cursorTarget = (slot: null, isSelf: false, isShellTray: false);
+        final gate = Completer<void>();
+        runner.systemDragGate = gate;
+
+        drag.begin(firstTab(), colors, tabsBloc: tabsBloc, cancelDrag: () {});
+        await Future<void>.delayed(const Duration(milliseconds: 620));
+
+        expect(runner.setImageCalls, 0);
+        expect(runner.systemDragCalls, 1);
+        gate.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+      },
+    );
+
+    test('כשל בשליחת מוק ממתין לחלון החסד ואז מוסר למערכת', () async {
+      runner.cursorTarget = (slot: null, isSelf: false, isShellTray: false);
+      runner.imageError = services.PlatformException(code: 'set-image-failed');
+      final gate = Completer<void>();
+      runner.systemDragGate = gate;
+
+      drag.begin(firstTab(), colors, tabsBloc: tabsBloc, cancelDrag: () {});
+      drag.applySnapshot(
+        TabWindowPreview(
+          image: await opaqueImage(),
+          targetWidth: 1100,
+          targetHeight: 760,
+        ),
+        1,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(runner.setImageCalls, 1);
+      expect(runner.systemDragCalls, 0);
+
+      await Future<void>.delayed(const Duration(milliseconds: 470));
+      expect(runner.systemDragCalls, 1);
+      gate.complete();
+      await Future<void>.delayed(const Duration(milliseconds: 60));
     });
 
     test('מוק מגרירה קודמת נדחה אחרי שגרירה חדשה התחילה', () async {
@@ -978,6 +1064,7 @@ class _FakeRunner {
 
   /// כמה פעמים נשלח צילום הכרטיסיה, והאם הוא הגיע **אחרי** המסירה למערכת.
   int setImageCalls = 0;
+  services.PlatformException? imageError;
   Completer<void>? imageGate;
   bool imageArrivedAfterHandOff = false;
   Map<Object?, Object?>? lastOpenArgs;
@@ -1034,6 +1121,7 @@ class _FakeRunner {
               setImageCalls++;
               if (systemDragCalls > 0) imageArrivedAfterHandOff = true;
               await imageGate?.future;
+              if (imageError case final error?) throw error;
               return null;
             case 'dragOutToSystem':
               systemDragCalls++;

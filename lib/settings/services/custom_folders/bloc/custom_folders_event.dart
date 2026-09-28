@@ -88,3 +88,27 @@ class ClearUserContent extends CustomFoldersEvent {
   @override
   List<Object> get props => [];
 }
+
+/// טעינת רשימת קובצי הייבוא לתצוגה בהגדרות.
+class LoadUserImportFiles extends CustomFoldersEvent {
+  const LoadUserImportFiles();
+  @override
+  List<Object> get props => [];
+}
+
+/// השהיה או החזרה של קובץ ייבוא. הקובץ נשאר בספרייה בשני המקרים.
+class SetUserImportFileEnabled extends CustomFoldersEvent {
+  const SetUserImportFileEnabled(this.id, {required this.enabled});
+  final int id;
+  final bool enabled;
+  @override
+  List<Object> get props => [id, enabled];
+}
+
+/// הסרת קובץ ייבוא בודד מהספרייה, על הנתונים שהגיעו ממנו.
+class RemoveUserImportFile extends CustomFoldersEvent {
+  const RemoveUserImportFile(this.id);
+  final int id;
+  @override
+  List<Object> get props => [id];
+}

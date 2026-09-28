@@ -1,31 +1,52 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/text_book/utils/link_processing.dart';
 
 Link makeLink({
   String heRef = 'בראשית א',
   int index1 = 1,
+  int? index1End,
   String path2 = 'תנ"ך/ספר.txt',
   int index2 = 1,
   String connectionType = 'reference',
   int? start,
   int? end,
   int baseProvenance = 0,
+  BookSource targetSource = BookSource.official,
+  int? targetCategoryId,
+  int? anchorStart,
 }) {
   return Link(
     heRef: heRef,
     index1: index1,
+    index1End: index1End,
     path2: path2,
     index2: index2,
     connectionType: connectionType,
     start: start,
     end: end,
     baseProvenance: baseProvenance,
+    targetSource: targetSource,
+    targetCategoryId: targetCategoryId,
+    anchorStart: anchorStart,
   );
 }
 
 void main() {
   group('mergeLinksByIdentity', () {
+    test('שומר טווחים, עוגנים ויעדים שונים באותו זוג שורות', () {
+      final links = [
+        makeLink(index1End: 3),
+        makeLink(index1End: 4),
+        makeLink(anchorStart: 2),
+        makeLink(anchorStart: 5),
+        makeLink(targetSource: BookSource.user),
+        makeLink(targetCategoryId: 7),
+      ];
+      expect(mergeLinksByIdentity([], links), hasLength(links.length));
+    });
+
     test('ממזג קישורים ללא כפילויות לפי זהות', () {
       final existing = [makeLink(index1: 1), makeLink(index1: 2)];
       final incoming = [makeLink(index1: 1), makeLink(index1: 3)];
@@ -80,6 +101,25 @@ void main() {
   });
 
   group('buildLinksByLineMap', () {
+    test('טווח גדול מאונדקס ללא שכפול, כולל שורת אמצע וסוף', () {
+      final link = makeLink(index1: 2, index1End: 1000000);
+      final map = buildLinksByLineMap([link]);
+      expect(map[1], isNull);
+      expect(map[500000], [link]);
+      expect(map[1000000], [link]);
+      expect(map[1000001], isNull);
+      expect(map.containsKey(500000), isTrue);
+    });
+
+    test('מחזיר טווחים חופפים בסדר המקורי ובמפתחות הפנימיים', () {
+      final a = makeLink(index1: 1, index1End: 5);
+      final b = makeLink(index1: 3);
+      final c = makeLink(index1: 2, index1End: 4);
+      final map = buildLinksByLineMap([a, b, c]);
+      expect(map[3], [a, b, c]);
+      expect(map.keys.toSet(), {1, 2, 3, 4, 5});
+    });
+
     test('מקבץ קישורים לפי index1', () {
       final map = buildLinksByLineMap([
         makeLink(index1: 1),
@@ -94,6 +134,17 @@ void main() {
   });
 
   group('computeVisibleLinks', () {
+    test('קישור טווח המופיע בשתי שורות נראות נכלל פעם אחת', () {
+      final link = makeLink(index1: 2, index1End: 4);
+      final visible = computeVisibleLinks(
+        links: [link],
+        visibleIndices: const [1, 2, 3],
+        selectedIndices: const {},
+        linksByLine: buildLinksByLineMap([link]),
+      );
+      expect(visible, [link]);
+    });
+
     test('מחזיר רק קישורים שאינם פרשנות/תרגום ושאינם מבוססי-תווים', () {
       final links = [
         makeLink(index1: 1, connectionType: 'reference'),

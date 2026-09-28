@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
+import 'package:otzaria/user_content_import/models/user_import_models.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
 import 'package:otzaria/user_content_import/services/user_content_importer.dart';
 import 'package:otzaria/user_content_import/services/user_sidecar_sync.dart';
@@ -225,6 +226,384 @@ void main() {
 
     await UserContentRepository(db).clearAllUserContent();
     expect(await headingRows(primary), isEmpty);
+  });
+
+  group('קובצי קישורים בתיקייה', () {
+    /// קובץ קישורים בפורמט ה-native של אוצריא, כפי שהוא יושב בתיקיית links.
+    void writeNativeLinks(String baseTitle, String commentator, int line) =>
+        writeSidecar(
+          '${baseTitle}_links.json',
+          '[{"line_index_1": $line, "line_index_2": 1, '
+              '"heRef_2": "$commentator א", '
+              '"path_2": "$commentator.txt", '
+              '"Conection Type": "linker"}]',
+        );
+
+    Future<List<UserLinkRecord>> linksOf(String title) =>
+        UserContentRepository(db).forwardUserLinks(
+          title,
+          sourceIsUserBook: true,
+        );
+
+    test('קובץ _links.json בתיקייה נקלט אוטומטית בסריקה', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+
+      final errors = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(errors, isEmpty);
+
+      final stored = await linksOf('מגילה');
+      expect(stored.single.targetTitle, 'מפרש');
+      expect(stored.single.sourceLineIndex, 1);
+      // LINKER נשמר כמפרש, כך שהוא מופיע בפאנל המפרשים של הבסיס.
+      expect(stored.single.connectionType, 'COMMENTARY');
+    });
+
+    test('קישור מספר רשמי נקלט עם המאגר המקומי של סנכרון הרקע', () async {
+      final officialDb = MyDatabase.withPath(
+        p.join(tempDir.path, 'seforim.db'),
+      );
+      try {
+        final official = await officialDb.database;
+        official.execute("INSERT INTO source (name) VALUES ('official')");
+        official.execute(
+          'INSERT INTO book (categoryId, sourceId, title, totalLines) '
+          'VALUES (1, 1, ?, 3)',
+          ['מגילה רשמית'],
+        );
+        await addBook('מפרש.txt', 'פירוש');
+        writeNativeLinks('מגילה רשמית', 'מפרש', 2);
+
+        final errors = await UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+          officialRepository: SeforimRepository(officialDb),
+        );
+
+        expect(errors, isEmpty);
+        final stored = await UserContentRepository(db).forwardUserLinks(
+          'מגילה רשמית',
+          sourceIsUserBook: false,
+        );
+        expect(stored, hasLength(1));
+        expect(stored.single.sourceLineIndex, 1);
+        expect(stored.single.targetTitle, 'מפרש');
+        expect(stored.single.targetIsUserBook, isTrue);
+      } finally {
+        officialDb.close();
+      }
+    });
+
+    test('שינוי במסד הרשמי מבטל חתימת קובץ קישורים שלא השתנה', () async {
+      final officialPath = p.join(tempDir.path, 'seforim.db');
+      final officialDb = MyDatabase.withPath(officialPath);
+      try {
+        final official = await officialDb.database;
+        official.execute("INSERT INTO source (name) VALUES ('official')");
+        official.execute(
+          'INSERT INTO book (categoryId, sourceId, title, totalLines) '
+          'VALUES (1, 1, ?, 3)',
+          ['מגילה רשמית'],
+        );
+        await addBook('מפרש.txt', 'פירוש');
+        final sidecar = writeSidecar(
+          'מגילה רשמית_links.json',
+          '[{"line_index_1": 2, "line_index_2": 1, '
+              '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+        );
+        final repository = SeforimRepository(officialDb);
+        Future<List<String>> scan() => UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+          officialRepository: repository,
+        );
+        expect(await scan(), isEmpty);
+        final repo = UserContentRepository(db);
+        final oldSignature = await repo.sidecarSignature(sidecar.path);
+
+        final userRaw = await db.database;
+        userRaw.execute('''
+          CREATE TEMP TRIGGER fail_reimport BEFORE INSERT ON user_link
+          BEGIN SELECT RAISE(ABORT, 'unchanged link was reimported'); END
+        ''');
+        expect(await scan(), isEmpty);
+        userRaw.execute('DROP TRIGGER fail_reimport');
+
+        official.execute(
+          'UPDATE book SET totalLines = 1 WHERE title = ?',
+          ['מגילה רשמית'],
+        );
+        File(officialPath).setLastModifiedSync(
+          DateTime.now().add(const Duration(hours: 1)),
+        );
+        final errors = await scan();
+        expect(errors.single, contains('חורגת מגבולות'));
+        expect(await repo.sidecarSignature(sidecar.path), oldSignature);
+        expect(
+          await repo.forwardUserLinks(
+            'מגילה רשמית',
+            sourceIsUserBook: false,
+          ),
+          hasLength(1),
+        );
+      } finally {
+        officialDb.close();
+      }
+    });
+
+    test('מסד רשמי חסר נרשם כלא זמין ומתעדכן כשהוא מופיע', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      final sidecar = writeSidecar(
+        'מגילה_links.json',
+        '[{"line_index_1": 2, "line_index_2": 1, '
+            '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+      );
+      final officialDb = MyDatabase.withPath(
+        p.join(tempDir.path, 'not-yet-created.db'),
+      );
+      try {
+        final repository = SeforimRepository(officialDb);
+        final errors = await UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+          officialRepository: repository,
+        );
+
+        expect(errors, isEmpty);
+        final repo = UserContentRepository(db);
+        expect(
+          await repo.sidecarSignature(sidecar.path),
+          contains('unavailable'),
+        );
+        expect(await linksOf('מגילה'), hasLength(1));
+
+        expect(
+          await UserSidecarSync.applyForFolder(
+            userDb: db,
+            folderPath: folder.path,
+            officialRepository: repository,
+          ),
+          isEmpty,
+        );
+        expect(
+          await repo.sidecarSignature(sidecar.path),
+          isNot(contains('unavailable')),
+        );
+      } finally {
+        officialDb.close();
+      }
+    });
+
+    test('מאגר הרקע מזהה שם ספר שקיים גם ברשמי וגם באישי', () async {
+      final officialDb = MyDatabase.withPath(
+        p.join(tempDir.path, 'seforim.db'),
+      );
+      try {
+        final official = await officialDb.database;
+        official.execute("INSERT INTO source (name) VALUES ('official')");
+        official.execute(
+          'INSERT INTO book (categoryId, sourceId, title, totalLines) '
+          'VALUES (1, 1, ?, 3)',
+          ['מגילה'],
+        );
+        await addBook('מגילה.txt', 'א\nב\nג');
+        await addBook('מפרש.txt', 'פירוש');
+        writeNativeLinks('מגילה', 'מפרש', 2);
+
+        final errors = await UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+          officialRepository: SeforimRepository(officialDb),
+        );
+
+        expect(errors.single, contains('קיים גם בספרייה האישית וגם ברשמית'));
+        expect(await linksOf('מגילה'), isEmpty);
+      } finally {
+        officialDb.close();
+      }
+    });
+
+    test('הסרת הקובץ מהתיקייה מורידה את קישוריו', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      final file = writeSidecar(
+        'מגילה_links.json',
+        '[{"line_index_1": 2, "line_index_2": 1, '
+            '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+      );
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+      expect(await linksOf('מגילה'), hasLength(1));
+
+      file.deleteSync();
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+      expect(await linksOf('מגילה'), isEmpty);
+    });
+
+    test('עריכת הקובץ מחליפה את קישוריו ולא מוסיפה עליהם', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      writeNativeLinks('מגילה', 'מפרש', 3);
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      final stored = await linksOf('מגילה');
+      expect(stored, hasLength(1));
+      expect(stored.single.sourceLineIndex, 2);
+    });
+
+    test('כשל כתיבה באמצע החלפת קישורים משאיר קישורים וחתימה ישנים', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      final sidecar = writeSidecar(
+        'מגילה_links.json',
+        '[{"line_index_1": 1, "line_index_2": 1, '
+            '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+      );
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+      final repo = UserContentRepository(db);
+      final oldSignature = await repo.sidecarSignature(sidecar.path);
+      final raw = await db.database;
+      raw.execute('''
+        CREATE TEMP TRIGGER fail_second_link BEFORE INSERT ON user_link
+        WHEN NEW.sourceLineIndex = 2
+        BEGIN SELECT RAISE(ABORT, 'injected write failure'); END
+      ''');
+
+      sidecar.writeAsStringSync(
+        '[{"line_index_1": 2, "line_index_2": 1, '
+        '"path_2": "מפרש.txt", "Conection Type": "linker"},'
+        '{"line_index_1": 3, "line_index_2": 1, '
+        '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+      );
+      final errors = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+
+      expect(errors.single, contains('injected write failure'));
+      expect((await linksOf('מגילה')).single.sourceLineIndex, 0);
+      expect(await repo.sidecarSignature(sidecar.path), oldSignature);
+    });
+
+    test('שינוי בספר יעד מפעיל קליטה חוזרת גם כשהקובץ לא השתנה', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'א\nב\nג');
+      final raw = await db.database;
+      raw.execute("UPDATE book SET totalLines = 3 WHERE title = 'מפרש'");
+      final sidecar = writeSidecar(
+        'מגילה_links.json',
+        '[{"line_index_1": 1, "line_index_2": 2, '
+            '"path_2": "מפרש.txt", "Conection Type": "linker"}]',
+      );
+      expect(
+        await UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+        ),
+        isEmpty,
+      );
+      final repo = UserContentRepository(db);
+      final oldSignature = await repo.sidecarSignature(sidecar.path);
+
+      raw.execute("UPDATE book SET totalLines = 1 WHERE title = 'מפרש'");
+      final errors = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(errors.single, contains('חורגת מגבולות'));
+      expect((await linksOf('מגילה')).single.targetLineIndex, 1);
+      expect(await repo.sidecarSignature(sidecar.path), oldSignature);
+    });
+
+    test('הופעת ספר אישי בשם יעד רשמי מבטלת חתימת קישורים', () async {
+      await addBook('מגילה.txt', 'א');
+      final raw = await db.database;
+      final source = p.join(folder.path, 'מגילה_links.json');
+      raw.execute(
+        'INSERT INTO user_link (sourceTitle, sourceIsUserBook, '
+        'sourceLineIndex, targetTitle, targetIsUserBook, targetLineIndex, '
+        'connectionType, source) VALUES (?, 1, 0, ?, 0, 0, ?, ?)',
+        ['מגילה', 'מפרש', 'COMMENTARY', source],
+      );
+      final repo = UserContentRepository(db);
+      await repo.replaceSidecarLinkBookDependencies(source);
+      final before = await repo.sidecarLinkBookSignature(source);
+
+      await addBook('מפרש.txt', 'א');
+
+      expect(await repo.sidecarLinkBookSignature(source), isNot(before));
+    });
+
+    test('קובץ גדול נקלט פעם אחת וחתימה חוסכת קליטה חוזרת', () async {
+      await addBook('מגילה.txt', List.filled(500, 'א').join('\n'));
+      await addBook('מפרש.txt', 'א');
+      final rows = [
+        for (var line = 1; line <= 500; line++)
+          '{"line_index_1": $line, "line_index_2": 1, '
+              '"path_2": "מפרש.txt", "Conection Type": "linker"}',
+      ];
+      writeSidecar('מגילה_links.json', '[${rows.join(',')}]');
+      expect(
+        await UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+        ),
+        isEmpty,
+      );
+      expect(await linksOf('מגילה'), hasLength(500));
+
+      final raw = await db.database;
+      raw.execute('''
+        CREATE TEMP TRIGGER fail_reimport BEFORE INSERT ON user_link
+        BEGIN SELECT RAISE(ABORT, 'unchanged file was reimported'); END
+      ''');
+      expect(
+        await UserSidecarSync.applyForFolder(
+          userDb: db,
+          folderPath: folder.path,
+        ),
+        isEmpty,
+      );
+      expect(await linksOf('מגילה'), hasLength(500));
+    });
+
+    test('"נקה הכל" אינו מוחק קישורים שמקורם בתיקייה', () async {
+      await addBook('מגילה.txt', 'א\nב\nג');
+      await addBook('מפרש.txt', 'פירוש');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+      await UserSidecarSync.applyForFolder(userDb: db, folderPath: folder.path);
+
+      // הם חוזרים עם התיקייה ואינם חלק ממה שהמשתמש ייבא מההגדרות.
+      await UserContentRepository(db).clearAllUserContent();
+      expect(await linksOf('מגילה'), hasLength(1));
+    });
+
+    test('קובץ שנכשל נקלט שוב בסריקה הבאה', () async {
+      // ספר היעד עדיין לא נסרק — הקליטה נכשלת ואין לרשום "לא השתנה".
+      await addBook('מגילה.txt', 'א\nב\nג');
+      writeNativeLinks('מגילה', 'מפרש', 2);
+      final first = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(first, isNotEmpty);
+      expect(await linksOf('מגילה'), isEmpty);
+
+      await addBook('מפרש.txt', 'פירוש');
+      final second = await UserSidecarSync.applyForFolder(
+        userDb: db,
+        folderPath: folder.path,
+      );
+      expect(second, isEmpty);
+      expect(await linksOf('מגילה'), hasLength(1));
+    });
   });
 
   test('מחיקת ספר מוחקת את כותרותיו ואת רשומות הגרסאות שלו', () async {

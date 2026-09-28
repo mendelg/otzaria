@@ -885,6 +885,7 @@ class FileSyncService {
                 await UserSidecarSync.applyForFolder(
                   userDb: _customFoldersRepo.database,
                   folderPath: folder.path,
+                  officialRepository: _repository,
                 ),
               );
 

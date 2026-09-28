@@ -5001,6 +5001,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
       for (final error in await UserSidecarSync.applyForFolder(
         userDb: repository.database as MyDatabase,
         folderPath: folderPath,
+        officialRepository: _sqliteProvider.repository,
       )) {
         failedDetails.add((folderName, error));
       }

@@ -1,3 +1,7 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/user_content_import/models/user_import_models.dart';
@@ -20,12 +24,80 @@ class UserContentRepository {
   Future<void> clearAllUserContent() async {
     final db = await _db.database;
     db.execute('DELETE FROM book_generation');
-    db.execute('DELETE FROM user_link');
+    // רק ייבוא ידני: קישורים עם source שייכים לתיקיית הספרים, ומחיקתם כאן
+    // הייתה מעלימה אותם עד הסריקה הבאה.
+    db.execute('DELETE FROM user_link WHERE source IS NULL');
     db.execute('DELETE FROM book_author');
     db.execute('DELETE FROM author');
     // כותרות וגרסאות מקובצי התיקייה אינן "מיובאות" — הן חוזרות בסריקה הבאה.
     await forgetSidecar(manualImportSource);
   }
+
+  /// מה ש-[clearAllUserContent] מוחק, לפי טבלה, בסדר שמכבד את התלויות.
+  static const Map<String, String> _manualContentFilters = {
+    'book_generation': '1',
+    'author': '1',
+    'book_author': '1',
+    'user_link': 'source IS NULL',
+    'user_alt_toc_structure': "source = '$manualImportSource'",
+    'user_alt_toc_entry':
+        'structureId IN (SELECT id FROM user_alt_toc_structure '
+        "WHERE source = '$manualImportSource')",
+    'user_book_version': "source = '$manualImportSource'",
+  };
+
+  static String _baselineTable(String table) => 'import_baseline_$table';
+
+  /// שומר את הנתונים הידניים הקיימים כבסיס שכל בנייה מחדש משחזרת. כך ייבוא
+  /// מגרסה שקדמה לספריית הקבצים אינו נמחק כשנוסף אליה הקובץ הראשון.
+  Future<void> captureManualBaseline() async {
+    final db = await _db.database;
+    for (final MapEntry(key: table, value: filter)
+        in _manualContentFilters.entries) {
+      final baseline = _baselineTable(table);
+      db.execute('DROP TABLE IF EXISTS $baseline');
+      db.execute(
+        'CREATE TABLE $baseline AS SELECT * FROM $table WHERE $filter',
+      );
+    }
+  }
+
+  /// מחזיר את הבסיס שנשמר ב-[captureManualBaseline], אם נשמר. ⚠️ OR IGNORE:
+  /// קובץ תיקייה שכתב מאז את אותו ספר מנצח, אחרת השחזור נופל על מפתח ייחודי.
+  Future<void> restoreManualBaseline() async {
+    final db = await _db.database;
+    for (final table in _manualContentFilters.keys) {
+      final baseline = _baselineTable(table);
+      final baselineColumns = _columns(db, baseline);
+      if (baselineColumns.isEmpty) continue;
+      // רק העמודות המשותפות: שדרוג סכמה אחרי השמירה מוסיף עמודות ליעד.
+      final columns = _columns(
+        db,
+        table,
+      ).where(baselineColumns.contains).join(', ');
+      // ערכים רק של מבנים שהוחזרו בפועל, אחרת נשארים יתומים.
+      final where = table == 'user_alt_toc_entry'
+          ? ' WHERE structureId IN (SELECT id FROM user_alt_toc_structure '
+                "WHERE source = '$manualImportSource')"
+          : '';
+      db.execute(
+        'INSERT OR IGNORE INTO $table ($columns) '
+        'SELECT $columns FROM $baseline$where',
+      );
+    }
+  }
+
+  Future<void> dropManualBaseline() async {
+    final db = await _db.database;
+    for (final table in _manualContentFilters.keys) {
+      db.execute('DROP TABLE IF EXISTS ${_baselineTable(table)}');
+    }
+  }
+
+  static List<String> _columns(sqlite3.Database db, String table) => [
+    for (final row in db.select('PRAGMA table_info($table)'))
+      row['name'] as String,
+  ];
 
   // ---- דורות ----
 
@@ -178,7 +250,8 @@ class UserContentRepository {
     }
   }
 
-  /// מוחק את כל מה שנקלט מקובץ [source] (כותרות וגרסאות), ואת רישום המעקב שלו.
+  /// מוחק את כל מה שנקלט מקובץ [source] (כותרות, גרסאות וקישורים), ואת רישום
+  /// המעקב שלו.
   Future<void> forgetSidecar(String source) async {
     final db = await _db.database;
     db.execute(
@@ -188,6 +261,8 @@ class UserContentRepository {
     );
     db.execute('DELETE FROM user_alt_toc_structure WHERE source = ?', [source]);
     db.execute('DELETE FROM user_book_version WHERE source = ?', [source]);
+    db.execute('DELETE FROM user_link WHERE source = ?', [source]);
+    db.execute('DELETE FROM user_sidecar_link_book WHERE path = ?', [source]);
     db.execute('DELETE FROM user_sidecar_file WHERE path = ?', [source]);
   }
 
@@ -201,6 +276,53 @@ class UserContentRepository {
     return rows.isEmpty ? null : rows.first['signature'] as String;
   }
 
+  /// מצב הספרים האישיים בכותרות שקובץ הקישורים מזכיר.
+  /// גם הופעת ספר אישי בכותרת שהייתה רשמית מבטלת את החתימה.
+  Future<String> sidecarLinkBookSignature(String source) async {
+    final db = await _db.database;
+    final rows = db.select(
+      '''
+      SELECT d.title, d.categoryId, b.id, b.lastModified, b.totalLines
+      FROM user_sidecar_link_book d LEFT JOIN book b
+        ON b.title = d.title
+        AND (d.categoryId = -1 OR b.categoryId = d.categoryId)
+      WHERE d.path = ?
+      ORDER BY d.title, d.categoryId, b.id
+    ''',
+      [source],
+    );
+    final state = jsonEncode([
+      for (final row in rows)
+        [
+          row['title'],
+          row['categoryId'],
+          row['id'],
+          row['lastModified'],
+          row['totalLines'],
+        ],
+    ]);
+    return sha256.convert(utf8.encode(state)).toString();
+  }
+
+  /// מעדכן רק בעת קליטת קובץ; בדיקת חתימה בסריקות הבאות קוראת רשימה מצומצמת.
+  Future<void> replaceSidecarLinkBookDependencies(String source) async {
+    final db = await _db.database;
+    db.execute('DELETE FROM user_sidecar_link_book WHERE path = ?', [source]);
+    db.execute(
+      '''
+      INSERT INTO user_sidecar_link_book (path, title, categoryId)
+      SELECT ?, title, -1 FROM (
+        SELECT sourceTitle AS title
+        FROM user_link WHERE source = ?
+        UNION
+        SELECT targetTitle AS title
+        FROM user_link WHERE source = ?
+      )
+    ''',
+      [source, source, source],
+    );
+  }
+
   Future<void> setSidecarSignature(String path, String signature) async {
     final db = await _db.database;
     db.execute(
@@ -212,7 +334,8 @@ class UserContentRepository {
   /// נתיבי הקבצים הנלווים שכבר יושמו ויושבים תחת [folderPath].
   Future<List<String>> trackedSidecarsUnder(String folderPath) async {
     final db = await _db.database;
-    // בלי המפריד, '/x/ספרים' תופס גם את '/x/ספרים חדשים'.
+    // ⚠️ בלי המפריד "C:\ספרים" תופס גם את "C:\ספרים2", וסריקת האחת הייתה
+    // שוכחת — ומוחקת את קישוריהם של — הקבצים הנלווים של השנייה.
     final prefix = folderPath.endsWith('/') || folderPath.endsWith('\\')
         ? folderPath
         : '$folderPath${p.separator}';
@@ -273,15 +396,58 @@ class UserContentRepository {
   /// מוסיף קישור-משתמש, או דורס קישור זהה אם כבר קיים. שני קישורים נחשבים
   /// "זהים" כשכל שדות הזיהוי שווים (מקור, שורת-מקור, יעד ומיקומו) — targetRef
   /// הוא תצוגה בלבד ואינו חלק מהזהות. כך ייבוא חוזר מצטבר ואינו מכפיל.
-  Future<void> upsertUserLink(UserLinkRecord link) async {
+  Future<void> upsertUserLink(UserLinkRecord link, {String? source}) async {
     final db = await _db.database;
-    // השוואת השדות ב-IS (ולא =) כדי ש-NULL ישווה ל-NULL — אחרת קישור עם
-    // targetLineIndex ריק לא היה נדרס בייבוא חוזר.
+    _deleteUserLinksAt(db, link, source);
+    _insertUserLink(db, link, source);
+  }
+
+  /// כל צמד-שורות נמחק *פעם אחת* ואז נכתבות כל רשומותיו. ב-[upsertUserLink]
+  /// לבדו, הרשומה השנייה של צמד רב-עוגנים הייתה מוחקת את הראשונה.
+  Future<void> replaceUserLinks(
+    Iterable<UserLinkRecord> links, {
+    String? source,
+  }) async {
+    final db = await _db.database;
+    // קובץ תיקייה מגדיר את קישוריו במלואם: כל מה שהיה ממנו יורד, ואז נכתב
+    // מה שיש בו עכשיו. בייבוא ידני (source == null) הכתיבה נשארת מצטברת.
+    if (source != null) {
+      db.execute('DELETE FROM user_link WHERE source = ?', [source]);
+    }
+    // כשהמקור כבר נמחק במלואו, אין צמד לנקות.
+    final cleared = <String>{};
+    for (final link in links) {
+      if (source != null) {
+        _insertUserLink(db, link, source);
+        continue;
+      }
+      final key = [
+        link.sourceTitle,
+        link.sourceIsUserBook,
+        link.sourceCategoryId,
+        link.sourceLineIndex,
+        link.targetTitle,
+        link.targetIsUserBook,
+        link.targetCategoryId,
+        link.targetLineIndex,
+      ].join('|');
+      if (cleared.add(key)) _deleteUserLinksAt(db, link, source);
+      _insertUserLink(db, link, source);
+    }
+  }
+
+  /// מוחק את קישורי הצמד של [link] *מאותו [source]*. IS ולא =, כדי ש-NULL
+  /// ישווה ל-NULL; כפילות בין מקורות מתמזגת בתצוגה ב-`dedupeUserLinks`.
+  void _deleteUserLinksAt(
+    sqlite3.Database db,
+    UserLinkRecord link,
+    String? source,
+  ) {
     db.execute(
       'DELETE FROM user_link WHERE sourceTitle = ? AND sourceIsUserBook = ? '
       'AND sourceCategoryId IS ? AND sourceLineIndex = ? '
       'AND targetTitle = ? AND targetIsUserBook = ? AND targetCategoryId IS ? '
-      'AND targetLineIndex IS ?',
+      'AND targetLineIndex IS ? AND source IS ?',
       [
         link.sourceTitle,
         link.sourceIsUserBook ? 1 : 0,
@@ -291,13 +457,23 @@ class UserContentRepository {
         link.targetIsUserBook ? 1 : 0,
         link.targetCategoryId,
         link.targetLineIndex,
+        source,
       ],
     );
+  }
+
+  void _insertUserLink(
+    sqlite3.Database db,
+    UserLinkRecord link,
+    String? source,
+  ) {
     db.execute(
       'INSERT INTO user_link (sourceTitle, sourceCategoryId, sourceIsUserBook, '
       'sourceLineIndex, targetTitle, targetCategoryId, targetIsUserBook, '
-      'targetRef, targetLineIndex, connectionType) '
-      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'targetRef, targetLineIndex, anchorStart, anchorEnd, anchorLabel, '
+      'sourceLineIndexEnd, targetLineIndexEnd, targetRefEnd, connectionType, '
+      'source) '
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         link.sourceTitle,
         link.sourceCategoryId,
@@ -308,13 +484,23 @@ class UserContentRepository {
         link.targetIsUserBook ? 1 : 0,
         link.targetRef,
         link.targetLineIndex,
+        link.anchorStart,
+        link.anchorEnd,
+        link.anchorLabel,
+        link.sourceLineIndexEnd,
+        link.targetLineIndexEnd,
+        link.targetRefEnd,
         link.connectionType,
+        source,
       ],
     );
   }
 
   /// קישורי-משתמש *יוצאים* מספר מקור (לפי כותרת+דגל), בטווח שורות (0-based,
   /// כולל). כשידועה קטגוריית המקור מסננים גם לפיה; שורות בלי קטגוריה עוברות.
+  ///
+  /// קישור-טווח נכלל גם כששורת הפתיחה שלו לפני החלון והטווח נמשך לתוכו —
+  /// אחרת גלילה לאמצע טווח הייתה מאבדת את הקישור.
   Future<List<UserLinkRecord>> forwardUserLinks(
     String sourceTitle, {
     required bool sourceIsUserBook,
@@ -327,7 +513,10 @@ class UserContentRepository {
         ? 'AND (sourceCategoryId IS NULL OR sourceCategoryId = ?)'
         : '';
     final hasRange = startLineIndex != null && endLineIndex != null;
-    final rangeClause = hasRange ? 'AND sourceLineIndex BETWEEN ? AND ?' : '';
+    final rangeClause = hasRange
+        ? 'AND sourceLineIndex <= ? '
+              'AND COALESCE(sourceLineIndexEnd, sourceLineIndex) >= ?'
+        : '';
     final rows = db.select(
       'SELECT * FROM user_link WHERE sourceTitle = ? AND sourceIsUserBook = ? '
       '$categoryClause $rangeClause ORDER BY sourceLineIndex',
@@ -335,7 +524,7 @@ class UserContentRepository {
         sourceTitle,
         sourceIsUserBook ? 1 : 0,
         ?sourceCategoryId,
-        if (hasRange) ...[startLineIndex, endLineIndex],
+        if (hasRange) ...[endLineIndex, startLineIndex],
       ],
     );
     return rows.map(_fromRow).toList();
@@ -343,6 +532,8 @@ class UserContentRepository {
 
   /// קישורי-משתמש *נכנסים* אל ספר יעד (לפי כותרת) — לתצוגה הפוכה. למשל
   /// מפרש-משתמש על ספר רשמי מופיע כשפותחים את הספר הרשמי.
+  ///
+  /// כמו ב-[forwardUserLinks], קישור-טווח נכלל גם כשהחלון מתחיל באמצעו.
   Future<List<UserLinkRecord>> inverseUserLinks(
     String targetTitle, {
     required bool targetIsUserBook,
@@ -358,7 +549,8 @@ class UserContentRepository {
         : '';
     final hasRange = startLineIndex != null && endLineIndex != null;
     final rangeClause = hasRange
-        ? 'AND ul.targetLineIndex BETWEEN ? AND ?'
+        ? 'AND ul.targetLineIndex <= ? '
+              'AND COALESCE(ul.targetLineIndexEnd, ul.targetLineIndex) >= ?'
         : '';
     final rows = db.select(
       'SELECT ul.* FROM user_link ul '
@@ -369,7 +561,7 @@ class UserContentRepository {
         targetTitle,
         targetIsUserBook ? 1 : 0,
         ?targetCategoryId,
-        if (hasRange) ...[startLineIndex, endLineIndex],
+        if (hasRange) ...[endLineIndex, startLineIndex],
       ],
     );
     return rows.map(_fromRow).toList();
@@ -410,6 +602,12 @@ class UserContentRepository {
     targetIsUserBook: (row['targetIsUserBook'] as int? ?? 0) == 1,
     targetRef: row['targetRef'] as String?,
     targetLineIndex: row['targetLineIndex'] as int?,
+    anchorStart: row['anchorStart'] as int?,
+    anchorEnd: row['anchorEnd'] as int?,
+    anchorLabel: row['anchorLabel'] as String?,
+    sourceLineIndexEnd: row['sourceLineIndexEnd'] as int?,
+    targetLineIndexEnd: row['targetLineIndexEnd'] as int?,
+    targetRefEnd: row['targetRefEnd'] as String?,
     connectionType: row['connectionType'] as String,
   );
 }

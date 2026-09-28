@@ -16,6 +16,7 @@ import 'package:otzaria/data/repository/book_toc_loader.dart';
 import 'package:otzaria/utils/file/document_converter.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/text_book/utils/commentator_group_builder.dart';
+import 'package:otzaria/text_book/utils/link_processing.dart';
 import 'package:otzaria/services/commentary_service.dart';
 import 'dart:io';
 import 'package:otzaria/utils/file/markdown_to_otzaria.dart';
@@ -250,19 +251,11 @@ class TextBookRepository {
   /// ו-B→A) או שורה כפולה ב-`external_link` מופיעים פעם אחת.
   @visibleForTesting
   static List<Link> mergeExtraLinks(List<Link> base, List<Link> extra) {
-    (int, String, int, BookSource?) keyOf(Link link) =>
-        (link.index1, link.path2, link.index2, link.targetSource);
-    final seen = {for (final link in base) keyOf(link)};
+    final seen = {for (final link in base) linkIdentityKey(link)};
     return [
       ...base,
       for (final link in extra)
-        if (seen.add((
-          link.index1,
-          link.path2,
-          link.index2,
-          link.targetSource,
-        )))
-          link,
+        if (seen.add(linkIdentityKey(link))) link,
     ];
   }
 
@@ -325,7 +318,7 @@ class TextBookRepository {
       final rangeEnd = normalizedEnd + 1;
       final targetBookTitlesSet = normalizedTargetBookTitles?.toSet();
       final filteredLinks = providerLinks
-          .where((link) => link.index1 >= rangeStart && link.index1 <= rangeEnd)
+          .where((link) => link.overlapsSourceLines(rangeStart, rangeEnd))
           .where((link) {
             if (targetBookTitlesSet == null) {
               return true;

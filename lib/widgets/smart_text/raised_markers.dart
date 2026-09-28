@@ -149,6 +149,10 @@ class RaisedMarkers {
     caseSensitive: false,
   );
   static final RegExp _bigTagRegex = RegExp(r'<big\b', caseSensitive: false);
+  static final RegExp _sizeTagRegex = RegExp(
+    r'<\s*(/?)\s*(small|big)\b[^>]*>',
+    caseSensitive: false,
+  );
   static final RegExp _htmlTagRegex = RegExp(r'<[^>]+>');
   static final RegExp _whitespaceRegex = RegExp(r'\s+');
 
@@ -191,9 +195,20 @@ class RaisedMarkers {
     // הטקסט הגלוי שנצבר עד כה — לספירת מופעים של כל סימון.
     final visibleSoFar = StringBuffer();
     var index = 0;
+    var outerSmalls = 0;
+    var outerBigs = 0;
 
     for (final match in _markerSpanRegex.allMatches(html)) {
-      visibleSoFar.write(_visibleText(html.substring(index, match.start)));
+      final before = html.substring(index, match.start);
+      visibleSoFar.write(_visibleText(before));
+      for (final tag in _sizeTagRegex.allMatches(before)) {
+        final closing = tag[1] == '/';
+        if (tag[2]!.toLowerCase() == 'small') {
+          outerSmalls = math.max(0, outerSmalls + (closing ? -1 : 1));
+        } else {
+          outerBigs = math.max(0, outerBigs + (closing ? -1 : 1));
+        }
+      }
       index = match.end;
 
       final String rawContent;
@@ -240,10 +255,9 @@ class RaisedMarkers {
         active = extraClasses.contains('link-anchor-active');
       }
 
-      // תגי small/big שהוזרקו לתוך הסימון (עיצוב סוגריים) מקטינים את הגליף
-      // בשורה — הציור מקבל את אותו יחס כדי להתלבש עליו בדיוק.
-      final smalls = _smallTagRegex.allMatches(rawContent).length;
-      final bigs = _bigTagRegex.allMatches(rawContent).length;
+      // תגי small/big בתוך הסימון ובאבותיו משנים את גודל הגליף שבשורה.
+      final smalls = outerSmalls + _smallTagRegex.allMatches(rawContent).length;
+      final bigs = outerBigs + _bigTagRegex.allMatches(rawContent).length;
       if (smalls > 0 || bigs > 0) {
         scale *=
             math.pow(kHtmlSmallerFontScale, smalls) *

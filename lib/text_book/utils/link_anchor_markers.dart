@@ -17,6 +17,14 @@ import 'package:otzaria/utils/text/text_manipulation.dart' show isHeadingLine;
 /// לתצוגה — קישור כזה לא מקבל סמן.
 String? anchorMarkerLetter(Link link) => _letterFor(link, link.anchorLabel);
 
+/// סמן העוגן כפי שהוא מודפס בטקסט, בסוגרי הווריאנט של המפרש ([kLinkAnchorVariants]).
+/// ⚠️ פאנלים חייבים לעבור דרך כאן — סוגריים קבועים לא יתאימו לטקסט.
+String? anchorMarkerText(Link link) {
+  final letter = anchorMarkerLetter(link);
+  if (letter == null) return null;
+  return wrapLinkAnchorLetter(letter, _stableStyleIndex(link.path2));
+}
+
 String? _letterFor(Link link, String? storedLabel) {
   final label = storedLabel?.trim();
   if (label != null && label.isNotEmpty) return _textPresentation(label);
@@ -84,6 +92,11 @@ String injectLinkAnchorMarkers({
   final ranges = <HtmlWrapRange>[];
   // כותרת היא כלי ניווט: ציטוט לינקר בתוכה הופך אותה לקישור לספר אחר.
   final skipLinker = isHeadingLine(rawLine);
+  // כל המרה היא סריקה של השורה מתחילתה; שורה עם כמה מפרשים מעוגנים שואלת
+  // לא פעם על אותו אופסט, ולכן שומרים את התוצאה לאורך הקריאה.
+  final visibleAtRaw = <int, int>{};
+  int toVisible(int rawOffset) =>
+      visibleAtRaw[rawOffset] ??= _visibleOffsetAtRaw(rawLine, rawOffset);
   for (var linkIndex = 0; linkIndex < anchorLinks.length; linkIndex++) {
     final link = anchorLinks[linkIndex];
     // continue ולא סינון מראש: האינדקס מזהה את הקישור ב-href של הסמן.
@@ -102,9 +115,15 @@ String injectLinkAnchorMarkers({
     for (final span in spans) {
       if (span.start < 0) continue;
       final end = span.end;
+      final visibleStart = link.anchorOffsetsAreRaw
+          ? toVisible(span.start)
+          : span.start;
+      final visibleEnd = end == null
+          ? null
+          : (link.anchorOffsetsAreRaw ? toVisible(end) : end);
       if (end != null && end > span.start) {
-        final rawStart = _rawStartOfVisible(rawLine, span.start);
-        final rawEnd = _rawEndOfVisible(rawLine, end);
+        final rawStart = _rawStartOfVisible(rawLine, visibleStart);
+        final rawEnd = _rawEndOfVisible(rawLine, visibleEnd!);
         if (rawStart < rawEnd) {
           // עם lineIndex הטווח לחיץ/מרחף (a); בלעדיו — סימון בלבד (span).
           final tag = lineIndex == null ? 'span' : 'a';
@@ -134,10 +153,11 @@ String injectLinkAnchorMarkers({
             ? ' link-anchor-active'
             : '';
         points.add((
-          at: span.start,
+          at: visibleStart,
           order: 1,
           html:
-              '<$tag class="link-anchor link-anchor-$styleIndex$activeClass"$href>($letter)</$tag>',
+              '<$tag class="link-anchor link-anchor-$styleIndex$activeClass"$href>'
+              '${wrapLinkAnchorLetter(letter, styleIndex)}</$tag>',
         ));
       }
     }
@@ -201,6 +221,32 @@ int _rawStartOfVisible(String html, int visibleOffset) {
     }
   }
   return len;
+}
+
+/// אופסט גולמי ← מספר התווים הגלויים שלפניו. ההיפוך של [_rawStartOfVisible],
+/// ולכן סופר בדיוק כמוהו: תג = 0, entity = 1, '&' בודד = 1.
+int _visibleOffsetAtRaw(String html, int rawOffset) {
+  final limit = rawOffset.clamp(0, html.length);
+  var visible = 0;
+  var i = 0;
+  while (i < limit) {
+    if (html[i] == '<') {
+      final close = html.indexOf('>', i);
+      // תג שנחתך באמצע ע"י האופסט: מה שאחריו כבר לא נספר.
+      if (close < 0 || close >= limit) break;
+      i = close + 1;
+    } else {
+      if (html[i] == '&') {
+        final end = (i + 10 < html.length) ? i + 10 : html.length;
+        final j = html.indexOf(';', i + 1);
+        i = (j > 0 && j < end) ? j + 1 : i + 1;
+      } else {
+        i++;
+      }
+      visible++;
+    }
+  }
+  return visible;
 }
 
 /// אינדקס גולמי מיד אחרי התו הגלוי מספר [visibleOffset]-1 — סוף טווח

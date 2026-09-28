@@ -218,8 +218,15 @@ void main() {
 
       await _pump(tester, textBookBloc: bloc, settingsBloc: settingsBloc);
 
-      expect(find.text('(א)'), findsOneWidget);
-      expect(find.text('(א) מפרש בדיקה, ג ב'), findsNothing);
+      // הסוגריים משתנים לפי וריאנט המפרש; הציפייה היא האות בכל אחד מהם בלבד.
+      final marker = RegExp(r'^[(\[{]א[)\]}]$');
+      expect(
+        find.byWidgetPredicate(
+          (w) => w is Text && marker.hasMatch(w.data ?? ''),
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('מפרש בדיקה, ג ב'), findsNothing);
     });
   });
 }

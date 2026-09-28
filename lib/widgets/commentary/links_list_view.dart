@@ -766,8 +766,8 @@ class _LinksListViewState extends State<LinksListView> {
           // קישור עם עוגן-מילה: אות הסימון שבגוף הטקסט מוצגת לפני ההפניה.
           var markerPrefix = '';
           if (link.anchorStart != null) {
-            final markerLetter = anchorMarkerLetter(link);
-            if (markerLetter != null) markerPrefix = '($markerLetter) ';
+            final markerText = anchorMarkerText(link);
+            if (markerText != null) markerPrefix = '$markerText ';
           }
           final rawFallback = settingsState.replaceHolyNames
               ? utils.replaceHolyNames(

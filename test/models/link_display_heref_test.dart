@@ -102,4 +102,34 @@ void main() {
       );
     });
   });
+
+  test('מטמון כתובת התצוגה מבחין בין הפניות לאותה שורת יעד', () async {
+    final first = _link(
+      heRef: 'מטמון הפניות ייחודי, א',
+      path2: 'מטמון הפניות ייחודי',
+    );
+    final second = _link(
+      heRef: 'מטמון הפניות ייחודי, ב',
+      path2: 'מטמון הפניות ייחודי',
+    );
+
+    expect(await first.displayReference, first.fallbackDisplayReference);
+    expect(await second.displayReference, second.fallbackDisplayReference);
+  });
+
+  test('מטמון כתובת התצוגה מבחין בין קצות טווח', () async {
+    final first = _link(
+      heRef: 'מטמון טווח ייחודי, א',
+      heRefEnd: 'מטמון טווח ייחודי, ב',
+      path2: 'מטמון טווח ייחודי',
+    );
+    final second = _link(
+      heRef: 'מטמון טווח ייחודי, א',
+      heRefEnd: 'מטמון טווח ייחודי, ג',
+      path2: 'מטמון טווח ייחודי',
+    );
+
+    expect(await first.displayReference, first.fallbackDisplayReference);
+    expect(await second.displayReference, second.fallbackDisplayReference);
+  });
 }

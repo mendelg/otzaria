@@ -46,11 +46,24 @@ Future<List<Link>> loadUserLinksForBook({
       Link(
         heRef: r.targetRef ?? r.targetTitle,
         index1: r.sourceLineIndex + 1,
+        index1End: r.sourceLineIndexEnd == null
+            ? null
+            : r.sourceLineIndexEnd! + 1,
         path2: r.targetTitle,
         index2: targetLine + 1,
         connectionType: r.connectionType,
         targetCategoryId: r.targetCategoryId,
         targetSource: BookSource.fromUserFlag(r.targetIsUserBook),
+        anchorStart: r.anchorStart,
+        anchorEnd: r.anchorEnd,
+        // אופסטי user_link נכתבים כפי שהלינקר מדד אותם — על ה-HTML הגולמי,
+        // ולא במוסכמת התווים-הגלויים של link_anchor שב-seforim.db.
+        anchorOffsetsAreRaw: true,
+        anchorLabel: r.anchorLabel,
+        heRefEnd: r.targetRefEnd,
+        index2End: r.targetLineIndexEnd == null
+            ? null
+            : r.targetLineIndexEnd! + 1,
       ),
     );
   }
@@ -71,6 +84,9 @@ Future<List<Link>> loadUserLinksForBook({
       Link(
         heRef: r.sourceTitle,
         index1: targetLine + 1,
+        index1End: r.targetLineIndexEnd == null
+            ? null
+            : r.targetLineIndexEnd! + 1,
         path2: r.sourceTitle,
         index2: r.sourceLineIndex + 1,
         // כמו ה-inverse של seforim.db: מפרש שקורא את בסיסו רואה אותו כ'מקור'
@@ -107,18 +123,27 @@ Future<List<String>> loadUserCommentatorTitles({
 /// מסיר כפילויות בין forward ל-inverse: קישור דו-כיווני (כמו שמייצר "מנהל
 /// המפרשים והקישורים") מיובא משני קבצים ומופיע משני הכיוונים — זהו אותו קישור.
 /// ה-forward נוסף ראשון ולכן נשמר (ה-heRef שלו עדיף).
+/// ⚠️ עוגן שונה אינו כפילות, ורשומה חסרת-עוגן נבלעת במעוגנת — הכלל של
+/// `mergeUserLinks` בייבוא.
 @visibleForTesting
 List<Link> dedupeUserLinks(List<Link> links) {
-  final seen = <String>{};
   // המפתח כולל גם את מקור היעד וקטגוריה — שני ספרים שונים יכולים לחלוק כותרת.
-  return links
-      .where(
-        (l) => seen.add(
-          '${l.index1}|${l.path2}|${l.index2}|'
-          '${l.connectionType}|${l.targetSource.wireKey}|${l.targetCategoryId}',
-        ),
-      )
-      .toList();
+  String keyOf(Link l) =>
+      '${l.index1}|${l.path2}|${l.index2}|'
+      '${l.connectionType}|${l.targetSource.wireKey}|${l.targetCategoryId}';
+
+  final anchoredKeys = <String>{
+    for (final link in links)
+      if (link.anchorStart != null) keyOf(link),
+  };
+  final seen = <String>{};
+  return links.where((l) {
+    final key = keyOf(l);
+    if (l.anchorStart == null) {
+      return !anchoredKeys.contains(key) && seen.add(key);
+    }
+    return seen.add('$key|@${l.anchorStart}');
+  }).toList();
 }
 
 /// מסנן קישורי-מפרש לפי המפרשים הנבחרים (כמו הסינון ב-getLinksForBookRange):

@@ -1273,5 +1273,16 @@
   "המסד יוחלף במקומו; הגרסה הקודמת נשמרת עד שהעדכון יאומת.": "The database is replaced in place; the previous version is kept until the update is verified.",
   "המסד צורף": "Database attached",
   "המסד \"{name}\" צורף לספרייה.": "The database \"{name}\" was attached to the library.",
-  "העדכונים שלו חתומים ויגיעו מ-{domain}. אוצריא תבדוק שם עדכונים כשבדיקת עדכוני הספרייה פעילה, ולא תתקין דבר בלי אישורך.": "Its updates are signed and come from {domain}. Otzaria checks there for updates while library update checks are on, and installs nothing without your approval."
+  "העדכונים שלו חתומים ויגיעו מ-{domain}. אוצריא תבדוק שם עדכונים כשבדיקת עדכוני הספרייה פעילה, ולא תתקין דבר בלי אישורך.": "Its updates are signed and come from {domain}. Otzaria checks there for updates while library update checks are on, and installs nothing without your approval.",
+  "ניהול קבצים": "Manage Files",
+  "קבצים מיובאים": "Imported Files",
+  "לא יובאו עדיין קבצים. השתמש ב\"ייבוא נתונים\" כדי להוסיף.": "No files imported yet. Use \"Import Data\" to add some.",
+  "מחיקת קובץ מיובא": "Delete Imported File",
+  "הקובץ יוסר והנתונים שהגיעו ממנו יימחקו מהתוכנה.": "The file will be removed and the data it brought in will be deleted from the app.",
+  "נתונים שהגיעו מקבצים אחרים יישארו. אפשר גם להשהות במקום למחוק.": "Data from other files is kept. You can also pause the file instead of deleting it.",
+  "השהה": "Pause",
+  "החזר לשימוש": "Restore",
+  "ייצוא": "Export",
+  "מחיקה": "Delete",
+  "מושהה": "Paused"
 }

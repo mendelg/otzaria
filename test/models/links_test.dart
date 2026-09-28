@@ -40,6 +40,63 @@ Future<List<String>> _orderedLabels(
 }
 
 void main() {
+  test('טווח מקור שנפתח לפני חלון השורות נשאר זמין למפרש', () async {
+    final range = Link(
+      heRef: 'מפרש, א',
+      index1: 2,
+      index1End: 9,
+      path2: 'מפרש',
+      index2: 4,
+      connectionType: LinkTypes.commentary,
+    );
+    expect(range.overlapsSourceLines(5, 6), isTrue);
+    expect(range.overlapsSourceLines(10, 12), isFalse);
+    expect(
+      await getLinksforIndexs(
+        indexes: const [4, 5],
+        links: [range],
+        commentatorsToShow: const ['מפרש'],
+      ),
+      [range],
+    );
+    expect(
+      await getLinksforIndexs(
+        indexes: const [9],
+        links: [range],
+        commentatorsToShow: const ['מפרש'],
+      ),
+      isEmpty,
+    );
+    expect(
+      await getLinksforIndexs(
+        indexes: const [0, 5, 12],
+        links: [range],
+        commentatorsToShow: const ['מפרש'],
+      ),
+      [range],
+    );
+    expect(
+      await getLinksforIndexs(
+        indexes: const [0, 9, 12],
+        links: [range],
+        commentatorsToShow: const ['מפרש'],
+      ),
+      isEmpty,
+    );
+  });
+
+  test('Link.fromJson קולט סוף טווח מקור כשקיים בקובץ', () {
+    final link = Link.fromJson({
+      'heRef_2': 'מפרש, א',
+      'line_index_1': 2,
+      'line_index_1_end': '9.0',
+      'path_2': 'מפרש.txt',
+      'line_index_2': 4,
+    });
+    expect(link.index1End, 9);
+    expect(link.overlapsSourceLines(5, 6), isTrue);
+  });
+
   test('getLinksforIndexs שומר קישורים נפרדים משורות מקור שונות', () async {
     final links = [
       _link(

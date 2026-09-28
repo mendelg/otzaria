@@ -68,6 +68,27 @@ class UserContentImporter {
     'links.json',
   };
 
+  /// סוג התוכן שהקובץ נושא לפי שמו, או null אם השם אינו מזוהה. מקור-אמת יחיד
+  /// גם לייבוא, גם לסריקת התיקייה וגם לתצוגה בהגדרות.
+  static UserImportKind? kindOf(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (_headingFileNames.contains(fileName) ||
+        _perBookHeadingSuffixes.any(lower.endsWith)) {
+      return UserImportKind.headings;
+    }
+    if (_versionFileNames.contains(fileName)) return UserImportKind.versions;
+    if (_generationFileNames.contains(fileName)) {
+      return UserImportKind.generations;
+    }
+    if (_folderLinkFileNames.contains(fileName) ||
+        lower.endsWith('.links.csv') ||
+        lower.endsWith('.links.json') ||
+        lower.endsWith('_links.json')) {
+      return UserImportKind.links;
+    }
+    return null;
+  }
+
   /// ייבוא של קבצים נבחרים כפעולה אחת אטומית: מפענח את כולם, וכל שגיאה
   /// (פענוח, ספר-לא-נמצא, או כתובת-יעד שלא נפתרה) חוסמת כתיבה כלשהי — לא
   /// כותבים חלקית, כך שטעות לא תפגע בנתונים קיימים. אם אין שגיאות — מיישם
@@ -79,6 +100,46 @@ class UserContentImporter {
     UserLinkSourceChecker sourceExists = userLinkSourceBookExists,
     UserLinkBookLocator locateBook = locateUserLinkBook,
   }) async {
+    final files = <ImportedFile>[];
+    final readErrors = <String>[];
+    for (final filePath in filePaths) {
+      final file = File(filePath);
+      if (!await file.exists()) {
+        readErrors.add('${_baseName(filePath)}: הקובץ לא נמצא');
+        continue;
+      }
+      try {
+        files.add(
+          ImportedFile(
+            name: _baseName(filePath),
+            content: await readTextFileSmart(file),
+          ),
+        );
+      } catch (e) {
+        readErrors.add('${_baseName(filePath)}: קריאת הקובץ נכשלה ($e)');
+      }
+    }
+    if (readErrors.isNotEmpty) return UserImportResult(errors: readErrors);
+    return importContents(
+      files,
+      userDb,
+      resolveRef: resolveRef,
+      sourceExists: sourceExists,
+      locateBook: locateBook,
+    );
+  }
+
+  /// אותו ייבוא על תוכן שכבר נקרא. [source] = נתיב הקובץ בתיקיית הספרים (null = ידני).
+  /// [beforeApply] רץ אחרי פענוח מוצלח ולפני הכתיבה — המקום היחיד שבו מותר לנקות.
+  static Future<UserImportResult> importContents(
+    Iterable<ImportedFile> files,
+    MyDatabase userDb, {
+    UserLinkRefResolver resolveRef = resolveUserLinkTargetLine,
+    UserLinkSourceChecker sourceExists = userLinkSourceBookExists,
+    UserLinkBookLocator locateBook = locateUserLinkBook,
+    String? source,
+    Future<void> Function()? beforeApply,
+  }) async {
     final repo = UserContentRepository(userDb);
     final errors = <String>[];
 
@@ -89,13 +150,8 @@ class UserContentImporter {
     final headingsByBook = <int, List<UserAltTocStructureData>>{};
     final versions = <UserBookVersionRecord>[];
 
-    for (final filePath in filePaths) {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        errors.add('${_baseName(filePath)}: הקובץ לא נמצא');
-        continue;
-      }
-      final name = _baseName(filePath);
+    for (final file in files) {
+      final name = file.name;
       final lower = name.toLowerCase();
       final perBookHeadingSuffix = _perBookHeadingSuffixes
           .where(lower.endsWith)
@@ -168,10 +224,7 @@ class UserContentImporter {
           locateBook: locateBook,
         );
       } else {
-        errors.add(
-          '$name: קובץ לא מזוהה (צפוי "דורות.csv", "כותרות.csv", '
-          '"גרסאות.csv" או "<ספר>.links.csv")',
-        );
+        errors.add('$name: $kUnrecognizedImportFileMessage');
       }
     }
 
@@ -179,56 +232,38 @@ class UserContentImporter {
       return UserImportResult(errors: errors);
     }
 
+    // מכאן והלאה הכתיבה ודאית — וזו הנקודה היחידה שבה מותר לנקות נתונים
+    // קיימים. ניקוי לפני הפענוח היה מוחק אותם גם כשהייבוא נכשל.
+    await beforeApply?.call();
+
     for (final entry in generationByBook.entries) {
       await repo.setBookGeneration(entry.key, entry.value);
     }
     for (final entry in authorByBook.entries) {
       await repo.setBookAuthor(entry.key, entry.value);
     }
+    final contentSource = source ?? UserContentRepository.manualImportSource;
     for (final entry in headingsByBook.entries) {
       await repo.replaceBookHeadings(
         entry.key,
         entry.value,
-        source: UserContentRepository.manualImportSource,
+        source: contentSource,
       );
     }
     if (versions.isNotEmpty) {
-      await repo.replaceVersions(
-        versions,
-        source: UserContentRepository.manualImportSource,
-      );
+      await repo.replaceVersions(versions, source: contentSource);
     }
     // איחוד רשומות זהות מכל הקבצים (למשל שני צדי צמד דו-כיווני שנורמלו
-    // לאותו כיוון) — עדיפות לרשומה עם targetRef להצגה.
-    final unique = <String, UserLinkRecord>{};
-    for (final link in links) {
-      final key = [
-        link.sourceIsUserBook,
-        link.sourceCategoryId,
-        link.sourceTitle,
-        link.sourceLineIndex,
-        link.targetIsUserBook,
-        link.targetCategoryId,
-        link.targetTitle,
-        link.targetLineIndex,
-        link.connectionType,
-      ].join('|');
-      final existing = unique[key];
-      if (existing == null ||
-          (existing.targetRef == null && link.targetRef != null)) {
-        unique[key] = link;
-      }
-    }
-    for (final link in unique.values) {
-      await repo.upsertUserLink(link);
-    }
+    // לאותו כיוון), תוך שמירת עוגנים נפרדים באותו צמד-שורות.
+    final unique = mergeUserLinks(links);
+    await repo.replaceUserLinks(unique, source: source);
 
     return UserImportResult(
       generationsApplied: generationByBook.length,
       linksApplied: unique.length,
       headingsApplied: headingsByBook.length,
       versionsApplied: versions.length,
-      booksWithLinks: unique.values
+      booksWithLinks: unique
           .map(
             (l) =>
                 '${l.sourceIsUserBook}|${l.sourceCategoryId}|'
@@ -241,16 +276,16 @@ class UserContentImporter {
   }
 
   static Future<void> _ingestGenerations(
-    File file,
+    ImportedFile file,
     UserContentRepository repo,
     Map<int, String> out,
     Map<int, String> authorsOut,
     List<String> errors,
   ) async {
-    final fileName = _baseName(file.path);
+    final fileName = file.name;
     final ParseResult<ParsedBookGeneration> parsed;
     try {
-      parsed = UserImportParser.parseGenerations(await readTextFileSmart(file));
+      parsed = UserImportParser.parseGenerations(file.content);
     } catch (e) {
       errors.add('$fileName: קריאת הקובץ נכשלה ($e)');
       return;
@@ -276,17 +311,17 @@ class UserContentImporter {
   }
 
   static Future<void> _ingestHeadings(
-    File file,
+    ImportedFile file,
     UserContentRepository repo,
     Map<int, List<UserAltTocStructureData>> out,
     List<String> errors, {
     required String? bookTitleFromFile,
   }) async {
-    final fileName = _baseName(file.path);
+    final fileName = file.name;
     final ParseResult<ParsedHeading> parsed;
     try {
       parsed = UserImportParser.parseHeadings(
-        await readTextFileSmart(file),
+        file.content,
         requireBook: bookTitleFromFile == null,
       );
     } catch (e) {
@@ -327,16 +362,16 @@ class UserContentImporter {
   }
 
   static Future<void> _ingestVersions(
-    File file,
+    ImportedFile file,
     UserContentRepository repo,
     List<UserBookVersionRecord> out,
     List<String> errors, {
     required UserLinkSourceChecker sourceExists,
   }) async {
-    final fileName = _baseName(file.path);
+    final fileName = file.name;
     final ParseResult<ParsedBookVersion> parsed;
     try {
-      parsed = UserImportParser.parseVersions(await readTextFileSmart(file));
+      parsed = UserImportParser.parseVersions(file.content);
     } catch (e) {
       errors.add('$fileName: קריאת הקובץ נכשלה ($e)');
       return;
@@ -403,7 +438,7 @@ class UserContentImporter {
   }
 
   static Future<void> _ingestLinks(
-    File file,
+    ImportedFile file,
     UserContentRepository repo,
     List<UserLinkRecord> out,
     List<String> errors, {
@@ -411,10 +446,10 @@ class UserContentImporter {
     required UserLinkRefResolver resolveRef,
     required UserLinkSourceChecker sourceExists,
   }) async {
-    final fileName = _baseName(file.path);
+    final fileName = file.name;
     final ParseResult<ParsedUserLink> parsed;
     try {
-      final content = await readTextFileSmart(file);
+      final content = file.content;
       parsed = fileName.toLowerCase().endsWith('.json')
           ? UserImportParser.parseLinksJson(content)
           : UserImportParser.parseLinks(content);
@@ -464,21 +499,19 @@ class UserContentImporter {
   }
 
   /// קולט קובץ בפורמט ה-native (`<ספר>_links.json`): ספר הבסיס נגזר משם
-  /// הקובץ, שני הצדדים מאותרים אוטומטית (אישי קודם), ואינדקסי השורות
+  /// הקובץ, שני הצדדים מאותרים לפי כותרת, ואינדקסי השורות
   /// הגולמיים מאומתים מול totalLines של כל ספר — אין פתירת ref.
   static Future<void> _ingestNativeLinks(
-    File file,
+    ImportedFile file,
     List<UserLinkRecord> out,
     List<String> errors, {
     required String baseTitle,
     required UserLinkBookLocator locateBook,
   }) async {
-    final fileName = _baseName(file.path);
+    final fileName = file.name;
     final ParseResult<ParsedNativeLink> parsed;
     try {
-      parsed = UserImportParser.parseNativeLinksJson(
-        await readTextFileSmart(file),
-      );
+      parsed = UserImportParser.parseNativeLinksJson(file.content);
     } catch (e) {
       errors.add('$fileName: קריאת הקובץ נכשלה ($e)');
       return;
@@ -487,7 +520,18 @@ class UserContentImporter {
       errors.add('$fileName ${err.message} (שורה ${err.lineNumber})');
     }
 
-    final source = await locateBook(baseTitle);
+    final ({bool isUserBook, int? categoryId, int totalLines})? source;
+    try {
+      source = await locateBook(baseTitle);
+    } on AmbiguousUserLinkBookException {
+      errors.add(
+        '$fileName: ספר הבסיס "$baseTitle" קיים גם בספרייה האישית וגם ברשמית',
+      );
+      return;
+    } on UnavailableUserLinkCatalogException {
+      errors.add('$fileName: לא ניתן לבדוק את הספרייה הרשמית');
+      return;
+    }
     if (source == null) {
       errors.add('$fileName: ספר הבסיס "$baseTitle" לא נמצא בספרייה');
       return;
@@ -495,9 +539,22 @@ class UserContentImporter {
 
     final targetCache =
         <String, ({bool isUserBook, int? categoryId, int totalLines})?>{};
+    final ambiguousTargets = <String>{};
     for (final row in parsed.rows) {
+      if (ambiguousTargets.contains(row.targetTitle)) continue;
       if (!targetCache.containsKey(row.targetTitle)) {
-        targetCache[row.targetTitle] = await locateBook(row.targetTitle);
+        try {
+          targetCache[row.targetTitle] = await locateBook(row.targetTitle);
+        } on AmbiguousUserLinkBookException {
+          ambiguousTargets.add(row.targetTitle);
+          errors.add(
+            '$fileName: ספר היעד "${row.targetTitle}" קיים גם בספרייה האישית וגם ברשמית',
+          );
+          continue;
+        } on UnavailableUserLinkCatalogException {
+          errors.add('$fileName: לא ניתן לבדוק את הספרייה הרשמית');
+          return;
+        }
       }
       final target = targetCache[row.targetTitle];
       if (target == null) {
@@ -518,10 +575,31 @@ class UserContentImporter {
         );
         continue;
       }
+      if (source.totalLines > 0 &&
+          row.sourceLineNumberEnd != null &&
+          row.sourceLineNumberEnd! > source.totalLines) {
+        errors.add(
+          '$fileName: שורת-סיום ${row.sourceLineNumberEnd} חורגת מגבולות '
+          '"$baseTitle" (${source.totalLines} שורות)',
+        );
+        continue;
+      }
+      if (target.totalLines > 0 &&
+          row.targetLineNumberEnd != null &&
+          row.targetLineNumberEnd! > target.totalLines) {
+        errors.add(
+          '$fileName: שורת-סיום ${row.targetLineNumberEnd} חורגת מגבולות '
+          '"${row.targetTitle}" (${target.totalLines} שורות)',
+        );
+        continue;
+      }
       // צמד קבצים דו-כיווני של הכלי מייצר גם רשומת מפרש→בסיס; מנרמלים אותה
       // לכיוון הקנוני (בסיס→מפרש) כך שהיא מתלכדת עם הרשומה מהקובץ של הבסיס.
+      final connectionType = row.connectionType == LinkTypes.linker
+          ? LinkTypes.commentary
+          : row.connectionType;
       final flip =
-          LinkTypes.isDependentTextLink(row.connectionType) &&
+          LinkTypes.isDependentTextLink(connectionType) &&
           source.isUserBook &&
           !target.isUserBook;
       out.add(
@@ -535,7 +613,13 @@ class UserContentImporter {
                 targetCategoryId: source.categoryId,
                 targetIsUserBook: source.isUserBook,
                 targetLineIndex: row.sourceLineNumber - 1,
-                connectionType: row.connectionType,
+                sourceLineIndexEnd: row.targetLineNumberEnd == null
+                    ? null
+                    : row.targetLineNumberEnd! - 1,
+                targetLineIndexEnd: row.sourceLineNumberEnd == null
+                    ? null
+                    : row.sourceLineNumberEnd! - 1,
+                connectionType: connectionType,
               )
             : UserLinkRecord(
                 sourceTitle: baseTitle,
@@ -547,7 +631,17 @@ class UserContentImporter {
                 targetIsUserBook: target.isUserBook,
                 targetRef: row.targetRef,
                 targetLineIndex: row.targetLineNumber - 1,
-                connectionType: row.connectionType,
+                anchorStart: row.anchorStart,
+                anchorEnd: row.anchorEnd,
+                anchorLabel: row.anchorLabel,
+                sourceLineIndexEnd: row.sourceLineNumberEnd == null
+                    ? null
+                    : row.sourceLineNumberEnd! - 1,
+                targetLineIndexEnd: row.targetLineNumberEnd == null
+                    ? null
+                    : row.targetLineNumberEnd! - 1,
+                targetRefEnd: row.targetRefEnd,
+                connectionType: connectionType,
               ),
       );
     }
@@ -626,15 +720,66 @@ class UserContentImporter {
       path.replaceAll('\\', '/').split('/').last;
 }
 
-/// עטיפה בטוחה לייבוא קבצים נבחרים — לעולם לא זורקת, רק מדווחת.
-Future<UserImportResult> importUserFilesSafe(
-  Iterable<String> filePaths,
-  MyDatabase userDb,
-) async {
-  try {
-    return await UserContentImporter.importFiles(filePaths, userDb);
-  } catch (e) {
-    debugPrint('⚠️ [UserContentImport] failed: $e');
-    return UserImportResult(errors: ['ייבוא נתוני-המשתמש נכשל: $e']);
+/// ההסבר שמוצג למשתמש כשבחר קובץ ששמו אינו מזוהה.
+const String kUnrecognizedImportFileMessage =
+    'קובץ לא מזוהה (צפוי "דורות.csv", "כותרות.csv", "גרסאות.csv", '
+    '"<ספר>.links.csv", "<ספר>.links.json" או "<ספר>_links.json")';
+
+/// בצמד-שורות, כל `anchorStart` שונה הוא רשומה נפרדת; רשומה חסרת-עוגן (הצד
+/// ההפוך של צמד דו-כיווני) נבלעת במעוגנת ומשלימה לה heRef.
+@visibleForTesting
+List<UserLinkRecord> mergeUserLinks(List<UserLinkRecord> links) {
+  final groups = <String, List<UserLinkRecord>>{};
+  for (final link in links) {
+    final key = [
+      link.sourceIsUserBook,
+      link.sourceCategoryId,
+      link.sourceTitle,
+      link.sourceLineIndex,
+      link.targetIsUserBook,
+      link.targetCategoryId,
+      link.targetTitle,
+      link.targetLineIndex,
+      link.connectionType,
+    ].join('|');
+    (groups[key] ??= []).add(link);
   }
+  return [for (final group in groups.values) ..._mergeLinkGroup(group)];
 }
+
+List<UserLinkRecord> _mergeLinkGroup(List<UserLinkRecord> group) {
+  if (group.length == 1) return group;
+  final anchored = <int, UserLinkRecord>{};
+  UserLinkRecord? plain;
+  for (final link in group) {
+    final start = link.anchorStart;
+    if (start == null) {
+      if (plain == null || _linkRichness(link) > _linkRichness(plain)) {
+        plain = link;
+      }
+    } else if (anchored[start] == null ||
+        _linkRichness(link) > _linkRichness(anchored[start]!)) {
+      anchored[start] = link;
+    }
+  }
+  if (anchored.isEmpty) return [plain!];
+  final starts = anchored.keys.toList()..sort();
+  return [
+    for (final start in starts)
+      // מה שיש ברשומה חסרת-העוגן ואין במעוגנת (heRef, קצות טווח) שווה
+      // לתצוגה גם בה, ואובד אילו היא הייתה פשוט נזרקת.
+      plain == null
+          ? anchored[start]!
+          : anchored[start]!.fillMissingFrom(plain),
+  ];
+}
+
+/// כמה שדות-תצוגה אופציונליים הרשומה נושאת — מכריע בין שתי רשומות שקולות.
+int _linkRichness(UserLinkRecord link) => [
+  link.targetRef,
+  link.anchorEnd,
+  link.anchorLabel,
+  link.sourceLineIndexEnd,
+  link.targetLineIndexEnd,
+  link.targetRefEnd,
+].where((value) => value != null).length;
