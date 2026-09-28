@@ -154,6 +154,10 @@ class DbReadWorker {
       throw const DbReadWorkerSuspended();
     }
     final service = await _instanceOrSpawn();
+    // השהיה/סגירה שהגיעה בזמן ה-spawn: אסור לשלוח, אחרת ה-worker יפתח את הקובץ.
+    if (_suspendedForExternalWrite || _closedUntilReopen) {
+      throw const DbReadWorkerSuspended();
+    }
     if (service._stalled) {
       throw const DbReadWorkerUnavailable('stalled');
     }

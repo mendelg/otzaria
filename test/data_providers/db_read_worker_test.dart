@@ -422,6 +422,19 @@ void main() {
     );
   });
 
+  test('close during the first spawn keeps the file closed', () async {
+    final dbPath = await seedDb('seforim');
+    final first = DbReadWorker.request(
+      'textRange',
+      textRangeArgs(dbPath, ''),
+    ).then<Object?>((result) => result, onError: (Object e) => e);
+    await DbReadWorker.closeConnectionIfRunning();
+
+    expect(await first, isA<DbReadWorkerSuspended>());
+    await File(dbPath).delete();
+    DbReadWorker.allowReopen();
+  });
+
   test('suspend stops a batch that is already running', () async {
     final dbPath = await seedDb('seforim', bigBookLines: 200000);
     await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
