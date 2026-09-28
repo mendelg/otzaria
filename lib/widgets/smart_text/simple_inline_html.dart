@@ -71,7 +71,9 @@ class SimpleInlineHtml {
   /// מנסה להמיר את [html]. מחזיר null אם נדרש HtmlWidget.
   static TextSpan? tryParse(String html, TextStyle baseStyle) {
     if (html.contains('&')) {
-      html = html.replaceAll('&nbsp;', ' ').replaceAll('&thinsp;', ' ');
+      html = html
+          .replaceAll('&nbsp;', '\u00A0')
+          .replaceAll('&thinsp;', '\u2009');
       if (_entityRegex.hasMatch(html)) return null;
     }
     if (html.contains('<i ')) {
