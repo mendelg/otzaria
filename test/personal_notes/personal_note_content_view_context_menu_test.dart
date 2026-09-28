@@ -121,9 +121,7 @@ void main() {
     });
   }
 
-  testWidgets('העתקה שומרת בדיוק על טווח הבחירה של Quill', (
-    tester,
-  ) async {
+  testWidgets('העתקה שומרת בדיוק על טווח הבחירה של Quill', (tester) async {
     await onPlatform(TargetPlatform.windows, () async {
       final clipboardWrites = <String>[];
       mockClipboard(tester, clipboardWrites);
@@ -171,6 +169,7 @@ void main() {
           .controller
           .getPlainText();
       expect(selectedText, isNotEmpty);
+      expect(selectedText, isNot(noteText));
 
       await rightClickText(tester);
       await tester.tap(find.text('העתק'));

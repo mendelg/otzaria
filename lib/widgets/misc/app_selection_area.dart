@@ -25,12 +25,13 @@ class AppSelectionArea extends StatefulWidget {
 
 class AppSelectionAreaState extends State<AppSelectionArea> {
   String? _selectedText;
-  final _selectionSources = <String Function()>{};
+  final _selectionSources = <String Function(), bool Function(Offset)>{};
 
-  /// תוכן שמנהל בחירה משלו (עורך Quill) ואינו מדווח ל-SelectionArea — בלי
-  /// הרישום "העתק" לא רואה את מה שסומן בו.
-  void addSelectionSource(String Function() source) =>
-      _selectionSources.add(source);
+  /// מקור בחירה נוסף עם בדיקת מיקום בקואורדינטות גלובליות.
+  void addSelectionSource(
+    String Function() source, {
+    required bool Function(Offset) containsPosition,
+  }) => _selectionSources[source] = containsPosition;
 
   void removeSelectionSource(String Function() source) =>
       _selectionSources.remove(source);
@@ -38,13 +39,14 @@ class AppSelectionAreaState extends State<AppSelectionArea> {
   bool get _hasSelection =>
       _selectedText != null && _selectedText!.trim().isNotEmpty;
 
-  String? get _textToCopy {
-    if (_hasSelection) return _selectedText;
-    for (final source in _selectionSources) {
-      final text = source();
-      if (text.trim().isNotEmpty) return text;
+  String? _textToCopyAt(Offset position) {
+    for (final entry in _selectionSources.entries) {
+      if (entry.value(position)) {
+        final text = entry.key();
+        return text.trim().isEmpty ? null : text;
+      }
     }
-    return null;
+    return _hasSelection ? _selectedText : null;
   }
 
   Future<void> _copy(String text) async {
@@ -87,8 +89,8 @@ class AppSelectionAreaState extends State<AppSelectionArea> {
                   ) ??
                   true;
             },
-            menuBuilder: (menuContext, _) {
-              final text = _textToCopy;
+            menuBuilder: (menuContext, position) {
+              final text = _textToCopyAt(position);
               return [
                 AppContextMenuEntry(
                   label: 'העתק',
