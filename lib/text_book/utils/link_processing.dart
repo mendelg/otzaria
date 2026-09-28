@@ -42,7 +42,7 @@ String linkIdentityKey(Link link) {
   final anchors = link.anchorSpans
       .map((span) => '${span.start}:${span.end}:${span.label}')
       .join(',');
-  return '${link.index1}|${link.index1End}|${link.path2}|${link.index2}|${link.index2End}|${link.connectionType}|${link.targetSource.wireKey}|${link.targetCategoryId}|${link.start}|${link.end}|${link.anchorStart}|${link.anchorEnd}|${link.anchorLabel}|$anchors';
+  return '${link.index1}|${link.index1End}|${link.path2}|${link.index2}|${link.index2End}|${link.connectionType}|${link.targetSource.wireKey}|${link.targetBookId}|${link.targetCategoryId}|${link.targetFileType}|${link.start}|${link.end}|${link.anchorStart}|${link.anchorEnd}|${link.anchorLabel}|$anchors';
 }
 
 Map<int, List<Link>> buildLinksByLineMap(List<Link> links) {

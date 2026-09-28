@@ -273,7 +273,8 @@ class Link {
         '${targetSource.wireKey}_'
         '${targetCategoryId ?? ''}_'
         '${targetFileType ?? ''}_'
-        '${targetBookId ?? ''}';
+        '${targetBookId ?? ''}_'
+        '${heRef.length}:$heRef${heRefEnd ?? ''}';
     final cached = _displayReferenceCache.remove(cacheKey);
     if (cached != null) {
       _displayReferenceCache[cacheKey] = cached;

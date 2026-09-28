@@ -6,6 +6,8 @@ import 'package:otzaria/text_book/text_book_repository.dart';
 Link _link({
   int? index1End,
   int? targetCategoryId,
+  int? targetBookId,
+  String? targetFileType,
   int? anchorStart,
   BookSource targetSource = BookSource.official,
 }) => Link(
@@ -16,6 +18,8 @@ Link _link({
   index2: 1,
   connectionType: 'COMMENTARY',
   targetCategoryId: targetCategoryId,
+  targetBookId: targetBookId,
+  targetFileType: targetFileType,
   targetSource: targetSource,
   anchorStart: anchorStart,
 );
@@ -35,5 +39,14 @@ void main() {
     expect(TextBookRepository.mergeExtraLinks([links.first], [links.first]), [
       links.first,
     ]);
+  });
+
+  test('mergeExtraLinks משמר ספרי יעד וסוגי קובץ שונים', () {
+    final links = [
+      _link(targetBookId: 10, targetFileType: 'txt'),
+      _link(targetBookId: 20, targetFileType: 'txt'),
+      _link(targetBookId: 10, targetFileType: 'pdf'),
+    ];
+    expect(TextBookRepository.mergeExtraLinks([], links), links);
   });
 }
