@@ -1844,6 +1844,8 @@ class _CombinedViewState extends State<CombinedView> {
           fontSize: settingsState.commentatorsFontSize,
           link: commentarySelection.link,
           removeNikud: removeNikud,
+          copyProfile: profile,
+          plainTextOnly: plainTextOnly,
         );
         return;
       }
