@@ -10,7 +10,7 @@ import 'package:otzaria/tour/bloc/tour_cubit.dart';
 import 'package:otzaria/tour/models/live_tip.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
-import 'package:otzaria/widgets/text/selection_copy_shortcuts.dart';
+import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// בונה פריטי תפריט הקשר למילונים על סמך הטקסט המסומן.
 List<AppContextMenuEntry> buildDictionaryContextMenuEntries({
@@ -158,11 +158,9 @@ Widget _buildAcronymDialogContent(String meaning) {
   return SizedBox(
     width: 460,
     child: SingleChildScrollView(
-      child: SelectionCutFallthrough(
-        child: SelectionArea(
-          child: Text(
-            meaning,
-          ),
+      child: AppSelectionArea(
+        child: Text(
+          meaning,
         ),
       ),
     ),
@@ -173,17 +171,15 @@ Widget _buildAramaicDialogContent(AramaicDictionaryEntry entry) {
   return SizedBox(
     width: 520,
     child: SingleChildScrollView(
-      child: SelectionCutFallthrough(
-        child: SelectionArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AramaicDictionaryEntryView(
-                definition: entry.hebrew,
-              ),
-            ],
-          ),
+      child: AppSelectionArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AramaicDictionaryEntryView(
+              definition: entry.hebrew,
+            ),
+          ],
         ),
       ),
     ),

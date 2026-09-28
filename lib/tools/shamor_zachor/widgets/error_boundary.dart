@@ -5,6 +5,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:logging/logging.dart';
 
 import '../models/error_model.dart';
+import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// Error boundary widget that catches and displays errors gracefully
 class ErrorBoundary extends StatefulWidget {
@@ -149,12 +150,14 @@ class _ErrorBoundaryState extends State<ErrorBoundary> {
                             color: Colors.black.withValues(alpha: 0.05),
                             borderRadius: AppTokens.borderRadiusAll,
                           ),
-                          child: SelectableText(
-                            'Type: ${error.type}\n\nMessage: ${error.message}\n\nDetails: ${error.details}\n\nStackTrace: ${error.stackTrace ?? 'N/A'}', // הוספנו את ה-StackTrace
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  fontFamily: 'monospace',
-                                ),
+                          child: AppSelectionArea(
+                            child: Text(
+                              'Type: ${error.type}\n\nMessage: ${error.message}\n\nDetails: ${error.details}\n\nStackTrace: ${error.stackTrace ?? 'N/A'}',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    fontFamily: 'monospace',
+                                  ),
+                            ),
                           ),
                         ),
                       ],

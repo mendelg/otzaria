@@ -2,7 +2,6 @@
 //
 // כרטיס תוצאה למילון ארמי-עברי.
 //  • שורה אחת: מקור | חץ | תרגום | כפתור העתקה
-//  • SelectionArea → Ctrl+C / תפריט הקשר
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -120,7 +119,7 @@ class _DictionaryValue extends StatelessWidget {
       );
     }
 
-    return SelectableText(
+    return Text(
       value,
       style: textStyle,
       textAlign: TextAlign.right,

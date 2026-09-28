@@ -48,7 +48,7 @@ class AcronymResultCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: SelectableText(
+            child: Text(
               acronym,
               style: TextStyle(
                 fontSize: AppTokens.fontLG,
@@ -71,7 +71,7 @@ class AcronymResultCard extends StatelessWidget {
           ),
           Expanded(
             child: meanings.length == 1
-                ? SelectableText(
+                ? Text(
                     meanings.first,
                     style: TextStyle(
                       fontSize: AppTokens.fontMD,
@@ -83,7 +83,7 @@ class AcronymResultCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
                     children: meanings.asMap().entries.map((e) {
-                      return SelectableText(
+                      return Text(
                         '${e.key + 1}. ${e.value}',
                         style: TextStyle(
                           fontSize: AppTokens.fontMD,
