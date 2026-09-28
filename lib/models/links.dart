@@ -261,7 +261,9 @@ class Link {
     final cacheKey =
         '${path2}_${index2}_${index2End ?? ''}_'
         '${targetSource.wireKey}_'
-        '${targetCategoryId ?? ''}';
+        '${targetCategoryId ?? ''}_'
+        '${targetFileType ?? ''}_'
+        '${targetBookId ?? ''}';
     final cached = _displayReferenceCache.remove(cacheKey);
     if (cached != null) {
       _displayReferenceCache[cacheKey] = cached;

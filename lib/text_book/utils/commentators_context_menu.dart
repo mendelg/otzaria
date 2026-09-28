@@ -77,6 +77,7 @@ class ParagraphCommentatorsCache {
     (
       book.id,
       book.title,
+      book.source.wireKey,
       book.categoryId,
       book.fileType,
       book.versionTitle,
@@ -115,7 +116,8 @@ List<Link> paragraphReferenceLinks({
   required int paragraphIndex,
   List<Link>? queriedLinks,
 }) {
-  final seen = <(int, String, int, BookSource)>{};
+  final seen =
+      <(int, String, int, BookSource, int?, int?, String?, int?, String)>{};
   final links = [
     for (final link in [
       ...?linksByLine[paragraphIndex + 1],
@@ -124,7 +126,17 @@ List<Link> paragraphReferenceLinks({
       if (!LinkTypes.isDependentTextLink(link.connectionType) &&
           link.start == null &&
           link.end == null &&
-          seen.add((link.index1, link.path2, link.index2, link.targetSource)))
+          seen.add((
+            link.index1,
+            link.path2,
+            link.index2,
+            link.targetSource,
+            link.targetBookId,
+            link.targetCategoryId,
+            link.targetFileType,
+            link.index2End,
+            link.connectionType,
+          )))
         link,
   ];
   return CommentaryService.sortLinksByEraSync(links);
