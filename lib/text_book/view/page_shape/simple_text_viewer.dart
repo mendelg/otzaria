@@ -3160,22 +3160,6 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
                   );
                 }
 
-                final hasOwnAnchors = widget.anchorLinksByLine != null;
-                var data = widget.content[primaryLineIndex];
-                if (widget.isMainText) {
-                  data = _injectPreviewMarkers(data, primaryLineIndex, state);
-                } else if (hasOwnAnchors) {
-                  data = _injectOwnAnchorMarkers(data, primaryLineIndex, state);
-                }
-
-                // הדגשת טקסט ממוקד: highlightText מופעל רק בשורה permanentHighlightLine
-                final searchText = widget.isMainText
-                    ? ((state.highlightText.isNotEmpty &&
-                              state.permanentHighlightLine == index)
-                          ? state.highlightText
-                          : state.searchText)
-                    : '';
-
                 // קישורי inline שייכים לטקסט הראשי; סימוני הערות שייכים גם למפרש.
                 final inlineLinks =
                     widget.isMainText &&
@@ -3188,15 +3172,35 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
                           )
                           .toList()
                     : const <Link>[];
-                final hasAnnotations =
-                    notesForLine.isNotEmpty || inlineLinks.isNotEmpty;
-                final annotatedData = hasAnnotations
+
+                final hasOwnAnchors = widget.anchorLinksByLine != null;
+                var data = widget.content[primaryLineIndex];
+                if (widget.isMainText) {
+                  // קישורי inline ראשונים — האופסטים שלהם גולמיים.
+                  data = _injectPreviewMarkers(
+                    injectInlineLinks(data, inlineLinks),
+                    primaryLineIndex,
+                    state,
+                  );
+                } else if (hasOwnAnchors) {
+                  data = _injectOwnAnchorMarkers(data, primaryLineIndex, state);
+                }
+
+                // הדגשת טקסט ממוקד: highlightText מופעל רק בשורה permanentHighlightLine
+                final searchText = widget.isMainText
+                    ? ((state.highlightText.isNotEmpty &&
+                              state.permanentHighlightLine == index)
+                          ? state.highlightText
+                          : state.searchText)
+                    : '';
+
+                // סימוני הערות אישיות — אחרונים.
+                final annotatedData = notesForLine.isNotEmpty
                     ? buildAnnotatedLineHtml(
                         rawLine: data,
                         notesForLine: notesForLine,
                         lineIndex0: primaryLineIndex,
                         underlineColor: Theme.of(context).colorScheme.primary,
-                        inlineLinks: inlineLinks,
                       )
                     : data;
 
@@ -3479,9 +3483,6 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     required SettingsState settingsState,
     required List<PersonalNote> notesForLine,
   }) {
-    var textWithLinks = widget.isMainText
-        ? _injectPreviewMarkers(rawText, lineIndex, state)
-        : rawText;
     final inlineLinks =
         widget.isMainText &&
             settingsState.enableHtmlLinks &&
@@ -3490,14 +3491,20 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
               .where((link) => link.start != null && link.end != null)
               .toList()
         : const <Link>[];
-    if (widget.isMainText &&
-        (notesForLine.isNotEmpty || inlineLinks.isNotEmpty)) {
+    // קישורי inline ראשונים — האופסטים שלהם גולמיים.
+    var textWithLinks = widget.isMainText
+        ? _injectPreviewMarkers(
+            injectInlineLinks(rawText, inlineLinks),
+            lineIndex,
+            state,
+          )
+        : rawText;
+    if (widget.isMainText && notesForLine.isNotEmpty) {
       textWithLinks = buildAnnotatedLineHtml(
         rawLine: textWithLinks,
         notesForLine: notesForLine,
         lineIndex0: lineIndex,
         underlineColor: Theme.of(context).colorScheme.primary,
-        inlineLinks: inlineLinks,
       );
     }
     final isPinpointTarget =

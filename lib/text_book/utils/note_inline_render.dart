@@ -15,32 +15,12 @@ String _colorToHex(Color color) {
   return '#${value.toRadixString(16).padLeft(6, '0')}';
 }
 
-/// בונה את ה-HTML של השורה עם סימוני ההערות (וקישורי inline אם סופקו).
-///
-/// [rawLine] - טקסט השורה הגולמי (HTML+ניקוד).
-/// [notesForLine] - ההערות השייכות לשורה זו.
-/// [lineIndex0] - אינדקס השורה (0-based), מוטמע ב-URL לטיפול בלחיצה.
-/// [inlineLinks] - קישורי inline (עם start/end) להזרקה יחד עם הסימונים.
-/// [underlineColor] - צבע הקו התחתון של ההערה (בד"כ primary של ה-theme).
-String buildAnnotatedLineHtml({
-  required String rawLine,
-  required List<PersonalNote> notesForLine,
-  required int lineIndex0,
-  required Color underlineColor,
-  List<Link> inlineLinks = const [],
-}) {
-  if (rawLine.isEmpty) return rawLine;
-  // אם כבר עברה עיבוד (מכילה את הסכמות שלנו) — מחזירים כמות שהיא.
-  if (rawLine.contains('otzaria://note') ||
-      rawLine.contains('otzaria://inline-link')) {
-    return rawLine;
-  }
+/// מזריק קישורי inline לפי start/end — על הטקסט השמור, לפני כל הזרקה אחרת.
+String injectInlineLinks(String rawLine, List<Link> inlineLinks) {
+  if (rawLine.isEmpty || inlineLinks.isEmpty) return rawLine;
+  if (rawLine.contains('otzaria://inline-link')) return rawLine;
 
   final ranges = <HtmlWrapRange>[];
-
-  // 1) קישורי inline (אם יש) — נשמרים כפי שהיו ב-addInlineLinksToText.
-  // נאסוף גם את טווחיהם כדי שסימוני ההערות לא יבלעו אותם.
-  final linkSpans = <List<int>>[];
   for (final link in inlineLinks) {
     final start = link.start;
     final end = link.end;
@@ -56,12 +36,30 @@ String buildAnnotatedLineHtml({
         closeTag: '</a>',
       ),
     );
-    linkSpans.add([start, end]);
   }
-  linkSpans.sort((a, b) => a[0].compareTo(b[0]));
+  return wrapHtmlRanges(rawLine, ranges);
+}
 
-  // 2) סימוני הערות. טווח כל הערה מחוסר מטווחי הקישורים, כך שקישור inline
-  // נשאר שלם וההדגשה ממלאת רק את המרווחים שסביבו.
+/// בונה את ה-HTML של השורה עם סימוני ההערות — ההזרקה האחרונה.
+///
+/// [rawLine] - HTML השורה אחרי שאר ההזרקות (כולל [injectInlineLinks]).
+/// [notesForLine] - ההערות השייכות לשורה זו.
+/// [lineIndex0] - אינדקס השורה (0-based), מוטמע ב-URL לטיפול בלחיצה.
+/// [underlineColor] - צבע הקו התחתון של ההערה (בד"כ primary של ה-theme).
+String buildAnnotatedLineHtml({
+  required String rawLine,
+  required List<PersonalNote> notesForLine,
+  required int lineIndex0,
+  required Color underlineColor,
+}) {
+  if (rawLine.isEmpty || notesForLine.isEmpty) return rawLine;
+  // כבר סומנה; `note?` ולא `note` — כדי לא לתפוס את otzaria://note-marker.
+  if (rawLine.contains('otzaria://note?')) return rawLine;
+
+  // ההערה מדלגת על כל <a> קיים — למניעת <a> מקונן.
+  final linkSpans = _anchorElementSpans(rawLine);
+  final ranges = <HtmlWrapRange>[];
+
   final hex = _colorToHex(underlineColor);
   // color: currentcolor (ולא inherit) — flutter_widget_from_html לא מפרש
   // inherit, וההצהרה הייתה נזרקת כך שטקסט ההערה נצבע בצבע ה-primary של
@@ -123,4 +121,24 @@ List<List<int>> _subtractSpans(int start, int end, List<List<int>> spans) {
   }
   if (cursor < end) gaps.add([cursor, end]);
   return gaps;
+}
+
+final RegExp _anchorTagRegExp = RegExp(r'<(/?)a\b[^>]*>', caseSensitive: false);
+
+/// טווחי [start, end) של רכיבי `<a>…</a>` החיצוניים ב-[html], ממוינים.
+List<List<int>> _anchorElementSpans(String html) {
+  final spans = <List<int>>[];
+  var depth = 0;
+  var openStart = 0;
+  for (final match in _anchorTagRegExp.allMatches(html)) {
+    if (match.group(1)!.isEmpty) {
+      if (depth == 0) openStart = match.start;
+      depth++;
+    } else if (depth > 0) {
+      depth--;
+      if (depth == 0) spans.add([openStart, match.end]);
+    }
+  }
+  if (depth > 0) spans.add([openStart, html.length]);
+  return spans;
 }

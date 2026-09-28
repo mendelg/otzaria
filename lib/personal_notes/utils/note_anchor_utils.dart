@@ -435,9 +435,16 @@ void _appendWrapped(
     if (text[i] == '<') {
       final gt = text.indexOf('>', i);
       final tagEnd = (gt < 0 || gt >= end) ? end - 1 : gt;
-      if (boundaries.contains(i) && wrapOpen) {
+      final isBoundary = boundaries.contains(i);
+      final isOpening =
+          i + 1 < end && text[i + 1] != '/' && text[tagEnd - 1] != '/';
+      if (isBoundary && wrapOpen) {
         buffer.write(closeTag);
         wrapOpen = false;
+      } else if (!isBoundary && isOpening && !wrapOpen) {
+        // תגית מאוזנת נפתחת בתוך העטיפה — אחרת `<b><a>…</b>…</a>`.
+        buffer.write(openTag);
+        wrapOpen = true;
       }
       buffer.write(text.substring(i, tagEnd + 1));
       i = tagEnd + 1;

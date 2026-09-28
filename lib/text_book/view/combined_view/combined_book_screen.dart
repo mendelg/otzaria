@@ -2665,7 +2665,26 @@ class _CombinedViewState extends State<CombinedView> {
                             return constrainedText;
                           }
 
-                          String data = widget.data[primaryLineIndex];
+                          // איסוף קישורי inline (start/end מתייחסים לטקסט המקורי)
+                          List<Link> linksForLine = const [];
+                          if (settingsState.enableHtmlLinks &&
+                              state.book.versionTitle == null) {
+                            linksForLine =
+                                (state.linksByLine[primaryLineIndex + 1] ??
+                                        const <Link>[])
+                                    .where(
+                                      (link) =>
+                                          link.start != null &&
+                                          link.end != null,
+                                    )
+                                    .toList();
+                          }
+
+                          // קישורי inline ראשונים — האופסטים שלהם גולמיים.
+                          String data = injectInlineLinks(
+                            widget.data[primaryLineIndex],
+                            linksForLine,
+                          );
                           data = inline_notes.addInlineNotePreviewLinks(
                             data,
                             lineIndex: primaryLineIndex,
@@ -2695,22 +2714,7 @@ class _CombinedViewState extends State<CombinedView> {
                             _sectionHeadingsByLine[primaryLineIndex],
                           );
 
-                          // איסוף קישורי inline (start/end מתייחסים לטקסט המקורי)
-                          List<Link> linksForLine = const [];
-                          if (settingsState.enableHtmlLinks &&
-                              state.book.versionTitle == null) {
-                            linksForLine =
-                                (state.linksByLine[primaryLineIndex + 1] ??
-                                        const <Link>[])
-                                    .where(
-                                      (link) =>
-                                          link.start != null &&
-                                          link.end != null,
-                                    )
-                                    .toList();
-                          }
-
-                          // הזרקת סימוני הערות אישיות (וקישורי inline) ל-HTML.
+                          // סימוני הערות אישיות — אחרונים.
                           final dataWithLinks = buildAnnotatedLineHtml(
                             rawLine: data,
                             notesForLine: notesForLine,
@@ -2718,7 +2722,6 @@ class _CombinedViewState extends State<CombinedView> {
                             underlineColor: Theme.of(
                               context,
                             ).colorScheme.primary,
-                            inlineLinks: linksForLine,
                           );
 
                           // הדגשת טקסט ממוקד: highlightText מופעל רק בשורה permanentHighlightLine
@@ -3019,10 +3022,16 @@ class _CombinedViewState extends State<CombinedView> {
     required SettingsState settingsState,
     required List<PersonalNote> notesForLine,
   }) {
-    // סמני עוגן-מילה — על הטקסט השמור, לפני קישורי ה-inline (שממילא לא
-    // מתקיימים יחד איתם: start/end מגיעים רק מקבצי ספרייה, עוגנים רק מהמסד).
-    var textWithLinks = inline_notes.addInlineNotePreviewLinks(
-      rawText,
+    final linksForLine =
+        settingsState.enableHtmlLinks && state.book.versionTitle == null
+        ? (state.linksByLine[lineIndex + 1] ?? const <Link>[])
+              .where((link) => link.start != null && link.end != null)
+              .toList()
+        : const <Link>[];
+    // קישורי inline ראשונים — האופסטים שלהם גולמיים.
+    var textWithLinks = injectInlineLinks(rawText, linksForLine);
+    textWithLinks = inline_notes.addInlineNotePreviewLinks(
+      textWithLinks,
       lineIndex: lineIndex,
     );
     textWithLinks = _injectNumberedNoteMarkers(textWithLinks, lineIndex, state);
@@ -3036,19 +3045,12 @@ class _CombinedViewState extends State<CombinedView> {
       textWithLinks,
       _sectionMarkersByLine[lineIndex],
     );
-    final linksForLine =
-        settingsState.enableHtmlLinks && state.book.versionTitle == null
-        ? (state.linksByLine[lineIndex + 1] ?? const <Link>[])
-              .where((link) => link.start != null && link.end != null)
-              .toList()
-        : const <Link>[];
-    if (notesForLine.isNotEmpty || linksForLine.isNotEmpty) {
+    if (notesForLine.isNotEmpty) {
       textWithLinks = buildAnnotatedLineHtml(
         rawLine: textWithLinks,
         notesForLine: notesForLine,
         lineIndex0: lineIndex,
         underlineColor: Theme.of(context).colorScheme.primary,
-        inlineLinks: linksForLine,
       );
     }
 

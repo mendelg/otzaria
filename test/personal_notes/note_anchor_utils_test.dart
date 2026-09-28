@@ -184,5 +184,12 @@ void main() {
       ]);
       expect(result, '<a>אבג</a>דה');
     });
+
+    test('טווח שנפתח בתגית מאוזנת עוטף אותה ולא מוצלב', () {
+      final result = wrapHtmlRanges('<b>אב</b> גד', const [
+        HtmlWrapRange(start: 0, end: 12, openTag: '<a>', closeTag: '</a>'),
+      ]);
+      expect(result, '<a><b>אב</b> גד</a>');
+    });
   });
 }
