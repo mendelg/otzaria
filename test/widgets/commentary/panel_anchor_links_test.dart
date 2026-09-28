@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/data_providers/library_provider.dart';
+import 'package:otzaria/data/data_providers/library_provider_manager.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/services/target_line_links_service.dart';
@@ -8,6 +10,8 @@ import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
 import 'package:otzaria/tabs/models/tab.dart';
+import 'package:otzaria/text_display/models/text_display_profile.dart';
+import 'package:otzaria/widgets/commentary/commentary_content.dart';
 import 'package:otzaria/widgets/commentary/panel_anchor_links.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria/widgets/misc/link_preview_overlay.dart';
@@ -71,6 +75,7 @@ String _renderedHtml(WidgetTester tester) =>
 
 void main() {
   tearDown(TargetLineLinksService.resetInstanceForTesting);
+  tearDown(LibraryProviderManager.instance.resetForTesting);
 
   testWidgets('ציטוט בשורה המוצגת נעטף כקישור לחיץ', (tester) async {
     await _pumpPanel(
@@ -143,6 +148,29 @@ void main() {
     expect(find.byType(LinkHoverPreviewContent), findsNothing);
   });
 
+  testWidgets('יציאה מהירה מהציטוט מבטלת תצוגה מקדימה ממתינה', (
+    tester,
+  ) async {
+    await _pumpPanel(
+      tester,
+      loaded: [_anchored(index1: 3, charStart: 2, charEnd: 6)],
+    );
+    addTearDown(LinkPreviewOverlay.dismiss);
+    final smartText = tester.widget<SmartTextWidget>(
+      find.byType(SmartTextWidget),
+    );
+
+    smartText.onAnchorHover!(
+      'otzaria://anchor?ref=2_0&range=1',
+      const Offset(100, 100),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    smartText.onAnchorHoverExit!('otzaria://anchor?ref=2_0&range=1');
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(LinkHoverPreviewContent), findsNothing);
+  });
+
   testWidgets('בלי ציטוטים בשורה אין ריחוף', (tester) async {
     await _pumpPanel(tester, loaded: const []);
 
@@ -178,6 +206,49 @@ void main() {
 
     expect(find.byType(LinkHoverPreviewContent), findsNothing);
   });
+
+  testWidgets('תוכן מפרש מחבר ריחוף לציטוט לתצוגה מקדימה', (tester) async {
+    final manager = LibraryProviderManager.instance;
+    manager.seedMappingsForTesting(
+      mapping: const {},
+      providers: [_TestLibraryProvider()],
+    );
+    TargetLineLinksService.instance = TargetLineLinksService(
+      loader: (_, _, _) async => [
+        _anchored(index1: 3, charStart: 2, charEnd: 6),
+      ],
+    );
+    final settings = _TestSettingsBloc(SettingsState.initial());
+    addTearDown(settings.close);
+
+    await tester.pumpWidget(
+      BlocProvider<SettingsBloc>.value(
+        value: settings,
+        child: MaterialApp(
+          home: CommentaryContent(
+            link: _displayed(),
+            fontSize: 18,
+            openBookCallback: (_) {},
+            displayProfile: TextDisplayProfile.defaults,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final smartText = tester.widget<SmartTextWidget>(
+      find.byType(SmartTextWidget).first,
+    );
+    expect(smartText.onAnchorHover, isNotNull);
+    expect(smartText.onAnchorHoverExit, isNotNull);
+
+    smartText.onAnchorHover!(
+      'otzaria://anchor?ref=2_0&range=1',
+      const Offset(100, 100),
+    );
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(find.byType(LinkHoverPreviewContent), findsOneWidget);
+  });
 }
 
 class _TestSettingsBloc extends Bloc<SettingsEvent, SettingsState>
@@ -188,4 +259,9 @@ class _TestSettingsBloc extends Bloc<SettingsEvent, SettingsState>
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TestLibraryProvider extends Fake implements LibraryProvider {
+  @override
+  Future<String> getLinkContent(Link link) async => 'תוכן בדיקה';
 }
