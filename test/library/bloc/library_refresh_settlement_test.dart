@@ -12,6 +12,7 @@ import 'package:otzaria/library/bloc/library_state.dart';
 import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/library/models/library.dart';
+import 'package:otzaria/models/books.dart';
 
 import '../../helpers/memory_settings_cache.dart';
 
@@ -46,31 +47,30 @@ void main() {
 
   late FileSystemData previousFiles;
   late TantivyDataProvider previousIndex;
-  late Future<Library>? previousLibrary;
   late _ControlledFiles files;
+  late DataRepository repository;
   late LibraryBloc bloc;
 
   setUp(() async {
     await Settings.init(cacheProvider: MemorySettingsCache());
     previousFiles = FileSystemData.instance;
     previousIndex = TantivyDataProvider.instance;
-    previousLibrary = DataRepository.instance.cachedLibraryFutureForTesting;
     files = _ControlledFiles();
     FileSystemData.instance = files;
     TantivyDataProvider.instance = _ReadyIndex();
-    DataRepository.instance.library = Future.value(Library(categories: []));
-    bloc = LibraryBloc(hiddenStore: const _EmptyHiddenStore());
+    repository = DataRepository(fileSystemData: files);
+    repository.library = Future.value(Library(categories: []));
+    await repository.library;
+    bloc = LibraryBloc(
+      hiddenStore: const _EmptyHiddenStore(),
+      repository: repository,
+    );
   });
 
   tearDown(() async {
     await bloc.close();
     FileSystemData.instance = previousFiles;
     TantivyDataProvider.instance = previousIndex;
-    if (previousLibrary case final library?) {
-      DataRepository.instance.library = library;
-    } else {
-      DataRepository.instance.invalidateLibraryCache();
-    }
   });
 
   test('בקשה שבאה תוך רענון נשארת למיזוג ומדווחת רק בסיום השני', () async {
@@ -138,5 +138,50 @@ void main() {
     expect(result.failedRefreshRequestIds, {7});
     expect(result.completedRefreshRequestIds, isNull);
     expect(LibraryState.refreshRequestSettled(result, 7), isTrue);
+  });
+
+  test('רענון אחרי רענון שנכשל בונה קטלוג חדש ומחזיר את הספרייה', () async {
+    final broken = Completer<Library>();
+    final newBook = TextBook(title: 'ספר שנוסף בזמן הכשל');
+    final refreshedLibrary = Library(
+      categories: [
+        Category(
+          title: 'קטגוריה',
+          description: '',
+          shortDescription: '',
+          order: 0,
+          subCategories: [],
+          books: [newBook],
+          parent: null,
+        ),
+      ],
+    );
+    files.results.addAll([
+      broken.future,
+      Future.value(refreshedLibrary),
+    ]);
+
+    final failed = bloc.stream.firstWhere(
+      (state) => state.failedRefreshRequestIds?.contains(1) ?? false,
+    );
+    bloc.add(const RefreshLibrary(requestIds: {1}));
+    while (files.calls < 1) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    broken.completeError(StateError('catalog failed'));
+    expect((await failed).error, isNotNull);
+
+    final recovered = bloc.stream.firstWhere(
+      (state) =>
+          (state.completedRefreshRequestIds?.contains(2) ?? false) ||
+          (state.failedRefreshRequestIds?.contains(2) ?? false),
+    );
+    bloc.add(const RefreshLibrary(requestIds: {2}));
+    final result = await recovered;
+
+    expect(files.calls, 2);
+    expect(result.completedRefreshRequestIds, {2});
+    expect(result.error, isNull);
+    expect(result.newBooksToIndex, [newBook]);
   });
 }

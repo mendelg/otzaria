@@ -26,7 +26,7 @@ import 'package:otzaria/settings/services/custom_folders/custom_folder.dart';
 import 'package:otzaria/utils/file/zip_extractor_service.dart';
 
 class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
-  final DataRepository _repository = DataRepository.instance;
+  final DataRepository _repository;
 
   /// חנות ההסתרות. ניתנת להחלפה בבדיקות.
   final HiddenLibraryStore hiddenStore;
@@ -49,8 +49,11 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
   final Set<String> _pendingAttachedSlugs = {};
   RefreshSource _pendingSource = RefreshSource.customFoldersScan;
 
-  LibraryBloc({this.hiddenStore = const HiddenLibraryStore()})
-    : super(LibraryState.initial()) {
+  LibraryBloc({
+    this.hiddenStore = const HiddenLibraryStore(),
+    DataRepository? repository,
+  }) : _repository = repository ?? DataRepository.instance,
+       super(LibraryState.initial()) {
     // droppable: בעלייה נשלחים שני LoadLibrary סמוכים (reveal + LibraryBrowser.
     // initState). droppable זורק את השני בזמן שהראשון מעובד; ה-guard ב-
     // _onLoadLibrary זורק כפילויות שמגיעות אחרי שכבר נטען (למשל ניווט חוזר
@@ -247,10 +250,13 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       );
 
       // צלם את מפתחות הספרים לפני הרענון לצורך זיהוי ספרים חדשים
-      final keysBeforeRefresh = (await _repository.library)
-          .getIndexableBooks()
-          .map((b) => IndexingRepository.catalogueOrderKey(b))
-          .toSet();
+      final previousLibrary = await _repository.librarySnapshotForRefresh();
+      final keysBeforeRefresh = previousLibrary == null
+          ? <String>{}
+          : previousLibrary
+                .getIndexableBooks()
+                .map((b) => IndexingRepository.catalogueOrderKey(b))
+                .toSet();
 
       final libraryPath = Settings.getValue<String>(
         SettingsRepository.keyLibraryPath,
@@ -260,9 +266,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       }
 
       // רענון הספרייה מהמערכת קבצים
-      DataRepository.instance.library = FileSystemData.instance.getLibrary();
+      final fullLibrary = await _repository.reloadLibrary();
       DataRepository.instance.invalidateExternalBooksCache();
-      final fullLibrary = await _repository.library;
       final library = filterHiddenFromLibrary(fullLibrary, hiddenStore.load());
 
       try {
