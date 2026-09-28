@@ -92,11 +92,12 @@ class _OutlineViewState extends State<OutlineView>
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
     }
-    // מעבר הפאנל מסגור לפתוח: גלילה מחדש למיקום הנוכחי. ה-guard
-    // עלול לחסום אחרת אם נשבש ברקע בזמן שהפאנל היה סגור.
-    if (!oldWidget.isPaneOpen && widget.isPaneOpen) {
+    if (!identical(oldWidget.outline, widget.outline) ||
+        (!oldWidget.isPaneOpen && widget.isPaneOpen)) {
       _lastScrolledPage = null;
-      _scrollToActiveItem();
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToActiveItem();
+      });
     }
   }
 

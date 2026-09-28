@@ -1,6 +1,16 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/pdf_book/view/pdf_outlines_screen.dart';
+import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 import 'package:pdfrx/pdfrx.dart';
+
+class _ReadyController extends PdfViewerController {
+  @override
+  bool get isReady => true;
+
+  @override
+  int? get pageNumber => 1;
+}
 
 PdfOutlineNode _node(String title, int? page, [List<PdfOutlineNode>? kids]) =>
     PdfOutlineNode(
@@ -40,5 +50,34 @@ void main() {
       _node('פרק ב', 10),
     ];
     expect(pdfOutlineActiveNode(withHole, 12)?.title, 'פרק ב');
+  });
+
+  testWidgets('סעיף פעיל מסומן כשהתוכן מגיע אחרי שהעמוד מוכן', (tester) async {
+    final controller = _ReadyController();
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    Widget view(List<PdfOutlineNode>? nodes) => MaterialApp(
+      home: Scaffold(
+        body: OutlineView(
+          outline: nodes,
+          controller: controller,
+          focusNode: focusNode,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(view(null));
+    await tester.pumpWidget(view([_node('הקדמה', 1)]));
+    await tester.pump();
+
+    expect(
+      tester
+          .widgetList<NavTreeTile>(find.byType(NavTreeTile))
+          .where((tile) => tile.title == 'הקדמה')
+          .single
+          .isSelected,
+      isTrue,
+    );
   });
 }
