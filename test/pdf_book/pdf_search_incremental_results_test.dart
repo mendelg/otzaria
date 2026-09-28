@@ -62,6 +62,17 @@ void main() {
       );
       expect(PdfBookSearchView.matchLineSnippet(broken, 'שאילתה'), 'שאילתה');
     });
+
+    test('שכבת טקסט ללא שורות אינה משכפלת עמוד שלם לכל התאמה', () {
+      final page =
+          '${List.filled(10000, 'א').join()}שלום${List.filled(10000, 'ב').join()}';
+      final snippet = PdfBookSearchView.matchLineSnippet(
+        _rangeIn(page, 'שלום'),
+        'שלום',
+      );
+      expect(snippet, contains('שלום'));
+      expect(snippet.length, lessThanOrEqualTo(242));
+    });
   });
 
   group('keptMatchCount — מיפוי מצטבר של תוצאות החיפוש הפשוט', () {

@@ -270,8 +270,15 @@ Future<void> main() async {
     expect(find.text('נמצאו 1 תוצאות'), findsOneWidget);
 
     await tester.pumpWidget(view(second));
-    second.current = [_match(3), _match(4)];
+    final page3 = _match(3);
+    second.current = [page3];
+    await _notify(tester, second);
+    expect(find.text('נמצאו 1 תוצאות'), findsOneWidget);
+
+    second.current = [page3, _match(4)];
     await _notify(tester, second);
     expect(find.text('נמצאו 2 תוצאות'), findsOneWidget);
+    expect(find.text('עמוד 3'), findsOneWidget);
+    expect(find.text('עמוד 4'), findsOneWidget);
   });
 }
