@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/indexing/repository/indexing_repository.dart';
 import 'package:otzaria/library/hidden/hidden_library_filter.dart';
 import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_titles.dart';
@@ -169,5 +170,32 @@ void main() {
     );
 
     expect(hiddenBookTitlesForSelection(library, hidden), {'שמות'});
+  });
+
+  // העותק המסונן נשלח לאינדוקס ("אפס ועדכן", "עדכן", "בנה אינדקס"); בלי
+  // offTreeBooks הגרסאות האישיות של ספרים שלא הוסתרו נופלות מהאינדקס.
+  test('העותק המסונן שומר גרסאות מחוץ לעץ, והאינדוקס מסנן רק מוסתרות', () {
+    final library = _buildLibrary();
+    final visibleVersion = TextBook(title: 'בראשית (אישי)', categoryId: 10);
+    final hiddenVersion = TextBook(title: 'שמות (אישי)', categoryId: 10);
+    library.offTreeBooks = [visibleVersion, hiddenVersion];
+    final hidden = HiddenLibrarySelection(
+      bookKeys: {
+        PerBookSettings.bookKey(TextBook(title: 'תנחומא', categoryId: 20)),
+        PerBookSettings.bookKey(hiddenVersion),
+      },
+    );
+
+    final filtered = filterHiddenFromLibrary(library, hidden);
+    final indexed = IndexingRepository.booksForIndexing(
+      filtered.getIndexableBooks(),
+      includePdfBooks: true,
+      hidden: hidden,
+      library: filtered,
+    ).map((b) => b.title);
+
+    expect(filtered.offTreeBooks, [visibleVersion, hiddenVersion]);
+    expect(indexed, contains('בראשית (אישי)'));
+    expect(indexed, isNot(contains('שמות (אישי)')));
   });
 }
