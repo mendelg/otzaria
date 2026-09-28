@@ -72,7 +72,7 @@ Future<void> main() async {
       expect(find.byType(HtmlWidget), findsOneWidget);
     });
 
-    testWidgets('הדגשת חיפוש פעילה נופלת ל-HtmlWidget רק בשורה עם התאמה', (
+    testWidgets('הדגשת חיפוש נשארת במסלול המהיר וצובעת רק את ההתאמה', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -92,9 +92,17 @@ Future<void> main() async {
         ),
       );
 
-      // השורה עם ההתאמה מקבלת span של הדגשה → HtmlWidget;
-      // השורה בלי התאמה נשארת במסלול המהיר.
-      expect(find.byType(HtmlWidget), findsOneWidget);
+      expect(find.byType(HtmlWidget), findsNothing);
+      Color? matchColor;
+      for (final rich in tester.widgetList<RichText>(find.byType(RichText))) {
+        rich.text.visitChildren((span) {
+          if (span is TextSpan && span.text == 'ברכה') {
+            matchColor = span.style?.color;
+          }
+          return true;
+        });
+      }
+      expect(matchColor, const Color(0xFFFF0000));
     }, skip: !engineReady);
 
     testWidgets('טקסט ריק לא תופס גובה', (tester) async {

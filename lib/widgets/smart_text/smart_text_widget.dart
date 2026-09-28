@@ -224,7 +224,13 @@ class SmartTextWidget extends StatelessWidget {
     // גם סימונים מורמים נתמכים כאן באופן בסיסי: SimpleInlineHtml מזהה את
     // שני תגי הסימון, והשכבה נעטפת בדיוק כמו במסלול ה-HtmlWidget.
     if (renderMode == RenderMode.column) {
-      final simpleSpan = SimpleInlineHtml.tryParse(processedHtml, textStyle);
+      final heading = SimpleInlineHtml.tryParseHeading(
+        processedHtml,
+        textStyle,
+      );
+      final lineStyle = heading?.style ?? textStyle;
+      final simpleSpan =
+          heading?.span ?? SimpleInlineHtml.tryParse(processedHtml, textStyle);
       if (simpleSpan != null) {
         if (simpleSpan.toPlainText().isEmpty) {
           return const SizedBox.shrink();
@@ -242,8 +248,8 @@ class SmartTextWidget extends StatelessWidget {
               width: double.infinity,
               child: SelectionFillText.rich(
                 simpleSpan,
-                style: textStyle,
-                strutStyle: exactLineHeightStrut(textStyle, simpleSpan),
+                style: lineStyle,
+                strutStyle: exactLineHeightStrut(lineStyle, simpleSpan),
                 textAlign: settings.justifyText
                     ? TextAlign.justify
                     : TextAlign.right,
