@@ -263,9 +263,21 @@ class _CommentaryContentState extends State<CommentaryContent>
                         onAnchorTap: anchorLinks.isEmpty
                             ? null
                             : (url) {
+                                cancelAnchorHover();
                                 final link = anchorLinkFromUrl(url);
                                 if (link != null) _openAnchorTarget(link);
                               },
+                        onAnchorHover: anchorLinks.isEmpty
+                            ? null
+                            : (url, position) => handleAnchorHover(
+                                url,
+                                position,
+                                onOpen: _openAnchorTarget,
+                                displayProfile: widget.displayProfile,
+                              ),
+                        onAnchorHoverExit: anchorLinks.isEmpty
+                            ? null
+                            : handleAnchorHoverExit,
                         onNoteTap: notesForLine.isEmpty
                             ? null
                             : (_) => openCommentaryPersonalNote(

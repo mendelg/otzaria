@@ -4,8 +4,11 @@ import 'package:flutter/widgets.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/services/target_line_links_service.dart';
 import 'package:otzaria/tabs/models/tab.dart';
+import 'package:otzaria/text_display/models/text_display_profile.dart';
 import 'package:otzaria/text_book/utils/link_anchor_markers.dart';
+import 'package:otzaria/text_book/utils/link_preview_utils.dart';
 import 'package:otzaria/utils/navigation/talmud_bavli_open_format.dart';
+import 'package:otzaria/widgets/misc/link_preview_overlay.dart';
 import 'package:otzaria/widgets/smart_text/smart_text.dart';
 
 /// קישורים פנימיים (ציטוטי הלינקר) בתוך קטע שמוצג בחלונית — מפרש או קישור.
@@ -35,6 +38,7 @@ mixin PanelAnchorLinksMixin<T extends StatefulWidget> on State<T> {
   }
 
   void restartAnchorLinks() {
+    _anchorHoverTimer?.cancel();
     _anchorLinks = const [];
     _requestAnchorLinks();
   }
@@ -42,6 +46,49 @@ mixin PanelAnchorLinksMixin<T extends StatefulWidget> on State<T> {
   void stopAnchorLinks() {
     _anchorSubscription?.cancel();
     _anchorSubscription = null;
+    _anchorHoverTimer?.cancel();
+  }
+
+  Timer? _anchorHoverTimer;
+
+  /// ריחוף על ציטוט — תצוגה מקדימה אחרי השהיה, כמו בגוף הספר (ההשהיה מונעת
+  /// הבהובים כשהסמן רק חולף). [onOpen] — לחיצה על כותרת החלונית.
+  void handleAnchorHover(
+    String url,
+    Offset globalPosition, {
+    required void Function(Link link) onOpen,
+    TextDisplayProfile? displayProfile,
+  }) {
+    LinkPreviewOverlay.cancelScheduledHide();
+    _anchorHoverTimer?.cancel();
+    final link = anchorLinkFromUrl(url);
+    if (link == null) return;
+    prefetchLinkPreview(link);
+    _anchorHoverTimer = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      LinkPreviewOverlay.show(
+        context,
+        link: link,
+        globalPosition: globalPosition,
+        hoverMode: true,
+        displayProfile: displayProfile,
+        onOpen: () {
+          LinkPreviewOverlay.dismiss();
+          onOpen(link);
+        },
+      );
+    });
+  }
+
+  void handleAnchorHoverExit(String url) {
+    _anchorHoverTimer?.cancel();
+    LinkPreviewOverlay.scheduleHide();
+  }
+
+  /// לחיצה על הציטוט מנווטת — ריחוף ממתין היה פותח חלונית אחרי הניווט.
+  void cancelAnchorHover() {
+    _anchorHoverTimer?.cancel();
+    LinkPreviewOverlay.dismiss();
   }
 
   void _requestAnchorLinks() {
@@ -163,6 +210,11 @@ class _PanelAnchoredTextState extends State<PanelAnchoredText>
 
   Future<void> _openAnchorTarget(Link link) async {
     widget.onAnchorActivated?.call();
+    await _navigateTo(link);
+  }
+
+  // בלי onAnchorActivated: הלחיצה על כותרת החלונית אינה הקשה על הפריט שמתחת.
+  Future<void> _navigateTo(Link link) async {
     final tab = await buildLinkTargetTab(link);
     if (!mounted) return;
     widget.openBookCallback(tab);
@@ -176,9 +228,15 @@ class _PanelAnchoredTextState extends State<PanelAnchoredText>
       onAnchorTap: anchorLinks.isEmpty
           ? null
           : (url) {
+              cancelAnchorHover();
               final link = anchorLinkFromUrl(url);
               if (link != null) _openAnchorTarget(link);
             },
+      onAnchorHover: anchorLinks.isEmpty
+          ? null
+          : (url, position) =>
+                handleAnchorHover(url, position, onOpen: _navigateTo),
+      onAnchorHoverExit: anchorLinks.isEmpty ? null : handleAnchorHoverExit,
     );
   }
 }
