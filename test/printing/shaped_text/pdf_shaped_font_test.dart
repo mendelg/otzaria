@@ -6,6 +6,8 @@ import 'package:opentype_shaper/opentype_shaper.dart';
 import 'package:otzaria/printing/shaped_text/pdf_shaped_font.dart';
 import 'package:pdf/pdf.dart';
 
+import '../../support/shaper_test_init.dart';
+
 /// A pointed Hebrew word: three letters carrying nikud, one of them a ta'am.
 const String pointedWord = 'שָׁ֖לֹם';
 
@@ -15,21 +17,6 @@ const List<String> _fontCandidates = [
   'fonts/TaameyDavidCLM-Medium.ttf',
   'fonts/NotoSerifHebrew-VariableFont_wdth,wght.ttf',
 ];
-
-String? _findNativeLibrary() {
-  final name = Platform.isWindows
-      ? 'opentype_shaper.dll'
-      : Platform.isMacOS
-      ? 'libopentype_shaper.dylib'
-      : 'libopentype_shaper.so';
-  for (final profile in const ['release', 'debug']) {
-    final candidate = File('C:/opentype_shaper/rust/target/$profile/$name');
-    if (candidate.existsSync()) {
-      return candidate.absolute.path;
-    }
-  }
-  return null;
-}
 
 (String, Uint8List)? _readFont() {
   for (final path in _fontCandidates) {
@@ -42,7 +29,7 @@ String? _findNativeLibrary() {
 }
 
 void main() {
-  final libraryPath = _findNativeLibrary();
+  final libraryPath = findNativeShaperLibrary();
   final font = _readFont();
 
   final skipReason = libraryPath == null

@@ -9,6 +9,8 @@ import 'package:otzaria/printing/shaped_text/shaped_text_widget.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../support/shaper_test_init.dart';
+
 /// Ordinary pointed Hebrew words, repeated to fill several lines.
 const List<String> _words = [
   'שָׁלוֹם',
@@ -25,21 +27,6 @@ String buildParagraph(int wordCount) => [
   for (var index = 0; index < wordCount; index++) _words[index % _words.length],
 ].join(' ');
 
-String? _findNativeLibrary() {
-  final name = Platform.isWindows
-      ? 'opentype_shaper.dll'
-      : Platform.isMacOS
-      ? 'libopentype_shaper.dylib'
-      : 'libopentype_shaper.so';
-  for (final profile in const ['release', 'debug']) {
-    final candidate = File('C:/opentype_shaper/rust/target/$profile/$name');
-    if (candidate.existsSync()) {
-      return candidate.absolute.path;
-    }
-  }
-  return null;
-}
-
 Uint8List? _readFont() {
   for (final path in const [
     'fonts/TaameyDavidCLM-Medium.ttf',
@@ -54,7 +41,7 @@ Uint8List? _readFont() {
 }
 
 void main() {
-  final libraryPath = _findNativeLibrary();
+  final libraryPath = findNativeShaperLibrary();
   final fontBytes = _readFont();
   final skipReason = libraryPath == null
       ? 'the native shaper is not built'
