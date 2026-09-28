@@ -157,12 +157,10 @@ void main() {
   });
 
   test('restart מבטל עץ ספרייה ישן לאחר שינוי נתיב בגיבוי', () async {
-    final oldTree = Future.value(Library(categories: []));
-    DataRepository.instance.library = oldTree;
-    expect(
-      DataRepository.instance.cachedLibraryFutureForTesting,
-      same(oldTree),
-    );
+    final oldLibrary = Library(categories: []);
+    DataRepository.instance.library = Future.value(oldLibrary);
+    expect(await DataRepository.instance.library, same(oldLibrary));
+    expect(DataRepository.instance.lastSuccessfulLibrary, same(oldLibrary));
 
     await Settings.setValue<String>(
       SettingsRepository.keyLibraryPath,
@@ -172,5 +170,6 @@ void main() {
 
     expect(FileSystemData.instance.libraryPath, 'C:/restored-library');
     expect(DataRepository.instance.cachedLibraryFutureForTesting, isNull);
+    expect(DataRepository.instance.lastSuccessfulLibrary, isNull);
   });
 }
