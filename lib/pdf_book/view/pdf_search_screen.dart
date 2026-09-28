@@ -417,6 +417,15 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _isSearching = false;
     _searchErrorMessage = null;
     _pendingSimpleSearchScrollFor = null;
+    if (!_isSimpleSearch &&
+        _searchableQuery(widget.searchController.text) != null) {
+      final generation = _searchGeneration;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchGeneration == generation) {
+          unawaited(_searchTextUpdated());
+        }
+      });
+    }
   }
 
   /// מחילה קונפיגורציית חיפוש שהגיעה מפתיחת תוצאה בספר שכבר פתוח.

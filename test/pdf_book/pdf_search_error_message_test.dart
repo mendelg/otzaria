@@ -59,6 +59,8 @@ class _FakeReadyController extends PdfViewerController {
 }
 
 class _ThrowingSearchRepository extends SearchRepository {
+  int calls = 0;
+
   @override
   Future<List<SearchResult>> searchTexts(
     String query,
@@ -85,6 +87,7 @@ class _ThrowingSearchRepository extends SearchRepository {
     WordMatchMode wordMatchMode = WordMatchMode.all,
     int? wordMatchCount,
   }) async {
+    calls++;
     throw Exception('כשל מנוע החיפוש');
   }
 }
@@ -190,6 +193,65 @@ Future<void> main() async {
     expect(find.text('אין תוצאות'), findsOneWidget);
 
     // ניקוז הטיימרים של pdfrx וההדגשה כדי שלא יישארו pending בסוף הבדיקה.
+    await tester.pump(const Duration(milliseconds: 800));
+  }, skip: !engineReady);
+
+  testWidgets('החלפת מנוע PDF מריצה מחדש חיפוש מתקדם קיים', (tester) async {
+    final settingsBloc = _MockSettingsBloc();
+    whenListen(
+      settingsBloc,
+      const Stream<SettingsState>.empty(),
+      initialState: SettingsState.initial(),
+    );
+    final pdfBookBloc = _MockPdfBookBloc();
+    whenListen(
+      pdfBookBloc,
+      const Stream<PdfBookState>.empty(),
+      initialState: _loadedState(),
+    );
+    final searchController = TextEditingController(text: 'אב');
+    final focusNode = FocusNode();
+    final firstSearcher = PdfTextSearcher(_FakeReadyController());
+    final secondSearcher = PdfTextSearcher(_FakeReadyController());
+    final searchRepository = _ThrowingSearchRepository();
+
+    addTearDown(settingsBloc.close);
+    addTearDown(pdfBookBloc.close);
+    addTearDown(searchController.dispose);
+    addTearDown(focusNode.dispose);
+    addTearDown(firstSearcher.dispose);
+    addTearDown(secondSearcher.dispose);
+
+    Widget searchView(PdfTextSearcher searcher) => MaterialApp(
+      home: MultiBlocProvider(
+        providers: [
+          BlocProvider<SettingsBloc>.value(value: settingsBloc),
+          BlocProvider<PdfBookBloc>.value(value: pdfBookBloc),
+        ],
+        child: Scaffold(
+          body: PdfBookSearchView(
+            textSearcher: searcher,
+            searchController: searchController,
+            focusNode: focusNode,
+            bookTitle: 'ספר בדיקה',
+            bookTopics: 'תנך',
+            pdfFilePath: '/nonexistent/test.pdf',
+            initialSearchMode: SearchMode.fuzzy,
+            initialSearchDistance: 2,
+            searchRepository: searchRepository,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(searchView(firstSearcher));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(searchRepository.calls, 1);
+
+    await tester.pumpWidget(searchView(secondSearcher));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(searchRepository.calls, 2);
+
     await tester.pump(const Duration(milliseconds: 800));
   }, skip: !engineReady);
 }
