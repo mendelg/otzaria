@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:otzaria/theme/app_fonts.dart';
+import 'package:otzaria/widgets/smart_text/otzaria_widget_factory.dart';
 
 import '../models/editor_settings.dart';
 import 'markdown_processor.dart';
@@ -45,6 +46,7 @@ class PreviewRenderer {
             padding: const EdgeInsets.all(16),
             child: HtmlWidget(
               html,
+              factoryBuilder: OtzariaWidgetFactory.new,
               textStyle: textStyle.copyWith(
                 fontFamily: fontFamily,
                 height: 1.5,
