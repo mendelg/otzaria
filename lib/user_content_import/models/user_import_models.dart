@@ -5,6 +5,7 @@
 library;
 
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/models/link_types.dart';
 
 /// שמות הדורות הקנוניים שמותר להזין בקובץ הדורות.
 ///
@@ -17,16 +18,32 @@ const Set<String> kCanonicalEraNames = {
   'מחברי זמננו',
 };
 
-/// מיפוי תווית-סוג בעברית (בקובץ הקישורים) לשם connection_type ב-DB.
-///
-/// פירוש/תרגום הם תלויי-טקסט (מוצגים בפאנל המפרשים); הפניה/מקור מוצגים
-/// בפאנל הקישורים. ראה [LinkTypes].
-const Map<String, String> kHebrewConnectionTypes = {
-  'פירוש': 'COMMENTARY',
-  'תרגום': 'TARGUM',
-  'הפניה': 'REFERENCE',
-  'מקור': 'SOURCE',
-  'אחר': 'OTHER',
+/// סוגי ה-native המותרים — ערכי ה-ConnectionType של מחולל ה-DB.
+const Set<String> kNativeConnectionTypes = {
+  LinkTypes.commentary,
+  LinkTypes.superCommentary,
+  LinkTypes.targum,
+  LinkTypes.reference,
+  LinkTypes.source,
+  LinkTypes.midrash,
+  LinkTypes.quotation,
+  LinkTypes.mesoratHashas,
+  LinkTypes.einMishpat,
+  LinkTypes.diburHamatchil,
+  LinkTypes.parshanut,
+  LinkTypes.mishnahInTalmud,
+  LinkTypes.related,
+  LinkTypes.other,
+  LinkTypes.linker,
+  LinkTypes.sifreiMitzvot,
+  LinkTypes.essay,
+  LinkTypes.allusion,
+  LinkTypes.liturgy,
+  LinkTypes.elucidation,
+  LinkTypes.explication,
+  LinkTypes.law,
+  LinkTypes.summary,
+  LinkTypes.footnotes,
 };
 
 /// שמות מבנה שמקבלים את תצוגת המבנה הרשמי המקביל: סימנים/סעיפים מוצגים
@@ -188,7 +205,7 @@ class ParsedUserLink {
   /// כתובת היעד כפי שנכתבה (ref), אם צוינה.
   final String? targetRef;
 
-  /// שם connection_type ב-DB (אחד מערכי [kHebrewConnectionTypes]).
+  /// שם connection_type ב-DB (אחד מערכי [LinkTypes.hebrewConnectionTypes]).
   final String connectionType;
 
   /// האם ספר היעד הוא ספר אישי (מפריד בין מרחבי ה-id).
@@ -262,7 +279,7 @@ class ParsedNativeLink {
   /// הכתובת העברית של היעד (heRef_2) — להצגה בלבד.
   final String? targetRef;
 
-  /// שם connection_type ב-DB.
+  /// שם connection_type ב-DB (אחד מ-[kNativeConnectionTypes]).
   final String connectionType;
 
   const ParsedNativeLink({

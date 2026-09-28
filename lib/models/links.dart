@@ -347,6 +347,20 @@ class Link {
     if (end != null) 'end': end,
   };
 
+  static const String defaultJsonConnectionType = 'reference';
+
+  /// 'Conection Type' חסר/ריק → [defaultJsonConnectionType] (לא "null").
+  static String connectionTypeFromJson(Object? raw) {
+    final value = raw?.toString();
+    if (value == null || value.trim().isEmpty) {
+      return defaultJsonConnectionType;
+    }
+    final hebrew = LinkTypes.hebrewConnectionTypes[value.trim()];
+    if (hebrew != null) return hebrew;
+    return LinkTypes.nativeConnectionTypeAliases[LinkTypes.normalize(value)] ??
+        value;
+  }
+
   /// בונה [Link] משורת `links.json`. סלחני בכוונה: מקבל אינדקסים כמספר או
   /// כמחרוזת (`"3.0"` → `3`), וסוג חיבור ריק הופך ל-`reference`.
   ///
@@ -356,9 +370,7 @@ class Link {
       index1 = int.parse(json['line_index_1'].toString().split('.').first),
       path2 = json['path_2'].toString(),
       index2 = int.parse(json['line_index_2'].toString().split('.').first),
-      connectionType = json['Conection Type'].toString().isEmpty
-          ? 'reference'
-          : json['Conection Type'].toString(),
+      connectionType = connectionTypeFromJson(json['Conection Type']),
       targetCategoryId = json['category_id_2'] != null
           ? int.tryParse(json['category_id_2'].toString())
           : null,

@@ -588,4 +588,51 @@ void main() {
       expect(restored.end, original.end);
     });
   });
+
+  group('Link.fromJson — Conection Type', () {
+    Link parse(Map<String, dynamic> extra) => Link.fromJson({
+      'heRef_2': 'בראשית א, א',
+      'line_index_1': 1,
+      'path_2': 'בראשית.txt',
+      'line_index_2': 2,
+      ...extra,
+    });
+
+    test('מפתח חסר → reference, לא "null"', () {
+      expect(parse({}).connectionType, 'reference');
+    });
+
+    for (final value in [null, '', '   ']) {
+      test('ערך ${value == null ? 'null' : '"$value"'} → reference', () {
+        expect(parse({'Conection Type': value}).connectionType, 'reference');
+      });
+    }
+
+    test('ערך קיים נשמר כמות שהוא', () {
+      expect(parse({'Conection Type': 'targum'}).connectionType, 'targum');
+    });
+
+    test('כינויי native מסווגים כמו בייבוא קישורים', () {
+      final elucidation = parse({'Conection Type': 'ellucidation'});
+      expect(elucidation.connectionType, LinkTypes.elucidation);
+      expect(LinkTypes.isDependentTextLink(elucidation.connectionType), isTrue);
+
+      final footnotes = parse({'Conection Type': 'footnote'});
+      expect(footnotes.connectionType, LinkTypes.footnotes);
+      expect(LinkTypes.isDependentTextLink(footnotes.connectionType), isTrue);
+    });
+
+    test('סוג עברי בקובץ native מסווג כמו בייבוא קישורים', () {
+      final targum = parse({'Conection Type': 'תרגום'});
+      expect(targum.connectionType, LinkTypes.targum);
+      expect(LinkTypes.isDependentTextLink(targum.connectionType), isTrue);
+    });
+
+    test('סוג עתידי לא מוכר נשמר כמות שהוא', () {
+      expect(
+        parse({'Conection Type': 'future_kind'}).connectionType,
+        'future_kind',
+      );
+    });
+  });
 }

@@ -50,7 +50,11 @@ bool _isBreakTag(String s, int start, int end) {
 }
 
 /// מקרין שורה גולמית (HTML+ניקוד) למחרוזת מנורמלת עם מפת אינדקסים חזרה.
-LineProjection projectLine(String rawLine, {bool keepPunctuation = false}) {
+LineProjection projectLine(
+  String rawLine, {
+  bool keepPunctuation = false,
+  bool omitInjectedAnchorMarkers = false,
+}) {
   final buffer = StringBuffer();
   final rawIndex = <int>[];
   bool inTag = false;
@@ -76,6 +80,19 @@ LineProjection projectLine(String rawLine, {bool keepPunctuation = false}) {
   for (int i = 0; i < rawLine.length; i++) {
     final ch = rawLine[i];
     final code = rawLine.codeUnitAt(i);
+
+    if (omitInjectedAnchorMarkers && !inTag && ch == '<') {
+      final isAnchor = rawLine.startsWith('<a class="link-anchor ', i);
+      final isSpan = rawLine.startsWith('<span class="link-anchor ', i);
+      if (isAnchor || isSpan) {
+        final closingTag = isAnchor ? '</a>' : '</span>';
+        final end = rawLine.indexOf(closingTag, i);
+        if (end >= 0) {
+          i = end + closingTag.length - 1;
+          continue;
+        }
+      }
+    }
 
     if (inTag) {
       if (ch == '>') {
@@ -242,24 +259,35 @@ int _rawToNormalizedIndex(LineProjection p, int rawHint) {
 /// מאתר את טווח הביטוי בשורה הגולמית.
 ///
 /// [anchorText] הוא הטקסט המנורמל שנבחר. [prefix]/[suffix] הם הקשר מנורמל
-/// לבחירת המופע הנכון. [hintStart] הוא offset גולמי משוער (fast-path).
+/// לבחירת המופע הנכון. [hintStart] נמדד ב-[hintSourceLine] אם סופקה.
 NoteAnchorRange? locateAnchor({
   required String rawLine,
   required String anchorText,
   String? prefix,
   String? suffix,
   int? hintStart,
+  String? hintSourceLine,
 }) {
   final needle = normalizeAnchorText(anchorText);
   if (needle.isEmpty) return null;
 
-  final p = projectLine(rawLine);
+  final p = projectLine(
+    rawLine,
+    omitInjectedAnchorMarkers: hintSourceLine != null,
+  );
   final occurrences = _allOccurrences(p.normalized, needle);
   if (occurrences.isEmpty) return null;
 
-  final normalizedHint = hintStart != null
-      ? _rawToNormalizedIndex(p, hintStart)
-      : null;
+  int? normalizedHint;
+  if (hintStart != null) {
+    final source = hintSourceLine == null || hintSourceLine == rawLine
+        ? p
+        : projectLine(hintSourceLine);
+    final offset = p.normalized.indexOf(source.normalized);
+    if (source.normalized.isNotEmpty && offset >= 0) {
+      normalizedHint = offset + _rawToNormalizedIndex(source, hintStart);
+    }
+  }
   final matchStart = _pickBestOccurrence(
     p.normalized,
     occurrences,
@@ -435,9 +463,16 @@ void _appendWrapped(
     if (text[i] == '<') {
       final gt = text.indexOf('>', i);
       final tagEnd = (gt < 0 || gt >= end) ? end - 1 : gt;
-      if (boundaries.contains(i) && wrapOpen) {
+      final isBoundary = boundaries.contains(i);
+      final isOpening =
+          i + 1 < end && text[i + 1] != '/' && text[tagEnd - 1] != '/';
+      if (isBoundary && wrapOpen) {
         buffer.write(closeTag);
         wrapOpen = false;
+      } else if (!isBoundary && isOpening && !wrapOpen) {
+        // תגית מאוזנת נפתחת בתוך העטיפה — אחרת `<b><a>…</b>…</a>`.
+        buffer.write(openTag);
+        wrapOpen = true;
       }
       buffer.write(text.substring(i, tagEnd + 1));
       i = tagEnd + 1;
