@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +12,108 @@ import 'package:otzaria/personal_notes/widgets/personal_note_editor.dart';
 import 'package:otzaria/shortcuts/shortcut_helper.dart';
 
 void main() {
+  Future<quill.QuillController> pumpEditorWith(
+    WidgetTester tester,
+    String text,
+  ) async {
+    final controller = buildPersonalNoteEditorController(
+      initialContent: text,
+      initialFormat: PersonalNoteContentFormat.plain,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PersonalNoteEditorBody(
+            controller: controller,
+            focusNode: FocusNode(),
+            scrollController: ScrollController(),
+            autofocus: false,
+            linkableNotes: const [],
+          ),
+        ),
+      ),
+    );
+    return controller.quillController;
+  }
+
+  List<String> mockClipboard(WidgetTester tester) {
+    final writes = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          writes.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    return writes;
+  }
+
+  // תפריט העריכה הוא הדרך לגזור ולהדביק בלי מקלדת.
+  testWidgets('לחיצה ימנית בעורך פותחת תפריט עריכה של אוצריא', (tester) async {
+    await pumpEditorWith(tester, 'שלום עולם');
+
+    await tester.tapAt(
+      tester.getCenter(find.byType(quill.QuillEditor)),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+
+    for (final label in ['גזור', 'העתק', 'הדבק', 'בחר הכל']) {
+      expect(find.text(label), findsOneWidget, reason: label);
+    }
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+  });
+
+  testWidgets('"העתק" בתפריט מעתיק את הטקסט המסומן', (tester) async {
+    final writes = mockClipboard(tester);
+    final quillController = await pumpEditorWith(tester, 'שלום עולם');
+    quillController.updateSelection(
+      const TextSelection(baseOffset: 0, extentOffset: 4),
+      quill.ChangeSource.local,
+    );
+    await tester.pump();
+
+    await tester.tapAt(
+      tester.getCenter(find.byType(quill.QuillEditor)),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('העתק'));
+    await tester.pumpAndSettle();
+
+    // Quill מאפס את הלוח לפני ההעתקה (copiedImageUrl), כמו ב-Ctrl+C.
+    expect(writes.last, 'שלום');
+  });
+
+  testWidgets('לחיצה ארוכה במגע פותחת את תפריט העריכה', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await pumpEditorWith(tester, 'שלום עולם');
+      await tester.tap(find.text('שלום עולם', findRichText: true));
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('שלום עולם', findRichText: true)),
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(find.text('הדבק'), findsOneWidget);
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets('ב-Mac Cmd+Enter שומר, ו-placeholder מציג ⌘', (tester) async {
     ShortcutHelper.isMacForTesting = true;
     addTearDown(() => ShortcutHelper.isMacForTesting = null);
@@ -282,33 +386,32 @@ void main() {
     controller.quillController.dispose();
   });
 
-  testWidgets('QuillEditor מוגדר ללא תפריט סלקציה אוטומטי', (tester) async {
-    // רגרסיה: Quill מציגה אוטומטית תפריט copy/paste בסיום גרירה בדסקטופ.
-    // בהערות אישיות זה מציק (יש לנו טולבר משלנו וקיצורי מקלדת).
-    // הפתרון: enableSelectionToolbar: false ב-QuillEditorConfig.
-    final controller = buildPersonalNoteEditorController(
-      initialContent: 'שלום עולם',
-      initialFormat: PersonalNoteContentFormat.plain,
+  // Quill מבקש תפריט מעצמו גם בסיום בחירה בעכבר, ובהערות אישיות זה מציק.
+  testWidgets('בקשת תפריט של Quill אחרי עכבר אינה פותחת תפריט', (
+    tester,
+  ) async {
+    await pumpEditorWith(tester, 'שלום עולם');
+    await tester.tap(
+      find.text('שלום עולם', findRichText: true),
+      kind: PointerDeviceKind.mouse,
     );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: PersonalNoteEditorBody(
-            controller: controller,
-            focusNode: FocusNode(),
-            scrollController: ScrollController(),
-            autofocus: false,
-            linkableNotes: const [],
-          ),
-        ),
-      ),
-    );
+    await tester.pumpAndSettle();
 
     final editor = tester.widget<quill.QuillEditor>(
       find.byType(quill.QuillEditor),
     );
-    expect(editor.config.enableSelectionToolbar, isFalse);
+    editor.config.contextMenuBuilder!(
+      tester.element(find.byType(quill.QuillEditor)),
+      tester.state<quill.QuillRawEditorState>(
+        find.byType(quill.QuillRawEditor),
+      ),
+    );
+    // באפליקציה Quill מבקש באמצע פריים; כאן צריך פריים כדי שהמשך הבקשה ירוץ.
+    tester.binding.scheduleFrame();
+    await tester.pumpAndSettle();
+
+    expect(find.text('הדבק'), findsNothing);
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
   });
 
   testWidgets('גובה העורך מתכווץ במסך נמוך עם מקלדת פתוחה', (tester) async {

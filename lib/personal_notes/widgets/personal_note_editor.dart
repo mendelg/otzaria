@@ -11,6 +11,7 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/widgets/personal_note_link_dialog.dart';
 import 'package:otzaria/shortcuts/shortcut_helper.dart';
+import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 
 // RTL-aware arrow key shortcuts for QuillEditor.
 //
@@ -151,6 +152,9 @@ class PersonalNoteEditorBody extends StatefulWidget {
 }
 
 class _PersonalNoteEditorBodyState extends State<PersonalNoteEditorBody> {
+  final _editMenuKey = GlobalKey<AppContextMenuRegionState>();
+  PointerDeviceKind? _lastPointerKind;
+
   // עוטף את אזור הכתיבה כדי לגלול אותו לתוך התצוגה כשהוא יורד מתחת לחלון.
   final GlobalKey _editorAreaKey = GlobalKey();
   Timer? _settleTimer;
@@ -195,6 +199,67 @@ class _PersonalNoteEditorBodyState extends State<PersonalNoteEditorBody> {
         alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
       );
     });
+  }
+
+  /// Quill מבקש תפריט גם בסיום גרירה בעכבר, ושם לא מציגים כלום; לחיצה ימנית
+  /// פותחת את התפריט מהאזור.
+  Widget _touchContextMenu(
+    BuildContext context,
+    quill.QuillRawEditorState editorState,
+  ) {
+    if (_lastPointerKind
+        case PointerDeviceKind.touch ||
+            PointerDeviceKind.stylus ||
+            PointerDeviceKind.invertedStylus) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        editorState.hideToolbar(false);
+        _editMenuKey.currentState?.openMenuAt(
+          editorState.contextMenuAnchors.primaryAnchor,
+        );
+      });
+    }
+    return const SizedBox.shrink();
+  }
+
+  List<AppContextMenuEntry> _buildEditMenu() {
+    final controller = widget.controller.quillController;
+    final hasSelection = !controller.selection.isCollapsed;
+    final hasText = controller.document.length > 1;
+    return [
+      AppContextMenuEntry(
+        label: 'גזור',
+        icon: FluentIcons.cut_24_regular,
+        enabled: hasSelection,
+        // ignore: experimental_member_use
+        onTap: () => controller.clipboardSelection(false),
+      ),
+      AppContextMenuEntry(
+        label: 'העתק',
+        icon: FluentIcons.copy_24_regular,
+        enabled: hasSelection,
+        // ignore: experimental_member_use
+        onTap: () => controller.clipboardSelection(true),
+      ),
+      AppContextMenuEntry(
+        label: 'הדבק',
+        icon: FluentIcons.clipboard_paste_24_regular,
+        // ignore: experimental_member_use
+        onTap: controller.clipboardPaste,
+      ),
+      AppContextMenuEntry(
+        label: 'בחר הכל',
+        icon: FluentIcons.select_all_on_24_regular,
+        enabled: hasText,
+        onTap: () => controller.updateSelection(
+          TextSelection(
+            baseOffset: 0,
+            extentOffset: controller.document.length - 1,
+          ),
+          quill.ChangeSource.local,
+        ),
+      ),
+    ];
   }
 
   Future<void> _insertLink() async {
@@ -326,23 +391,29 @@ class _PersonalNoteEditorBodyState extends State<PersonalNoteEditorBody> {
                         ): widget.onSaveShortcut!,
                       },
                     },
-                    child: quill.QuillEditor(
-                      controller: widget.controller.quillController,
-                      focusNode: widget.focusNode,
-                      scrollController: widget.scrollController,
-                      config: quill.QuillEditorConfig(
-                        autoFocus: widget.autofocus,
-                        expands: false,
-                        padding: const EdgeInsets.all(12),
-                        placeholder:
-                            widget.hintText ??
-                            'כתוב כאן... (${ShortcutHelper.formatShortcutForDisplay('ctrl+enter')} לשמירה)',
-                        customShortcuts: _rtlArrowShortcuts,
-                        // Quill מציגה אוטומטית תפריט סלקציה ב-desktop
-                        // בסיום גרירה — בהערות אישיות זה מטריד.
-                        // יש לנו טולבר משלנו וניתן להשתמש בקיצורי מקלדת
-                        // וב-right-click הסטנדרטי של המערכת.
-                        enableSelectionToolbar: false,
+                    child: AppContextMenuRegion(
+                      key: _editMenuKey,
+                      // לחיצה ארוכה של Quill גוברת על זו של האזור; במגע התפריט
+                      // נפתח מ-contextMenuBuilder.
+                      openOnLongPress: false,
+                      menuBuilder: (_, _) => _buildEditMenu(),
+                      child: Listener(
+                        onPointerDown: (event) => _lastPointerKind = event.kind,
+                        child: quill.QuillEditor(
+                          controller: widget.controller.quillController,
+                          focusNode: widget.focusNode,
+                          scrollController: widget.scrollController,
+                          config: quill.QuillEditorConfig(
+                            autoFocus: widget.autofocus,
+                            expands: false,
+                            padding: const EdgeInsets.all(12),
+                            placeholder:
+                                widget.hintText ??
+                                'כתוב כאן... (${ShortcutHelper.formatShortcutForDisplay('ctrl+enter')} לשמירה)',
+                            customShortcuts: _rtlArrowShortcuts,
+                            contextMenuBuilder: _touchContextMenu,
+                          ),
+                        ),
                       ),
                     ),
                   ),
