@@ -202,6 +202,54 @@ void main() {
       expect(bytes.length, greaterThan(1000));
     });
 
+    // Regression: with less room than the padding, a line was forced onto the
+    // page anyway and printed over the line above it.
+    test('moves a line that has no room left to the next page', () async {
+      ShaperLibrary.path = libraryPath;
+      final shaper = ShaperFont.register(fontBytes!);
+      addTearDown(shaper.dispose);
+
+      const format = PdfPageFormat.a5;
+      const margin = 24.0;
+      final painted = <(int, double)>[];
+      final document = pw.Document();
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: format,
+          margin: const pw.EdgeInsets.all(margin),
+          build: (context) {
+            final pdfFont = PdfShapedFont(
+              context.document,
+              shaper: shaper,
+              fontBytes: fontBytes,
+            );
+            return [
+              // Leaves 10pt, less than the 16pt of padding below.
+              pw.SizedBox(height: format.height - 2 * margin - 10),
+              pw.Padding(
+                padding: const pw.EdgeInsets.all(8),
+                child: _PaintRecorder(
+                  painted,
+                  buildParagraph(2),
+                  fonts: [pdfFont],
+                  fontSize: 16,
+                ),
+              ),
+            ];
+          },
+        ),
+      );
+      await document.save();
+
+      expect(document.document.pdfPageList.pages, hasLength(2));
+      final onFirstPage = painted.where((entry) => entry.$1 == 1);
+      expect(onFirstPage.every((entry) => entry.$2 == 0), isTrue);
+      expect(
+        painted.where((entry) => entry.$1 == 2 && entry.$2 > 0),
+        hasLength(1),
+      );
+    });
+
     test('renders a multi-line document for inspection', () async {
       ShaperLibrary.path = libraryPath;
       final shaper = ShaperFont.register(fontBytes!);
@@ -247,4 +295,22 @@ void main() {
       expect(text, contains('/Identity-H'));
     });
   }, skip: skipReason);
+}
+
+/// Records, for every paint, the page and the height of the lines drawn.
+class _PaintRecorder extends ShapedText {
+  _PaintRecorder(
+    this.painted,
+    super.text, {
+    required super.fonts,
+    required super.fontSize,
+  });
+
+  final List<(int, double)> painted;
+
+  @override
+  void paint(pw.Context context) {
+    painted.add((context.pageNumber, box!.height));
+    super.paint(context);
+  }
 }

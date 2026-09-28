@@ -86,8 +86,10 @@ class ShapedText extends pw.Widget with pw.SpanningWidget {
     final firstLine = _context.startLine.clamp(0, block.lines.length);
     var lastLine = block.lines.length;
     if (constraints.maxHeight.isFinite) {
+      // Zero lines when none fits: MultiPage then moves the rest to the next
+      // page, where forcing one would draw it into space the page lacks.
       final fittingLines = (constraints.maxHeight / block.lineHeight).floor();
-      lastLine = firstLine + (fittingLines < 1 ? 1 : fittingLines);
+      lastLine = firstLine + fittingLines;
       if (lastLine > block.lines.length) lastLine = block.lines.length;
     }
     _firstLine = firstLine;
