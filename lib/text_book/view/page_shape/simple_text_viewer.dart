@@ -3198,6 +3198,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
                 final annotatedData = notesForLine.isNotEmpty
                     ? buildAnnotatedLineHtml(
                         rawLine: data,
+                        sourceLine: widget.content[primaryLineIndex],
                         notesForLine: notesForLine,
                         lineIndex0: primaryLineIndex,
                         underlineColor: Theme.of(context).colorScheme.primary,
@@ -3502,6 +3503,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     if (widget.isMainText && notesForLine.isNotEmpty) {
       textWithLinks = buildAnnotatedLineHtml(
         rawLine: textWithLinks,
+        sourceLine: rawText,
         notesForLine: notesForLine,
         lineIndex0: lineIndex,
         underlineColor: Theme.of(context).colorScheme.primary,

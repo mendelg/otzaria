@@ -611,5 +611,22 @@ void main() {
     test('ערך קיים נשמר כמות שהוא', () {
       expect(parse({'Conection Type': 'targum'}).connectionType, 'targum');
     });
+
+    test('כינויי native מסווגים כמו בייבוא קישורים', () {
+      final elucidation = parse({'Conection Type': 'ellucidation'});
+      expect(elucidation.connectionType, LinkTypes.elucidation);
+      expect(LinkTypes.isDependentTextLink(elucidation.connectionType), isTrue);
+
+      final footnotes = parse({'Conection Type': 'footnote'});
+      expect(footnotes.connectionType, LinkTypes.footnotes);
+      expect(LinkTypes.isDependentTextLink(footnotes.connectionType), isTrue);
+    });
+
+    test('סוג עתידי לא מוכר נשמר כמות שהוא', () {
+      expect(
+        parse({'Conection Type': 'future_kind'}).connectionType,
+        'future_kind',
+      );
+    });
   });
 }

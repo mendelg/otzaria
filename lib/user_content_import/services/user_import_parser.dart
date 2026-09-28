@@ -533,7 +533,8 @@ class UserImportParser {
     final hebrew = kHebrewConnectionTypes[value];
     if (hebrew != null) return hebrew;
     final normalized = LinkTypes.normalize(value);
-    final type = kNativeConnectionTypeAliases[normalized] ?? normalized;
+    final type =
+        LinkTypes.nativeConnectionTypeAliases[normalized] ?? normalized;
     return kNativeConnectionTypes.contains(type) ? type : null;
   }
 

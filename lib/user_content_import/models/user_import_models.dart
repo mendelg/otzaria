@@ -58,20 +58,6 @@ const Set<String> kNativeConnectionTypes = {
   LinkTypes.footnotes,
 };
 
-/// כינויים (אחרי [LinkTypes.normalize]) שהמחולל מקבל ו-Link-Notes פולט.
-const Map<String, String> kNativeConnectionTypeAliases = {
-  'NONE': LinkTypes.other,
-  'SUPERCOMMENTARY': LinkTypes.superCommentary,
-  'QUOTATION_AUTO': LinkTypes.quotation,
-  'QUOTATION_AUTO_TANAKH': LinkTypes.quotation,
-  'RELATED_PASSAGE': LinkTypes.related,
-  'EIN_MISHPAT_/_NER_MITSVAH': LinkTypes.einMishpat,
-  'EIN_MISHPAT_/_NER_MITZVAH': LinkTypes.einMishpat,
-  'SIFREI_MITSVOT': LinkTypes.sifreiMitzvot,
-  'ELLUCIDATION': LinkTypes.elucidation,
-  'FOOTNOTE': LinkTypes.footnotes,
-};
-
 /// שמות מבנה שמקבלים את תצוגת המבנה הרשמי המקביל: סימנים/סעיפים מוצגים
 /// כסימני חלוקה בגוף הטקסט, ונושאים ככותרת מעל השורה.
 const Map<String, String> kHebrewAltTocStructureKeys = {

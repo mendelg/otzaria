@@ -29,6 +29,20 @@ class LinkTypes {
   static const String essay = 'ESSAY';
   static const String none = 'NONE';
 
+  /// כינויי סוגים בקובצי native; סוגים שאינם במפה נשמרים כמות שהם.
+  static const Map<String, String> nativeConnectionTypeAliases = {
+    'NONE': other,
+    'SUPERCOMMENTARY': superCommentary,
+    'QUOTATION_AUTO': quotation,
+    'QUOTATION_AUTO_TANAKH': quotation,
+    'RELATED_PASSAGE': related,
+    'EIN_MISHPAT_/_NER_MITSVAH': einMishpat,
+    'EIN_MISHPAT_/_NER_MITZVAH': einMishpat,
+    'SIFREI_MITSVOT': sifreiMitzvot,
+    'ELLUCIDATION': elucidation,
+    'FOOTNOTE': footnotes,
+  };
+
   /// ביאורים תלויי־טקסט, ולכן מוצגים כמפרשים ולא כהפניות.
   static const String elucidation = 'ELUCIDATION';
   static const String explication = 'EXPLICATION';

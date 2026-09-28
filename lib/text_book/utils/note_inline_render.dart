@@ -43,11 +43,13 @@ String injectInlineLinks(String rawLine, List<Link> inlineLinks) {
 /// בונה את ה-HTML של השורה עם סימוני ההערות — ההזרקה האחרונה.
 ///
 /// [rawLine] - HTML השורה אחרי שאר ההזרקות (כולל [injectInlineLinks]).
+/// [sourceLine] - שורת המקור שבה נמדד [PersonalNote.anchorStart].
 /// [notesForLine] - ההערות השייכות לשורה זו.
 /// [lineIndex0] - אינדקס השורה (0-based), מוטמע ב-URL לטיפול בלחיצה.
 /// [underlineColor] - צבע הקו התחתון של ההערה (בד"כ primary של ה-theme).
 String buildAnnotatedLineHtml({
   required String rawLine,
+  String? sourceLine,
   required List<PersonalNote> notesForLine,
   required int lineIndex0,
   required Color underlineColor,
@@ -92,6 +94,7 @@ String buildAnnotatedLineHtml({
         prefix: note.anchorPrefix,
         suffix: note.anchorSuffix,
         hintStart: note.anchorStart,
+        hintSourceLine: sourceLine,
       );
       if (range != null) {
         addNoteSpan(range.start, range.end);

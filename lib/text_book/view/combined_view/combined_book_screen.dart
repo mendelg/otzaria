@@ -2717,6 +2717,7 @@ class _CombinedViewState extends State<CombinedView> {
                           // סימוני הערות אישיות — אחרונים.
                           final dataWithLinks = buildAnnotatedLineHtml(
                             rawLine: data,
+                            sourceLine: widget.data[primaryLineIndex],
                             notesForLine: notesForLine,
                             lineIndex0: primaryLineIndex,
                             underlineColor: Theme.of(
@@ -3048,6 +3049,7 @@ class _CombinedViewState extends State<CombinedView> {
     if (notesForLine.isNotEmpty) {
       textWithLinks = buildAnnotatedLineHtml(
         rawLine: textWithLinks,
+        sourceLine: rawText,
         notesForLine: notesForLine,
         lineIndex0: lineIndex,
         underlineColor: Theme.of(context).colorScheme.primary,

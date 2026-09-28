@@ -242,13 +242,14 @@ int _rawToNormalizedIndex(LineProjection p, int rawHint) {
 /// מאתר את טווח הביטוי בשורה הגולמית.
 ///
 /// [anchorText] הוא הטקסט המנורמל שנבחר. [prefix]/[suffix] הם הקשר מנורמל
-/// לבחירת המופע הנכון. [hintStart] הוא offset גולמי משוער (fast-path).
+/// לבחירת המופע הנכון. [hintStart] נמדד ב-[hintSourceLine] אם סופקה.
 NoteAnchorRange? locateAnchor({
   required String rawLine,
   required String anchorText,
   String? prefix,
   String? suffix,
   int? hintStart,
+  String? hintSourceLine,
 }) {
   final needle = normalizeAnchorText(anchorText);
   if (needle.isEmpty) return null;
@@ -257,9 +258,16 @@ NoteAnchorRange? locateAnchor({
   final occurrences = _allOccurrences(p.normalized, needle);
   if (occurrences.isEmpty) return null;
 
-  final normalizedHint = hintStart != null
-      ? _rawToNormalizedIndex(p, hintStart)
-      : null;
+  int? normalizedHint;
+  if (hintStart != null) {
+    final source = hintSourceLine == null || hintSourceLine == rawLine
+        ? p
+        : projectLine(hintSourceLine);
+    final offset = p.normalized.indexOf(source.normalized);
+    if (source.normalized.isNotEmpty && offset >= 0) {
+      normalizedHint = offset + _rawToNormalizedIndex(source, hintStart);
+    }
+  }
   final matchStart = _pickBestOccurrence(
     p.normalized,
     occurrences,

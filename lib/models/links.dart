@@ -352,9 +352,11 @@ class Link {
   /// 'Conection Type' חסר/ריק → [defaultJsonConnectionType] (לא "null").
   static String connectionTypeFromJson(Object? raw) {
     final value = raw?.toString();
-    return value == null || value.trim().isEmpty
-        ? defaultJsonConnectionType
-        : value;
+    if (value == null || value.trim().isEmpty) {
+      return defaultJsonConnectionType;
+    }
+    return LinkTypes.nativeConnectionTypeAliases[LinkTypes.normalize(value)] ??
+        value;
   }
 
   /// בונה [Link] משורת `links.json`. סלחני בכוונה: מקבל אינדקסים כמספר או

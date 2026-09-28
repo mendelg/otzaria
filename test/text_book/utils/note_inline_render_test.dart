@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
+import 'package:otzaria/personal_notes/utils/note_anchor_utils.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart';
 import 'package:otzaria/text_book/utils/inline_section_markers.dart';
 import 'package:otzaria/text_book/utils/note_inline_render.dart';
@@ -89,6 +90,7 @@ void main() {
     if (transform != null) html = transform(html);
     return buildAnnotatedLineHtml(
       rawLine: html,
+      sourceLine: raw,
       notesForLine: notes,
       lineIndex0: lineIndex0,
       underlineColor: color,
@@ -301,6 +303,33 @@ void main() {
     );
     expect(html, startsWith('<b>[א]</b> אבגד $linkOpenהוזח</a> '));
     expect(html, endsWith('$noteOpenטיכל</a>'));
+  });
+
+  test('הערה על מופע חוזר נשארת במופע שנבחר אחרי הזרקת קישור', () {
+    final raw = List.filled(30, 'אבג').join(' ');
+    final selected = computeAnchorForSelection(
+      rawLine: raw,
+      selectedText: 'אבג',
+      selectionColumnHint: 52,
+    )!;
+    final html = render(
+      raw,
+      notes: [
+        _note(
+          anchorText: 'אבג',
+          anchorPrefix: selected.prefix,
+          anchorSuffix: selected.suffix,
+          anchorStart: selected.start,
+          anchorEnd: selected.end,
+        ),
+      ],
+      links: [_inlineLink(0, 3)],
+    );
+
+    final noteStart = html.indexOf(noteOpen);
+    expect(noteStart, greaterThan(0));
+    expect('אבג'.allMatches(html.substring(0, noteStart)).length, 13);
+    expect(html.substring(noteStart), startsWith('$noteOpenאבג</a>'));
   });
 
   test('שורה שכבר סומנה אינה מסומנת שוב', () {
