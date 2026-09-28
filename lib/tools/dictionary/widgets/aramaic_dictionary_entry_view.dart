@@ -92,7 +92,7 @@ class _MeaningView extends StatelessWidget {
                     ),
                     borderRadius: AppTokens.borderRadiusAll,
                   ),
-                  child: SelectableText(
+                  child: Text(
                     meaning.expression!,
                     style: textTheme.bodyMedium?.copyWith(
                       fontStyle: FontStyle.italic,
@@ -104,7 +104,7 @@ class _MeaningView extends StatelessWidget {
                 SizedBox(height: compact ? 6 : 8),
               ],
               if (meaning.mainText.isNotEmpty)
-                SelectableText(
+                Text(
                   meaning.mainText,
                   style: textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
@@ -113,7 +113,7 @@ class _MeaningView extends StatelessWidget {
                 ),
               if (meaning.expansion != null) ...[
                 SizedBox(height: compact ? 2 : 4),
-                SelectableText(
+                Text(
                   meaning.expansion!,
                   style: textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,

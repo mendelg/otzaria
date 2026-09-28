@@ -28,6 +28,7 @@ import 'package:otzaria/widgets/dialogs/password_dialog.dart';
 import 'package:otzaria/pdf_book/view/pdf_book_screen.dart'
     show kPdfImageCacheMinBytesPerPane;
 import 'package:otzaria/pdf_book/view/pdf_scrollbar.dart';
+import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
 
 /// פאנל תצוגה מקדימה של ספר בספרייה
@@ -612,6 +613,8 @@ class _BookPreviewPanelState extends State<BookPreviewPanel> {
     );
   }
 
+  final GlobalKey<AppContextMenuRegionState> _pdfContextMenuKey = GlobalKey();
+
   /// בניית PDF viewer דרך נתיב הקובץ
   Widget _buildPdfViewer(String filePath) {
     if (!_pdfFileExists) {
@@ -621,56 +624,93 @@ class _BookPreviewPanelState extends State<BookPreviewPanel> {
     }
     return Stack(
       children: [
-        PdfViewer(
-          PdfFontFallback.documentRef(
-            filePath,
-            passwordProvider: () => passwordDialog(context),
-          ),
-          key: ValueKey('pdf_${widget.book!.title}'),
-          initialPageNumber: widget.initialPdfPage ?? 1,
-          controller: _pdfController!,
-          params: PdfViewerParams(
-            backgroundColor: Theme.of(context).colorScheme.surface,
-            // התצוגה המקדימה חיה לצד טאבי הקריאה — מקבלת את רצפת התקציב שלהם
-            // ולא את 100MB ברירת המחדל של pdfrx.
-            maxImageBytesCachedOnMemory: kPdfImageCacheMinBytesPerPane,
-            zoomStepsDelegateProvider:
-                const PdfViewerZoomStepsDelegateProviderSmart(),
-            sizeDelegateProvider: PdfViewerSizeDelegateProviderLegacy(
-              maxScale: 10,
+        AppContextMenuRegion(
+          key: _pdfContextMenuKey,
+          // לחיצה ארוכה נתפסת ב-onGeneralTap, אחרת pdfrx פותח עליה תפריט Flutter.
+          openOnLongPress: false,
+          menuBuilder: (_, _) {
+            final controller = _pdfController!;
+            final selection = controller.isReady
+                ? controller.textSelectionDelegate
+                : null;
+            return [
+              AppContextMenuEntry(
+                label: 'העתק',
+                icon: FluentIcons.copy_24_regular,
+                enabled:
+                    selection != null &&
+                    selection.hasSelectedText &&
+                    selection.isCopyAllowed,
+                onTap: () => selection?.copyTextSelection(),
+              ),
+            ];
+          },
+          child: PdfViewer(
+            PdfFontFallback.documentRef(
+              filePath,
+              passwordProvider: () => passwordDialog(context),
             ),
-            horizontalCacheExtent: 0,
-            verticalCacheExtent: 1,
-            pageAnchor: PdfPageAnchor.top,
-            margin: 4,
-            onDocumentChanged: (document) {
-              if (document != null || !_isPdfViewerReady || !mounted) return;
-              setState(() => _isPdfViewerReady = false);
-            },
-            onViewerReady: (document, controller) {
-              if (_isPdfViewerReady || !mounted) return;
-              setState(() => _isPdfViewerReady = true);
-            },
-            viewerOverlayBuilder: (context, size, handleLinkTap) => [
-              if (_isPdfViewerReady)
-                KeyedSubtree(
-                  key: _pdfVerticalScrollbarKey,
-                  child: PdfScrollbar(
-                    controller: _pdfController!,
-                    orientation: ScrollbarOrientation.right,
-                    trackThickness: 16.0,
-                    thumbMinSize: 50.0,
+            key: ValueKey('pdf_${widget.book!.title}'),
+            initialPageNumber: widget.initialPdfPage ?? 1,
+            controller: _pdfController!,
+            params: PdfViewerParams(
+              backgroundColor: Theme.of(context).colorScheme.surface,
+              // התצוגה המקדימה חיה לצד טאבי הקריאה — מקבלת את רצפת התקציב שלהם
+              // ולא את 100MB ברירת המחדל של pdfrx.
+              maxImageBytesCachedOnMemory: kPdfImageCacheMinBytesPerPane,
+              zoomStepsDelegateProvider:
+                  const PdfViewerZoomStepsDelegateProviderSmart(),
+              sizeDelegateProvider: PdfViewerSizeDelegateProviderLegacy(
+                maxScale: 10,
+              ),
+              horizontalCacheExtent: 0,
+              verticalCacheExtent: 1,
+              pageAnchor: PdfPageAnchor.top,
+              margin: 4,
+              onGeneralTap: (tapContext, _, details) {
+                if (details.type == PdfViewerGeneralTapType.secondaryTap) {
+                  return true;
+                }
+                if (details.type != PdfViewerGeneralTapType.longPress) {
+                  return false;
+                }
+                final box = tapContext.findRenderObject();
+                _pdfContextMenuKey.currentState?.openMenuAt(
+                  box is RenderBox
+                      ? box.localToGlobal(details.localPosition)
+                      : details.localPosition,
+                );
+                return true;
+              },
+              onDocumentChanged: (document) {
+                if (document != null || !_isPdfViewerReady || !mounted) return;
+                setState(() => _isPdfViewerReady = false);
+              },
+              onViewerReady: (document, controller) {
+                if (_isPdfViewerReady || !mounted) return;
+                setState(() => _isPdfViewerReady = true);
+              },
+              viewerOverlayBuilder: (context, size, handleLinkTap) => [
+                if (_isPdfViewerReady)
+                  KeyedSubtree(
+                    key: _pdfVerticalScrollbarKey,
+                    child: PdfScrollbar(
+                      controller: _pdfController!,
+                      orientation: ScrollbarOrientation.right,
+                      trackThickness: 16.0,
+                      thumbMinSize: 50.0,
+                    ),
                   ),
-                ),
-              if (_isPdfViewerReady)
-                KeyedSubtree(
-                  key: _pdfHorizontalScrollbarKey,
-                  child: PdfHorizontalScrollbar(
-                    controller: _pdfController!,
-                    trackThickness: 10.0,
+                if (_isPdfViewerReady)
+                  KeyedSubtree(
+                    key: _pdfHorizontalScrollbarKey,
+                    child: PdfHorizontalScrollbar(
+                      controller: _pdfController!,
+                      trackThickness: 10.0,
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         Positioned.fill(

@@ -11,6 +11,7 @@ import 'package:otzaria/core/messages/messages_exports.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/theme/app_surfaces.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
+import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// מציג את דוח [AppInfoReport] בפופאפ קטן ומעוצב.
 Future<void> showAppInfoDialog(
@@ -62,42 +63,44 @@ class _AppInfoDialogContentState extends State<AppInfoDialogContent> {
     return SizedBox(
       width: width,
       child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(cs),
-            const SizedBox(height: 12),
-            for (final topic in widget.report.topic.sections)
-              if (sections[topic.slug] case final data?) ...[
-                _InfoSectionCard(topic: topic, data: data),
-                const SizedBox(height: 10),
-              ],
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: ActionButton.ghost(
-                text: _showRawJson ? 'הסתר JSON' : 'הצג JSON',
-                onPressed: () => setState(() => _showRawJson = !_showRawJson),
-              ),
-            ),
-            if (_showRawJson)
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppSurfaces.panelSection(context),
-                  borderRadius: BorderRadius.circular(10),
+        child: AppSelectionArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeader(cs),
+              const SizedBox(height: 12),
+              for (final topic in widget.report.topic.sections)
+                if (sections[topic.slug] case final data?) ...[
+                  _InfoSectionCard(topic: topic, data: data),
+                  const SizedBox(height: 10),
+                ],
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: ActionButton.ghost(
+                  text: _showRawJson ? 'הסתר JSON' : 'הצג JSON',
+                  onPressed: () => setState(() => _showRawJson = !_showRawJson),
                 ),
-                child: SelectableText(
-                  _prettyJson,
-                  textDirection: TextDirection.ltr,
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    height: 1.4,
+              ),
+              if (_showRawJson)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppSurfaces.panelSection(context),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _prettyJson,
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -278,7 +281,7 @@ class _InfoRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(label, style: labelStyle),
-            SelectableText(
+            Text(
               value,
               textDirection: isLtr ? TextDirection.ltr : null,
               style: const TextStyle(fontSize: 12),
@@ -306,7 +309,7 @@ class _InfoRow extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             flex: 6,
-            child: SelectableText(
+            child: Text(
               value,
               textAlign: TextAlign.end,
               textDirection: isLtr ? TextDirection.ltr : null,
@@ -351,7 +354,7 @@ class _FolderEntryTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SelectableText(
+          Text(
             '${folder['path']}',
             textDirection: TextDirection.ltr,
             style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
@@ -374,7 +377,7 @@ class _FolderEntryTile extends StatelessWidget {
           for (final file in shown)
             Padding(
               padding: const EdgeInsetsDirectional.only(top: 2, start: 8),
-              child: SelectableText(
+              child: Text(
                 '${file['name']}',
                 style: const TextStyle(fontSize: 11),
               ),
@@ -436,9 +439,10 @@ class _ErrorEntryTile extends StatelessWidget {
           if (message.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: SelectableText(
+              child: Text(
                 message,
                 maxLines: 3,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11, color: cs.error),
               ),
             ),

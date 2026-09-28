@@ -4,6 +4,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:otzaria/theme/theme_exports.dart';
 import 'package:otzaria/widgets/controls/action_buttons.dart';
+import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// תצוגה מקדימה של מה שיישלח: מפת האבחון וקטע יומן השגיאות, כל אחד עם
 /// תיבת סימון להחרגה. הטקסטים טכניים ולכן מוצגים LTR.
@@ -191,11 +192,13 @@ class _PreviewBox extends StatelessWidget {
               borderRadius: AppTokens.borderRadiusAll,
             ),
             child: SingleChildScrollView(
-              child: SelectableText(
-                content,
-                textDirection: TextDirection.ltr,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
+              child: AppSelectionArea(
+                child: Text(
+                  content,
+                  textDirection: TextDirection.ltr,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
             ),

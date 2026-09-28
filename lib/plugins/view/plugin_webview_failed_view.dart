@@ -4,6 +4,7 @@ import 'package:otzaria/theme/app_tokens.dart';
 
 import 'package:otzaria/widgets/controls/action_buttons.dart';
 import 'package:otzaria/widgets/layout/centered_scrollable_state.dart';
+import 'package:otzaria/widgets/misc/app_selection_area.dart';
 
 /// תצוגה שמופיעה במקום ה-WebView כשיצירת רכיב הדפדפן נכשלה — מצב שעד כה
 /// הסתיים במסך ריק בלי שום הסבר. [isEmulatedOnArm] מחליף את ההסבר הכללי
@@ -101,10 +102,12 @@ class PluginWebViewFailedView extends StatelessWidget {
                 children: [
                   Align(
                     alignment: AlignmentDirectional.centerStart,
-                    child: SelectableText(
-                      errorDetails!,
-                      style: tt.bodySmall,
-                      textDirection: TextDirection.ltr,
+                    child: AppSelectionArea(
+                      child: Text(
+                        errorDetails!,
+                        style: tt.bodySmall,
+                        textDirection: TextDirection.ltr,
+                      ),
                     ),
                   ),
                 ],
