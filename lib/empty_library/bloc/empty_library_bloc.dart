@@ -292,9 +292,16 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
     // seforim.db — דחוס או רגיל. נדרש אלא אם כבר קיים ביעד (ייבוא נלווים בלבד
     // אל ספרייה קיימת).
-    final dbZst = File(
+    var dbZst = File(
       path.join(source, DatabaseConstants.databaseArchiveFileName),
     );
+    for (final name in DatabaseConstants.supportedDatabaseArchiveFileNames) {
+      final candidate = File(path.join(source, name));
+      if (await candidate.exists()) {
+        dbZst = candidate;
+        break;
+      }
+    }
     final dbPlain = File(path.join(source, DatabaseConstants.databaseFileName));
     final targetDb = File(
       path.join(target, DatabaseConstants.databaseFileName),
@@ -1735,7 +1742,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
     final asset = parseLatestDatabaseAsset(decoded);
     if (asset == null) {
-      throw Exception('לא נמצא קובץ seforim.db.zst ברליס האחרון');
+      throw Exception('לא נמצא ברליס האחרון קובץ ספרייה שגרסה זו יודעת לקרוא');
     }
 
     return asset;
@@ -1751,6 +1758,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       return null;
     }
 
+    final urlsByName = <String, String>{};
     for (final asset in assets) {
       if (asset is! Map<String, dynamic>) {
         continue;
@@ -1758,7 +1766,13 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
       final name = asset['name']?.toString() ?? '';
       final downloadUrl = asset['browser_download_url']?.toString() ?? '';
-      if (name == 'seforim.db.zst' && downloadUrl.isNotEmpty) {
+      if (downloadUrl.isNotEmpty) urlsByName[name] = downloadUrl;
+    }
+
+    // הסכמה הגבוהה ביותר שהגרסה הזו קוראת; ארכיון בסכמה חדשה יותר מדולג.
+    for (final name in DatabaseConstants.supportedDatabaseArchiveFileNames) {
+      final downloadUrl = urlsByName[name];
+      if (downloadUrl != null) {
         return DatabaseReleaseAsset(assetName: name, downloadUrl: downloadUrl);
       }
     }

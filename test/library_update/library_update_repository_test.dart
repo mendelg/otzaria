@@ -1769,10 +1769,14 @@ Map<String, String> _tableHashes(String dbPath, {int schemaVersion = 4}) {
   }
 }
 
+/// ה-hash הכולל בסדר של סכמה 4, כמו ה-edges של [_schema4Edge].
 String _logicalHash(String dbPath) {
   final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
   try {
-    return const LogicalContentHasher().compute(db);
+    return const LogicalContentHasher().compute(
+      db,
+      tableOrder: hashTableOrderForSchemaVersion(4),
+    );
   } finally {
     db.close();
   }

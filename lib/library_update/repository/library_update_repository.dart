@@ -818,14 +818,19 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     } finally {
       db.close();
     }
-    if (expectedVersion != null) {
-      final local = const LocalDbVersionReader().read(newDbPath);
-      if (local.dbVersion != expectedVersion) {
-        throw StateError(
-          'גרסת ה-DB שהורד (${local.dbVersion}) אינה הגרסה הצפויה '
-          '($expectedVersion)',
-        );
-      }
+    final local = const LocalDbVersionReader().read(newDbPath);
+    if (expectedVersion != null && local.dbVersion != expectedVersion) {
+      throw StateError(
+        'גרסת ה-DB שהורד (${local.dbVersion}) אינה הגרסה הצפויה '
+        '($expectedVersion)',
+      );
+    }
+    final schema = local.schemaVersion;
+    if (schema != null && schema > kSupportedDbSchemaVersion) {
+      throw StateError(
+        'ה-DB שהורד בסכמה $schema, חדשה מהנתמכת ($kSupportedDbSchemaVersion) — '
+        'נדרש עדכון אפליקציה',
+      );
     }
   }
 

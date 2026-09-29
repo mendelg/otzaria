@@ -93,6 +93,42 @@ void main() {
       expect(asset.downloadUrl, 'https://example.com/seforim.db.zst');
     });
 
+    test(
+      'parseLatestDatabaseAsset מעדיף ארכיון בסכמה נתמכת ומדלג על חדשה ממנה',
+      () {
+        final asset = EmptyLibraryBloc.parseLatestDatabaseAsset({
+          'assets': [
+            {
+              'name': 'seforim-schema99.db.zst',
+              'browser_download_url': 'https://example.com/s99',
+            },
+            {
+              'name': 'seforim.db.zst',
+              'browser_download_url': 'https://example.com/legacy',
+            },
+            {
+              'name': 'seforim-schema6.db.zst',
+              'browser_download_url': 'https://example.com/s6',
+            },
+          ],
+        });
+
+        expect(asset!.assetName, 'seforim-schema6.db.zst');
+        expect(asset.downloadUrl, 'https://example.com/s6');
+        expect(
+          EmptyLibraryBloc.parseLatestDatabaseAsset({
+            'assets': [
+              {
+                'name': 'seforim-schema99.db.zst',
+                'browser_download_url': 'https://example.com/s99',
+              },
+            ],
+          }),
+          isNull,
+        );
+      },
+    );
+
     test('קריאת release API נקטעת ב-connect timeout', () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'otzaria-release-timeout-',

@@ -119,7 +119,7 @@ Future<LibraryFolderScan> scanLibraryFolderAssets(String folder) async {
   String? probePath;
   final dbPath = await firstExisting([
     DatabaseConstants.databaseFileName,
-    DatabaseConstants.databaseArchiveFileName,
+    ...DatabaseConstants.supportedDatabaseArchiveFileNames,
   ]);
   if (dbPath != null) {
     found.add(_kSeforimAssetLabel);

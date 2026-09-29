@@ -1113,7 +1113,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
-          curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim.db.zst -o full_installer/library_db/seforim.db.zst
+          # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
+          curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim-schema6.db.zst -o full_installer/library_db/seforim.db.zst \n            || curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim.db.zst -o full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
           curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
@@ -1972,7 +1973,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
-          curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim.db.zst -o full_installer/library_db/seforim.db.zst
+          # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
+          curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim-schema6.db.zst -o full_installer/library_db/seforim.db.zst \n            || curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim.db.zst -o full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
           curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
@@ -2172,7 +2174,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
-          curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim.db.zst -o full_installer/library_db/seforim.db.zst
+          # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
+          curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim-schema6.db.zst -o full_installer/library_db/seforim.db.zst \n            || curl -L --fail https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim.db.zst -o full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
           curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
