@@ -1551,6 +1551,12 @@ class _FindRefDialogState extends State<FindRefDialog> {
       iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
       title: context.settingsText('לא נמצאה ספרייה'),
       message: context.settingsText('האיתור יהיה זמין לאחר התקנת הספרייה'),
+      // קובץ שנעדר רגעית (עדכון מלא, כונן רשת) לא צריך להשאיר את המסך תקוע.
+      action: ActionButton.recommended(
+        text: context.settingsText('נסה שוב'),
+        onPressed: _retrySearch,
+        icon: FluentIcons.arrow_clockwise_24_regular,
+      ),
     );
   }
 

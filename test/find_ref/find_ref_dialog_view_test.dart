@@ -384,6 +384,28 @@ void main() {
     expect(pops.pops, 0, reason: 'המסך הראשי הוא שסוגר את האיתור');
   });
 
+  testWidgets('"לא נמצאה ספרייה" מציע ניסיון חוזר', (tester) async {
+    final repository = _FakeRepository(
+      const [],
+      error: const ReferenceLibraryMissingException(),
+    );
+    await _pumpDialog(tester, repository: repository);
+
+    await tester.enterText(find.byType(TextField), 'בראשית');
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+    expect(find.text('לא נמצאה ספרייה'), findsOneWidget);
+    final callsBefore = repository.calls;
+
+    final retry = find.text('נסה שוב');
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+
+    expect(repository.calls, callsBefore + 1);
+  });
+
   testWidgets('פתיחת תוצאה נשמרת כאיתור אחרון', (tester) async {
     await _pumpDialog(tester, results: [_ref('בראשית פרק א')]);
 
