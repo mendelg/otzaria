@@ -247,9 +247,9 @@ void main() {
   });
 
   test('תקרת ספרים לשלב תוכן העניינים', () async {
-    final previous = FindRefRepository.maxAttachedTocBooks;
-    addTearDown(() => FindRefRepository.maxAttachedTocBooks = previous);
-    FindRefRepository.maxAttachedTocBooks = 0;
+    final previous = FindRefRepository.maxSecondaryTocLookups;
+    addTearDown(() => FindRefRepository.maxSecondaryTocLookups = previous);
+    FindRefRepository.maxSecondaryTocLookups = 0;
     await attach(createDb(withLineRef: false));
     final results = attachedOnly(
       await buildRepo().findRefs('$_title ג', includePersonalBooks: true),

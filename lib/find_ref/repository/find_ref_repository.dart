@@ -1871,7 +1871,6 @@ class FindRefRepository {
               index: index,
               source: BookSource.attached(library.slug),
               rootPath: library.displayName,
-              maxTocBooks: maxAttachedTocBooks,
               fetchTocBatch: (books) => worker.runBatch(
                 library.path,
                 immutable: library.immutable,
@@ -1894,9 +1893,10 @@ class FindRefRepository {
     return out;
   }
 
-  /// כמה ספרים ממסד מצורף אחד מגיעים לשלב תוכן העניינים בכל הקלדה.
+  /// כמה ספרים ממסד משני אחד נשאלים בתוכן העניינים בכל הקלדה — כמו בקטלוג
+  /// הרשמי. בלעדיה התאמת "מכיל" רחבה שלחה מאות ספרים לבקשה אחת ב-worker.
   @visibleForTesting
-  static int maxAttachedTocBooks = 12;
+  static int maxSecondaryTocLookups = _maxTocLookups;
 
   /// תוכן העניינים של כל הספרים האישיים המועמדים — בבקשה אחת ל-worker, כדי
   /// שהשאילתה הסינכרונית לא תחסום את ההקלדה. כשל מדלג על ה-TOC בלבד.
@@ -2120,7 +2120,6 @@ class FindRefRepository {
     fetchTocBatch,
     Future<Map<int, _ExactLine>> Function(List<int> bookIds, String refKey)?
     resolveLineRefs,
-    int? maxTocBooks,
   }) async {
     final queryTokens = search.queryTokens;
     final folderMatchLengths = <ReferenceBookHit, int>{};
@@ -2191,19 +2190,33 @@ class FindRefRepository {
       }
     }
 
-    // התקרה נותנת את חיפושי ה-TOC לספרים שהשם שלהם כיסה הכי הרבה מהשאילתה
-    // ("שות פלוני חלק טו ג" → "חלק טו") — אותו סדר כיסוי של הקטלוג הרשמי.
+    // התקרה נותנת את חיפושי ה-TOC לפי איכות ההתאמה (זהה, תחילית, מכיל,
+    // מקורב) ואז לפי כיסוי השם ("שות פלוני חלק טו ג" → "חלק טו").
     final wantsToc = <ReferenceBookHit>[
       for (final (book: _, :hit) in matches)
         if (queryTokens.length > 1 && remainingByHit[hit]!.isNotEmpty) hit,
     ];
-    final tocAllowed = maxTocBooks == null
-        ? wantsToc.toSet()
-        : _prioritizeByTitleCoverage(
-            wantsToc,
-            queryTokens,
-            maxTocBooks,
-          ).take(maxTocBooks).toSet();
+    final significant = _significantTokens(queryTokens);
+    final ranked = [
+      for (var i = 0; i < wantsToc.length; i++)
+        (
+          index: i,
+          hit: wantsToc[i],
+          coverage: _titleCoverage(wantsToc[i].titleTokens, significant),
+        ),
+    ];
+    mergeSort(
+      ranked,
+      compare: (a, b) {
+        final byRank = a.hit.matchRank.compareTo(b.hit.matchRank);
+        if (byRank != 0) return byRank;
+        final byCoverage = b.coverage.compareTo(a.coverage);
+        return byCoverage != 0 ? byCoverage : a.index.compareTo(b.index);
+      },
+    );
+    final tocAllowed = {
+      for (final e in ranked.take(maxSecondaryTocLookups)) e.hit,
+    };
 
     // מילה אחת, רק כותרת, או ספר מעבר לתקרה — הספר בלבד, בלי ערכי TOC.
     final tocRequests = <_SecondaryTocRequest>[];
@@ -2438,39 +2451,47 @@ class FindRefRepository {
     List<String> queryTokens,
     int maxTocLookups,
   ) {
-    final significant = queryTokens
-        .where((t) => t.length >= 2)
-        .toList(growable: false);
+    final significant = _significantTokens(queryTokens);
     if (hits.length <= maxTocLookups || significant.length < 2) return hits;
-
-    int coverage(ReferenceBookHit hit) {
-      final titleTokens = hit.titleTokens;
-      var score = 0;
-      for (final qt in significant) {
-        // התאמת טוקן שלם, כולל אות-חיבור בכותרת — אותם כללים כמו
-        // ב-[_getRemainingTokens], אחרת ספר שהותאם דרך ו' החיבור ייחתך ע"י
-        // תקרת חיפושי ה-TOC דווקא כשהוא הספר המכוון.
-        var inTitle = false;
-        for (var ti = 0; ti < titleTokens.length && !inTitle; ti++) {
-          final tt = titleTokens[ti];
-          inTitle =
-              tt == qt ||
-              titleTokenWithoutConjunction(tt, allowVav: ti > 0) == qt;
-        }
-        if (inTitle) score++;
-      }
-      return score;
-    }
 
     final indexed =
         [
           for (var i = 0; i < hits.length; i++)
-            (index: i, hit: hits[i], score: coverage(hits[i])),
+            (
+              index: i,
+              hit: hits[i],
+              score: _titleCoverage(hits[i].titleTokens, significant),
+            ),
         ]..sort((a, b) {
           final c = b.score.compareTo(a.score);
           return c != 0 ? c : a.index.compareTo(b.index);
         });
     return [for (final e in indexed) e.hit];
+  }
+
+  /// טוקני שאילתה שאינם אותיות-מיקום בודדות.
+  static List<String> _significantTokens(List<String> queryTokens) =>
+      queryTokens.where((t) => t.length >= 2).toList(growable: false);
+
+  /// כמה מ-[significant] מופיעים כטוקן שלם ב-[titleTokens].
+  static int _titleCoverage(
+    List<String> titleTokens,
+    List<String> significant,
+  ) {
+    var score = 0;
+    for (final qt in significant) {
+      // התאמת טוקן שלם, כולל אות-חיבור בכותרת — אותם כללים כמו
+      // ב-[_getRemainingTokens], אחרת ספר שהותאם דרך ו' החיבור ייחתך בתקרה.
+      var inTitle = false;
+      for (var ti = 0; ti < titleTokens.length && !inTitle; ti++) {
+        final tt = titleTokens[ti];
+        inTitle =
+            tt == qt ||
+            titleTokenWithoutConjunction(tt, allowVav: ti > 0) == qt;
+      }
+      if (inTitle) score++;
+    }
+    return score;
   }
 
   /// טוקני הזנב של ראש-התיבות שהותאם שאינם מילים מכותרת הספר — הם מציינים חלק

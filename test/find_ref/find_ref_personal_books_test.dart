@@ -159,6 +159,23 @@ void main() {
     expect(results.map((r) => r.reference), contains('חלק טו, סימן ג'));
   });
 
+  test(
+    'מאות ספרים תואמים — חיפוש תוכן העניינים חסום כמו בקטלוג הרשמי',
+    () async {
+      var tocCalls = 0;
+      final books = [for (var i = 1; i <= 300; i++) _book(i, 'שות מהדורה $i')];
+      final repo = _repo(
+        books: books,
+        userToc: (_, _, {queryTokens}) async {
+          tocCalls++;
+          return const [];
+        },
+      );
+      await repo.findRefs('שות סימן ג', includePersonalBooks: true);
+      expect(tocCalls, FindRefRepository.maxSecondaryTocLookups);
+    },
+  );
+
   group('ספרים אישיים עוברים את מנוע ההתאמה של הקטלוג הרשמי', () {
     Future<List<DbReferenceResult>> personal(
       FindRefRepository repo,
@@ -323,6 +340,12 @@ void main() {
 
     for (final count in [13, 200]) {
       test('$count ספרים באותו שם — הכותרת שבספר האחרון נמצאת', () async {
+        // כל הספרים באצווה אחת ל-worker, גם מעבר לתקרה הרגילה.
+        final previousCap = FindRefRepository.maxSecondaryTocLookups;
+        addTearDown(
+          () => FindRefRepository.maxSecondaryTocLookups = previousCap,
+        );
+        FindRefRepository.maxSecondaryTocLookups = count;
         final lastId = 10 + count;
         final db = sqlite3.sqlite3.open(dbPath);
         try {
