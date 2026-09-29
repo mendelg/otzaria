@@ -13,6 +13,7 @@ import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/data_providers/tantivy_data_provider.dart';
 import 'package:otzaria/indexing/repository/indexing_repository.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
+import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/library/hidden/hidden_library_filter.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/library/models/library.dart';
@@ -268,6 +269,8 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
       // רענון הספרייה מהמערכת קבצים
       final fullLibrary = await _repository.reloadLibrary();
       DataRepository.instance.invalidateExternalBooksCache();
+      // ייבוא, מחיקה וסנכרון תיקיות כותבים ל-user_books.db לפני הרענון.
+      FindRefRepository.revalidateUserBooks();
       final library = filterHiddenFromLibrary(fullLibrary, hiddenStore.load());
 
       try {

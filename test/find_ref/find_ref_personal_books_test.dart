@@ -411,6 +411,9 @@ void main() {
         'VALUES (50, ?, 1, ?, 3)',
         [SeforimFixtureIds.torahCategoryId, 'קונטרס חדש'],
       );
+      // כתיבה מתוך האפליקציה: רענון הספרייה מפעיל את הבדיקה ברקע.
+      FindRefRepository.revalidateUserBooks();
+      await repo.debugUserBooksRefresh;
       expect(await userRefs(repo, 'קונטרס חדש'), contains('קונטרס חדש'));
     });
 
@@ -423,6 +426,9 @@ void main() {
       expect(await userRefs(repo, title), contains(title));
 
       execute('DELETE FROM book WHERE id = ?', [SeforimFixtureIds.rashiId]);
+      // כתיבה של חיבור אחר: החיפוש הראשון מחזיר מהקאש ובודק ברקע.
+      await userRefs(repo, title);
+      await repo.debugUserBooksRefresh;
       expect(await userRefs(repo, title), isNot(contains(title)));
     });
 
@@ -438,5 +444,47 @@ void main() {
       execute('DELETE FROM book WHERE id = ?', [SeforimFixtureIds.rashiId]);
       expect(await userRefs(repo, title), isNot(contains(title)));
     });
+
+    test('כשיש אינדקס, החיפוש אינו ממתין ל-worker עסוק', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      expect(await userRefs(repo, title), contains(title));
+
+      final busy = AttachedFindRefWorker.instance.run(
+        dbPath,
+        immutable: false,
+        version: '0',
+        job: _slowJob,
+      );
+      final stopwatch = Stopwatch()..start();
+      expect(await userRefs(repo, title), contains(title));
+      expect(stopwatch.elapsedMilliseconds, lessThan(1000));
+      await busy;
+    });
+
+    test('חיבור חדש לאותו תוכן אינו בונה את האינדקס מחדש', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      await userRefs(repo, title);
+      final index = repo.debugUserBooksIndex;
+      expect(index, isNotNull);
+
+      // כמו idleClose: ה-worker פותח חיבור חדש, data_version מתחיל מחדש.
+      AttachedFindRefWorker.instance.reset();
+      await userRefs(repo, title);
+      await repo.debugUserBooksRefresh;
+      expect(identical(repo.debugUserBooksIndex, index), isTrue);
+    });
   });
+}
+
+Future<int> _slowJob(SeforimRepository repository) async {
+  await Future<void>.delayed(const Duration(milliseconds: 2000));
+  return 1;
 }

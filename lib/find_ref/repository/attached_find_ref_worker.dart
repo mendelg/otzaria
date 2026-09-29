@@ -60,18 +60,21 @@ class AttachedFindRefWorker {
   SendPort? _commandPort;
 
   /// מריץ עבודה אחת; ההמתנה בתור אינה נחשבת לזמן הריצה שלה.
+  /// ב-[background] timeout אינו משבית את המסד ואינו נוטש את ה-worker.
   Future<R> run<R>(
     String path, {
     required bool immutable,
     required String version,
     required AttachedDbJob<R> job,
     int calls = 1,
+    bool background = false,
   }) async => (await _run<R>(
     path,
     immutable: immutable,
     version: version,
     jobs: [job],
     calls: calls,
+    background: background,
   )).single;
 
   /// שולח אצווה אחת; כל עבודה חוזרת לסוף התור ומאפשרת ביטול בין ספרים.
@@ -99,6 +102,7 @@ class AttachedFindRefWorker {
     int calls = 1,
     int? searchScope,
     int? searchEpoch,
+    bool background = false,
   }) async {
     if (jobs.isEmpty) return [];
     final failedUntil = _failedUntil[path];
@@ -125,6 +129,7 @@ class AttachedFindRefWorker {
             result.completeError(
               TimeoutException('secondary database job', callTimeout),
             );
+            if (background) return;
             _failedUntil[path] = DateTime.now().add(failureBackoff);
             if (identical(_port, portFuture)) _abandon();
           });

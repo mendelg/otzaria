@@ -292,6 +292,42 @@ void main() {
       );
     });
 
+    test(
+      'timeout של עבודת רקע אינו משבית את המסד ואינו נוטש את ה-worker',
+      () async {
+        final path = createDb(withLineRef: false);
+        final previous = AttachedFindRefWorker.callTimeout;
+        addTearDown(() {
+          AttachedFindRefWorker.callTimeout = previous;
+          AttachedFindRefWorker.instance.reset();
+        });
+        AttachedFindRefWorker.callTimeout = const Duration(milliseconds: 300);
+        final worker = AttachedFindRefWorker.instance;
+
+        await expectLater(
+          worker.run(
+            path,
+            immutable: false,
+            version: '',
+            job: _slowJob,
+            background: true,
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+        // העבודה האיטית ממשיכה; הבאה בתור ממתינה לה ולא נדחית.
+        AttachedFindRefWorker.callTimeout = const Duration(seconds: 5);
+        expect(
+          await worker.run(
+            path,
+            immutable: false,
+            version: '',
+            job: _countBooksJob,
+          ),
+          greaterThan(0),
+        );
+      },
+    );
+
     test('עבודה מאוגדת מקבלת תוספת קטנה לכל שאילתה, לא כפולה', () async {
       final path = createDb(withLineRef: false);
       final previous = (
