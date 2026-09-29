@@ -37,6 +37,15 @@ class LinkDao {
     }
 
     final db = await database;
+    // Sparse books are faster link-first even for moderately short ranges.
+    // This covering-index probe avoids reading line metadata for them.
+    if (db.select(
+      'SELECT 1 FROM link WHERE sourceBookId = ? LIMIT 1 OFFSET 31',
+      [bookId],
+    ).isEmpty) {
+      return queryName;
+    }
+
     final bounds = db.select(
       'SELECT (SELECT lineIndex FROM line WHERE bookId = ? '
       'ORDER BY lineIndex LIMIT 1) AS firstIdx, '
@@ -54,25 +63,24 @@ class LinkDao {
       return queryName;
     }
 
-    final lineCount =
-        firstIntValue(
-          db.select(
-            'SELECT COUNT(*) FROM line WHERE bookId = ? '
-            'AND lineIndex >= ? AND lineIndex < ?',
-            [bookId, startLineIndex, endLineIndex],
-          ),
-        ) ??
-        0;
-    if (lineCount <= 512) return '${queryName}Official';
+    // Official books normally number lines densely. Clipping index bounds
+    // estimates the window in constant time; gaps can affect plan selection
+    // but never the rows returned by either query.
+    final clippedStart = startLineIndex > firstIndex
+        ? startLineIndex
+        : firstIndex;
+    final clippedEnd = endLineIndex <= lastIndex ? endLineIndex : lastIndex + 1;
+    final rangeWidth = clippedEnd > clippedStart
+        ? clippedEnd - clippedStart
+        : 0;
+    if (rangeWidth <= 512) return '${queryName}Official';
 
-    // The link threshold rises from roughly half a link per window line for a
-    // tiny range to roughly 2.75 for a three-quarter-book range. This keeps
-    // short windows line-first without scanning every line of a broad range.
-    // The covering-index probe stops at that threshold, even in dense books.
+    // Require more links as the range approaches a whole book. The bounded
+    // probe uses the covering source-book index in both analyzed and older DBs.
     final bookSpan = lastIndex - firstIndex + 1;
-    if (lineCount * 4 >= bookSpan * 3) return queryName;
+    if (rangeWidth * 4 >= bookSpan * 3) return queryName;
     final minLinks =
-        (lineCount * (bookSpan + 6 * lineCount) + 2 * bookSpan - 1) ~/
+        (rangeWidth * (bookSpan + 6 * rangeWidth) + 2 * bookSpan - 1) ~/
         (2 * bookSpan);
     final hasEnoughLinks = db.select(
       'SELECT 1 FROM link WHERE sourceBookId = ? LIMIT 1 OFFSET ?',
@@ -101,6 +109,40 @@ class LinkDao {
             displayedSide: 0,
           ),
         );
+  }
+
+  Future<String?> _lineRangeQuery(
+    String queryName,
+    int bookId,
+    int startLineIndex,
+    int endLineIndex,
+    DbCapabilities capabilities,
+  ) async {
+    final selectedName = await _forLineRange(
+      queryName,
+      bookId,
+      startLineIndex,
+      endLineIndex,
+    );
+    final query = await _visibilityAwareQuery(
+      selectedName,
+      capabilities: capabilities,
+    );
+    if (query == null || !_db.isOfficial || selectedName != queryName) {
+      return query;
+    }
+
+    // On old official DBs without ANALYZE, SQLite otherwise visits each line
+    // before checking whether a link has a commentary type. Fix only this
+    // official link-first plan; attached databases retain their original SQL.
+    const typeJoin = 'JOIN connection_type ct';
+    const sourceLineJoin = 'JOIN line sl';
+    if (!query.contains(typeJoin) || !query.contains(sourceLineJoin)) {
+      throw StateError('Missing link-first joins in $queryName');
+    }
+    return query
+        .replaceFirst(typeJoin, 'CROSS JOIN connection_type ct')
+        .replaceFirst(sourceLineJoin, 'CROSS JOIN line sl');
   }
 
   Future<Link?> selectLinkById(int id) async {
@@ -154,14 +196,12 @@ class LinkDao {
   ) async {
     final capabilities = await _capabilities;
     if (!capabilities.hasLinks) return const [];
-    final query = await _visibilityAwareQuery(
-      await _forLineRange(
-        'selectCommentatorsByLineRange',
-        bookId,
-        startLineIndex,
-        endLineIndex,
-      ),
-      capabilities: capabilities,
+    final query = await _lineRangeQuery(
+      'selectCommentatorsByLineRange',
+      bookId,
+      startLineIndex,
+      endLineIndex,
+      capabilities,
     );
     if (query == null) return const [];
     final db = await database;
@@ -189,14 +229,12 @@ class LinkDao {
   ) async {
     final capabilities = await _capabilities;
     if (!capabilities.hasLinks) return const [];
-    final query = await _visibilityAwareQuery(
-      await _forLineRange(
-        'selectCommentaryLinksByLineRange',
-        bookId,
-        startLineIndex,
-        endLineIndex,
-      ),
-      capabilities: capabilities,
+    final query = await _lineRangeQuery(
+      'selectCommentaryLinksByLineRange',
+      bookId,
+      startLineIndex,
+      endLineIndex,
+      capabilities,
     );
     if (query == null) return const [];
     final db = await database;
