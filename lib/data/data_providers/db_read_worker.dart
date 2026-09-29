@@ -598,6 +598,13 @@ void _workerMain(_Bootstrap bootstrap) {
     return resolvedBooks[key] = resolved?.book;
   }
 
+  // קריאת ספר שלם נמשכת שניות: suspend/close שהגיע קוטע אותה, במקום שיפוג
+  // ה-timeout שלו ועדכון הספרייה ייכשל על קובץ תפוס.
+  Future<void> yieldToControls() async {
+    await Future<void>.delayed(Duration.zero);
+    if (suspended || closed) throw const _Suspended();
+  }
+
   Future<Object?> dispatch(String method, Map<String, Object?> args) async {
     switch (method) {
       case 'suspend':
@@ -636,12 +643,14 @@ void _workerMain(_Bootstrap bootstrap) {
         return readBookContentText(
           await repo.database.database,
           _bookTextKey(args),
+          checkpoint: yieldToControls,
         );
       case 'bookTextBytes':
         final repo = await ensureRepo(args['dbPath'] as String);
         return readBookContentTransferable(
           await repo.database.database,
           _bookTextKey(args),
+          checkpoint: yieldToControls,
         );
       default:
         final repo = await ensureRepo(args['dbPath'] as String);

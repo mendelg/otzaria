@@ -78,6 +78,20 @@ void main() {
     return dbPath;
   }
 
+  /// שורות [count] של ~150 בתים לספר [bookId], אחרי השורות הקיימות.
+  void insertManyLines(
+    sqlite3.Database db, {
+    required int bookId,
+    required int count,
+  }) {
+    db.execute(
+      'WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c '
+      'WHERE i < ?) INSERT INTO line (bookId, lineIndex, content) '
+      "SELECT ?, i, printf('%.150c', 'x') FROM c",
+      [count, bookId],
+    );
+  }
+
   /// המסלול הקודם, כפי שרץ על החיבור הראשי.
   ({String? text, Uint8List? bytes}) legacyRead(String dbPath, int bookId) {
     final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
@@ -120,6 +134,7 @@ void main() {
 
   tearDown(() async {
     DbReadWorker.stallTimeout = const Duration(seconds: 10);
+    DbReadWorker.lifecycleCommandTimeout = const Duration(seconds: 4);
     await DbReadWorker.resumeAfterExternalWrite();
     DbReadWorker.disposeForTesting();
     try {
@@ -139,10 +154,17 @@ void main() {
       for (final bookId in [1, 2, 3, 99]) {
         final legacy = legacyRead(dbPath, bookId);
         final k = key(bookId);
-        expect(readBookContentText(db, k), legacy.text, reason: '$bookId');
-        expect(readBookContentBytes(db, k), legacy.bytes);
         expect(
-          readBookContentTransferable(db, k)?.materialize().asUint8List(),
+          await readBookContentText(db, k),
+          legacy.text,
+          reason: '$bookId',
+        );
+        expect(await readBookContentBytes(db, k), legacy.bytes);
+        expect(
+          (await readBookContentTransferable(
+            db,
+            k,
+          ))?.materialize().asUint8List(),
           legacy.bytes,
         );
       }
@@ -162,10 +184,13 @@ void main() {
 
     final legacy = legacyRead(dbPath, 1);
     expect(legacy.text, ['א', '$bomב', 'ג$bom', '', 'ד'].join('\n'));
-    expect(readBookContentText(db, key(1)), legacy.text);
+    expect(await readBookContentText(db, key(1)), legacy.text);
     // הבייטים נשארים כפי שמאוחסנים, כולל ה-BOM.
-    expect(readBookContentBytes(db, key(1)), utf8.encode(rows.join('\n')));
-    expect(readBookContentBytes(db, key(1)), legacy.bytes);
+    expect(
+      await readBookContentBytes(db, key(1)),
+      utf8.encode(rows.join('\n')),
+    );
+    expect(await readBookContentBytes(db, key(1)), legacy.bytes);
   });
 
   for (final encoding in ['UTF-8', 'UTF-16le']) {
@@ -182,10 +207,10 @@ void main() {
 
       final legacy = legacyRead(dbPath, 1);
       expect(legacy.text, contains('\n\nאחרי NULL'));
-      expect(readBookContentText(db, key(1)), legacy.text);
-      expect(readBookContentText(db, key(2)), isNull);
+      expect(await readBookContentText(db, key(1)), legacy.text);
+      expect(await readBookContentText(db, key(2)), isNull);
       if (encoding == 'UTF-8') {
-        expect(readBookContentBytes(db, key(1)), legacy.bytes);
+        expect(await readBookContentBytes(db, key(1)), legacy.bytes);
       }
     });
   }
@@ -198,11 +223,43 @@ void main() {
     final BookTextKey otherCategory = (id: 1, title: 'בראשית', categoryId: 8);
 
     for (final k in [stale, otherCategory]) {
-      expect(readBookContentText(db, k), isNull);
-      expect(readBookContentBytes(db, k), isNull);
-      expect(readBookContentTransferable(db, k), isNull);
+      expect(await readBookContentText(db, k), isNull);
+      expect(await readBookContentBytes(db, k), isNull);
+      expect(await readBookContentTransferable(db, k), isNull);
     }
   });
+
+  test(
+    'נקודת עצירה נקראת כל 4096 שורות, וזריקה ממנה קוטעת את הקריאה',
+    () async {
+      final dbPath = await seedDb('checkpoint');
+      final writer = sqlite3.sqlite3.open(dbPath);
+      insertManyLines(writer, bookId: 3, count: 10000);
+      writer.close();
+      final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      addTearDown(db.close);
+
+      var calls = 0;
+      final text = await readBookContentText(
+        db,
+        key(3),
+        checkpoint: () async => calls++,
+      );
+      expect(calls, 2);
+      expect(text, await readBookContentText(db, key(3)));
+
+      await expectLater(
+        readBookContentBytes(
+          db,
+          key(3),
+          checkpoint: () async => throw const FormatException('stop'),
+        ),
+        throwsFormatException,
+      );
+      // המשפט נסגר גם בקטיעה: קריאה נוספת על אותו חיבור עובדת.
+      expect(await readBookContentText(db, key(1)), legacyRead(dbPath, 1).text);
+    },
+  );
 
   test('מסד מצורף נקרא ב-isolate נפרד, לא על החיבור הראשי', () async {
     final dbPath = await seedDb('attached');
@@ -308,6 +365,29 @@ void main() {
         legacy.bytes,
       );
       expect(BookTextReader.mainConnectionReads, 0);
+    });
+
+    test('השהיה לכתיבה חיצונית קוטעת קריאת ספר ארוכה ב-worker', () async {
+      final writer = sqlite3.sqlite3.open(dbPath);
+      insertManyLines(writer, bookId: 3, count: 600000);
+      writer.close();
+      final repository = SqliteDataProvider.instance.repository!;
+      final big = book(3);
+      // חימום: ה-worker והחיבור שלו כבר קיימים כשהקריאה הארוכה מתחילה.
+      expect(await BookTextReader.text(repository, book(1)), isNotNull);
+
+      final started = Stopwatch()..start();
+      await BookTextReader.bytes(repository, big);
+      final fullRead = started.elapsed;
+
+      DbReadWorker.lifecycleCommandTimeout = fullRead ~/ 4;
+      final read = expectLater(
+        BookTextReader.text(repository, big),
+        throwsA(isA<DbReadWorkerSuspended>()),
+      );
+      await Future<void>.delayed(fullRead ~/ 4);
+      expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+      await read;
     });
 
     test('בזמן השהיה לכתיבה חיצונית הקובץ לא נפתח לקריאה', () async {

@@ -23,6 +23,18 @@ const _contentTextSql =
 /// הספר שנפתר על ה-UI isolate; קריאה שהמזהה שלה כבר אינו שלו מחזירה null.
 typedef BookTextKey = ({int id, String title, int categoryId});
 
+/// נקרא כל [_rowsPerCheckpoint] שורות; זריקה ממנו קוטעת את הקריאה.
+typedef ReadCheckpoint = Future<void> Function();
+
+const _rowsPerCheckpoint = 4096;
+
+typedef _BookRead<T> =
+    Future<T?> Function(
+      sqlite3.Database db,
+      BookTextKey book, {
+      ReadCheckpoint? checkpoint,
+    });
+
 final Uint8List _newline = Uint8List.fromList(const [0x0A]);
 
 /// קריאת תוכן ספר שלם (כל שורות `line`, מאוחות ב-`\n`) מחוץ ל-UI isolate:
@@ -64,7 +76,7 @@ class BookTextReader {
     db_models.Book book, {
     required String workerMethod,
     required T? Function(Object? result) fromWorker,
-    required T? Function(sqlite3.Database db, BookTextKey book) read,
+    required _BookRead<T> read,
   }) async {
     final BookTextKey key = (
       id: book.id,
@@ -97,25 +109,26 @@ class BookTextReader {
 }
 
 // פונקציה נפרדת: סגירה בתוך _load הייתה לוכדת את ה-repository, שאינו נשלח.
-T? Function() _readOnTargetTask<T>(
+Future<T?> Function() _readOnTargetTask<T>(
   ReadOnlyDbTarget target,
   BookTextKey book,
-  T? Function(sqlite3.Database db, BookTextKey book) read,
-) => () {
+  _BookRead<T> read,
+) => () async {
   final db = openReadOnlyTarget(target);
   try {
-    return read(db, book);
+    return await read(db, book);
   } finally {
     db.close();
   }
 };
 
 /// שורות [book] כבייטים בסדר השורות; תוכן NULL נקרא כשורה ריקה.
-List<Uint8List> _readContentParts(
+Future<List<Uint8List>> _readContentParts(
   sqlite3.Database db,
   BookTextKey book, {
   bool stripRowBom = false,
-}) {
+  ReadCheckpoint? checkpoint,
+}) async {
   final statement = db.prepare(_contentBlobSql);
   try {
     final raw = statement.raw
@@ -131,6 +144,9 @@ List<Uint8List> _readContentParts(
             ? Uint8List.sublistView(part, 3)
             : part,
       );
+      if (checkpoint != null && parts.length % _rowsPerCheckpoint == 0) {
+        await checkpoint();
+      }
     }
     return parts;
   } finally {
@@ -157,17 +173,22 @@ Uint8List _joinLines(List<Uint8List> parts) {
 }
 
 /// תוכן [book] כבייטים מאוחים ב-`\n`, או null כשאין לו שורות.
-Uint8List? readBookContentBytes(sqlite3.Database db, BookTextKey book) {
-  final parts = _readContentParts(db, book);
+Future<Uint8List?> readBookContentBytes(
+  sqlite3.Database db,
+  BookTextKey book, {
+  ReadCheckpoint? checkpoint,
+}) async {
+  final parts = await _readContentParts(db, book, checkpoint: checkpoint);
   return parts.isEmpty ? null : _joinLines(parts);
 }
 
 /// כמו [readBookContentBytes], כחוצץ שעובר ל-isolate אחר בלי העתקה נוספת.
-TransferableTypedData? readBookContentTransferable(
+Future<TransferableTypedData?> readBookContentTransferable(
   sqlite3.Database db,
-  BookTextKey book,
-) {
-  final parts = _readContentParts(db, book);
+  BookTextKey book, {
+  ReadCheckpoint? checkpoint,
+}) async {
+  final parts = await _readContentParts(db, book, checkpoint: checkpoint);
   if (parts.isEmpty) return null;
   return TransferableTypedData.fromList([
     for (var i = 0; i < parts.length; i++) ...[if (i > 0) _newline, parts[i]],
@@ -175,7 +196,11 @@ TransferableTypedData? readBookContentTransferable(
 }
 
 /// הטקסט המלא של [book] — זהה ל-`join('\n')` של תוכן השורות.
-String? readBookContentText(sqlite3.Database db, BookTextKey book) {
+Future<String?> readBookContentText(
+  sqlite3.Database db,
+  BookTextKey book, {
+  ReadCheckpoint? checkpoint,
+}) async {
   // CAST AS BLOB מחזיר את קידוד המסד; פענוח חוצץ אחד נכון רק ב-UTF-8.
   final encoding = db.select('PRAGMA encoding').first.values.first;
   if (encoding != 'UTF-8') {
@@ -187,6 +212,11 @@ String? readBookContentText(sqlite3.Database db, BookTextKey book) {
     if (rows.isEmpty) return null;
     return rows.map((row) => (row.values.first as String?) ?? '').join('\n');
   }
-  final parts = _readContentParts(db, book, stripRowBom: true);
+  final parts = await _readContentParts(
+    db,
+    book,
+    stripRowBom: true,
+    checkpoint: checkpoint,
+  );
   return parts.isEmpty ? null : utf8.decode(_joinLines(parts));
 }
