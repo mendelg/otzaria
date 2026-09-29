@@ -13,6 +13,7 @@ import 'package:otzaria/data/cache/books_cache.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
 import 'package:otzaria/data/data_providers/book_composite_key.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/library_provider.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
@@ -914,12 +915,13 @@ List<Map<String, dynamic>> _loadBookLinksRowsInRangeInIsolate({
   required int startLineIndex,
   required int endLineIndex,
   required List<String>? targetBookTitles,
+  ReadOnlyConnection? connection,
 }) {
   sqlite3.Database? db;
   try {
-    db = openReadOnlyTarget(target);
+    db = connection?.db ?? openReadOnlyTarget(target);
     // מסד בלי טבלאות קישורים הוא תשובה ריקה תקפה, לא כשל שדורש ניסיון חוזר.
-    final capabilities = DbCapabilities.probe(db);
+    final capabilities = connection?.capabilities ?? DbCapabilities.probe(db);
     if (!capabilities.hasLinks) return const [];
 
     final bookId = _selectBookId(
@@ -1018,7 +1020,7 @@ List<Map<String, dynamic>> _loadBookLinksRowsInRangeInIsolate({
       ),
     ];
   } finally {
-    db?.close();
+    if (connection == null) db?.close();
   }
 }
 
@@ -1292,11 +1294,12 @@ _loadBookTextRangeRowsInIsolate({
   required int startLine,
   required int endLine,
   String? versionTitle,
+  ReadOnlyConnection? connection,
 }) {
   sqlite3.Database? db;
   try {
-    db = openReadOnlyTarget(target);
-    final capabilities = DbCapabilities.probe(db);
+    db = connection?.db ?? openReadOnlyTarget(target);
+    final capabilities = connection?.capabilities ?? DbCapabilities.probe(db);
     if (!capabilities.hasLines) return null;
 
     final bookId = _selectBookId(
@@ -1360,7 +1363,7 @@ _loadBookTextRangeRowsInIsolate({
       lines: text.split('\n'),
     );
   } finally {
-    db?.close();
+    if (connection == null) db?.close();
   }
 }
 
@@ -1387,6 +1390,59 @@ _runBookTextRangeInIsolate({
       versionTitle: versionTitle,
     ),
   );
+}
+
+/// טעינות הטווח של [DbReadWorker] על החיבור הקבוע שלו — אותן פונקציות של
+/// מסלול ה-`Isolate.run`, בלי פתיחת חיבור ו-probe בכל בקשה.
+Object? runRangeRequestOnConnection(
+  String method,
+  Map<String, Object?> args,
+  ReadOnlyConnection connection,
+) {
+  final target = trustedDbTarget(args['dbPath'] as String);
+  return switch (method) {
+    'textRange' => _loadBookTextRangeRowsInIsolate(
+      target: target,
+      title: args['title'] as String,
+      categoryId: args['categoryId'] as int,
+      fileType: args['fileType'] as String,
+      startLine: args['startLine'] as int,
+      endLine: args['endLine'] as int,
+      versionTitle: args['versionTitle'] as String?,
+      connection: connection,
+    ),
+    'linksRange' => _loadBookLinksRowsInRangeInIsolate(
+      target: target,
+      title: args['title'] as String,
+      categoryId: args['categoryId'] as int,
+      fileType: args['fileType'] as String,
+      startLineIndex: args['startLineIndex'] as int,
+      endLineIndex: args['endLineIndex'] as int,
+      targetBookTitles: (args['targetBookTitles'] as List?)?.cast<String>(),
+      connection: connection,
+    ),
+    _ => throw StateError('Unknown DbReadWorker method: $method'),
+  };
+}
+
+/// seforim.db נקרא ב-[DbReadWorker]; מסד מצורף, או worker שאינו זמין,
+/// נשארים במסלול [isolateRun] (חיבור חדש לכל בקשה).
+Future<T> _loadOnReadWorker<T>(
+  ReadOnlyDbTarget target,
+  String method,
+  Map<String, Object?> args,
+  Future<T> Function() isolateRun,
+) async {
+  if (target.untrusted) return isolateRun();
+  try {
+    return await DbReadWorker.request(method, {
+          ...args,
+          'dbPath': target.path,
+        })
+        as T;
+  } on DbReadWorkerUnavailable {
+    return isolateRun();
+  }
 }
 
 /// Top-level worker לרשימת המהדורות (book_version) של ספר. רשימה ריקה כשה-DB
@@ -4191,14 +4247,26 @@ class DatabaseLibraryProvider implements LibraryProvider {
     }
 
     // ראה הערה ב-_runAlternativeStructuresInIsolate.
-    final result = await _runBookLinksInRangeInIsolate(
-      target: target,
-      title: title,
-      categoryId: categoryId,
-      fileType: fileType,
-      startLineIndex: startLineIndex,
-      endLineIndex: endLineIndex,
-      targetBookTitles: normalizedTargetBookTitles,
+    final result = await _loadOnReadWorker(
+      target,
+      'linksRange',
+      {
+        'title': title,
+        'categoryId': categoryId,
+        'fileType': fileType,
+        'startLineIndex': startLineIndex,
+        'endLineIndex': endLineIndex,
+        'targetBookTitles': normalizedTargetBookTitles,
+      },
+      () => _runBookLinksInRangeInIsolate(
+        target: target,
+        title: title,
+        categoryId: categoryId,
+        fileType: fileType,
+        startLineIndex: startLineIndex,
+        endLineIndex: endLineIndex,
+        targetBookTitles: normalizedTargetBookTitles,
+      ),
     );
 
     final links = result.map((row) {
@@ -4303,14 +4371,26 @@ class DatabaseLibraryProvider implements LibraryProvider {
     if (target == null) return null;
 
     try {
-      return await _runBookTextRangeInIsolate(
-        target: target,
-        title: title,
-        categoryId: categoryId,
-        fileType: fileType,
-        startLine: startLine,
-        endLine: endLine,
-        versionTitle: versionTitle,
+      return await _loadOnReadWorker(
+        target,
+        'textRange',
+        {
+          'title': title,
+          'categoryId': categoryId,
+          'fileType': fileType,
+          'startLine': startLine,
+          'endLine': endLine,
+          'versionTitle': versionTitle,
+        },
+        () => _runBookTextRangeInIsolate(
+          target: target,
+          title: title,
+          categoryId: categoryId,
+          fileType: fileType,
+          startLine: startLine,
+          endLine: endLine,
+          versionTitle: versionTitle,
+        ),
       );
     } catch (e) {
       debugPrint('⚠️ Error in getBookTextRange "$title": $e');
@@ -4382,6 +4462,9 @@ class DatabaseLibraryProvider implements LibraryProvider {
     final repository = _sqliteProvider.repository;
     if (repository == null) return 'שגיאה: מאגר לא מאותחל';
 
+    final fromWorker = await _officialLinkContentOnWorker(link, targetTitle);
+    if (fromWorker != null) return fromWorker;
+
     try {
       final resolvedBook = await BookDatabaseResolver.resolveBook(
         title: targetTitle,
@@ -4422,27 +4505,40 @@ class DatabaseLibraryProvider implements LibraryProvider {
             .join('<br>');
       }
 
-      // link.index2 is 1-based; lineIndex in DB is 0-based
-      final line = await resolvedBook.repository.getLineByIndex(
+      return await linkContentFromDbLines(
+        resolvedBook.repository,
         resolvedBook.book.id,
-        link.index2 - 1,
+        link.index2,
+        link.index2End,
       );
-      if (line == null) return 'שגיאה: אינדקס מחוץ לטווח';
-
-      // קישור-טווח: מצרפים את כל שורות הטווח עד index2End (1-based, כולל)
-      // בשאילתת טווח אחת במקום שאילתה פר-שורה.
-      final end0 = (link.index2End ?? link.index2) - 1;
-      if (end0 <= link.index2 - 1) return line.content;
-      final rangeLines = await resolvedBook.repository.getLines(
-        resolvedBook.book.id,
-        link.index2 - 1,
-        end0,
-      );
-      if (rangeLines.isEmpty) return line.content;
-      return rangeLines.map((l) => l.content).join('<br>');
     } catch (e) {
       debugPrint('⚠️ Error in getLinkContent: $e');
       return 'שגיאה בטעינת תוכן המפרש';
+    }
+  }
+
+  /// תוכן קישור לספר ב-seforim.db, מה-[DbReadWorker] במקום על ה-UI isolate.
+  /// null — הספר אינו שם, ספר קבצים או worker לא זמין: המסלול הישיר ממשיך.
+  Future<String?> _officialLinkContentOnWorker(
+    Link link,
+    String targetTitle,
+  ) async {
+    final dbPath = _sqliteProvider.dbPath;
+    if (!link.targetSource.isOfficial || dbPath.isEmpty) return null;
+    try {
+      final result =
+          await DbReadWorker.batched('linkContent', {
+                'dbPath': dbPath,
+                'title': targetTitle,
+                'categoryId': link.targetCategoryId,
+                'index2': link.index2,
+                'index2End': link.index2End,
+              })
+              as Map;
+      return result['content'] as String?;
+    } catch (e) {
+      debugPrint('⚠️ getLinkContent worker path failed: $e');
+      return null;
     }
   }
 

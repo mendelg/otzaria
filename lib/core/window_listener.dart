@@ -373,7 +373,7 @@ class AppWindowListener extends WindowListener {
     // Step 1: Non-critical cleanup — errors here must not block Hive.close().
     try {
       await UserBooksDatabaseHolder.instance.close();
-      await SqliteDataProvider.instance.dispose();
+      await SqliteDataProvider.instance.dispose(forAppExit: true);
     } catch (e) {
       if (kDebugMode) print('Non-critical cleanup error: $e');
     }

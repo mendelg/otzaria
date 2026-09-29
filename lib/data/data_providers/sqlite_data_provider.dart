@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
@@ -132,6 +133,7 @@ class SqliteDataProvider {
       _repository = SeforimRepository(database);
       await _repository.ensureInitialized();
       _isInitialized = true;
+      DbReadWorker.allowReopen();
     } on SqliteException catch (e) {
       // SQLITE_CANTOPEN (code 14): the native library cannot open the file.
       // On Android this happens when the DB is in Scoped Storage and sqlite3
@@ -161,11 +163,17 @@ class SqliteDataProvider {
   bool get isInitialized => _isInitialized;
 
   /// Closes the database connection to free resources
-  Future<void> dispose() async {
+  /// [forAppExit] לא ממתין ל-worker עסוק: התהליך מסתיים ממילא.
+  Future<void> dispose({bool forAppExit = false}) =>
+      _dispose(waitForWorker: !forAppExit);
+
+  Future<void> _dispose({required bool waitForWorker}) async {
     if (_isInitialized) {
       _repository.database.close();
       _isInitialized = false;
     }
+    // ה-worker פותח לפי הנתיב של החיבור הזה, ולכן לא יחזיק את הקובץ אחריו.
+    await DbReadWorker.closeConnectionIfRunning(wait: waitForWorker);
   }
 
   /// מספר ה-write-sessions הפעילים. כשהוא > 0 חיבור ה-RO סגור ו-[initialize]
@@ -207,21 +215,28 @@ class SqliteDataProvider {
   /// חיבור RO מתנגש בזמן שהאיזולייט כותב.
   /// יש לקרוא ל-[reopenAfterExternalWrite] לאחר שהאיזולייט סיים.
   /// זורק [StateError] אם שחרור ה-handle של ה-worker לא אומת.
-  Future<void> closeForExternalWrite() async {
+  /// [releaseOnFailure]=false משאיר את השער סגור גם כשהשחרור נכשל; הקורא
+  /// חייב אז לקרוא ל-[reopenAfterExternalWrite] בעצמו.
+  Future<void> closeForExternalWrite({bool releaseOnFailure = true}) async {
     // נוצר *לפני* הגדלת המונה, כך שקורא מקביל שיראה _activeWriteSessions > 0
     // תמיד יראה גם gate להמתין עליו.
     _externalWriteGate ??= Completer<void>();
     _activeWriteSessions++;
-    await dispose();
+    // ה-suspend שאחריו סוגר גם הוא את חיבור ה-worker וממתין לו - המתנה אחת מספיקה.
+    await _dispose(waitForWorker: false);
     // ל-worker של ה-isolate יש handle RO משלו על אותו קובץ; בלי סגירה
     // *ממתינה* המחיקה/החלפה של ה-DB נכשלת (ב-Windows) או נתקעת על busy.
-    final released = await FindRefDbIsolate.suspendForExternalWrite();
-    if (!released) {
+    final findRefReleased = await FindRefDbIsolate.suspendForExternalWrite();
+    final readWorkerReleased = await DbReadWorker.suspendForExternalWrite();
+    if (!findRefReleased || !readWorkerReleased) {
       // בלי handle סגור אסור להזיז את הקובץ, בייחוד ב-Windows.
-      await reopenAfterExternalWrite(reopenDatabase: false);
-      throw StateError(
-        'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה',
-      );
+      if (releaseOnFailure) {
+        await reopenAfterExternalWrite(reopenDatabase: false);
+      }
+      final message = 'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה';
+      throw findRefReleased
+          ? DbReadWorkerNotReleased(message)
+          : StateError(message);
     }
   }
 
@@ -248,6 +263,7 @@ class SqliteDataProvider {
       // ב-finally: worker שנשאר מושהה אחרי כשל פתיחה יחזיר שגיאה לכל TOC
       // וקטלוג עד סוף ה-session.
       await FindRefDbIsolate.resumeAfterExternalWrite();
+      await DbReadWorker.resumeAfterExternalWrite();
       // משחררים את הקוראים הממתינים. ה-finally מבטיח שחרור גם אם הפתיחה-מחדש
       // נכשלה (אחרת היו נתקעים לנצח).
       final gate = _externalWriteGate;

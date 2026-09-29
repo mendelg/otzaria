@@ -13,6 +13,7 @@ import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/core/error_log_file.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/library_update/repository/library_update_repository.dart';
 import 'package:otzaria/library_update/services/library_runtime_refresh_service.dart';
@@ -917,6 +918,56 @@ void main() {
       expect(refresh.called, isTrue);
       expect(const LocalDbVersionReader().read(dbPath).dbVersion, 2);
       expect(stale.existsSync(), isFalse);
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  test(
+    'a read worker that does not release after a committed WAL patch does not fail the update',
+    () async {
+      final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);
+      _writeSchema4SourceDb(dbPath, version: 1, sourceName: 'old');
+      final expectedPath = p.join(tmp.path, 'expected.db');
+      _writeSchema4SourceDb(expectedPath, version: 2, sourceName: 'new');
+      final patchPath = p.join(tmp.path, 'patch-1-2.db');
+      _writeSourcePatch(
+        patchPath,
+        fromVersion: 1,
+        toVersion: 2,
+        sourceName: 'new',
+      );
+      final repository = LibraryUpdateRepository(
+        discovery: _unusedDiscovery(),
+        downloader: _PatchMapDownloader({'patch-1-2.db': patchPath}),
+        refreshService: _NoopRefreshService(),
+        dbPathProvider: () => dbPath,
+        dataRootProvider: () async => tmp.path,
+        nowTimestamp: () => '2026-09-28T00:00:00Z',
+      );
+      // ה-dispose שב-setUp חוסם את ה-worker עד אתחול; כאן רק מעירים אותו.
+      DbReadWorker.allowReopen();
+      await DbReadWorker.request('open', const {});
+      DbReadWorker.lifecycleCommandTimeout = Duration.zero;
+      try {
+        final result = await repository.applyDeltaPlan(
+          _schema4DeltaPlan([
+            _schema4Edge(
+              fromVersion: 1,
+              toVersion: 2,
+              patchName: 'patch-1-2.db',
+              toHash: _logicalHash(expectedPath),
+            ),
+          ]),
+        );
+
+        expect(result.appliedSteps, 1);
+        expect(const LocalDbVersionReader().read(dbPath).dbVersion, 2);
+        expect(_journalMode(dbPath), 'delete');
+      } finally {
+        DbReadWorker.lifecycleCommandTimeout = const Duration(seconds: 4);
+        await DbReadWorker.resumeAfterExternalWrite();
+        DbReadWorker.disposeForTesting();
+      }
     },
     timeout: const Timeout(Duration(seconds: 30)),
   );
