@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
 import 'package:otzaria/attached_libraries/models/attached_library.dart';
@@ -408,9 +409,12 @@ class FindRefRepository {
   /// קאש מזהי הספרים בעלי מבנה AltToc (ראה [getAltStructureBookIds]).
   Set<int>? _altBookIdsCache;
 
-  /// הספרים האישיים (user_books.db), עד [clearCaches] — שמתבצע במסלולי
-  /// הרענון, גם אחרי שינוי בספרים האישיים.
+  /// הספרים האישיים (user_books.db). נבנה מחדש כשתוכן המסד השתנה (ראו
+  /// [_userBooksJob]), ב-[clearCaches] ובסגירת המסד.
   _SecondaryIndex? _userBooksIndex;
+
+  /// גרסת התוכן שממנה נבנה [_userBooksIndex].
+  String? _userBooksToken;
 
   /// נתיב user_books.db, לשאילתות ה-TOC ב-worker; נקבע בטעינת הרשימה.
   String? _userBooksDbPath;
@@ -514,6 +518,7 @@ class FindRefRepository {
     _altTocFlatCache = null;
     _altBookIdsCache = null;
     _userBooksIndex = null;
+    _userBooksToken = null;
     _userBooksDbPath = null;
     _userBooksVersion++;
     _attachedBooksCache.clear();
@@ -555,29 +560,50 @@ class FindRefRepository {
     }
   }
 
-  /// הספרים האישיים ומנוע ההתאמה שלהם, נטענים פעם אחת עד [clearCaches] —
-  /// דרך [getAllUserBooks] (בדיקות) או מ-`user_books.db`.
+  /// הספרים האישיים ומנוע ההתאמה שלהם — דרך [getAllUserBooks] (בדיקות,
+  /// פעם אחת עד [clearCaches]) או מ-`user_books.db` דרך ה-worker.
   Future<_SecondaryIndex> _loadUserBooks() async {
-    final cached = _userBooksIndex;
-    if (cached != null) return cached;
-
-    final List<_SecondaryBook> books;
     final injected = getAllUserBooks;
     if (injected != null) {
-      books = [
+      final cached = _userBooksIndex;
+      if (cached != null) return cached;
+      final books = [
         for (final record in await _awaitCurrent(injected()))
           _SecondaryBook(record),
       ];
-    } else {
-      // הפתיחה דרך ה-holder מריצה את המיגרציות לפני שה-worker קורא מהקובץ.
-      final userRepo = await _awaitCurrent(
-        openUserBooksRepository?.call() ??
-            UserBooksDatabaseHolder.instance.repository,
-      );
-      books = await _awaitCurrent(_readSecondaryBooksFrom(userRepo));
-      _userBooksDbPath = userRepo.database.path;
+      final index = await _awaitCurrent(_SecondaryIndex.build(books));
+      return _userBooksIndex = index;
     }
-    final index = await _awaitCurrent(_SecondaryIndex.build(books));
+
+    // הפתיחה דרך ה-holder מריצה את המיגרציות לפני שה-worker קורא מהקובץ.
+    final userRepo = await _awaitCurrent(
+      openUserBooksRepository?.call() ??
+          UserBooksDatabaseHolder.instance.repository,
+    );
+    _userBooksDbPath = userRepo.database.path;
+    UserBooksDatabaseHolder.instance.addCloseListener(_resetSecondaryWorker);
+    final cached = _userBooksIndex;
+    final ({String token, List<_SecondaryBook>? books}) loaded;
+    try {
+      loaded = await _awaitCurrent(
+        AttachedFindRefWorker.instance.run(
+          userRepo.database.path,
+          immutable: false,
+          version: '$_userBooksVersion',
+          job: _userBooksJob(cached == null ? null : _userBooksToken),
+        ),
+      );
+    } on FindRefQueryCancelled {
+      rethrow;
+    } catch (e) {
+      if (cached == null) rethrow;
+      debugPrint('[FindRef] personal books version check failed: $e');
+      return cached;
+    }
+    final books = loaded.books;
+    if (books == null && cached != null) return cached;
+    final index = await _awaitCurrent(_SecondaryIndex.build(books ?? const []));
+    _userBooksToken = loaded.token;
     return _userBooksIndex = index;
   }
 
@@ -1911,7 +1937,15 @@ class FindRefRepository {
     }
   }
 
-  static void _resetSecondaryWorker() => AttachedFindRefWorker.instance.reset();
+  /// סגירת user_books.db: ה-worker משחרר את הקובץ, והספרים האישיים ייטענו
+  /// מחדש — גרסת התוכן של החיבור הישן אינה ברת-השוואה לחדש.
+  static void _resetSecondaryWorker() {
+    AttachedFindRefWorker.instance.reset();
+    for (final repo in _liveInstances) {
+      repo._userBooksIndex = null;
+      repo._userBooksToken = null;
+    }
+  }
 
   static AttachedDbJob<List<Map<String, dynamic>>> _userBookTocJob(
     _SecondaryTocRequest book, {
@@ -1941,6 +1975,24 @@ class FindRefRepository {
       queryTokens: fallback,
     );
   }
+
+  /// מזהה חיבור ייחודי גם בין מופעי worker: מונה החיבורים מתאפס ב-isolate חדש.
+  static final int _workerNonce = Random().nextInt(1 << 32);
+  static final Expando<int> _connectionSerials = Expando();
+  static int _lastConnectionSerial = 0;
+
+  /// רשימת הספרים האישיים, רק אם תוכן המסד השתנה מאז [knownToken]. PRAGMA
+  /// data_version משתנה בכל כתיבה של חיבור אחר, ולכן בדיקה בכל חיפוש זולה.
+  static AttachedDbJob<({String token, List<_SecondaryBook>? books})>
+  _userBooksJob(String? knownToken) => (repository) async {
+    final db = await repository.database.database;
+    final dataVersion =
+        db.select('PRAGMA data_version').first.columnAt(0) as int;
+    final serial = _connectionSerials[repository] ??= ++_lastConnectionSerial;
+    final token = '$_workerNonce:$serial:$dataVersion';
+    if (token == knownToken) return (token: token, books: null);
+    return (token: token, books: await _readSecondaryBooksFrom(repository));
+  };
 
   static String _attachedVersion(AttachedLibrary library) {
     final fingerprint = library.fingerprint;

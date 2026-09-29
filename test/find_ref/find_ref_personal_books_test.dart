@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
+import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/find_ref/repository/attached_find_ref_worker.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
@@ -365,5 +366,54 @@ void main() {
         );
       });
     }
+
+    void execute(String sql, [List<Object?> args = const []]) {
+      final db = sqlite3.sqlite3.open(dbPath);
+      try {
+        db.execute(sql, args);
+      } finally {
+        db.close();
+      }
+    }
+
+    test('ספר שנוסף למסד אחרי החיפוש הראשון נמצא', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      expect(await userRefs(repo, 'קונטרס חדש'), isEmpty);
+
+      execute(
+        'INSERT INTO book (id, categoryId, sourceId, title, orderIndex) '
+        'VALUES (50, ?, 1, ?, 3)',
+        [SeforimFixtureIds.torahCategoryId, 'קונטרס חדש'],
+      );
+      expect(await userRefs(repo, 'קונטרס חדש'), contains('קונטרס חדש'));
+    });
+
+    test('ספר שנמחק מהמסד אינו מוצע עוד', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      expect(await userRefs(repo, title), contains(title));
+
+      execute('DELETE FROM book WHERE id = ?', [SeforimFixtureIds.rashiId]);
+      expect(await userRefs(repo, title), isNot(contains(title)));
+    });
+
+    test('שינוי בזמן שמסד הספרים האישיים סגור נראה בחיפוש הבא', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      expect(await userRefs(repo, title), contains(title));
+
+      await UserBooksDatabaseHolder.instance.close();
+      execute('DELETE FROM book WHERE id = ?', [SeforimFixtureIds.rashiId]);
+      expect(await userRefs(repo, title), isNot(contains(title)));
+    });
   });
 }
