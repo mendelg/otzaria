@@ -128,6 +128,22 @@ void main() {
     expect(report.capabilities['hasLines'], isTrue);
   });
 
+  test('split line content (schema 6) is not reported as missing', () {
+    final path = build('split.db', '''
+      CREATE TABLE book(id INTEGER PRIMARY KEY, title TEXT NOT NULL);
+      INSERT INTO book VALUES (1, 'Book A');
+      CREATE TABLE line(id INTEGER PRIMARY KEY, bookId INTEGER,
+        lineIndex INTEGER);
+      CREATE TABLE line_content(id INTEGER PRIMARY KEY, content TEXT);
+      CREATE INDEX idx_line_book_index ON line(bookId, lineIndex);
+      INSERT INTO line VALUES (1, 1, 0);
+      INSERT INTO line_content VALUES (1, 'x');
+    ''');
+    final report = validatePersonalDb(path);
+    expect(codes(report), isNot(contains('missing_columns')));
+    expect(report.capabilities['hasLines'], isTrue);
+  });
+
   test('no book table is fatal', () {
     final report = validatePersonalDb(
       build('none.db', 'CREATE TABLE plugin_data(x);'),

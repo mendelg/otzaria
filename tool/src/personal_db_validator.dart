@@ -29,6 +29,7 @@ const Set<String> kValidatorKnownTables = {
   'book_generation',
   'book_base_text',
   'line',
+  'line_content',
   'line_ref',
   'line_dh',
   'tocText',
@@ -478,7 +479,7 @@ void _checkColumns(_Caps caps, PersonalDbReport report) {
     if (!caps.has(table)) continue;
     final missing = [
       for (final c in required)
-        if (!caps.col(table, c)) c,
+        if (!caps.col(table, c) && !_splitLineContent(caps, table, c)) c,
     ];
     if (missing.isEmpty) continue;
     report._add(
@@ -488,6 +489,10 @@ void _checkColumns(_Caps caps, PersonalDbReport report) {
     );
   }
 }
+
+// סכמה 6: התוכן ב-`line_content` ולא בעמודה של `line`.
+bool _splitLineContent(_Caps caps, String table, String column) =>
+    table == 'line' && column == 'content' && caps.has('line_content');
 
 void _checkGroups(_Caps caps, PersonalDbReport report) {
   for (final (name, triggers, required, flag) in _featureGroups) {
