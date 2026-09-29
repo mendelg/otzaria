@@ -540,7 +540,7 @@ void main() {
       expect(usesReverse(_commentaryB), isFalse);
       expect(maxSource('commentary-b'), isNull);
 
-      Future<void> verify() async {
+      Future<void> verify(int endLineIndex) async {
         final database = MyDatabase.withPath(
           file,
           readOnly: true,
@@ -553,13 +553,13 @@ void main() {
               await dao.selectCommentatorsByLineRange(
                 _baseBook,
                 0,
-                0x7fffffff,
+                endLineIndex,
               ),
             ),
             _canonical(
               db.select(
                 linkQuery(db, 'selectCommentatorsByLineRange'),
-                [_baseBook, 0, 0x7fffffff],
+                [_baseBook, 0, endLineIndex],
               ),
             ),
           );
@@ -568,7 +568,7 @@ void main() {
               await dao.selectCommentaryLinksByLineRange(
                 _baseBook,
                 0,
-                0x7fffffff,
+                endLineIndex,
                 _commentaryB,
                 5,
               ),
@@ -576,7 +576,7 @@ void main() {
             _canonical(
               db.select(
                 linkQuery(db, 'selectCommentaryLinksByLineRange'),
-                [5, _baseBook, 0, 0x7fffffff, _commentaryB],
+                [5, _baseBook, 0, endLineIndex, _commentaryB],
               ),
             ),
           );
@@ -585,7 +585,7 @@ void main() {
         }
       }
 
-      await verify(); // Few links: choose the link-first query.
+      await verify(0x7fffffff); // Sparse whole-book range.
 
       db.execute('BEGIN');
       for (var i = _linesPerBook; i < 2048; i++) {
@@ -603,7 +603,8 @@ void main() {
       db.execute('COMMIT');
       expect(usesReverse(_baseBook), isTrue);
       expect(maxSource('base'), 2047);
-      await verify(); // Many links: choose the line-first query.
+      await verify(600); // Dense partial range keeps the line-first query.
+      await verify(0x7fffffff); // Whole-book range uses the link-first query.
     } finally {
       db.close();
     }

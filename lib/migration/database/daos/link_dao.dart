@@ -22,10 +22,10 @@ class LinkDao {
   String _forDb(String queryName) =>
       _db.isOfficial ? '${queryName}Official' : queryName;
 
-  /// A line-first join is best for a short window. For a broad range in a
-  /// sparsely linked book it probes every line, while the link-first query can
-  /// stop after scanning the book's few links. Both indexes exist only in the
-  /// official database, so keep attached databases on their original query.
+  /// A line-first join is best for a short window. As the window approaches a
+  /// whole book it probes many lines, while the link-first query scans that
+  /// book's links once. Both indexes exist only in the official database, so
+  /// attached databases keep their original query.
   Future<String> _forLineRange(
     String queryName,
     int bookId,
@@ -37,6 +37,23 @@ class LinkDao {
     }
 
     final db = await database;
+    final bounds = db.select(
+      'SELECT (SELECT lineIndex FROM line WHERE bookId = ? '
+      'ORDER BY lineIndex LIMIT 1) AS firstIdx, '
+      '(SELECT lineIndex FROM line WHERE bookId = ? '
+      'ORDER BY lineIndex DESC LIMIT 1) AS lastIdx',
+      [bookId, bookId],
+    ).first;
+    final firstIndex = bounds['firstIdx'] as int?;
+    final lastIndex = bounds['lastIdx'] as int?;
+    if (firstIndex == null || lastIndex == null) {
+      return '${queryName}Official';
+    }
+    // A whole-book range scans every line with the line-first join.
+    if (startLineIndex <= firstIndex && endLineIndex > lastIndex) {
+      return queryName;
+    }
+
     final lineCount =
         firstIntValue(
           db.select(
@@ -48,11 +65,18 @@ class LinkDao {
         0;
     if (lineCount <= 512) return '${queryName}Official';
 
-    // The covering source-book index answers this bounded probe without
-    // reading link rows. No count of a dense book's millions of links is needed.
+    // The link threshold rises from roughly half a link per window line for a
+    // tiny range to roughly 2.75 for a three-quarter-book range. This keeps
+    // short windows line-first without scanning every line of a broad range.
+    // The covering-index probe stops at that threshold, even in dense books.
+    final bookSpan = lastIndex - firstIndex + 1;
+    if (lineCount * 4 >= bookSpan * 3) return queryName;
+    final minLinks =
+        (lineCount * (bookSpan + 6 * lineCount) + 2 * bookSpan - 1) ~/
+        (2 * bookSpan);
     final hasEnoughLinks = db.select(
       'SELECT 1 FROM link WHERE sourceBookId = ? LIMIT 1 OFFSET ?',
-      [bookId, lineCount ~/ 2],
+      [bookId, minLinks - 1],
     ).isNotEmpty;
     return hasEnoughLinks ? '${queryName}Official' : queryName;
   }
