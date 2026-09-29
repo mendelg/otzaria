@@ -130,6 +130,24 @@ void main() {
     });
 
     test(
+      'אין קובץ ספרייה גם כשפונקציית TOC מוזרקת (כמו ב-factory) → Missing',
+      () async {
+        final repository = FindRefRepository(
+          isReferenceBooksCacheLoaded: () => false,
+          warmUpReferenceBooksCache: () async {},
+          libraryDatabaseExists: () async => false,
+          getTocEntriesForReference: (bookId, bookTitle, {queryTokens}) async =>
+              const <Map<String, dynamic>>[],
+        );
+
+        await expectLater(
+          repository.findRefs('בראשית פרק א'),
+          throwsA(isA<ReferenceLibraryMissingException>()),
+        );
+      },
+    );
+
+    test(
       'קאש טעון → אין חריגה, מוחזרת רשימה (ריקה = באמת אין תוצאות)',
       () async {
         var warmUpCalls = 0;
