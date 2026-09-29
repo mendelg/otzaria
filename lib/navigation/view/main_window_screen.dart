@@ -1584,7 +1584,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
         if (query.isNotEmpty) {
           context.read<FindRefBloc>().add(SearchRefRequested(query));
         }
-        _handleFindRefOpen(context);
+        _handleFindRefOpen(context, closeIfOpen: false);
         return true;
       case OpenInspectionAction():
         context.read<NavigationBloc>().add(
