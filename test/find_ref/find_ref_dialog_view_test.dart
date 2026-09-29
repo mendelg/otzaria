@@ -35,6 +35,7 @@ class _FakeRepository implements FindRefRepository {
   final List<DbReferenceResult> results;
   final Object? error;
   final List<DbCommentatorEntry> commentators;
+  int calls = 0;
 
   @override
   void cancelPendingSearch() {}
@@ -44,6 +45,7 @@ class _FakeRepository implements FindRefRepository {
     String ref, {
     bool includePersonalBooks = false,
   }) async {
+    calls++;
     if (error != null) throw error!;
     return results;
   }
@@ -104,6 +106,28 @@ class _GatedRepository implements FindRefRepository {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+class _FakeHost implements FindRefDialogHost {
+  final List<String> deepLinks = [];
+  final List<String> textSearches = [];
+
+  @override
+  Future<bool> handleDeepLink(String uri) async {
+    deepLinks.add(uri);
+    // false: הדיאלוג לא ינסה לסגור את עצמו, והבדיקה נשארת על המסך.
+    return false;
+  }
+
+  @override
+  void openTextSearch(String query) => textSearches.add(query);
+}
+
+class _PopCounter extends NavigatorObserver {
+  int pops = 0;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => pops++;
+}
+
 DbReferenceResult _ref(String reference, {String path = 'תנ"ך, תורה'}) =>
     DbReferenceResult(
       title: 'בראשית',
@@ -123,6 +147,8 @@ Future<void> _pumpDialog(
   double textScale = 1.0,
   Object? error,
   FindRefRepository? repository,
+  FindRefDialogHost? host,
+  NavigatorObserver? observer,
 }) async {
   if (screenSize != null) {
     tester.view.physicalSize = screenSize;
@@ -140,6 +166,7 @@ Future<void> _pumpDialog(
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pumpWidget(
     MaterialApp(
+      navigatorObservers: [?observer],
       locale: const Locale('he', 'IL'),
       theme: ThemeData(
         useMaterial3: true,
@@ -157,7 +184,9 @@ Future<void> _pumpDialog(
                 Provider<FocusRepository>.value(value: FocusRepository()),
                 BlocProvider<FindRefBloc>.value(value: bloc),
               ],
-              child: const FindRefDialog(),
+              child: host == null
+                  ? const FindRefDialog()
+                  : FindRefDialog(host: host),
             ),
           ),
         ),
@@ -301,7 +330,14 @@ void main() {
   });
 
   testWidgets('הדבקת קישור איתור מריצה אותו בדיאלוג בלי לסגור', (tester) async {
-    await _pumpDialog(tester, results: [_ref('בראשית פרק א')]);
+    final host = _FakeHost();
+    final pops = _PopCounter();
+    await _pumpDialog(
+      tester,
+      results: [_ref('בראשית פרק א')],
+      host: host,
+      observer: pops,
+    );
 
     await tester.enterText(
       find.byType(TextField),
@@ -314,6 +350,38 @@ void main() {
     expect(FocusRepository().findRefSearchController.text, 'בראשית');
     expect(find.byType(FindRefDialog), findsOneWidget);
     expect(find.text('מקור אחד'), findsOneWidget);
+    expect(host.deepLinks, isEmpty, reason: 'אין ניתוב דרך המסך הראשי');
+    expect(pops.pops, 0);
+  });
+
+  testWidgets('קישור שאינו איתור עדיין מנותב דרך המסך הראשי', (tester) async {
+    final host = _FakeHost();
+    await _pumpDialog(tester, host: host);
+
+    await tester.enterText(find.byType(TextField), 'otzaria://open/sdk');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(_pastDebounce);
+
+    expect(host.deepLinks, hasLength(1));
+  });
+
+  testWidgets('"פתח חיפוש טקסט" עובר דרך המסך הראשי ולא סוגר בעצמו', (
+    tester,
+  ) async {
+    final host = _FakeHost();
+    final pops = _PopCounter();
+    await _pumpDialog(tester, host: host, observer: pops);
+
+    await tester.enterText(find.byType(TextField), 'אין כזה');
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+    final button = find.text('פתח חיפוש טקסט');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(host.textSearches, ['אין כזה']);
+    expect(pops.pops, 0, reason: 'המסך הראשי הוא שסוגר את האיתור');
   });
 
   testWidgets('פתיחת תוצאה נשמרת כאיתור אחרון', (tester) async {

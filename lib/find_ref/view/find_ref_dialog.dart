@@ -49,8 +49,41 @@ import 'package:otzaria/widgets/controls/action_buttons.dart';
 import 'package:otzaria/widgets/layout/centered_scrollable_state.dart';
 import 'package:otzaria/widgets/misc/rtl_icon.dart';
 
+/// מה שהדיאלוג מבקש מהמסך הראשי — ניתוב קישורים ופתיחת חיפוש טקסט.
+abstract interface class FindRefDialogHost {
+  Future<bool> handleDeepLink(String uri);
+  void openTextSearch(String query);
+}
+
+class _MainWindowFindRefHost implements FindRefDialogHost {
+  const _MainWindowFindRefHost();
+
+  @override
+  Future<bool> handleDeepLink(String uri) async =>
+      await mainWindowScreenKey.currentState?.handleInternalDeepLink(uri) ??
+      false;
+
+  @override
+  void openTextSearch(String query) {
+    final mainScreen = mainWindowScreenKey.currentState;
+    if (mainScreen == null) {
+      debugPrint('[FindRef] openTextSearch: main window screen not mounted');
+      return;
+    }
+    mainScreen.openSearchDialog(
+      SearchingTab(
+        'חיפוש',
+        query,
+        initialConfiguration: const SearchConfiguration(),
+      ),
+    );
+  }
+}
+
 class FindRefDialog extends StatefulWidget {
-  const FindRefDialog({super.key});
+  const FindRefDialog({super.key, this.host = const _MainWindowFindRefHost()});
+
+  final FindRefDialogHost host;
 
   @visibleForTesting
   static void resetExamplesRotationForTesting([int offset = 0]) =>
@@ -767,29 +800,20 @@ class _FindRefDialogState extends State<FindRefDialog> {
       return true;
     }
 
-    final handled = await mainWindowScreenKey.currentState
-        ?.handleInternalDeepLink(normalized.toString());
+    final handled = await widget.host.handleDeepLink(normalized.toString());
 
-    if (handled == true && mounted) {
+    if (handled && mounted) {
       final focusRepository = context.read<FocusRepository>();
       focusRepository.findRefSearchController.clear();
       BlocProvider.of<FindRefBloc>(context).add(const SearchRefRequested(''));
       BlocProvider.of<FindRefBloc>(context).add(ClearSearchRequested());
       Navigator.of(context).pop();
     }
-    return handled == true;
+    return handled;
   }
 
   /// פותח את דיאלוג החיפוש עם [query] מוכן בשדה — ללא הרצת חיפוש.
-  void _openTextSearch(String query) {
-    mainWindowScreenKey.currentState?.openSearchDialog(
-      SearchingTab(
-        'חיפוש',
-        query,
-        initialConfiguration: const SearchConfiguration(),
-      ),
-    );
-  }
+  void _openTextSearch(String query) => widget.host.openTextSearch(query);
 
   /// חלון הדוגמאות של הפתיחה הנוכחית — מתקדם בכל פתיחה.
   List<String> _rotatedExamples() {
