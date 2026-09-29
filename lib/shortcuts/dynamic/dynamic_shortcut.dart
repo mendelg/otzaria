@@ -44,7 +44,7 @@ enum DynamicShortcutKind {
   /// שינוי תצוגת הטקסט בכרטיסייה הפעילה (ואופציונלית שמירה לספר).
   setTextDisplay,
 
-  /// העתקת הטקסט המסומן עם פרופיל שונה מערוץ ההעתכה.
+  /// העתקת הטקסט המסומן עם פרופיל שונה מערוץ ההעתקה.
   copySelectionWith,
 
   /// העתקת הפסקה הנבחרת עם פרופיל שונה מערוץ ההעתקה.
@@ -153,6 +153,9 @@ class DynamicShortcut {
   /// ב-[DynamicShortcutKind.setTextDisplay]: לשמור גם לקובץ הספר.
   final bool persistToBook;
 
+  /// בפעולות ההעתקה: טקסט פשוט בלבד, בלי HTML מעוצב (issue #1299).
+  final bool plainTextOnly;
+
   const DynamicShortcut({
     required this.id,
     required this.key,
@@ -160,7 +163,13 @@ class DynamicShortcut {
     this.target = TextTarget.body,
     required this.change,
     this.persistToBook = false,
+    this.plainTextOnly = false,
   });
+
+  bool get isCopy => kind != DynamicShortcutKind.setTextDisplay;
+
+  /// האם לקיצור יש השפעה כלשהי — שינוי תצוגה, או העתקה ללא עיצוב.
+  bool get hasEffect => !change.isEmpty || (isCopy && plainTextOnly);
 
   /// מפתח ההגדרה הסינתטי שבו הקיצור נרשם ב-`ShortcutValidator`.
   String get settingKey => '$settingKeyPrefix$id';
@@ -172,6 +181,7 @@ class DynamicShortcut {
     TextTarget? target,
     DynamicDisplayChange? change,
     bool? persistToBook,
+    bool? plainTextOnly,
   }) => DynamicShortcut(
     id: id,
     key: key ?? this.key,
@@ -179,6 +189,7 @@ class DynamicShortcut {
     target: target ?? this.target,
     change: change ?? this.change,
     persistToBook: persistToBook ?? this.persistToBook,
+    plainTextOnly: plainTextOnly ?? this.plainTextOnly,
   );
 
   Map<String, dynamic> toJson() => {
@@ -188,6 +199,7 @@ class DynamicShortcut {
     'target': target.name,
     'change': change.toJson(),
     'persistToBook': persistToBook,
+    'plainTextOnly': plainTextOnly,
   };
 
   /// null כשהרשומה פגומה (אין מזהה או סוג) — נדלגת בטעינה.
@@ -205,6 +217,7 @@ class DynamicShortcut {
           ? DynamicDisplayChange.fromJson(Map<String, dynamic>.from(change))
           : const DynamicDisplayChange(),
       persistToBook: json['persistToBook'] == true,
+      plainTextOnly: json['plainTextOnly'] == true,
     );
   }
 
@@ -230,6 +243,7 @@ class DynamicShortcut {
       if (change.anchorMarkers != null)
         '${_mark(change.anchorMarkers!)} ציוני מפרשים',
     ];
+    if (isCopy && plainTextOnly) parts.add('ללא עיצוב');
     final what = parts.isEmpty ? 'ללא שינוי' : parts.join(', ');
     final where = target == TextTarget.body ? 'גוף הספר' : 'מפרשים';
     return switch (kind) {
@@ -254,8 +268,17 @@ class DynamicShortcut {
       kind == other.kind &&
       target == other.target &&
       change == other.change &&
-      persistToBook == other.persistToBook;
+      persistToBook == other.persistToBook &&
+      plainTextOnly == other.plainTextOnly;
 
   @override
-  int get hashCode => Object.hash(id, key, kind, target, change, persistToBook);
+  int get hashCode => Object.hash(
+    id,
+    key,
+    kind,
+    target,
+    change,
+    persistToBook,
+    plainTextOnly,
+  );
 }

@@ -14,10 +14,13 @@ class DynamicCopyRequest {
   /// הפרופיל המלא שבו יש להעתיק (כבר פתור מול ערוץ ההעתקה).
   final TextDisplayProfile profile;
 
+  final bool plainTextOnly;
+
   const DynamicCopyRequest({
     required this.kind,
     required this.target,
     required this.profile,
+    this.plainTextOnly = false,
   });
 }
 
@@ -52,6 +55,7 @@ class DynamicShortcutDispatcher {
           kind: shortcut.kind,
           target: shortcut.target,
           profile: shortcut.change.patchFor(base).applyTo(base),
+          plainTextOnly: shortcut.plainTextOnly,
         );
         return true;
     }

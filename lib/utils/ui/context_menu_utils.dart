@@ -473,6 +473,8 @@ class ContextMenuUtils {
     required double fontSize,
     Link? link,
     bool removeNikud = false,
+    TextDisplayProfile? copyProfile,
+    bool plainTextOnly = false,
   }) async {
     final plainText = savedSelectedText;
 
@@ -498,6 +500,8 @@ class ContextMenuUtils {
             fontSize: fontSize,
             headerBookOverride: _targetBookFromLink(link),
             removeNikud: removeNikud,
+            copyProfile: copyProfile,
+            plainTextOnly: plainTextOnly,
           );
           return;
         }
@@ -507,20 +511,26 @@ class ContextMenuUtils {
           replaceHolyNames: settingsState.replaceHolyNames,
           holyNameStyle: settingsState.holyNameStyle,
           removeNikud: removeNikud,
-        );
-
-        final htmlText = CopyUtils.buildStyledHtml(
-          htmlText: finalPlainText,
-          fontFamily: settingsState.commentatorsFontFamily,
-          fontSize: fontSize,
+          profile: copyProfile,
         );
 
         final item = DataWriterItem();
         item.add(Formats.plainText(finalPlainText));
-        item.add(Formats.htmlText(htmlText));
+        if (!plainTextOnly) {
+          final htmlText = CopyUtils.buildStyledHtml(
+            htmlText: finalPlainText,
+            fontFamily: settingsState.commentatorsFontFamily,
+            fontSize: fontSize,
+          );
+          item.add(Formats.htmlText(htmlText));
+        }
 
         await clipboard.write([item]);
-        UiSnack.show(CommonMessages.textCopiedShort);
+        UiSnack.show(
+          plainTextOnly
+              ? CommonMessages.plainTextCopied
+              : CommonMessages.textCopiedShort,
+        );
       }
     } catch (e) {
       debugPrint('Error copying text: $e');

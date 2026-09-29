@@ -103,7 +103,7 @@ class _DynamicShortcutDialog extends StatelessWidget {
       UiSnack.showError(SettingsMessages.dynamicShortcutMissingKey);
       return false;
     }
-    if (value.change.isEmpty) {
+    if (!value.hasEffect) {
       UiSnack.showError(SettingsMessages.dynamicShortcutMissingChange);
       return false;
     }
@@ -244,6 +244,14 @@ class _DynamicShortcutForm extends StatelessWidget {
                 onChanged: (v) => onChanged(
                   value.copyWith(change: change.copyWith(anchorMarkers: v)),
                 ),
+              ),
+            if (!isDisplay)
+              SettingsActionTile.switchTile(
+                icon: FluentIcons.text_clear_formatting_24_regular,
+                title: t('ללא עיצוב'),
+                subtitle: t('העתקת טקסט פשוט בלבד, בלי גופן ועיצוב'),
+                value: value.plainTextOnly,
+                onChanged: (v) => onChanged(value.copyWith(plainTextOnly: v)),
               ),
             if (isDisplay)
               SettingsActionTile.switchTile(

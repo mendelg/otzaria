@@ -1705,6 +1705,7 @@ class _CombinedViewState extends State<CombinedView> {
   Future<void> _copyParagraphByIndex(
     int index, {
     TextDisplayProfile? profile,
+    bool plainTextOnly = false,
   }) async {
     if (index < 0 || index >= widget.data.length) return;
 
@@ -1758,21 +1759,15 @@ class _CombinedViewState extends State<CombinedView> {
       replaceHolyNames: false,
     );
 
-    final item = DataWriterItem();
-    item.add(Formats.plainText(copyContent.plainText.trimRight()));
-    item.add(Formats.htmlText(_formatTextAsHtml(copyContent.htmlText)));
-
-    await SystemClipboard.instance?.write([item]);
-  }
-
-  /// עיצוב טקסט כ-HTML עם הגדרות הגופן הנוכחיות
-  String _formatTextAsHtml(String text) {
-    final settingsState = context.read<SettingsBloc>().state;
-    return CopyUtils.buildStyledHtml(
-      htmlText: text,
-      fontFamily: settingsState.fontFamily,
-      fontSize: widget.textSize,
-    );
+    await SystemClipboard.instance?.write([
+      CopyUtils.buildClipboardItem(
+        plainText: copyContent.plainText,
+        htmlText: copyContent.htmlText,
+        fontFamily: settingsState.fontFamily,
+        fontSize: widget.textSize,
+        plainTextOnly: plainTextOnly,
+      ),
+    ]);
   }
 
   /// העתקת טקסט מעוצב (HTML) ללוח
@@ -1801,14 +1796,23 @@ class _CombinedViewState extends State<CombinedView> {
     widget.tab.dynamicCopyRequestNotifier.value = null;
     switch (request.kind) {
       case DynamicShortcutKind.copySelectionWith:
-        _copyFormattedText(null, false, request.profile);
+        _copyFormattedText(
+          null,
+          false,
+          request.profile,
+          request.plainTextOnly,
+        );
       case DynamicShortcutKind.copyParagraphWith:
         final state = _textBookBloc.state;
         final index =
             _currentSelectedIndex.value ??
             (state is TextBookLoaded ? state.selectedIndex : null);
         if (index != null) {
-          _copyParagraphByIndex(index, profile: request.profile);
+          _copyParagraphByIndex(
+            index,
+            profile: request.profile,
+            plainTextOnly: request.plainTextOnly,
+          );
         }
       case DynamicShortcutKind.setTextDisplay:
         break;
@@ -1819,6 +1823,7 @@ class _CombinedViewState extends State<CombinedView> {
     String? capturedText,
     bool removeNikud = false,
     TextDisplayProfile? profile,
+    bool plainTextOnly = false,
   ]) async {
     final plainText = capturedText ?? _savedSelectedText.value;
 
@@ -1839,6 +1844,8 @@ class _CombinedViewState extends State<CombinedView> {
           fontSize: settingsState.commentatorsFontSize,
           link: commentarySelection.link,
           removeNikud: removeNikud,
+          copyProfile: profile,
+          plainTextOnly: plainTextOnly,
         );
         return;
       }
@@ -1861,6 +1868,7 @@ class _CombinedViewState extends State<CombinedView> {
         fontSize: widget.textSize,
         removeNikud: removeNikud,
         copyProfile: profile,
+        plainTextOnly: plainTextOnly,
       );
     } catch (e) {
       if (mounted) {

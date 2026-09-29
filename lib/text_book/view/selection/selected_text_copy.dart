@@ -44,6 +44,7 @@ String resolveHtmlTextForSelection({
 /// [removeNikud] — פעולת "העתק בלי ניקוד" (issue #851): ניקוד וטעמים
 /// מוסרים מהעותק בלבד (כולל הכותרות וה-HTML), התצוגה לא משתנה.
 /// [copyProfile] — פרופיל מלא ("העתק כ..." / קיצור דינמי) שמחליף את הדגלים.
+/// [plainTextOnly] — טקסט פשוט בלבד, בלי HTML מעוצב.
 Future<void> copySelectedTextForBook({
   required String plainText,
   required int? selectedIndex,
@@ -56,6 +57,7 @@ Future<void> copySelectedTextForBook({
   List<String>? headerContentOverride,
   bool removeNikud = false,
   TextDisplayProfile? copyProfile,
+  bool plainTextOnly = false,
 }) async {
   var htmlContentToUse = resolveHtmlTextForSelection(
     plainText: plainText,
@@ -105,5 +107,6 @@ Future<void> copySelectedTextForBook({
     htmlText: copyContent.htmlText,
     fontFamily: fontFamily,
     fontSize: fontSize,
+    plainTextOnly: plainTextOnly,
   );
 }
