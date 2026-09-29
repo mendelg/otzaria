@@ -757,7 +757,13 @@ class _FindRefDialogState extends State<FindRefDialog> {
     if (uri == null) return false;
     final normalized = ExternalUriRouter.normalizeUri(uri);
     if (normalized == null) return false;
-    if (ExternalUriRouter.parseUri(normalized) == null) return false;
+    final action = ExternalUriRouter.parseUri(normalized);
+    if (action == null) return false;
+    // ניתוב דרך המסך הראשי סוגר את הדיאלוג, והקוד שלמטה סוגר שוב את שמתחתיו.
+    if (action is RunDetectionAction) {
+      _applySuggestion(action.query);
+      return true;
+    }
 
     final handled = await mainWindowScreenKey.currentState
         ?.handleInternalDeepLink(normalized.toString());

@@ -290,6 +290,22 @@ void main() {
     expect(second, isNot(equals(first)));
   });
 
+  testWidgets('הדבקת קישור איתור מריצה אותו בדיאלוג בלי לסגור', (tester) async {
+    await _pumpDialog(tester, results: [_ref('בראשית פרק א')]);
+
+    await tester.enterText(
+      find.byType(TextField),
+      'otzaria://open/detection?q=%D7%91%D7%A8%D7%90%D7%A9%D7%99%D7%AA',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+
+    expect(FocusRepository().findRefSearchController.text, 'בראשית');
+    expect(find.byType(FindRefDialog), findsOneWidget);
+    expect(find.text('מקור אחד'), findsOneWidget);
+  });
+
   testWidgets('פתיחת תוצאה נשמרת כאיתור אחרון', (tester) async {
     await _pumpDialog(tester, results: [_ref('בראשית פרק א')]);
 
