@@ -65,12 +65,12 @@ GROUP BY l.targetBookId, b.title, a.name
 ORDER BY b.orderIndex, b.title;
 
 -- גרסה ל-seforim.db הרשמי בלבד (LinkDao בוחר לפי isOfficial): CROSS JOIN מקבע את sl
--- כחיצוני על idx_link_source_line; במסד בלי אינדקס כזה זו סריקה מלאה של link לכל שורה.
+-- כחיצוני על idx_link_source_line/targetorder; ה-+ על sourceBookId מונע בחירת idx_link_source_book (אין sqlite_stat1).
 selectCommentatorsByLineRangeOfficial:
 SELECT l.targetBookId, b.title AS targetBookTitle, a.name AS author,
        COUNT(*) AS linkCount, MIN(tl.lineIndex) AS targetLineIndex
 FROM line sl
-CROSS JOIN link l ON l.sourceLineId = sl.id AND l.sourceBookId = sl.bookId
+CROSS JOIN link l ON l.sourceLineId = sl.id AND +l.sourceBookId = sl.bookId
 JOIN connection_type ct ON l.connectionTypeId = ct.id
 JOIN book b ON l.targetBookId = b.id
 JOIN line tl ON l.targetLineId = tl.id
@@ -116,7 +116,7 @@ GROUP BY l.targetBookId, b.title, b.categoryId
 ORDER BY b.orderIndex, b.title;
 
 -- גרסה ל-seforim.db הרשמי בלבד (LinkDao בוחר לפי isOfficial): CROSS JOIN מקבע את sl
--- כחיצוני על idx_link_source_line; במסד בלי אינדקס כזה זו סריקה מלאה של link לכל שורה.
+-- כחיצוני על idx_link_source_line/targetorder; ה-+ על sourceBookId מונע בחירת idx_link_source_book (אין sqlite_stat1).
 selectCommentaryLinksByLineRangeOfficial:
 SELECT l.targetBookId, b.title AS targetBookTitle,
        b.categoryId AS targetCategoryId, NULL AS targetFileType,
@@ -125,7 +125,7 @@ SELECT l.targetBookId, b.title AS targetBookTitle,
        MAX(tl.lineIndex) AS maxTargetLineIndex,
        MIN(CASE WHEN sl.lineIndex = ? THEN tl.lineIndex END) AS exactTargetLineIndex
 FROM line sl
-CROSS JOIN link l ON l.sourceLineId = sl.id AND l.sourceBookId = sl.bookId
+CROSS JOIN link l ON l.sourceLineId = sl.id AND +l.sourceBookId = sl.bookId
 JOIN connection_type ct ON l.connectionTypeId = ct.id
 JOIN book b ON l.targetBookId = b.id
 JOIN line tl ON l.targetLineId = tl.id

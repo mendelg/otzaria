@@ -422,7 +422,7 @@ const officialInverseWindowLinksSql = '''SELECT l.id, l.targetLineId FROM link l
           )''';
 
 /// win+anchors הישירים ל-seforim.db הרשמי בלבד: CROSS JOIN מקבע את win כחיצוני על
-/// idx_link_source_line; במסד בלי אינדקס מתאים זו סריקה מלאה של link לכל שורה.
+/// idx_link_source_line או idx_link_source_targetorder; ה-+ על sourceBookId מונע בחירת idx_link_source_book (אין sqlite_stat1).
 @visibleForTesting
 const officialForwardWindowSql = '''win(id, bookId) AS (
           SELECT id, bookId FROM line
@@ -431,7 +431,7 @@ const officialForwardWindowSql = '''win(id, bookId) AS (
         anchors(linkId, anchorLineId) AS (
           SELECT l.id, l.sourceLineId FROM win w
           CROSS JOIN link l
-            ON l.sourceLineId = w.id AND l.sourceBookId = w.bookId''';
+            ON l.sourceLineId = w.id AND +l.sourceBookId = w.bookId''';
 
 /// טוען קישורי "מקור" (SOURCE וירטואלי) לספר כ-target: הופך source↔target כדי
 /// שספר מפרש יציג את מקורו. ב-v3 הקישור נשמר בכיוון קנוני אחד בלבד.
@@ -903,7 +903,7 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
           ? useReverseMax
                 ? 'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
                       'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
-                      'AND l.sourceBookId = sl.bookId) '
+                      'AND +l.sourceBookId = sl.bookId) '
                       'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx'
                 : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
                       'CROSS JOIN line sl ON sl.id = l.sourceLineId '

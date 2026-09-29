@@ -22,11 +22,27 @@ int _lineId(int bookId, int lineIndex) => bookId * 1000 + lineIndex;
 /// צורת האינדקסים על link: של seforim.db, או רק המורכבים שמומלצים למסד מצורף
 /// (docs/personal_databases.md). בשתיהן בלי sqlite_stat1.
 /// bare: מסד מצורף בלי שום אינדקס על link.
-enum _Shape { seforim, attached, bare }
+enum _Shape {
+  seforim,
+  // seforim.db בלי idx_link_source_line: רק האינדקס המורכב מכסה את sourceLineId,
+  // ובלי סטטיסטיקה המתכנן נמשך ל-idx_link_source_book.
+  seforimTargetOrder,
+  attached,
+  bare,
+}
+
+const _officialShapes = {_Shape.seforim, _Shape.seforimTargetOrder};
 
 const _seforimLinkIndexes = '''
-    CREATE INDEX idx_link_source_book ON link(sourceBookId);
     CREATE INDEX idx_link_source_line ON link(sourceLineId);
+$_seforimTargetOrderLinkIndexes''';
+
+const _seforimTargetOrderLinkIndexes = '''
+    ALTER TABLE link ADD COLUMN targetLineIndex INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE link ADD COLUMN targetBookOrderIndex INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX idx_link_source_book ON link(sourceBookId);
+    CREATE INDEX idx_link_source_targetorder
+      ON link(sourceLineId, targetBookOrderIndex, targetLineIndex);
     CREATE INDEX idx_link_target_book ON link(targetBookId);
     CREATE INDEX idx_link_target_line ON link(targetLineId);
     CREATE INDEX idx_link_type ON link(connectionTypeId);
@@ -64,6 +80,8 @@ void _buildFixture(sqlite3.Database db, _Shape shape) {
   switch (shape) {
     case _Shape.seforim:
       db.execute(_seforimLinkIndexes);
+    case _Shape.seforimTargetOrder:
+      db.execute(_seforimTargetOrderLinkIndexes);
     case _Shape.attached:
       db.execute(_attachedLinkIndexes);
     case _Shape.bare:
@@ -107,14 +125,18 @@ void _buildFixture(sqlite3.Database db, _Shape shape) {
 
   void link(int sb, int si, int tb, int ti, int type) {
     linkId++;
-    db.execute('INSERT INTO link VALUES (?, ?, ?, ?, ?, ?)', [
-      linkId,
-      sb,
-      tb,
-      _lineId(sb, si),
-      _lineId(tb, ti),
-      type,
-    ]);
+    db.execute(
+      'INSERT INTO link (id, sourceBookId, targetBookId, sourceLineId, '
+      'targetLineId, connectionTypeId) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+        linkId,
+        sb,
+        tb,
+        _lineId(sb, si),
+        _lineId(tb, ti),
+        type,
+      ],
+    );
     if (next(4) == 0) {
       db.execute('INSERT INTO link_anchor VALUES (?, ?, ?, ?, ?)', [
         linkId,
@@ -153,6 +175,13 @@ void _buildFixture(sqlite3.Database db, _Shape shape) {
       _lineId(_commentaryA, i),
       linkId,
     ]);
+  }
+  if (_officialShapes.contains(shape)) {
+    db.execute('''
+      UPDATE link SET
+        targetLineIndex = (SELECT lineIndex FROM line WHERE id = targetLineId),
+        targetBookOrderIndex = (SELECT orderIndex FROM book WHERE id = targetBookId)
+    ''');
   }
 }
 
@@ -286,7 +315,7 @@ void main() {
   const windows = [(0, 0), (0, 9), (3, 17), (18, 25), (30, 39), (0, 39)];
 
   for (final shape in _Shape.values) {
-    final untrusted = shape != _Shape.seforim;
+    final untrusted = !_officialShapes.contains(shape);
 
     test(
       '${shape.name}: חלון הקישורים זהה לסינון הספר המלא, רשמי ולא רשמי',
@@ -373,7 +402,7 @@ void main() {
         }
 
         Future<List<String>> viaDao({required bool official}) async {
-          final database = shape == _Shape.seforim
+          final database = _officialShapes.contains(shape)
               ? MyDatabase.withPath(
                   paths[shape]!,
                   readOnly: true,
@@ -436,40 +465,47 @@ void main() {
     });
   }
 
-  test('seforim: החלון הרשמי נשען על האינדקסים של seforim.db', () {
-    final db = dbs[_Shape.seforim]!;
-    final inversePlan = _plan(
-      db,
-      'WITH anchors(linkId, anchorLineId) AS ($officialInverseWindowLinksSql) '
-      'SELECT * FROM anchors',
-      [_commentaryA, 0, 10],
-    );
-    final forwardPlan = _plan(
-      db,
-      'WITH $officialForwardWindowSql) SELECT * FROM anchors',
-      [_baseBook, 0, 10],
-    );
-    _expectNoLinkScan(inversePlan, reason: 'inverse');
-    _expectNoLinkScan(forwardPlan, reason: 'forward');
-    expect(inversePlan, contains('COVERING INDEX idx_link_target_line'));
-    expect(forwardPlan, contains('idx_link_source_line'));
-
-    for (final (sql, params) in [
-      (
-        linkQuery(db, 'selectCommentatorsByLineRangeOfficial'),
+  for (final shape in _officialShapes) {
+    test('${shape.name}: החלון הרשמי נשען על האינדקסים של seforim.db', () {
+      final db = dbs[shape]!;
+      final inversePlan = _plan(
+        db,
+        'WITH anchors(linkId, anchorLineId) AS ($officialInverseWindowLinksSql) '
+        'SELECT * FROM anchors',
+        [_commentaryA, 0, 10],
+      );
+      final forwardPlan = _plan(
+        db,
+        'WITH $officialForwardWindowSql) SELECT * FROM anchors',
         [_baseBook, 0, 10],
-      ),
-      (
-        linkQuery(db, 'selectCommentaryLinksByLineRangeOfficial'),
-        [1, _baseBook, 0, 10, _commentaryB],
-      ),
-    ]) {
-      final plan = _plan(db, sql, params);
-      _expectNoLinkScan(plan, reason: sql);
-      expect(plan, contains('idx_line_book_index'));
-      expect(plan, contains('idx_link_source_line'));
-    }
-  });
+      );
+      final sourceLineIndex = RegExp(
+        shape == _Shape.seforim
+            ? r'idx_link_source_(line|targetorder)\b'
+            : r'idx_link_source_targetorder\b',
+      );
+      _expectNoLinkScan(inversePlan, reason: 'inverse');
+      _expectNoLinkScan(forwardPlan, reason: 'forward');
+      expect(inversePlan, contains('COVERING INDEX idx_link_target_line'));
+      expect(forwardPlan, matches(sourceLineIndex));
+
+      for (final (sql, params) in [
+        (
+          linkQuery(db, 'selectCommentatorsByLineRangeOfficial'),
+          [_baseBook, 0, 10],
+        ),
+        (
+          linkQuery(db, 'selectCommentaryLinksByLineRangeOfficial'),
+          [1, _baseBook, 0, 10, _commentaryB],
+        ),
+      ]) {
+        final plan = _plan(db, sql, params);
+        _expectNoLinkScan(plan, reason: sql);
+        expect(plan, contains('idx_line_book_index'));
+        expect(plan, matches(sourceLineIndex));
+      }
+    });
+  }
 
   test('seforim: טווח רחב מחזיר אותו מידע בספר דל ועתיר קישורים', () async {
     final file = path.join(tempDir.path, 'broad_range.db');
@@ -553,12 +589,16 @@ void main() {
 
       db.execute('BEGIN');
       for (var i = _linesPerBook; i < 2048; i++) {
-        db.execute('INSERT INTO link VALUES (NULL, ?, ?, ?, ?, 1)', [
-          _baseBook,
-          _commentaryA,
-          100000 + i,
-          _lineId(_commentaryA, i % _linesPerBook),
-        ]);
+        db.execute(
+          'INSERT INTO link (id, sourceBookId, targetBookId, sourceLineId, '
+          'targetLineId, connectionTypeId) VALUES (NULL, ?, ?, ?, ?, 1)',
+          [
+            _baseBook,
+            _commentaryA,
+            100000 + i,
+            _lineId(_commentaryA, i % _linesPerBook),
+          ],
+        );
       }
       db.execute('COMMIT');
       expect(usesReverse(_baseBook), isTrue);
