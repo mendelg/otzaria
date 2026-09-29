@@ -189,7 +189,7 @@ void main() {
   setUp(() {
     FindRefRecentStore.clear();
     // איפוס היסט הדוגמאות כדי שהחלון המוצג יהיה צפוי בכל בדיקה.
-    Settings.setValue<int>('key-find-ref-examples-offset', 0);
+    FindRefDialog.resetExamplesRotationForTesting();
     // המתג נקרא מההגדרות בבניית ה-State, ולכן בדיקה שמפעילה אותו הייתה
     // משפיעה על הבדיקות שאחריה.
     Settings.setValue<bool>('key-find-ref-include-personal-books', false);
@@ -288,6 +288,16 @@ void main() {
 
     expect(first, isNotEmpty);
     expect(second, isNot(equals(first)));
+  });
+
+  testWidgets('החלפת הדוגמאות אינה כותבת להגדרות', (tester) async {
+    const legacyKey = 'key-find-ref-examples-offset';
+    await Settings.setValue<int?>(legacyKey, null);
+
+    await _pumpDialog(tester);
+    await _pumpDialog(tester);
+
+    expect(Settings.getValue<int>(legacyKey), isNull);
   });
 
   testWidgets('הדבקת קישור איתור מריצה אותו בדיאלוג בלי לסגור', (tester) async {

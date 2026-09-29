@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_bloc.dart';
 import 'package:otzaria/search/view/layout_fix_suggestion_banner.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_event.dart';
@@ -53,6 +52,10 @@ import 'package:otzaria/widgets/misc/rtl_icon.dart';
 
 class FindRefDialog extends StatefulWidget {
   const FindRefDialog({super.key});
+
+  @visibleForTesting
+  static void resetExamplesRotationForTesting([int offset = 0]) =>
+      _FindRefDialogState._examplesOffset = offset;
 
   @override
   State<FindRefDialog> createState() => _FindRefDialogState();
@@ -237,8 +240,8 @@ class _FindRefDialogState extends State<FindRefDialog> {
     'משלי פרק ג',
   ];
 
-  /// מפתח ההגדרה שמקדם את חלון הדוגמאות בין פתיחות.
-  static const String _keyExamplesOffset = 'key-find-ref-examples-offset';
+  /// בזיכרון בלבד: כתיבה להגדרות בכל פתיחה משדרת סנכרון לכל החלונות.
+  static int _examplesOffset = math.Random().nextInt(_referenceExamples.length);
 
   static const int _suggestionCount = 3;
 
@@ -792,15 +795,10 @@ class _FindRefDialogState extends State<FindRefDialog> {
     );
   }
 
-  /// חלון הדוגמאות של הפתיחה הנוכחית. ההיסט נשמר ומתקדם בכל פתיחה, כך
-  /// שהמשתמש רואה דוגמאות אחרות בכל פעם.
+  /// חלון הדוגמאות של הפתיחה הנוכחית — מתקדם בכל פתיחה.
   List<String> _rotatedExamples() {
-    final offset =
-        Settings.getValue<int>(_keyExamplesOffset, defaultValue: 0) ?? 0;
-    Settings.setValue<int>(
-      _keyExamplesOffset,
-      (offset + _suggestionCount) % _referenceExamples.length,
-    );
+    final offset = _examplesOffset;
+    _examplesOffset = (offset + _suggestionCount) % _referenceExamples.length;
     return [
       for (var i = 0; i < _suggestionCount; i++)
         _referenceExamples[(offset + i) % _referenceExamples.length],
