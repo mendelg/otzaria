@@ -1,11 +1,15 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_bloc.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_event.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_state.dart';
+import 'package:otzaria/find_ref/find_ref_personal_books_setting.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
+
+import '../helpers/memory_settings_cache.dart';
 
 // ─── Fake repository ──────────────────────────────────────────────────────────
 // implements (לא extends) — אין צורך ב-DataRepository, BLoC קורא רק findRefs
@@ -18,6 +22,7 @@ class _FakeRepository implements FindRefRepository {
 
   final Future<List<DbReferenceResult>> Function(String) _fn;
   final Exception? _error;
+  final List<bool> includePersonalBooksCalls = [];
 
   _FakeRepository({
     Future<List<DbReferenceResult>> Function(String)? fn,
@@ -29,6 +34,7 @@ class _FakeRepository implements FindRefRepository {
     String ref, {
     bool includePersonalBooks = false,
   }) async {
+    includePersonalBooksCalls.add(includePersonalBooks);
     if (_error != null) throw _error;
     return _fn(ref);
   }
@@ -67,6 +73,41 @@ const _kTwoDebounces = Duration(milliseconds: 900);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await Settings.init(cacheProvider: MemorySettingsCache());
+  });
+
+  group('FindRefBloc — כלול ספרים אישיים', () {
+    for (final saved in [true, false]) {
+      test(
+        'בקשה בלי ערך מפורש (קישור/סיור) נוהגת לפי ההגדרה: $saved',
+        () async {
+          await FindRefPersonalBooksSetting.save(saved);
+          final repository = _FakeRepository();
+          final bloc = FindRefBloc(findRefRepository: repository);
+
+          bloc.add(const SearchRefRequested('בראשית'));
+          await Future<void>.delayed(_kPastDebounce);
+
+          expect(repository.includePersonalBooksCalls, [saved]);
+          await bloc.close();
+        },
+      );
+    }
+
+    test('ערך מפורש גובר על ההגדרה', () async {
+      await FindRefPersonalBooksSetting.save(true);
+      final repository = _FakeRepository();
+      final bloc = FindRefBloc(findRefRepository: repository);
+
+      bloc.add(const SearchRefRequested('בראשית', includePersonalBooks: false));
+      await Future<void>.delayed(_kPastDebounce);
+
+      expect(repository.includePersonalBooksCalls, [false]);
+      await bloc.close();
+    });
+  });
 
   group('FindRefBloc — זרימת חיפוש', () {
     blocTest<FindRefBloc, FindRefState>(

@@ -1,11 +1,14 @@
 import 'dart:async';
 
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_bloc.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_event.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_state.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
+
+import '../helpers/memory_settings_cache.dart';
 
 // בדיקות אינטגרציה של ה-debounce + restartable ברמת ה-bloc.
 // ה-debounce חי בתוך `_onSearchRefRequested` (await Future.delayed לפני
@@ -40,6 +43,10 @@ class _RecordingRepo extends FindRefRepository {
 }
 
 void main() {
+  // בקשה בלי ערך מפורש לספרים אישיים קוראת את ההגדרה השמורה.
+  setUpAll(() async {
+    await Settings.init(cacheProvider: MemorySettingsCache());
+  });
   group('FindRefBloc — debounce + restartable', () {
     test('debounce: הקלדה אחת — findRefs רץ אחרי השהיה של ~250ms', () async {
       final repo = _RecordingRepo();

@@ -1,6 +1,7 @@
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_event.dart';
+import 'package:otzaria/find_ref/find_ref_personal_books_setting.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_state.dart';
@@ -52,13 +53,15 @@ class FindRefBloc extends Bloc<FindRefEvent, FindRefState> {
     Emitter<FindRefState> emit,
   ) async {
     final normalized = normalizeForFindRefMatch(event.refText);
+    final includePersonalBooks =
+        event.includePersonalBooks ?? FindRefPersonalBooksSetting.load();
     final visibility = findRefRepository.respectHiddenLibrary
         ? const HiddenLibraryStore().load()
         : const HiddenLibrarySelection();
     if (event.refText.length >= 2 &&
         state is FindRefSuccess &&
         normalized == _shownNormalizedQuery &&
-        event.includePersonalBooks == _shownIncludePersonalBooks &&
+        includePersonalBooks == _shownIncludePersonalBooks &&
         visibility == _shownVisibility) {
       return;
     }
@@ -84,14 +87,14 @@ class FindRefBloc extends Bloc<FindRefEvent, FindRefState> {
     try {
       final List<DbReferenceResult> refs = await findRefRepository.findRefs(
         event.refText,
-        includePersonalBooks: event.includePersonalBooks,
+        includePersonalBooks: includePersonalBooks,
       );
       // emit.isDone יהיה true אם ה-handler בוטל ע"י restartable
       // (event חדש הגיע באמצע ה-fetch). במצב כזה לא נכתוב את התוצאות
       // המיושנות.
       if (emit.isDone || requestGeneration != _requestGeneration) return;
       _shownNormalizedQuery = normalized;
-      _shownIncludePersonalBooks = event.includePersonalBooks;
+      _shownIncludePersonalBooks = includePersonalBooks;
       _shownVisibility = visibility;
       _retriedQuery = null;
       emit(FindRefSuccess(refs, query: event.refText));
@@ -112,7 +115,7 @@ class FindRefBloc extends Bloc<FindRefEvent, FindRefState> {
         add(
           SearchRefRequested(
             event.refText,
-            includePersonalBooks: event.includePersonalBooks,
+            includePersonalBooks: includePersonalBooks,
           ),
         );
         return;

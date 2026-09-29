@@ -13,6 +13,7 @@ import 'package:otzaria/find_ref/bloc/find_ref_bloc.dart';
 import 'package:otzaria/search/view/layout_fix_suggestion_banner.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_event.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_state.dart';
+import 'package:otzaria/find_ref/find_ref_personal_books_setting.dart';
 import 'package:otzaria/find_ref/find_ref_recent_store.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
@@ -52,10 +53,6 @@ import 'package:otzaria/widgets/misc/rtl_icon.dart';
 
 class FindRefDialog extends StatefulWidget {
   const FindRefDialog({super.key});
-
-  /// מפתח הגדרה לשמירת מצב הטוגל "כלול ספרים אישיים" בין פתיחות הדיאלוג.
-  static const String _keyIncludePersonalBooks =
-      'key-find-ref-include-personal-books';
 
   @override
   State<FindRefDialog> createState() => _FindRefDialogState();
@@ -255,12 +252,7 @@ class _FindRefDialogState extends State<FindRefDialog> {
   /// הרשימה ותחזיר אותה — הרשימה הקודמת נשארת עד שהחדשה מגיעה.
   List<DbReferenceResult> _shownRefs = const <DbReferenceResult>[];
   FindRefState? _supersededVisibilityState;
-  bool _includePersonalBooks =
-      Settings.getValue<bool>(
-        FindRefDialog._keyIncludePersonalBooks,
-        defaultValue: true,
-      ) ??
-      true;
+  bool _includePersonalBooks = FindRefPersonalBooksSetting.load();
   final Map<int, GlobalKey> _itemKeys = {};
   final Map<int, GlobalKey> _commentatorsButtonKeys = {};
   // המפתח כולל את כל הפרמטרים המבדילים בין refs (bookId/sourceLineId/isAltToc/
@@ -1133,10 +1125,7 @@ class _FindRefDialogState extends State<FindRefDialog> {
                     _includePersonalBooks = v;
                     _selectedIndex = 0;
                   });
-                  Settings.setValue<bool>(
-                    FindRefDialog._keyIncludePersonalBooks,
-                    v,
-                  );
+                  FindRefPersonalBooksSetting.save(v);
                   final text = context
                       .read<FocusRepository>()
                       .findRefSearchController
