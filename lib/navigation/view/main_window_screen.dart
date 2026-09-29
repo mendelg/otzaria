@@ -116,6 +116,7 @@ import 'package:otzaria/core/sequential_dialog_queue.dart';
 import 'package:otzaria/core/external_activation_queue.dart';
 import 'package:otzaria/core/external_activation_channel.dart';
 import 'package:otzaria/core/external_uri_router.dart';
+import 'package:otzaria/find_ref/find_ref_deep_link.dart';
 import 'package:otzaria/core/info/app_info_service.dart';
 import 'package:otzaria/core/info/view/app_info_dialog.dart';
 import 'package:otzaria/plugins/repository/plugin_registry_repository.dart';
@@ -1577,14 +1578,13 @@ class MainWindowScreenState extends State<MainWindowScreen>
         _runExternalSearch(query, mode: mode);
         return true;
       case RunDetectionAction(:final query):
-        final focusRepository = context.read<FocusRepository>();
-        focusRepository.findRefSearchController.text = query;
-        focusRepository.findRefSearchController.selection =
-            TextSelection.collapsed(offset: query.length);
-        if (query.isNotEmpty) {
-          context.read<FindRefBloc>().add(SearchRefRequested(query));
-        }
-        _handleFindRefOpen(context);
+        runDetectionDeepLink(
+          query,
+          controller: context.read<FocusRepository>().findRefSearchController,
+          bloc: context.read<FindRefBloc>(),
+          openDialog: ({required closeIfOpen}) =>
+              _handleFindRefOpen(context, closeIfOpen: closeIfOpen),
+        );
         return true;
       case OpenInspectionAction():
         context.read<NavigationBloc>().add(
@@ -3958,7 +3958,19 @@ class MainWindowScreenState extends State<MainWindowScreen>
     }
   }
 
-  void _handleSearchTabOpen(BuildContext context, {bool closeIfOpen = true}) {
+  /// פותח את דיאלוג החיפוש במסלול שעוקב אחרי `_isSearchOpen`, כדי שקיצור
+  /// החיפוש לא יפתח דיאלוג שני מעליו.
+  void openSearchDialog(SearchingTab existingTab) => _handleSearchTabOpen(
+    context,
+    closeIfOpen: false,
+    existingTab: existingTab,
+  );
+
+  void _handleSearchTabOpen(
+    BuildContext context, {
+    bool closeIfOpen = true,
+    SearchingTab? existingTab,
+  }) {
     if (_isSearchOpen) {
       if (closeIfOpen) {
         Navigator.of(context).pop();
@@ -3972,7 +3984,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
 
     showDialog(
       context: context,
-      builder: (context) => const SearchDialog(existingTab: null),
+      builder: (context) => SearchDialog(existingTab: existingTab),
     ).then((_) {
       if (!mounted) return;
       setState(() => _isSearchOpen = false);

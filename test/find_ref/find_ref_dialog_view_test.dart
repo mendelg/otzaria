@@ -35,6 +35,7 @@ class _FakeRepository implements FindRefRepository {
   final List<DbReferenceResult> results;
   final Object? error;
   final List<DbCommentatorEntry> commentators;
+  int calls = 0;
 
   @override
   void cancelPendingSearch() {}
@@ -44,6 +45,7 @@ class _FakeRepository implements FindRefRepository {
     String ref, {
     bool includePersonalBooks = false,
   }) async {
+    calls++;
     if (error != null) throw error!;
     return results;
   }
@@ -104,6 +106,28 @@ class _GatedRepository implements FindRefRepository {
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
 }
 
+class _FakeHost implements FindRefDialogHost {
+  final List<String> deepLinks = [];
+  final List<String> textSearches = [];
+
+  @override
+  Future<bool> handleDeepLink(String uri) async {
+    deepLinks.add(uri);
+    // false: הדיאלוג לא ינסה לסגור את עצמו, והבדיקה נשארת על המסך.
+    return false;
+  }
+
+  @override
+  void openTextSearch(String query) => textSearches.add(query);
+}
+
+class _PopCounter extends NavigatorObserver {
+  int pops = 0;
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => pops++;
+}
+
 DbReferenceResult _ref(String reference, {String path = 'תנ"ך, תורה'}) =>
     DbReferenceResult(
       title: 'בראשית',
@@ -123,6 +147,8 @@ Future<void> _pumpDialog(
   double textScale = 1.0,
   Object? error,
   FindRefRepository? repository,
+  FindRefDialogHost? host,
+  NavigatorObserver? observer,
 }) async {
   if (screenSize != null) {
     tester.view.physicalSize = screenSize;
@@ -140,6 +166,7 @@ Future<void> _pumpDialog(
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pumpWidget(
     MaterialApp(
+      navigatorObservers: [?observer],
       locale: const Locale('he', 'IL'),
       theme: ThemeData(
         useMaterial3: true,
@@ -157,7 +184,9 @@ Future<void> _pumpDialog(
                 Provider<FocusRepository>.value(value: FocusRepository()),
                 BlocProvider<FindRefBloc>.value(value: bloc),
               ],
-              child: const FindRefDialog(),
+              child: host == null
+                  ? const FindRefDialog()
+                  : FindRefDialog(host: host),
             ),
           ),
         ),
@@ -189,7 +218,7 @@ void main() {
   setUp(() {
     FindRefRecentStore.clear();
     // איפוס היסט הדוגמאות כדי שהחלון המוצג יהיה צפוי בכל בדיקה.
-    Settings.setValue<int>('key-find-ref-examples-offset', 0);
+    FindRefDialog.resetExamplesRotationForTesting();
     // המתג נקרא מההגדרות בבניית ה-State, ולכן בדיקה שמפעילה אותו הייתה
     // משפיעה על הבדיקות שאחריה.
     Settings.setValue<bool>('key-find-ref-include-personal-books', false);
@@ -288,6 +317,93 @@ void main() {
 
     expect(first, isNotEmpty);
     expect(second, isNot(equals(first)));
+  });
+
+  testWidgets('החלפת הדוגמאות אינה כותבת להגדרות', (tester) async {
+    const legacyKey = 'key-find-ref-examples-offset';
+    await Settings.setValue<int?>(legacyKey, null);
+
+    await _pumpDialog(tester);
+    await _pumpDialog(tester);
+
+    expect(Settings.getValue<int>(legacyKey), isNull);
+  });
+
+  testWidgets('הדבקת קישור איתור מריצה אותו בדיאלוג בלי לסגור', (tester) async {
+    final host = _FakeHost();
+    final pops = _PopCounter();
+    await _pumpDialog(
+      tester,
+      results: [_ref('בראשית פרק א')],
+      host: host,
+      observer: pops,
+    );
+
+    await tester.enterText(
+      find.byType(TextField),
+      'otzaria://open/detection?q=%D7%91%D7%A8%D7%90%D7%A9%D7%99%D7%AA',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+
+    expect(FocusRepository().findRefSearchController.text, 'בראשית');
+    expect(find.byType(FindRefDialog), findsOneWidget);
+    expect(find.text('מקור אחד'), findsOneWidget);
+    expect(host.deepLinks, isEmpty, reason: 'אין ניתוב דרך המסך הראשי');
+    expect(pops.pops, 0);
+  });
+
+  testWidgets('קישור שאינו איתור עדיין מנותב דרך המסך הראשי', (tester) async {
+    final host = _FakeHost();
+    await _pumpDialog(tester, host: host);
+
+    await tester.enterText(find.byType(TextField), 'otzaria://open/sdk');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump(_pastDebounce);
+
+    expect(host.deepLinks, hasLength(1));
+  });
+
+  testWidgets('"פתח חיפוש טקסט" עובר דרך המסך הראשי ולא סוגר בעצמו', (
+    tester,
+  ) async {
+    final host = _FakeHost();
+    final pops = _PopCounter();
+    await _pumpDialog(tester, host: host, observer: pops);
+
+    await tester.enterText(find.byType(TextField), 'אין כזה');
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+    final button = find.text('פתח חיפוש טקסט');
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+
+    expect(host.textSearches, ['אין כזה']);
+    expect(pops.pops, 0, reason: 'המסך הראשי הוא שסוגר את האיתור');
+  });
+
+  testWidgets('"לא נמצאה ספרייה" מציע ניסיון חוזר', (tester) async {
+    final repository = _FakeRepository(
+      const [],
+      error: const ReferenceLibraryMissingException(),
+    );
+    await _pumpDialog(tester, repository: repository);
+
+    await tester.enterText(find.byType(TextField), 'בראשית');
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+    expect(find.text('לא נמצאה ספרייה'), findsOneWidget);
+    final callsBefore = repository.calls;
+
+    final retry = find.text('נסה שוב');
+    await tester.ensureVisible(retry);
+    await tester.tap(retry);
+    await tester.pump(_pastDebounce);
+    await tester.pump();
+
+    expect(repository.calls, callsBefore + 1);
   });
 
   testWidgets('פתיחת תוצאה נשמרת כאיתור אחרון', (tester) async {

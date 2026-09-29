@@ -1,4 +1,5 @@
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/data/cache/acronyms_cache.dart';
 import 'package:otzaria/data/cache/books_cache.dart';
@@ -8,6 +9,8 @@ import 'package:otzaria/find_ref/bloc/find_ref_state.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
+
+import '../helpers/memory_settings_cache.dart';
 
 class _FakeRepository implements FindRefRepository {
   @override
@@ -44,6 +47,11 @@ const _book = BookCacheEntry(
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // בקשה בלי ערך מפורש לספרים אישיים קוראת את ההגדרה השמורה.
+  setUpAll(() async {
+    await Settings.init(cacheProvider: MemorySettingsCache());
+  });
 
   setUp(() {
     ReferenceBooksCache.instance.clear();
@@ -128,6 +136,24 @@ void main() {
         throwsA(isA<ReferenceLibraryMissingException>()),
       );
     });
+
+    test(
+      'אין קובץ ספרייה גם כשפונקציית TOC מוזרקת (כמו ב-factory) → Missing',
+      () async {
+        final repository = FindRefRepository(
+          isReferenceBooksCacheLoaded: () => false,
+          warmUpReferenceBooksCache: () async {},
+          libraryDatabaseExists: () async => false,
+          getTocEntriesForReference: (bookId, bookTitle, {queryTokens}) async =>
+              const <Map<String, dynamic>>[],
+        );
+
+        await expectLater(
+          repository.findRefs('בראשית פרק א'),
+          throwsA(isA<ReferenceLibraryMissingException>()),
+        );
+      },
+    );
 
     test(
       'קאש טעון → אין חריגה, מוחזרת רשימה (ריקה = באמת אין תוצאות)',

@@ -10,12 +10,14 @@ abstract class FindRefEvent extends Equatable {
 
 class SearchRefRequested extends FindRefEvent {
   final String refText;
-  final bool includePersonalBooks;
 
-  const SearchRefRequested(this.refText, {this.includePersonalBooks = false});
+  /// null = לפי ההגדרה השמורה של מתג הדיאלוג (הבלוק מכריע).
+  final bool? includePersonalBooks;
+
+  const SearchRefRequested(this.refText, {this.includePersonalBooks});
 
   @override
-  List<Object> get props => [refText, includePersonalBooks];
+  List<Object> get props => [refText, ?includePersonalBooks];
 }
 
 class ClearSearchRequested extends FindRefEvent {}

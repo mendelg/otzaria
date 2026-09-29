@@ -744,6 +744,17 @@ class FindRefRepository {
     );
   }
 
+  /// "אין ספרייה" מול "עוד לא עלתה": רשימה ריקה הייתה מוצגת כ"לא נמצא ספר",
+  /// וקובץ חסר שמדווח כ"לא מוכן" משאיר את המשתמש בהמתנה לנצח.
+  Future<Never> _throwLibraryUnavailable() async {
+    final dbExists = await _awaitCurrent(
+      libraryDatabaseExists?.call() ??
+          File(DatabaseConstants.getDatabasePath()).exists(),
+    );
+    if (!dbExists) throw const ReferenceLibraryMissingException();
+    throw const ReferenceLibraryNotReadyException();
+  }
+
   Future<List<DbReferenceResult>> _findRefs(
     String ref, {
     bool includePersonalBooks = false,
@@ -766,15 +777,8 @@ class FindRefRepository {
     final SeforimRepository? repository =
         SqliteDataProvider.instance.repository;
     if (repository == null && getTocEntriesForReference == null) {
-      final dbExists = await _awaitCurrent(
-        libraryDatabaseExists?.call() ??
-            File(DatabaseConstants.getDatabasePath()).exists(),
-      );
-      if (!dbExists) throw const ReferenceLibraryMissingException();
-      // רשימה ריקה כאן הוצגה כ"לא נמצא ספר", בעוד שה-DB פשוט עוד לא עלה —
-      // המצב הרגיל בשניות הראשונות אחרי הפעלה או יציאה ממצב שינה.
       debugPrint('[FindRef] Database not initialized');
-      throw const ReferenceLibraryNotReadyException();
+      await _throwLibraryUnavailable();
     }
 
     Future<List<Map<String, dynamic>>> fetchTocEntries(
@@ -820,7 +824,7 @@ class FindRefRepository {
       );
       // ה-warmUp חוזר בלי לזרוק גם כשהוא נכשל (DB נעול, יציאה ממצב שינה).
       // בלי הבדיקה השנייה נחפש על מטמון ריק ונדווח "לא נמצא ספר".
-      if (!cacheLoaded()) throw const ReferenceLibraryNotReadyException();
+      if (!cacheLoaded()) await _throwLibraryUnavailable();
     }
 
     final visibility = await _currentVisibility();
@@ -1978,20 +1982,7 @@ class FindRefRepository {
       if (r.bookPath.isNotEmpty) return r; // already set — don't overwrite
       final path = r.bookId > 0 ? (pathMap[r.bookId] ?? '') : '';
       if (path.isEmpty) return r;
-      return DbReferenceResult(
-        title: r.title,
-        reference: r.reference,
-        segment: r.segment,
-        isPdf: r.isPdf,
-        filePath: r.filePath,
-        orderIndex: r.orderIndex,
-        isAltToc: r.isAltToc,
-        tocLevel: r.tocLevel,
-        bookId: r.bookId,
-        bookPath: path,
-        sourceLineId: r.sourceLineId,
-        source: r.source,
-      );
+      return r.copyWith(bookPath: path);
     }).toList();
     return _dropTalmudBavliPdfRefs(enriched);
   }

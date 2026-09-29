@@ -8,11 +8,11 @@ import 'package:flutter/services.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_bloc.dart';
 import 'package:otzaria/search/view/layout_fix_suggestion_banner.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_event.dart';
 import 'package:otzaria/find_ref/bloc/find_ref_state.dart';
+import 'package:otzaria/find_ref/find_ref_personal_books_setting.dart';
 import 'package:otzaria/find_ref/find_ref_recent_store.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
@@ -44,18 +44,50 @@ import 'package:otzaria/library/view/grid_items.dart';
 import 'package:otzaria/widgets/text/rtl_text_field.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/tabs/models/searching_tab.dart';
-import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/navigation/view/main_window_screen.dart';
 import 'package:otzaria/widgets/controls/action_buttons.dart';
 import 'package:otzaria/widgets/layout/centered_scrollable_state.dart';
 import 'package:otzaria/widgets/misc/rtl_icon.dart';
 
-class FindRefDialog extends StatefulWidget {
-  const FindRefDialog({super.key});
+/// מה שהדיאלוג מבקש מהמסך הראשי — ניתוב קישורים ופתיחת חיפוש טקסט.
+abstract interface class FindRefDialogHost {
+  Future<bool> handleDeepLink(String uri);
+  void openTextSearch(String query);
+}
 
-  /// מפתח הגדרה לשמירת מצב הטוגל "כלול ספרים אישיים" בין פתיחות הדיאלוג.
-  static const String _keyIncludePersonalBooks =
-      'key-find-ref-include-personal-books';
+class _MainWindowFindRefHost implements FindRefDialogHost {
+  const _MainWindowFindRefHost();
+
+  @override
+  Future<bool> handleDeepLink(String uri) async =>
+      await mainWindowScreenKey.currentState?.handleInternalDeepLink(uri) ??
+      false;
+
+  @override
+  void openTextSearch(String query) {
+    final mainScreen = mainWindowScreenKey.currentState;
+    if (mainScreen == null) {
+      debugPrint('[FindRef] openTextSearch: main window screen not mounted');
+      return;
+    }
+    mainScreen.openSearchDialog(
+      SearchingTab(
+        'חיפוש',
+        query,
+        initialConfiguration: const SearchConfiguration(),
+      ),
+    );
+  }
+}
+
+class FindRefDialog extends StatefulWidget {
+  const FindRefDialog({super.key, this.host = const _MainWindowFindRefHost()});
+
+  final FindRefDialogHost host;
+
+  @visibleForTesting
+  static void resetExamplesRotationForTesting([int offset = 0]) =>
+      _FindRefDialogState._examplesOffset = offset;
 
   @override
   State<FindRefDialog> createState() => _FindRefDialogState();
@@ -240,8 +272,8 @@ class _FindRefDialogState extends State<FindRefDialog> {
     'משלי פרק ג',
   ];
 
-  /// מפתח ההגדרה שמקדם את חלון הדוגמאות בין פתיחות.
-  static const String _keyExamplesOffset = 'key-find-ref-examples-offset';
+  /// בזיכרון בלבד: כתיבה להגדרות בכל פתיחה משדרת סנכרון לכל החלונות.
+  static int _examplesOffset = math.Random().nextInt(_referenceExamples.length);
 
   static const int _suggestionCount = 3;
 
@@ -255,12 +287,7 @@ class _FindRefDialogState extends State<FindRefDialog> {
   /// הרשימה ותחזיר אותה — הרשימה הקודמת נשארת עד שהחדשה מגיעה.
   List<DbReferenceResult> _shownRefs = const <DbReferenceResult>[];
   FindRefState? _supersededVisibilityState;
-  bool _includePersonalBooks =
-      Settings.getValue<bool>(
-        FindRefDialog._keyIncludePersonalBooks,
-        defaultValue: true,
-      ) ??
-      true;
+  bool _includePersonalBooks = FindRefPersonalBooksSetting.load();
   final Map<int, GlobalKey> _itemKeys = {};
   final Map<int, GlobalKey> _commentatorsButtonKeys = {};
   // המפתח כולל את כל הפרמטרים המבדילים בין refs (bookId/sourceLineId/isAltToc/
@@ -765,44 +792,33 @@ class _FindRefDialogState extends State<FindRefDialog> {
     if (uri == null) return false;
     final normalized = ExternalUriRouter.normalizeUri(uri);
     if (normalized == null) return false;
-    if (ExternalUriRouter.parseUri(normalized) == null) return false;
+    final action = ExternalUriRouter.parseUri(normalized);
+    if (action == null) return false;
+    // ניתוב דרך המסך הראשי סוגר את הדיאלוג, והקוד שלמטה סוגר שוב את שמתחתיו.
+    if (action is RunDetectionAction) {
+      _applySuggestion(action.query);
+      return true;
+    }
 
-    final handled = await mainWindowScreenKey.currentState
-        ?.handleInternalDeepLink(normalized.toString());
+    final handled = await widget.host.handleDeepLink(normalized.toString());
 
-    if (handled == true && mounted) {
+    if (handled && mounted) {
       final focusRepository = context.read<FocusRepository>();
       focusRepository.findRefSearchController.clear();
       BlocProvider.of<FindRefBloc>(context).add(const SearchRefRequested(''));
       BlocProvider.of<FindRefBloc>(context).add(ClearSearchRequested());
       Navigator.of(context).pop();
     }
-    return handled == true;
+    return handled;
   }
 
   /// פותח את דיאלוג החיפוש עם [query] מוכן בשדה — ללא הרצת חיפוש.
-  void _openTextSearch(String query) {
-    Navigator.of(context).pop();
-    final tab = SearchingTab(
-      'חיפוש',
-      query,
-      initialConfiguration: const SearchConfiguration(),
-    );
-    showDialog(
-      context: context,
-      builder: (context) => SearchDialog(existingTab: tab),
-    );
-  }
+  void _openTextSearch(String query) => widget.host.openTextSearch(query);
 
-  /// חלון הדוגמאות של הפתיחה הנוכחית. ההיסט נשמר ומתקדם בכל פתיחה, כך
-  /// שהמשתמש רואה דוגמאות אחרות בכל פעם.
+  /// חלון הדוגמאות של הפתיחה הנוכחית — מתקדם בכל פתיחה.
   List<String> _rotatedExamples() {
-    final offset =
-        Settings.getValue<int>(_keyExamplesOffset, defaultValue: 0) ?? 0;
-    Settings.setValue<int>(
-      _keyExamplesOffset,
-      (offset + _suggestionCount) % _referenceExamples.length,
-    );
+    final offset = _examplesOffset;
+    _examplesOffset = (offset + _suggestionCount) % _referenceExamples.length;
     return [
       for (var i = 0; i < _suggestionCount; i++)
         _referenceExamples[(offset + i) % _referenceExamples.length],
@@ -1133,10 +1149,7 @@ class _FindRefDialogState extends State<FindRefDialog> {
                     _includePersonalBooks = v;
                     _selectedIndex = 0;
                   });
-                  Settings.setValue<bool>(
-                    FindRefDialog._keyIncludePersonalBooks,
-                    v,
-                  );
+                  FindRefPersonalBooksSetting.save(v);
                   final text = context
                       .read<FocusRepository>()
                       .findRefSearchController
@@ -1538,6 +1551,12 @@ class _FindRefDialogState extends State<FindRefDialog> {
       iconColor: Theme.of(context).colorScheme.onSurfaceVariant,
       title: context.settingsText('לא נמצאה ספרייה'),
       message: context.settingsText('האיתור יהיה זמין לאחר התקנת הספרייה'),
+      // קובץ שנעדר רגעית (עדכון מלא, כונן רשת) לא צריך להשאיר את המסך תקוע.
+      action: ActionButton.recommended(
+        text: context.settingsText('נסה שוב'),
+        onPressed: _retrySearch,
+        icon: FluentIcons.arrow_clockwise_24_regular,
+      ),
     );
   }
 
