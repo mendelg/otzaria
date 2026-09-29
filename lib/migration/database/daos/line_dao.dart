@@ -14,9 +14,15 @@ class LineDao {
 
   Future<sqlite3.Database> get database => _db.database;
 
+  /// שאילתת תוכן לפי צורת המסד: בסכמה 6 התוכן ב-`line_content`.
+  Future<String> _forShape(String name) async =>
+      (await _db.capabilities).hasSplitLineContent
+      ? _queries['${name}Split']!
+      : _queries[name]!;
+
   Future<Line?> getLineById(int id) async {
     final db = await database;
-    final result = db.select(_queries['selectById']!, [id]).toMapList();
+    final result = db.select(await _forShape('selectById'), [id]).toMapList();
     if (result.isEmpty) return null;
     return _mapToLine(result.first);
   }
@@ -24,7 +30,7 @@ class LineDao {
   Future<List<Line>> selectByBookId(int bookId) async {
     final db = await database;
     return db
-        .select(_queries['selectByBookId']!, [bookId])
+        .select(await _forShape('selectByBookId'), [bookId])
         .toMapList()
         .map((row) => _mapToLine(row))
         .toList();
@@ -35,7 +41,7 @@ class LineDao {
   Future<List<String>> selectContentByBookId(int bookId) async {
     final db = await database;
     return db
-        .select(_queries['selectContentByBookId']!, [bookId])
+        .select(await _forShape('selectContentByBookId'), [bookId])
         .map((row) => (row.values.first as String?) ?? '')
         .toList();
   }
@@ -47,7 +53,7 @@ class LineDao {
   ) async {
     final db = await database;
     return db
-        .select(_queries['selectByBookIdRange']!, [
+        .select(await _forShape('selectByBookIdRange'), [
           bookId,
           startIndex,
           endIndex,
@@ -59,7 +65,7 @@ class LineDao {
 
   Future<Line?> selectByBookIdAndIndex(int bookId, int lineIndex) async {
     final db = await database;
-    final result = db.select(_queries['selectByBookIdAndIndex']!, [
+    final result = db.select(await _forShape('selectByBookIdAndIndex'), [
       bookId,
       lineIndex,
     ]).toMapList();
@@ -69,7 +75,9 @@ class LineDao {
 
   Future<Line?> selectByHeRef(String heRef) async {
     final db = await database;
-    final result = db.select(_queries['selectByHeRef']!, [heRef]).toMapList();
+    final result = db.select(await _forShape('selectByHeRef'), [
+      heRef,
+    ]).toMapList();
     if (result.isEmpty) return null;
     return _mapToLine(result.first);
   }

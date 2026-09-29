@@ -25,6 +25,41 @@ SELECT * FROM line WHERE bookId = ? AND lineIndex = ?;
 selectByHeRef:
 SELECT * FROM line WHERE heRef = ? LIMIT 1;
 
+-- סכמה 6 (DbCapabilities.hasSplitLineContent): התוכן ב-line_content לפי אותו id.
+-- LEFT JOIN — שורה בלי תוכן תוצג ריקה ולא תיעלם מהטווח.
+selectByIdSplit:
+SELECT l.*, COALESCE(lc.content, '') AS content
+FROM line l LEFT JOIN line_content lc ON lc.id = l.id
+WHERE l.id = ?;
+
+selectByBookIdSplit:
+SELECT l.*, COALESCE(lc.content, '') AS content
+FROM line l LEFT JOIN line_content lc ON lc.id = l.id
+WHERE l.bookId = ? ORDER BY l.lineIndex;
+
+selectByBookIdRangeSplit:
+SELECT l.*, COALESCE(lc.content, '') AS content
+FROM line l LEFT JOIN line_content lc ON lc.id = l.id
+WHERE l.bookId = ?
+AND l.lineIndex >= ?
+AND l.lineIndex <= ?
+ORDER BY l.lineIndex;
+
+selectContentByBookIdSplit:
+SELECT lc.content
+FROM line l LEFT JOIN line_content lc ON lc.id = l.id
+WHERE l.bookId = ? ORDER BY l.lineIndex;
+
+selectByBookIdAndIndexSplit:
+SELECT l.*, COALESCE(lc.content, '') AS content
+FROM line l LEFT JOIN line_content lc ON lc.id = l.id
+WHERE l.bookId = ? AND l.lineIndex = ?;
+
+selectByHeRefSplit:
+SELECT l.*, COALESCE(lc.content, '') AS content
+FROM line l LEFT JOIN line_content lc ON lc.id = l.id
+WHERE l.heRef = ? LIMIT 1;
+
 -- כל ה-heRef-ים של ספר, רזה (בלי content) — לרזולוציית הפניה לרמת שורה.
 selectRefsByBookId:
 SELECT lineIndex, heRef FROM line

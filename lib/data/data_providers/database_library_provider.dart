@@ -1168,9 +1168,23 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
 
     // כל הרמות, לא רק עלים: בערוך השולחן "הלכות X" החסרה היא צומת ביניים,
     // והעלה ("סימן א") נופל בבדיקת הנראוּת.
-    final headingRows = db
-        .select(
-          '''
+    final headingRows = db.select(
+      capabilities.hasSplitLineContent
+          ? '''
+      SELECT l.lineIndex AS lineIndex, t.text AS label, lc.content AS line0,
+        (SELECT pc.content FROM line p JOIN line_content pc ON pc.id = p.id
+          WHERE p.bookId = l.bookId AND p.lineIndex = l.lineIndex - 1) AS line1,
+        (SELECT pc.content FROM line p JOIN line_content pc ON pc.id = p.id
+          WHERE p.bookId = l.bookId AND p.lineIndex = l.lineIndex - 2) AS line2
+      FROM alt_toc_structure s
+      JOIN alt_toc_entry e ON e.structureId = s.id
+      JOIN tocText t ON t.id = e.textId
+      JOIN line l ON l.id = e.lineId
+      LEFT JOIN line_content lc ON lc.id = l.id
+      WHERE s.bookId = ? AND s.key = 'Topic'
+      ORDER BY l.lineIndex, e.level
+      '''
+          : '''
       SELECT l.lineIndex AS lineIndex, t.text AS label, l.content AS line0,
         (SELECT p.content FROM line p
           WHERE p.bookId = l.bookId AND p.lineIndex = l.lineIndex - 1) AS line1,
@@ -1183,9 +1197,8 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
       WHERE s.bookId = ? AND s.key = 'Topic'
       ORDER BY l.lineIndex, e.level
       ''',
-          [bookId],
-        )
-        .toMapList();
+      [bookId],
+    ).toMapList();
 
     // השאילתה מביאה לכל כותרת את שורתה ושתיים שלפניה — חלון הבדיקה כולו.
     final linesByIndex = <int, String?>{};
@@ -1378,9 +1391,20 @@ _loadBookTextRangeRowsInIsolate({
       // מהדורה חלופית: שורות מבנה (heRef NULL — כותרות/מחברים) נשארות מהשלד;
       // שורת תוכן מקבלת את נוסח המהדורה, וסגמנט שחסר בה מוצג ריק — לעולם לא
       // נופלים בשקט לנוסח הממוזג.
-      rows = db
-          .select(
-            '''
+      rows = db.select(
+        capabilities.hasSplitLineContent
+            // סכמה 6: vl.content NULL = זהה לבסיס; שורה חסרה עדיין ריקה.
+            ? '''
+        SELECT CASE WHEN l.heRef IS NULL THEN lc.content
+                    WHEN vl.lineId IS NULL THEN ''
+                    ELSE COALESCE(vl.content, lc.content, '') END AS content
+        FROM line l
+        LEFT JOIN line_content lc ON lc.id = l.id
+        LEFT JOIN version_line vl ON vl.versionId = ? AND vl.lineId = l.id
+        WHERE l.bookId = ? AND l.lineIndex >= ? AND l.lineIndex <= ?
+        ORDER BY l.lineIndex
+      '''
+            : '''
         SELECT CASE WHEN l.heRef IS NULL THEN l.content
                     ELSE COALESCE(vl.content, '') END AS content
         FROM line l
@@ -1388,12 +1412,16 @@ _loadBookTextRangeRowsInIsolate({
         WHERE l.bookId = ? AND l.lineIndex >= ? AND l.lineIndex <= ?
         ORDER BY l.lineIndex
       ''',
-            [versionId, bookId, normalizedStart, normalizedEnd],
-          )
-          .toMapList();
+        [versionId, bookId, normalizedStart, normalizedEnd],
+      ).toMapList();
     } else {
       rows = db.select(
-        'SELECT content FROM line WHERE bookId = ? AND lineIndex >= ? AND lineIndex <= ? ORDER BY lineIndex',
+        capabilities.hasSplitLineContent
+            ? 'SELECT lc.content AS content FROM line l '
+                  'LEFT JOIN line_content lc ON lc.id = l.id '
+                  'WHERE l.bookId = ? AND l.lineIndex >= ? AND l.lineIndex <= ? '
+                  'ORDER BY l.lineIndex'
+            : 'SELECT content FROM line WHERE bookId = ? AND lineIndex >= ? AND lineIndex <= ? ORDER BY lineIndex',
         [bookId, normalizedStart, normalizedEnd],
       ).toMapList();
     }

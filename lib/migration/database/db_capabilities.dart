@@ -20,6 +20,7 @@ const Set<String> kKnownSeforimTables = {
   'book_generation',
   'book_base_text',
   'line',
+  'line_content',
   'line_ref',
   'line_dh',
   'tocText',
@@ -104,6 +105,11 @@ class DbCapabilities {
 
   bool get hasBooks => has('book');
   bool get hasLines => hasBooks && has('line');
+
+  /// סכמה 6: תוכן השורה ב-`line_content` (אותו id), ו-`line` צרה בלי `content`.
+  /// `version_line.content` NULL פירושו נוסח זהה לשורת הבסיס.
+  bool get hasSplitLineContent =>
+      has('line_content') && !hasColumn('line', 'content');
   bool get hasCategories => has('category');
 
   /// ספרים משויכים לקטגוריות. בלי טבלת קטגוריות ערכי `book.categoryId`
