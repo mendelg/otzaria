@@ -1103,28 +1103,31 @@ class _CombinedViewState extends State<CombinedView> {
 
   // עדכון האינדקס הנוכחי ב-tab — חייב להמיר segmentIndex לשורת מקור.
   void _updateTabIndex() {
-    final positions = widget.tab.positionsListener.itemPositions.value;
-    if (positions.isEmpty) return;
-
     final state = _textBookBloc.state;
     if (state is! TextBookLoaded) return;
 
-    final visiblePositions =
-        positions
-            .where(
-              (position) =>
-                  position.itemTrailingEdge > 0 && position.itemLeadingEdge < 1,
-            )
-            .toList()
-          ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
-    final source = visiblePositions.isNotEmpty ? visiblePositions : positions;
+    // רץ בכל פריים של גלילה, ולכן מעבר יחיד במקום מיון; בשוויון נשאר הראשון.
+    ItemPosition? first;
+    ItemPosition? topVisible;
+    for (final position in widget.tab.positionsListener.itemPositions.value) {
+      first ??= position;
+      if (position.itemTrailingEdge <= 0 || position.itemLeadingEdge >= 1) {
+        continue;
+      }
+      if (topVisible == null ||
+          position.itemLeadingEdge < topVisible.itemLeadingEdge) {
+        topVisible = position;
+      }
+    }
+    final top = topVisible ?? first;
+    if (top == null) return;
 
     if (!state.continuousReadingMode || state.readingSegments.isEmpty) {
-      widget.tab.index = source.first.index;
+      widget.tab.index = top.index;
       return;
     }
     // במצב רציף — translate segmentIndex לשורת מקור ראשונה
-    final segmentIndex = source.first.index;
+    final segmentIndex = top.index;
     if (segmentIndex >= 0 && segmentIndex < state.readingSegments.length) {
       widget.tab.index = state.readingSegments[segmentIndex].startLineIndex;
     }
@@ -2306,7 +2309,6 @@ class _CombinedViewState extends State<CombinedView> {
           itemCount: itemCount,
           itemBuilder: (context, index) => RepaintBoundary(
             child: buildExpansiomTile(
-              ExpansibleController(),
               index,
               state,
               const <int, List<PersonalNote>>{},
@@ -2353,11 +2355,10 @@ class _CombinedViewState extends State<CombinedView> {
       scrollOffsetController: widget.tab.mainOffsetController,
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        ExpansibleController controller = ExpansibleController();
         // מבודד את שכבת הצביעה של כל פריט - rebuild של פריט בודד (בחירה/
         // הדגשה) או emit של warming לא יצבע מחדש את כל ה-viewport.
         final tile = RepaintBoundary(
-          child: buildExpansiomTile(controller, index, state, noteMap),
+          child: buildExpansiomTile(index, state, noteMap),
         );
         final sourceBannerKind = _sourceBannerKind;
         if (index == 0 && sourceBannerKind != null) {
@@ -2381,7 +2382,6 @@ class _CombinedViewState extends State<CombinedView> {
   }
 
   Widget buildExpansiomTile(
-    ExpansibleController controller,
     int index,
     TextBookLoaded state,
     Map<int, List<PersonalNote>> noteMap,
