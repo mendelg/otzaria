@@ -111,9 +111,12 @@ void main() {
     final results = attachedOnly(
       await buildRepo().findRefs(_title, includePersonalBooks: true),
     );
-    expect(results, hasLength(1));
-    expect(results.single.bookId, _bookId);
-    expect(results.single.bookPath, isNotEmpty);
+    // הכותרת המדויקת ראשונה; "רש"י על בראשית" מצטרף כהתאמת "מכיל".
+    expect(results.map((r) => r.bookId), [
+      _bookId,
+      SeforimFixtureIds.rashiId,
+    ]);
+    expect(results.first.bookPath, isNotEmpty);
   });
 
   test('מסד מצורף אינו נחקר כשספרים אישיים אינם כלולים', () async {
@@ -158,6 +161,43 @@ void main() {
       AcronymsCache.instance.acronymsFor(BookSource.official, _bookId),
       isNull,
     );
+  });
+
+  test('שגיאת כתיב בשם ספר ממסד מצורף — התאמה מקורבת', () async {
+    await attach(createDb(withLineRef: true));
+    final results = attachedOnly(
+      await buildRepo().findRefs('בראשיס', includePersonalBooks: true),
+    );
+    expect(results.map((r) => r.bookId), contains(_bookId));
+  });
+
+  test('זנב כינוי שאינו בכותרת מצמצם את תוכן העניינים לחלק', () async {
+    final path = createDb(withLineRef: false);
+    final db = sqlite3.sqlite3.open(path);
+    // שני חלקים, ובכל אחד כותרת 'ה'; הכינוי 'ספר בראשית יב' מציין את השני.
+    db.execute(
+      "INSERT INTO tocText (id, text) VALUES (910, 'יא'), (911, 'ה'), "
+      "(912, 'יב')",
+    );
+    db.execute(
+      'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId) '
+      'VALUES (910, ?1, NULL, 910, 1, 901), (911, ?1, 910, 911, 2, 901), '
+      '(912, ?1, NULL, 912, 1, 902), (913, ?1, 912, 911, 2, 902)',
+      [_bookId],
+    );
+    db.execute(
+      "INSERT INTO book_acronym (bookId, term) VALUES (?, 'ספר בראשית יב')",
+      [_bookId],
+    );
+    db.close();
+    await attach(path);
+
+    final results = attachedOnly(
+      await buildRepo().findRefs('ספר בראשית יב ה', includePersonalBooks: true),
+    );
+    final lineIds = results.map((r) => r.sourceLineId).toSet();
+    expect(lineIds, contains(902));
+    expect(lineIds, isNot(contains(901)));
   });
 
   test('ספר רשמי וספר מצורף באותו id וכותרת אינם מתאחדים', () async {

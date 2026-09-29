@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/find_ref/repository/attached_find_ref_worker.dart';
+import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
@@ -154,6 +155,68 @@ void main() {
 
     expect(tocCalls, contains(15));
     expect(results.map((r) => r.reference), contains('חלק טו, סימן ג'));
+  });
+
+  group('ספרים אישיים עוברים את מנוע ההתאמה של הקטלוג הרשמי', () {
+    Future<List<DbReferenceResult>> personal(
+      FindRefRepository repo,
+      String query,
+    ) async => [
+      for (final r in await repo.findRefs(query, includePersonalBooks: true))
+        if (r.source == BookSource.user) r,
+    ];
+
+    test('שאילתה שמופיעה באמצע השם מוצאת את הספר', () async {
+      final repo = _repo(books: [_book(1, 'פירוש פלוני על בבא קמא')]);
+      expect(
+        (await personal(repo, 'בבא קמא')).map((r) => r.title),
+        contains('פירוש פלוני על בבא קמא'),
+      );
+    });
+
+    test('התאמה באמצע השם ממשיכה לתוכן העניינים עם טוקני הקטע', () async {
+      List<String>? received;
+      final repo = _repo(
+        books: [_book(1, 'פירוש פלוני על בבא קמא')],
+        userToc: (_, _, {queryTokens}) async {
+          received = queryTokens;
+          return [
+            {
+              'reference': 'פירוש פלוני על בבא קמא, ג',
+              'segment': 7,
+              'level': 2,
+            },
+          ];
+        },
+      );
+      final results = await personal(repo, 'בבא קמא ג');
+      expect(received, ['ג']);
+      expect(
+        results.map((r) => r.reference),
+        contains('פירוש פלוני על בבא קמא, ג'),
+      );
+    });
+
+    test('שגיאת כתיב בשם — התאמה מקורבת', () async {
+      final repo = _repo(books: [_book(1, 'ספר המצוות הגדול')]);
+      expect(
+        (await personal(repo, 'ספר המצות')).map((r) => r.title),
+        contains('ספר המצוות הגדול'),
+      );
+    });
+
+    test('ספרייה אישית גדולה נבנית ב-isolate עם אותן תוצאות', () async {
+      final previous = FindRefRepository.secondaryIndexIsolateThreshold;
+      addTearDown(
+        () => FindRefRepository.secondaryIndexIsolateThreshold = previous,
+      );
+      FindRefRepository.secondaryIndexIsolateThreshold = 0;
+      final repo = _repo(books: [_book(1, 'פירוש פלוני על בבא קמא')]);
+      expect(
+        (await personal(repo, 'בבא קמא')).map((r) => r.bookId),
+        contains(1),
+      );
+    });
   });
 
   group('תוכן עניינים של ספר אישי ב-worker', () {
