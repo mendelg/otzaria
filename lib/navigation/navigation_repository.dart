@@ -28,7 +28,7 @@ class NavigationRepository {
 
   static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
 
-  /// בודק אם הספרייה ריקה - כלומר אם קובץ seforim.db לא קיים
+  /// בודק אם הספרייה ריקה - כלומר אם קובץ seforim.db לא קיים או אינו קריא
   bool checkLibraryIsEmpty() {
     final libraryPath = Settings.getValue<String>(
       SettingsRepository.keyLibraryPath,
@@ -46,28 +46,22 @@ class NavigationRepository {
       return true;
     }
 
-    // Android: גם אם הקובץ "קיים" (stat עובד), ייתכן שה-native sqlite3
-    // לא יכול לפתוח אותו מאחסון Scoped Storage חיצוני.
-    // אם אין keyDbEffectivePath, המשמעות היא שה-flow לא הושלם — נחזיר true
-    // כדי שהמשתמש יגיע למסך הבחירה עם הדיאלוג המתאים.
-    if (_isAndroid && !_isNativeAccessible(databasePath)) {
-      final effectivePath =
-          Settings.getValue<String>(SettingsRepository.keyDbEffectivePath) ??
-          '';
-      if (effectivePath.isEmpty) {
-        return true;
-      }
+    // Android: stat מצליח גם בלי הרשאת קריאה (Scoped Storage), ואז sqlite לא
+    // יפתח את הקובץ.
+    if (_isAndroid && !_canRead(databaseFile)) {
+      return true;
     }
 
     return false;
   }
 
-  /// בודק אם נתיב נגיש ל-sqlite3 native ב-Android.
-  static bool _isNativeAccessible(String filePath) {
-    if (filePath.startsWith('/data/')) return true;
-    if (filePath.contains('/Android/data/')) return true;
-    if (filePath.contains('/Android/obb/')) return true;
-    return false;
+  static bool _canRead(File file) {
+    try {
+      file.openSync().closeSync();
+      return true;
+    } on FileSystemException {
+      return false;
+    }
   }
 
   Future<void> refreshLibrary() async {
