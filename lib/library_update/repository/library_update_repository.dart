@@ -232,6 +232,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
       localSchemaVersion: local.schemaVersion,
       hasLocalVersionMeta: local.hasVersionMeta,
       latestVersion: result.latestVersion,
+      latestDbSchemaVersion: result.latestDbSchemaVersion,
       edges: result.edges,
       latestFullDbAsset: result.latestFullDbAsset,
       latestReleaseTag: result.latestReleaseTag,

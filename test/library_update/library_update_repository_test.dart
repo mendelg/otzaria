@@ -1064,6 +1064,46 @@ void main() {
     expect(planner.seenLocalDbSizeBytes, File(dbPath).lengthSync());
   });
 
+  test('release בסכמה חדשה ללא דלתא דורש עדכון אפליקציה', () async {
+    final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);
+    _writeDb(dbPath, version: 1, marker: 'old');
+    final repository = LibraryUpdateRepository(
+      discovery: LibraryUpdateDiscovery(
+        supportedDbSchemaVersion: DatabaseConstants.readableDbSchemaVersion,
+        client: GithubLibraryReleaseClient(
+          httpClient: MockClient(
+            (request) async => http.Response(
+              jsonEncode([
+                {
+                  'tag_name': 'v2',
+                  'draft': false,
+                  'prerelease': false,
+                  'assets': [
+                    {
+                      'name': 'seforim-schema7.db.zst',
+                      'browser_download_url': 'https://example.com/schema7',
+                      'size': 100,
+                    },
+                  ],
+                },
+              ]),
+              200,
+            ),
+          ),
+        ),
+      ),
+      downloader: _PatchMapDownloader(const {}),
+      dbPathProvider: () => dbPath,
+    );
+
+    final plan = await repository.checkForUpdate(allowPrerelease: false);
+    expect(plan.kind, LibraryUpdatePlanKind.blocked);
+    expect(plan.targetVersion, 2);
+    expect(plan.reason, contains('נדרש עדכון אפליקציה'));
+    expect(plan.reason, contains('DB 7'));
+    expect(plan.fullDbAsset, isNull);
+  });
+
   test(
     'כשל בצעד דלתא מאוחר מדווח את הצעדים שכבר נכתבו ומרענן runtime',
     () async {
@@ -1557,6 +1597,7 @@ class _RecordingPlanner extends LibraryUpdatePlanner {
     required int? localSchemaVersion,
     required bool hasLocalVersionMeta,
     required int latestVersion,
+    int? latestDbSchemaVersion,
     required List<PatchEdge> edges,
     ReleaseAsset? latestFullDbAsset,
     String? latestReleaseTag,
@@ -1568,6 +1609,7 @@ class _RecordingPlanner extends LibraryUpdatePlanner {
       localSchemaVersion: localSchemaVersion,
       hasLocalVersionMeta: hasLocalVersionMeta,
       latestVersion: latestVersion,
+      latestDbSchemaVersion: latestDbSchemaVersion,
       edges: edges,
       latestFullDbAsset: latestFullDbAsset,
       latestReleaseTag: latestReleaseTag,

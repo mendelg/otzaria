@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,17 @@ import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:path/path.dart' as path;
 
 import '../test_helpers/memory_cache_provider.dart';
+
+Future<int> Function() _pausedFallback(SendPort checkpoint) => () async {
+  final release = ReceivePort();
+  try {
+    checkpoint.send(release.sendPort);
+    await release.first;
+    return 1;
+  } finally {
+    release.close();
+  }
+};
 
 /// ה-worker הקבוע חייב להחזיר בדיוק את מה שהמסלול הישיר מחזיר, לאגד בקשות
 /// של אותו סבב, לשחרר את הקובץ בהשהיה ובסגירה, וליפול למסלול הישיר כשנתקע.
@@ -107,6 +119,20 @@ void main() {
     'endLine': 3,
     'versionTitle': null,
   };
+
+  Future<({Future<Object?> result, SendPort release})> pausedBookRead(
+    String dbPath,
+  ) async {
+    final checkpoint = ReceivePort();
+    addTearDown(checkpoint.close);
+    DbReadWorker.bookReadCheckpointPort = checkpoint.sendPort;
+    final result = DbReadWorker.request('bookTextBytes', {
+      'dbPath': dbPath,
+      'bookId': 3,
+      'title': 'ספר גדול',
+    }).then<Object?>((value) => value, onError: (Object error) => error);
+    return (result: result, release: await checkpoint.first as SendPort);
+  }
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('otzaria_db_read_worker');
@@ -272,6 +298,169 @@ void main() {
     final links = await DbReadWorker.request('linksRange', linksArgs);
     expect(links, hasLength(1));
     expect(links, direct.links);
+  });
+
+  test('טווח וקישור מתקדמים בזמן שקריאת ספר שלם ממתינה', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 4097);
+    final full = await pausedBookRead(dbPath);
+    var finished = false;
+    final result = full.result.whenComplete(() => finished = true);
+    try {
+      expect(
+        await DbReadWorker.request(
+          'textRange',
+          textRangeArgs(dbPath, 'בראשית'),
+        ),
+        isNotNull,
+      );
+      expect(
+        await DbReadWorker.batched('linkContent', linkArgs(dbPath, 'מפרש', 2)),
+        {'content': 'פירוש 1'},
+      );
+      expect(finished, isFalse);
+    } finally {
+      full.release.send(null);
+    }
+    expect(await result, isA<TransferableTypedData>());
+  });
+
+  test('השהיה קוטעת ספר שלם וסוגרת את שני החיבורים לפני החלפת DB', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 4097);
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+    final full = await pausedBookRead(dbPath);
+    final suspending = DbReadWorker.suspendForExternalWrite();
+    full.release.send(null);
+    expect(await suspending, isTrue);
+    expect(await full.result, isA<DbReadWorkerSuspended>());
+    for (final method in ['textRange', 'bookText']) {
+      await expectLater(
+        DbReadWorker.request(method, {'dbPath': dbPath}),
+        throwsA(isA<DbReadWorkerSuspended>()),
+      );
+    }
+
+    await File(dbPath).rename('$dbPath.old');
+    final replacement = await seedDb('replacement');
+    final database = MyDatabase.withPath(replacement);
+    (await database.database).execute(
+      "UPDATE line SET content = 'replacement' WHERE bookId = 1",
+    );
+    database.close();
+    await File(replacement).rename(dbPath);
+    await DbReadWorker.resumeAfterExternalWrite();
+    expect(
+      await DbReadWorker.request('bookText', {
+        'dbPath': dbPath,
+        'bookId': 1,
+        'title': 'בראשית',
+      }),
+      List.filled(5, 'replacement').join('\n'),
+    );
+    final range =
+        await DbReadWorker.request(
+              'textRange',
+              textRangeArgs(dbPath, 'בראשית'),
+            )
+            as ({
+              int startLine,
+              int endLine,
+              int totalLines,
+              List<String> lines,
+            });
+    expect(range.lines, List.filled(3, 'replacement'));
+    await DbReadWorker.closeConnectionIfRunning();
+    await File(dbPath).delete();
+  });
+
+  test('סגירה ופתיחה מחדש דוחות timeout ישן של ספר בלי fallback', () async {
+    final dbPath = await seedDb('seforim', bigBookLines: 4097);
+    DbReadWorker.stallTimeout = const Duration(milliseconds: 50);
+    final full = await pausedBookRead(dbPath);
+    await DbReadWorker.closeConnectionIfRunning(wait: false);
+    DbReadWorker.allowReopen();
+    expect(await full.result, isA<DbReadWorkerSuspended>());
+    DbReadWorker.stallTimeout = const Duration(seconds: 10);
+    full.release.send(null);
+    expect(
+      await DbReadWorker.request('bookText', {
+        'dbPath': dbPath,
+        'bookId': 1,
+        'title': 'בראשית',
+      }),
+      List.generate(5, (i) => 'שורה $i').join('\n'),
+    );
+  });
+
+  test(
+    'סגירה בזמן spawn של שני ה-workers דוחה בקשות גם אחרי פתיחה מחדש',
+    () async {
+      final dbPath = await seedDb('seforim');
+      final pending =
+          [
+                DbReadWorker.request(
+                  'textRange',
+                  textRangeArgs(dbPath, 'בראשית'),
+                ),
+                DbReadWorker.request('bookText', {
+                  'dbPath': dbPath,
+                  'bookId': 1,
+                  'title': 'בראשית',
+                }),
+              ]
+              .map(
+                (read) =>
+                    read.then<Object?>((v) => v, onError: (Object e) => e),
+              )
+              .toList();
+      await DbReadWorker.closeConnectionIfRunning();
+      DbReadWorker.allowReopen();
+      expect(
+        await Future.wait(pending),
+        everyElement(isA<DbReadWorkerSuspended>()),
+      );
+      expect(
+        await DbReadWorker.request('bookText', {
+          'dbPath': dbPath,
+          'bookId': 1,
+          'title': 'בראשית',
+        }),
+        isNotNull,
+      );
+    },
+  );
+
+  test('dispose בזמן spawn אינו משאיר worker ישן פתוח', () async {
+    final dbPath = await seedDb('seforim');
+    final first = DbReadWorker.request('bookText', {
+      'dbPath': dbPath,
+      'bookId': 1,
+      'title': 'בראשית',
+    }).then<Object?>((v) => v, onError: (Object e) => e);
+    DbReadWorker.disposeForTesting();
+    expect(await first, isA<DbReadWorkerSuspended>());
+    expect(
+      await DbReadWorker.request('bookText', {
+        'dbPath': dbPath,
+        'bookId': 1,
+        'title': 'בראשית',
+      }),
+      isNotNull,
+    );
+    expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+    await File(dbPath).delete();
+  });
+
+  test('fallback שהסתיים אחרי סגירה ופתיחה מחדש אינו מחזיר תוכן ישן', () async {
+    final checkpoint = ReceivePort();
+    addTearDown(checkpoint.close);
+    final read = DbReadWorker.runOnFreshIsolate(
+      _pausedFallback(checkpoint.sendPort),
+    ).then<Object?>((v) => v, onError: (Object e) => e);
+    final release = await checkpoint.first as SendPort;
+    await DbReadWorker.closeConnectionIfRunning(wait: false);
+    DbReadWorker.allowReopen();
+    release.send(null);
+    expect(await read, isA<DbReadWorkerSuspended>());
   });
 
   test(
