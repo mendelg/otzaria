@@ -1458,6 +1458,7 @@ Object? runRangeRequestOnConnection(
     ),
     'linksRange' => _loadBookLinksRowsInRangeInIsolate(
       target: target,
+      official: true,
       title: args['title'] as String,
       categoryId: args['categoryId'] as int,
       fileType: args['fileType'] as String,
