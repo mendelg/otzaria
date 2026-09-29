@@ -2761,7 +2761,6 @@ class FindRefRepository {
         result: r,
         normTitle: normTitle,
         fuzzyBookMatch:
-            r.source.isOfficial &&
             !r.isSourceLine &&
             !directMatches.contains(r) &&
             !directSegments.contains((
@@ -2843,6 +2842,12 @@ class FindRefRepository {
       // תיוג הדור בנתיב הקטגוריה. orderIndex לבדו מערבב דורות מענפי-עץ שונים.
       if (aTier == null && a.era != b.era) {
         return a.era.order.compareTo(b.era.order);
+      }
+
+      // ספר רשמי קודם לספר ממסד משני כשסימני הרלוונטיות שווים: orderIndex
+      // של מסדים שונים אינו בר-השוואה.
+      if (a.result.source.isOfficial != b.result.source.isOfficial) {
+        return a.result.source.isOfficial ? -1 : 1;
       }
 
       // 7. סדר ספר בספרייה — ספרים בסדר הספרייה (בתוך אותו tier יסוד או

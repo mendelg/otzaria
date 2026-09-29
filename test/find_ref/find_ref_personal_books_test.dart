@@ -6,6 +6,7 @@ import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/find_ref/repository/attached_find_ref_worker.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
+import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
@@ -203,6 +204,48 @@ void main() {
         (await personal(repo, 'ספר המצות')).map((r) => r.title),
         contains('ספר המצוות הגדול'),
       );
+    });
+
+    test('התאמה מקורבת של ספר אישי יורדת מתחת להתאמה מילולית', () async {
+      final repo = _repo(
+        books: [_book(1, 'המצוות הגדולות'), _book(2, 'קונטרס המצות גדול')],
+      );
+      // בלי סימון ההתאמה המקורבת, orderIndex הנמוך של 1 היה מקדים אותו.
+      expect((await personal(repo, 'המצות גדול')).map((r) => r.bookId), [
+        2,
+        1,
+      ]);
+    });
+
+    test('ספר רשמי קודם לספר אישי כשהרלוונטיות שווה', () async {
+      final repo = FindRefRepository(
+        dataRepository: MockDataRepository(),
+        isReferenceBooksCacheLoaded: () => true,
+        warmUpReferenceBooksCache: () async {},
+        searchReferenceBooks: (query, {limit = 50}) => [
+          if (query == 'ספר פלוני')
+            ReferenceBookHit(
+              bookId: 900,
+              title: 'ספר פלוני',
+              normalizedTitle: 'ספר פלוני',
+              filePath: '',
+              fileType: 'txt',
+              matchRank: 0,
+              orderIndex: 50,
+            ),
+        ],
+        getTocEntriesForReference: (_, _, {queryTokens}) async => const [],
+        getAllUserBooks: () async => [_book(1, 'ספר פלוני')],
+        getUserBookTocEntries: (_, _, {queryTokens}) async => const [],
+      );
+      final results = await repo.findRefs(
+        'ספר פלוני',
+        includePersonalBooks: true,
+      );
+      expect(results.map((r) => r.source), [
+        BookSource.official,
+        BookSource.user,
+      ]);
     });
 
     test('ספרייה אישית גדולה נבנית ב-isolate עם אותן תוצאות', () async {
