@@ -54,7 +54,9 @@ jobs:
           # אותם מקורות כמו חבילות ה-FULL ב-build-and-announce.yml.
           fetch() { curl -L --fail --retry 3 -o "$dl/$2" "https://github.com/Otzaria/$1/releases/latest/download/$2"; }
           # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
-          curl -L --fail --retry 3 -o "$dl/seforim.db.zst" \n            https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim-schema6.db.zst \n            || fetch SeforimLibrary seforim.db.zst
+          curl -L --fail --retry 3 -o "$dl/seforim.db.zst" \
+            https://github.com/Otzaria/SeforimLibrary/releases/latest/download/seforim-schema6.db.zst \
+            || fetch SeforimLibrary seforim.db.zst
           fetch otzar-HB_catalog otzar-HB_catalog.db.zst
           fetch otzaria-library talmud_bavli_latest.tar.zst
           fetch SeforimMagicIndexer lexical.db
