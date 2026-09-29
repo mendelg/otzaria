@@ -958,6 +958,10 @@ class FindRefRepository {
     await _ensureReferenceBooksLoaded();
 
     final visibility = await _currentVisibility();
+    // בדיקת הגרסה ב-worker רצה בזמן הזיהוי הרשמי, ולא אחריו.
+    final userBooks = includePersonalBooks
+        ? (_loadUserBooks()..ignore())
+        : null;
 
     // מצב "דור + נושא": "ראשונים סנהדרין" / "סנהדרין ראשונים" → כל הראשונים על
     // סנהדרין. בלי תוצאות — נופלים למסלול הרגיל.
@@ -989,6 +993,7 @@ class FindRefRepository {
               _resolveDibburim(detection.hits, query.dibbur!.prefix),
             ),
       includePersonalBooks: includePersonalBooks,
+      userBooks: userBooks,
     );
 
     return queryTokens.length == 1
@@ -1805,7 +1810,9 @@ class FindRefRepository {
     _FindRefSearch search,
   ) async {
     try {
-      final index = await _awaitCurrent(_loadUserBooks());
+      final index = await _awaitCurrent(
+        search.userBooks ?? _loadUserBooks(),
+      );
       if (index.books.isEmpty) return const [];
       return await _searchSecondaryBooks(
         search,
@@ -3196,6 +3203,7 @@ class _FindRefSearch {
     required this.bookMatchRanks,
     required this.dibburim,
     required this.includePersonalBooks,
+    this.userBooks,
   });
 
   /// השאילתה אחרי הרחבת ע"א/ע"ב, לפני הנרמול.
@@ -3208,6 +3216,9 @@ class _FindRefSearch {
   final Map<_BookKey, int> bookMatchRanks;
   final Map<int, List<_Dibbur>> dibburim;
   final bool includePersonalBooks;
+
+  /// טעינת הספרים האישיים, שהתחילה עם השאילתה.
+  final Future<_SecondaryIndex>? userBooks;
 
   FindRefVisibility? get visibilityFilter =>
       visibility.selection.isEmpty ? null : visibility;
