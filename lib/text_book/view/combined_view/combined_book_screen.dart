@@ -743,6 +743,7 @@ class _CombinedViewState extends State<CombinedView> {
   }
 
   late final FocusNode _focusNode;
+  final _selectionAreaFocusNode = _KeepSelectionOnWindowBlurFocusNode();
 
   bool _didRequestInitialFocus = false;
 
@@ -1005,6 +1006,7 @@ class _CombinedViewState extends State<CombinedView> {
       FocusRepository().unregisterTabContentFocusRequester(widget.tab);
     }
     _focusNode.dispose();
+    _selectionAreaFocusNode.dispose();
     widget.selectionSyncController?.removeListener(
       _handleExternalSelectionChange,
     );
@@ -2014,6 +2016,7 @@ class _CombinedViewState extends State<CombinedView> {
                       _endSelectionPointer(takeFocus: false),
                   child: SelectionArea(
                     key: _selectionAreaKey,
+                    focusNode: _selectionAreaFocusNode,
                     // SelectionArea אחד לכל הרשימה - מאפשר בחירה רציפה בין פסקאות
                     contextMenuBuilder: (context, selectableRegionState) {
                       return const SizedBox.shrink();
@@ -3158,6 +3161,18 @@ class _CombinedViewState extends State<CombinedView> {
   //     context.read<TextBookBloc>().add(OpenEditor(index: paragraphIndex));
   //   }
   // }
+}
+
+// ב-Windows אובדן פוקוס החלון מעביר את הפוקוס ל-rootScope כשה-lifecycle עדיין
+// resumed; בלי זה SelectableRegion מנקה את הבחירה.
+class _KeepSelectionOnWindowBlurFocusNode extends FocusNode {
+  @override
+  void notifyListeners() {
+    if (FocusManager.instance.primaryFocus == FocusManager.instance.rootScope) {
+      return;
+    }
+    super.notifyListeners();
+  }
 }
 
 class _CommentaryCard extends StatefulWidget {
