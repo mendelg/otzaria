@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import '../query_loader.dart';
 import 'database.dart';
@@ -36,16 +37,8 @@ class LineRefDao {
   ) async {
     if (bookIds.isEmpty || !await isAvailable()) return const [];
     final db = await database;
-    final ids = bookIds.join(',');
     return db
-        .select(
-          'SELECT lr.bookId, lr.lineIndex, l.id AS lineId, l.heRef '
-          'FROM line_ref lr '
-          'JOIN line l ON l.bookId = lr.bookId AND l.lineIndex = lr.lineIndex '
-          'WHERE lr.refKeyHash = ? AND lr.bookId IN ($ids) '
-          'ORDER BY lr.bookId, lr.lineIndex',
-          [refKeyHash],
-        )
+        .select(candidatesSql(bookIds, official: _db.isOfficial), [refKeyHash])
         .map(
           (row) => (
             bookId: row['bookId'] as int,
@@ -56,6 +49,17 @@ class LineRefDao {
         )
         .toList();
   }
+
+  /// בלי sqlite_stat1 המתכנן סורק את כל שורות הספר ב-line; ב-seforim.db
+  /// CROSS JOIN מתחיל ממפתח line_ref. מסד אחר שומר על השאילתה המקורית.
+  @visibleForTesting
+  static String candidatesSql(List<int> bookIds, {required bool official}) =>
+      'SELECT lr.bookId, lr.lineIndex, l.id AS lineId, l.heRef '
+      'FROM line_ref lr '
+      '${official ? 'CROSS JOIN' : 'JOIN'} line l '
+      'ON l.bookId = lr.bookId AND l.lineIndex = lr.lineIndex '
+      'WHERE lr.refKeyHash = ? AND lr.bookId IN (${bookIds.join(',')}) '
+      'ORDER BY lr.bookId, lr.lineIndex';
 
   Future<void> insert(int bookId, int refKeyHash, int lineIndex) async {
     final db = await database;
