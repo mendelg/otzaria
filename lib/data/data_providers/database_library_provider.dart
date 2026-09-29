@@ -894,22 +894,24 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
         )
         .toMapList();
 
-    // סריקה יורדת של שורות הספר עוצרת בשורה המקושרת הראשונה. תנאי הספר נדרש
-    // למסד מצורף, שבו רק (sourceBookId, sourceLineId) מאונדקס.
-    final maxRows = db
-        .select(
-          official
-              ? 'SELECT CASE WHEN EXISTS (SELECT 1 FROM link pre '
-                    'WHERE pre.sourceBookId = ?) THEN '
-                    '(SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
-                    'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
-                    'AND l.sourceBookId = sl.bookId) '
-                    'ORDER BY sl.lineIndex DESC LIMIT 1) END as maxIdx'
-              : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
-                    'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
-          official ? [bookId, bookId] : [bookId],
-        )
-        .toMapList();
+    // בספר דל קישורים, סריקה מסוף השורות עלולה לעבור זנב ארוך ללא קישור.
+    // בדיקת צפיפות מוגבלת עוצרת אחרי 256 קישורים באינדקס sourceBookId.
+    // בספר דל מתחילים מ-link; בספר עתיר קישורים מתחילים מסוף line.
+    final useReverseMax = official && _hasManySourceLinks(db, bookId);
+    final maxRows = db.select(
+      official
+          ? useReverseMax
+                ? 'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
+                      'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
+                      'AND l.sourceBookId = sl.bookId) '
+                      'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx'
+                : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
+                      'CROSS JOIN line sl ON sl.id = l.sourceLineId '
+                      'WHERE l.sourceBookId = ? AND sl.bookId = l.sourceBookId'
+          : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
+                'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
+      [bookId],
+    ).toMapList();
     final maxSourceLineIndex = maxRows.isEmpty
         ? null
         : maxRows.first['maxIdx'] as int?;
@@ -922,6 +924,11 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
     db?.close();
   }
 }
+
+bool _hasManySourceLinks(sqlite3.Database db, int bookId) => db.select(
+  'SELECT 1 FROM link WHERE sourceBookId = ? LIMIT 1 OFFSET 255',
+  [bookId],
+).isNotEmpty;
 
 /// Top-level wrapper עבור סיכום קישורי ספר ב-isolate.
 /// ראה ההסבר ב-[_runAlternativeStructuresInIsolate].
@@ -2001,6 +2008,23 @@ class DatabaseLibraryProvider implements LibraryProvider {
       title: title,
       categoryId: categoryId,
     );
+  }
+
+  @visibleForTesting
+  static bool usesReverseMaxSourceLineQueryForTesting({
+    required String dbPath,
+    required int bookId,
+  }) {
+    final db = openReadOnlyTarget((
+      path: dbPath,
+      untrusted: false,
+      immutable: false,
+    ));
+    try {
+      return _hasManySourceLinks(db, bookId);
+    } finally {
+      db.close();
+    }
   }
 
   @visibleForTesting

@@ -486,6 +486,24 @@ void main() {
       }
       db.execute('COMMIT');
 
+      bool usesReverse(int bookId) =>
+          DatabaseLibraryProvider.usesReverseMaxSourceLineQueryForTesting(
+            dbPath: file,
+            bookId: bookId,
+          );
+      int? maxSource(String title) =>
+          DatabaseLibraryProvider.loadBookLinkTargetsSummaryRowsForTesting(
+            dbPath: file,
+            official: true,
+            title: title,
+            categoryId: 7,
+          ).maxSourceLineIndex;
+
+      expect(usesReverse(_baseBook), isFalse);
+      expect(maxSource('base'), _linesPerBook - 7);
+      expect(usesReverse(_commentaryB), isFalse);
+      expect(maxSource('commentary-b'), isNull);
+
       Future<void> verify() async {
         final database = MyDatabase.withPath(
           file,
@@ -543,6 +561,8 @@ void main() {
         ]);
       }
       db.execute('COMMIT');
+      expect(usesReverse(_baseBook), isTrue);
+      expect(maxSource('base'), 2047);
       await verify(); // Many links: choose the line-first query.
     } finally {
       db.close();
