@@ -58,19 +58,22 @@ class LinkDao {
   }
 
   /// שאילתה עם מסנן הנראות, או null כשאין במסד קישורים.
-  Future<String?> _visibilityAwareQuery(String queryName) async {
+  Future<String?> _visibilityAwareQuery(
+    String queryName, {
+    DbCapabilities? capabilities,
+  }) async {
     final query = _queries[queryName]!;
     if (!query.contains(linkVisibilityFilterMarker)) {
       throw StateError('Missing visibility marker in $queryName');
     }
-    final capabilities = await _capabilities;
-    if (!capabilities.hasLinks) return null;
-    return capabilities
+    final dbCapabilities = capabilities ?? await _capabilities;
+    if (!dbCapabilities.hasLinks) return null;
+    return dbCapabilities
         .adaptBookQuery(query)
         .replaceFirst(
           linkVisibilityFilterMarker,
           suppressedSideFilter(
-            capabilities.hasLinkSuppressedSide,
+            dbCapabilities.hasLinkSuppressedSide,
             displayedSide: 0,
           ),
         );
@@ -125,7 +128,8 @@ class LinkDao {
     int startLineIndex,
     int endLineIndex,
   ) async {
-    if (!(await _capabilities).hasLinks) return const [];
+    final capabilities = await _capabilities;
+    if (!capabilities.hasLinks) return const [];
     final query = await _visibilityAwareQuery(
       await _forLineRange(
         'selectCommentatorsByLineRange',
@@ -133,6 +137,7 @@ class LinkDao {
         startLineIndex,
         endLineIndex,
       ),
+      capabilities: capabilities,
     );
     if (query == null) return const [];
     final db = await database;
@@ -158,7 +163,8 @@ class LinkDao {
     int excludeBookId,
     int exactSourceLineIndex,
   ) async {
-    if (!(await _capabilities).hasLinks) return const [];
+    final capabilities = await _capabilities;
+    if (!capabilities.hasLinks) return const [];
     final query = await _visibilityAwareQuery(
       await _forLineRange(
         'selectCommentaryLinksByLineRange',
@@ -166,6 +172,7 @@ class LinkDao {
         startLineIndex,
         endLineIndex,
       ),
+      capabilities: capabilities,
     );
     if (query == null) return const [];
     final db = await database;
