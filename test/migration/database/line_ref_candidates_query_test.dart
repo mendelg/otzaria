@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/attached_libraries/repository/external_link_core.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/daos/line_ref_dao.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
+import 'package:otzaria/migration/database/untrusted_database.dart';
+import 'package:otzaria/utils/text/ref_key.dart';
 import 'package:path/path.dart' as path;
 
 const _books = [1, 2, 3, 4, 5];
@@ -210,5 +213,116 @@ void main() {
       db.execute('DROP TABLE IF EXISTS sqlite_stat1');
       db.close();
     }
+  });
+
+  group('יעד קישור חיצוני (_byRef)', () {
+    String originalByRefSql(String ids) =>
+        'SELECT lr.bookId, lr.lineIndex, l.heRef FROM line_ref lr '
+        'JOIN line l ON l.bookId = lr.bookId AND l.lineIndex = lr.lineIndex '
+        'WHERE lr.refKeyHash = ? AND lr.bookId IN ($ids) '
+        'ORDER BY lr.bookId, lr.lineIndex';
+
+    test('יעד מצורף מקבל את השאילתה המקורית; הרשמי זהה בתוצאות', () {
+      final db = sqlite3.sqlite3.open(dbPath);
+      try {
+        for (final ids in bookSets) {
+          expect(
+            ExternalTargetResolver.refCandidatesSql(ids, official: false),
+            originalByRefSql(ids.join(',')),
+          );
+          for (var hash = -7; hash < _hashes - 5; hash++) {
+            expect(
+              db.select(
+                ExternalTargetResolver.refCandidatesSql(ids, official: true),
+                [hash],
+              ),
+              db.select(originalByRefSql(ids.join(',')), [hash]),
+              reason: '$ids / $hash',
+            );
+          }
+        }
+      } finally {
+        db.close();
+      }
+    });
+
+    test('ביעד הרשמי התוכנית מתחילה ממפתח line_ref', () {
+      final db = sqlite3.sqlite3.open(dbPath);
+      try {
+        void expectKeyFirst() {
+          final plan = _plan(
+            db,
+            ExternalTargetResolver.refCandidatesSql(_books, official: true),
+            [0],
+          );
+          expect(
+            plan.first,
+            contains('SEARCH lr USING PRIMARY KEY (bookId=? AND refKeyHash=?)'),
+            reason: plan.join('\n'),
+          );
+        }
+
+        expectKeyFirst();
+        db.execute('ANALYZE');
+        expectKeyFirst();
+      } finally {
+        db.execute('DROP TABLE IF EXISTS sqlite_stat1');
+        db.close();
+      }
+    });
+
+    test('הפניה נפתרת לאותה שורה ביעד רשמי ובמצורף', () {
+      const title = 'ישעיהו';
+      final refsPath = path.join(tempDir.path, 'refs.db');
+      final db = sqlite3.sqlite3.open(refsPath);
+      try {
+        _buildFixture(db);
+        db.execute("UPDATE book SET title = '$title' WHERE id = 3");
+        for (final (lineIndex, heRef) in [
+          (10, 'ישעיהו לב, י'),
+          (11, 'ישעיהו לב, יא'),
+        ]) {
+          db.execute(
+            'UPDATE line SET heRef = ? WHERE bookId = 3 AND lineIndex = ?',
+            [heRef, lineIndex],
+          );
+          db.execute('INSERT OR IGNORE INTO line_ref VALUES (3, ?, ?)', [
+            refKeyHash(buildLineRefKey(heRef, [title])!),
+            lineIndex,
+          ]);
+        }
+      } finally {
+        db.close();
+      }
+
+      final resolver = ExternalTargetResolver([
+        (
+          wireKey: 'o',
+          slug: null,
+          target: trustedDbTarget(refsPath),
+          version: '1',
+        ),
+        (
+          wireKey: 'd:x',
+          slug: 'x',
+          target: (path: refsPath, untrusted: true, immutable: false),
+          version: '1',
+        ),
+      ]);
+      try {
+        for (final source in ['official', 'x']) {
+          final hit = resolver.resolve(
+            targetSource: source,
+            targetTitle: title,
+            targetRef: 'ישעיהו לב, יא',
+            targetLineIndex: null,
+          );
+          expect(hit?.bookId, 3, reason: source);
+          expect(hit?.lineIndex, 11, reason: source);
+        }
+      } finally {
+        resolver.close();
+      }
+    });
   });
 }
