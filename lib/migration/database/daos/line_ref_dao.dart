@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import '../query_loader.dart';
 import 'database.dart';
@@ -24,6 +25,10 @@ class LineRefDao {
 
   Future<sqlite3.Database> get database => _db.database;
 
+  /// ה-SQL האחרון של [candidatesForBooks] — לוודא בבדיקות איזה נוסח נשלח בפועל.
+  @visibleForTesting
+  String? lastCandidatesSql;
+
   /// האם המסד הנוכחי מכיל את טבלת האינדקס.
   Future<bool> isAvailable() async => (await _db.capabilities).hasLineRef;
 
@@ -36,8 +41,10 @@ class LineRefDao {
   ) async {
     if (bookIds.isEmpty || !await isAvailable()) return const [];
     final db = await database;
+    final sql = candidatesSql(bookIds, official: _db.isOfficial);
+    lastCandidatesSql = sql;
     return db
-        .select(candidatesSql(bookIds, official: _db.isOfficial), [refKeyHash])
+        .select(sql, [refKeyHash])
         .map(
           (row) => (
             bookId: row['bookId'] as int,

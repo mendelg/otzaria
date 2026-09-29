@@ -68,6 +68,10 @@ class ExternalTargetResolver {
   final Map<String, (sqlite3.Database, DbCapabilities)?> _open = {};
   final Map<(String, String), List<(int, int?)>> _books = {};
 
+  /// ה-SQL האחרון של פתרון לפי הפניה — לוודא בבדיקות איזה נוסח נשלח בפועל.
+  @visibleForTesting
+  String? lastRefCandidatesSql;
+
   /// המסד שה-targetSource מצביע עליו; ריק (null בערך) — כל המסדים לפי הסדר.
   List<ExternalTargetDb> candidatesFor(String? targetSource) {
     final requested = _text(targetSource);
@@ -237,10 +241,9 @@ class ExternalTargetResolver {
     if (key == null) return null;
     final keyTokens = refKeyTokens(key);
     final categoryByBook = {for (final (id, cat) in books) id: cat};
-    final rows = db.select(
-      refCandidatesSql(categoryByBook.keys, official: official),
-      [refKeyHash(key)],
-    );
+    final sql = refCandidatesSql(categoryByBook.keys, official: official);
+    lastRefCandidatesSql = sql;
+    final rows = db.select(sql, [refKeyHash(key)]);
     for (final row in rows) {
       final heRef = _text(row['heRef']);
       final bookId = _int(row['bookId']);

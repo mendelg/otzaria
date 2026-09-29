@@ -6,7 +6,7 @@ import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/daos/line_ref_dao.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
-import 'package:otzaria/migration/database/untrusted_database.dart';
+import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/utils/text/ref_key.dart';
 import 'package:path/path.dart' as path;
 
@@ -14,7 +14,7 @@ const _books = [1, 2, 3, 4, 5];
 const _linesPerBook = 300;
 const _hashes = 12;
 
-/// השאילתה כפי שנשלחה לפני הכפייה — מסד לא רשמי חייב לקבל אותה בדיוק.
+/// השאילתה שמסד לא רשמי חייב לקבל בדיוק.
 String _originalSql(String ids) =>
     'SELECT lr.bookId, lr.lineIndex, l.id AS lineId, l.heRef '
     'FROM line_ref lr '
@@ -59,6 +59,25 @@ void _buildFixture(sqlite3.Database db) {
   db.execute('COMMIT');
 }
 
+const _title = 'ישעיהו';
+const _ref = 'ישעיהו לב, יא';
+
+/// ספר 3 בשם אמיתי עם מפתחות line_ref אמיתיים, לפתרון מקצה לקצה.
+void _buildRefsFixture(sqlite3.Database db) {
+  _buildFixture(db);
+  db.execute("UPDATE book SET title = '$_title' WHERE id = 3");
+  for (final (lineIndex, heRef) in [(10, 'ישעיהו לב, י'), (11, _ref)]) {
+    db.execute(
+      'UPDATE line SET heRef = ? WHERE bookId = 3 AND lineIndex = ?',
+      [heRef, lineIndex],
+    );
+    db.execute('INSERT OR IGNORE INTO line_ref VALUES (3, ?, ?)', [
+      refKeyHash(buildLineRefKey(heRef, [_title])!),
+      lineIndex,
+    ]);
+  }
+}
+
 List<String> _plan(sqlite3.Database db, String sql, List<Object?> params) => db
     .select('EXPLAIN QUERY PLAN $sql', params)
     .map((r) => r['detail'] as String)
@@ -69,6 +88,7 @@ void main() {
 
   late Directory tempDir;
   late String dbPath;
+  late String refsPath;
 
   setUpAll(() async {
     await QueryLoader.initialize();
@@ -79,6 +99,13 @@ void main() {
       _buildFixture(db);
     } finally {
       db.close();
+    }
+    refsPath = path.join(tempDir.path, 'refs.db');
+    final refs = sqlite3.sqlite3.open(refsPath);
+    try {
+      _buildRefsFixture(refs);
+    } finally {
+      refs.close();
     }
   });
 
@@ -271,58 +298,75 @@ void main() {
       }
     });
 
-    test('הפניה נפתרת לאותה שורה ביעד רשמי ובמצורף', () {
-      const title = 'ישעיהו';
-      final refsPath = path.join(tempDir.path, 'refs.db');
-      final db = sqlite3.sqlite3.open(refsPath);
-      try {
-        _buildFixture(db);
-        db.execute("UPDATE book SET title = '$title' WHERE id = 3");
-        for (final (lineIndex, heRef) in [
-          (10, 'ישעיהו לב, י'),
-          (11, 'ישעיהו לב, יא'),
-        ]) {
-          db.execute(
-            'UPDATE line SET heRef = ? WHERE bookId = 3 AND lineIndex = ?',
-            [heRef, lineIndex],
-          );
-          db.execute('INSERT OR IGNORE INTO line_ref VALUES (3, ?, ?)', [
-            refKeyHash(buildLineRefKey(heRef, [title])!),
-            lineIndex,
-          ]);
-        }
-      } finally {
-        db.close();
-      }
+    ExternalTargetDb target(
+      String wireKey,
+      String? slug, {
+      required bool untrusted,
+    }) => (
+      wireKey: wireKey,
+      slug: slug,
+      target: (path: refsPath, untrusted: untrusted, immutable: false),
+      version: '1',
+    );
 
-      final resolver = ExternalTargetResolver([
-        (
-          wireKey: 'o',
-          slug: null,
-          target: trustedDbTarget(refsPath),
-          version: '1',
-        ),
-        (
-          wireKey: 'd:x',
-          slug: 'x',
-          target: (path: refsPath, untrusted: true, immutable: false),
-          version: '1',
-        ),
-      ]);
+    String? sentSql(ExternalTargetDb db, String? source) {
+      final resolver = ExternalTargetResolver([db]);
       try {
-        for (final source in ['official', 'x']) {
-          final hit = resolver.resolve(
-            targetSource: source,
-            targetTitle: title,
-            targetRef: 'ישעיהו לב, יא',
-            targetLineIndex: null,
-          );
-          expect(hit?.bookId, 3, reason: source);
-          expect(hit?.lineIndex, 11, reason: source);
-        }
+        final hit = resolver.resolve(
+          targetSource: source,
+          targetTitle: _title,
+          targetRef: _ref,
+          targetLineIndex: null,
+        );
+        expect(hit?.bookId, 3, reason: db.wireKey);
+        expect(hit?.lineIndex, 11, reason: db.wireKey);
+        return resolver.lastRefCandidatesSql;
       } finally {
         resolver.close();
       }
+    }
+
+    test('רק יעד רשמי מהימן (slug null) מקבל את הנוסח הכפוי', () {
+      expect(
+        sentSql(target('o', null, untrusted: false), 'official'),
+        ExternalTargetResolver.refCandidatesSql([3], official: true),
+      );
+      for (final (db, source) in [
+        (target('d:x', 'x', untrusted: true), 'x'),
+        (target('d:y', 'y', untrusted: false), 'y'),
+        (target('o', null, untrusted: true), null),
+      ]) {
+        expect(
+          sentSql(db, source),
+          originalByRefSql('3'),
+          reason: db.wireKey,
+        );
+      }
     });
+  });
+
+  test('seforim.db רשמי שולח את הנוסח הכפוי במסלול הקריאה של המאגר', () async {
+    final key = buildLineRefKey(_ref, [_title])!;
+    for (final official in [true, false]) {
+      final database = MyDatabase.withPath(
+        refsPath,
+        readOnly: true,
+        official: official,
+      );
+      final repo = SeforimRepository(database);
+      try {
+        final resolved = await repo.resolveRefKeyInBooks([3, 1], key);
+        expect(resolved[3]?.lineIndex, 11);
+        final expected = official
+            ? LineRefDao.candidatesSql([3, 1], official: true)
+            : _originalSql('3,1');
+        expect(database.lineRefDao.lastCandidatesSql, expected);
+        database.lineRefDao.lastCandidatesSql = null;
+        await repo.resolvePartialRefKeyInBooks([3, 1], 'לב יא');
+        expect(database.lineRefDao.lastCandidatesSql, expected);
+      } finally {
+        database.close();
+      }
+    }
   });
 }
