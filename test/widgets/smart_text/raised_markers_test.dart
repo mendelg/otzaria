@@ -2,7 +2,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart'
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart'
     show HtmlWidget;
 import 'package:otzaria/text_book/utils/link_anchor_variants.dart'
     show kLinkAnchorMarkerScale;

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
-import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:otzaria/widgets/smart_text/otzaria_widget_factory.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/models/book_version.dart';
 import 'package:otzaria/models/books.dart';
@@ -250,6 +251,7 @@ class BookVersionTile extends StatelessWidget {
                   HtmlWidget(
                     notes!,
                     textStyle: theme.textTheme.bodySmall,
+                    factoryBuilder: OtzariaWidgetFactory.new,
                     customStylesBuilder: (element) {
                       final font = theme.textTheme.bodySmall?.fontFamily;
                       final weight = AppFonts.headingFontWeightOverride(

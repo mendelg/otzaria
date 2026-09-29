@@ -112,6 +112,14 @@ void main() {
       expect(span!.toPlainText(), 'א & ב');
     });
 
+    test('&nbsp; ו-&thinsp; מפוענחים ואינם מתכווצים', () {
+      final span = SimpleInlineHtml.tryParse(
+        'א&nbsp;&nbsp;ב&thinsp;ג',
+        baseStyle,
+      );
+      expect(span!.toPlainText(), 'א  ב ג');
+    });
+
     group('נפילה ל-HtmlWidget (מחזיר null)', () {
       final cases = <String, String>{
         // סימונים מורמים (footnote-marker-number / raised-sup) הם היוצא
@@ -120,7 +128,7 @@ void main() {
         'קישור': '<a href="x">קישור</a>',
         'כותרת': '<h2>כותרת</h2>',
         'הדגשת חיפוש': 'לפני <span style="background-color:yellow">מילה</span>',
-        'HTML entity': 'א&nbsp;ב',
+        'HTML entity': 'א&amp;ב',
         'entity מספרי': 'א&#1488;ב',
         'תג לא מוכר': '<sup>1</sup>',
       };

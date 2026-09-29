@@ -15,11 +15,10 @@ const double kHtmlLargerFontScale = 6 / 5;
 /// ממיר HTML פשוט (טקסט + תגי עיצוב בסיסיים בלבד) ל-[TextSpan] ישירות,
 /// כדי לעקוף את עלות הפרסור ובניית העץ של HtmlWidget עבור רוב שורות הספרים.
 ///
-/// כל markup שאינו ברשימה הלבנה (תגים עם attributes, קישורים, spans, כותרות,
-/// entities) מחזיר null — והקורא נופל חזרה ל-HtmlWidget המלא. יוצא הדופן
-/// היחיד: שני תגי הסימונים המורמים (ראו raised_markers.dart), שמזוהים
-/// במדויק — כך שורות עם סימונים נשארות במסלול המהיר, והתמיכה בהם היא חלק
-/// מצנרת הטקסט הבסיסית ולא נפילה ל-HtmlWidget.
+/// כל markup שאינו ברשימה הלבנה (תגים עם attributes, קישורים, spans, כותרות
+/// בתוך שורה, entities) מחזיר null — והקורא נופל חזרה ל-HtmlWidget המלא.
+/// יוצאי הדופן: תגי הסימונים המורמים (ראו raised_markers.dart) ותגי הדגשת
+/// החיפוש, שמזוהים במדויק — כך שורות עם סימונים או התאמות נשארות במסלול המהיר.
 class SimpleInlineHtml {
   SimpleInlineHtml._();
 
@@ -28,7 +27,21 @@ class SimpleInlineHtml {
   static final RegExp _entityRegex = RegExp(
     r'&[a-zA-Z]{2,10};|&#x?[0-9a-fA-F]{1,6};',
   );
-  static final RegExp _whitespaceRegex = RegExp(r'\s+');
+  // רווח ASCII בלבד, כמו ב-HTML וב-fwfh: NBSP ו-U+2009 אינם מתכווצים.
+  static final RegExp _whitespaceRegex = RegExp(r'[\t\n\f\r ]+');
+  static final RegExp _leadingWhitespaceRegex = RegExp(r'^[\t\n\f\r ]+');
+  static final RegExp _trailingWhitespaceRegex = RegExp(r'[\t\n\f\r ]+$');
+
+  /// עוגני המפרשים הריקים של שו"ע/טור (`<i data-commentator=…></i>`) — אין
+  /// להם תוכן ואין מי שקורא אותם מהעץ המרונדר, ולכן אינם מציירים דבר.
+  static final RegExp _emptyDataElementRegex = RegExp(
+    r'<i(?: data-[a-z]+="[^"<>]*")+></i>',
+  );
+
+  /// span של מקרא על פי המסורה (`mam-kq`, `mam-spi-pe`…) — אין לו עיצוב.
+  static final RegExp _mamSpanOpenRegex = RegExp(
+    r'^<span class="mam-[a-z-]+">$',
+  );
 
   /// תגי הפתיחה של סימונים מורמים, כפי שנפלטים מ-`_fixFootnoteMarkers`
   /// (מחרוזות קבועות, ולכן השוואה מדויקת). כל span אחר עדיין מפיל ל-HtmlWidget.
@@ -37,21 +50,46 @@ class SimpleInlineHtml {
   static const String _raisedSupOpen = '<span class="$kRaisedSupClass">';
   static const String _spanClose = '</span>';
 
+  /// תגי הדגשת החיפוש של `highLight` (text_manipulation.dart), כמחרוזות
+  /// מדויקות: שינוי שם פשוט מחזיר את השורות ל-HtmlWidget.
+  static final Map<String, _Highlight> _searchHighlightOpens = {
+    '<span style="color: red">': _Highlight(_red, null),
+    '<span style="color: red; ">': _Highlight(_red, null),
+    '<span style="color: blue; background-color: yellow;">': _Highlight(
+      const Color(0xFF0000FF),
+      _yellowPaint,
+    ),
+    '<span style="background-color: yellow; color: black">': _Highlight(
+      const Color(0xFF000000),
+      _yellowPaint,
+    ),
+  };
+  static const Color _red = Color(0xFFFF0000);
+  // background ולא backgroundColor — כמו ש-fwfh מצייר background-color.
+  static final Paint _yellowPaint = Paint()..color = const Color(0xFFFFFF00);
+
   /// מנסה להמיר את [html]. מחזיר null אם נדרש HtmlWidget.
   static TextSpan? tryParse(String html, TextStyle baseStyle) {
-    if (html.contains('&') && _entityRegex.hasMatch(html)) return null;
+    if (html.contains('&')) {
+      html = html
+          .replaceAll('&nbsp;', '\u00A0')
+          .replaceAll('&thinsp;', '\u2009');
+      if (_entityRegex.hasMatch(html)) return null;
+    }
+    if (html.contains('<i ')) {
+      html = html.replaceAll(_emptyDataElementRegex, '');
+    }
 
     // המקרה הנפוץ ביותר: שורה בלי שום תג.
     if (!html.contains('<')) {
-      final collapsed = html.replaceAll(_whitespaceRegex, ' ').trim();
-      return TextSpan(text: collapsed);
+      return TextSpan(text: _trim(html.replaceAll(_whitespaceRegex, ' ')));
     }
 
     var bold = 0, italic = 0, underline = 0, big = 0, small = 0;
     var footnoteMarkers = 0, raisedSups = 0;
-    // איזה סוג סימון כל `</span>` סוגר (true = מרקר הערה, false = raised-sup).
-    // אלה שני תגי ה-span היחידים שהמסלול מקבל, ולכן מחסנית בוליאנית מספיקה.
-    final markerStack = <bool>[];
+    _Highlight? highlight;
+    // איזה סוג span כל `</span>` סוגר — רק שלושת הסוגים שהמסלול מקבל.
+    final spanStack = <_SpanKind>[];
     final segments = <_Segment>[];
 
     TextStyle? styleForCurrent() {
@@ -61,7 +99,8 @@ class SimpleInlineHtml {
           big == 0 &&
           small == 0 &&
           footnoteMarkers == 0 &&
-          raisedSups == 0) {
+          raisedSups == 0 &&
+          highlight == null) {
         return null;
       }
       double? fontSize;
@@ -89,7 +128,8 @@ class SimpleInlineHtml {
         fontSize: fontSize,
         // גליפי סימון שקופים: תופסים את מקומם בשורה (סדר, בחירה, העתקה),
         // ו-RaisedMarkerOverlay מצייר אותם מורמים — ראו raised_markers.dart.
-        color: insideMarker ? const Color(0x00000000) : null,
+        color: insideMarker ? const Color(0x00000000) : highlight?.color,
+        background: highlight?.background,
       );
     }
 
@@ -110,7 +150,7 @@ class SimpleInlineHtml {
       // סימונים מורמים — השוואת מחרוזת מדויקת, בלי פרסור attributes.
       if (rawTag == _footnoteMarkerOpen || rawTag == _raisedSupOpen) {
         final isFootnote = rawTag == _footnoteMarkerOpen;
-        markerStack.add(isFootnote);
+        spanStack.add(isFootnote ? _SpanKind.footnote : _SpanKind.raisedSup);
         if (isFootnote) {
           footnoteMarkers++;
         } else {
@@ -118,14 +158,31 @@ class SimpleInlineHtml {
         }
         continue;
       }
+      if (_mamSpanOpenRegex.hasMatch(rawTag)) {
+        spanStack.add(_SpanKind.plain);
+        continue;
+      }
+      final highlightOpen = _searchHighlightOpens[rawTag];
+      if (highlightOpen != null) {
+        // הדגשה בתוך הדגשה אינה נפלטת; ירושת הצבע והרקע שם אינה מאומתת.
+        if (highlight != null) return null;
+        highlight = highlightOpen;
+        spanStack.add(_SpanKind.highlight);
+        continue;
+      }
       if (rawTag == _spanClose) {
         // `</span>` יתום — לא נפתח על-ידי סימון שלנו; span זר כבר היה מפיל
         // את השורה בתג הפתיחה שלו, אז זה markup שבור: נופלים ל-HtmlWidget.
-        if (markerStack.isEmpty) return null;
-        if (markerStack.removeLast()) {
-          footnoteMarkers = math.max(0, footnoteMarkers - 1);
-        } else {
-          raisedSups = math.max(0, raisedSups - 1);
+        if (spanStack.isEmpty) return null;
+        switch (spanStack.removeLast()) {
+          case _SpanKind.footnote:
+            footnoteMarkers = math.max(0, footnoteMarkers - 1);
+          case _SpanKind.raisedSup:
+            raisedSups = math.max(0, raisedSups - 1);
+          case _SpanKind.highlight:
+            highlight = null;
+          case _SpanKind.plain:
+            break;
         }
         continue;
       }
@@ -166,32 +223,122 @@ class SimpleInlineHtml {
     );
   }
 
+  static final RegExp _wholeLineHeadingRegex = RegExp(
+    r'^[\t\n\f\r ]*<h([1-6])>(.*)</h\1>[\t\n\f\r ]*$',
+    dotAll: true,
+  );
+
+  /// גודל ברירת המחדל של fwfh לכל רמת כותרת, ביחס לגופן הסובב.
+  static const Map<String, double> _defaultHeadingScale = {
+    'h1': 2,
+    'h2': 1.5,
+    'h3': 1.17,
+    'h4': 1,
+    'h5': 0.83,
+    'h6': 0.67,
+  };
+
+  /// כותרת שהיא כל השורה (`<hN>` בלי attributes): fwfh מציג אותה כבלוק יחיד
+  /// שהשוליים שלו נחתכים בקצות הגוף, ולכן היא טקסט אחד בסגנון [SimpleHeading.style].
+  static SimpleHeading? tryParseHeading(String html, TextStyle baseStyle) {
+    if (!html.contains('<h')) return null;
+    final match = _wholeLineHeadingRegex.firstMatch(html);
+    if (match == null) return null;
+    final tag = 'h${match[1]}';
+    final fontFamily = baseStyle.fontFamily;
+    final sizeOverride = AppFonts.headingFontSizeOverride(tag, fontFamily);
+    final scale = sizeOverride == null
+        ? _defaultHeadingScale[tag]!
+        : double.tryParse(sizeOverride.replaceFirst('em', ''));
+    if (scale == null) return null;
+    final weightOverride = AppFonts.headingFontWeightOverride(tag, fontFamily);
+    final weight = weightOverride == null
+        ? FontWeight.bold
+        : FontWeight.values.firstWhere(
+            (w) => w.value == int.tryParse(weightOverride),
+            orElse: () => FontWeight.bold,
+          );
+    final style = baseStyle.copyWith(
+      fontSize: (baseStyle.fontSize ?? 14.0) * scale,
+      fontWeight: weight,
+      fontVariations:
+          baseStyle.fontVariations ??
+          AppFonts.boldFontVariations(fontFamily, weight),
+    );
+    final span = tryParse(match[2]!, style);
+    if (span == null || span.toPlainText().isEmpty) return null;
+    return SimpleHeading(style, span);
+  }
+
+  static String _trim(String text) => text
+      .replaceFirst(_leadingWhitespaceRegex, '')
+      .replaceFirst(_trailingWhitespaceRegex, '');
+
   /// מדמה את כללי הרווחים של HTML: רווחים צמודים ל-<br> ולקצוות הפסקה נבלעים.
   static void _normalizeWhitespace(List<_Segment> segments) {
+    // רווח שאחרי רווח מתכווץ גם מעבר לגבול תג (`<b>א </b> ב`).
+    var afterSpace = false;
+    for (final segment in segments) {
+      if (segment.isBreak) {
+        afterSpace = false;
+        continue;
+      }
+      if (afterSpace && segment.text.startsWith(' ')) {
+        segment.text = segment.text.substring(1);
+      }
+      if (segment.text.isNotEmpty) afterSpace = segment.text.endsWith(' ');
+    }
     for (var i = 0; i < segments.length; i++) {
       if (!segments[i].isBreak) continue;
       if (i > 0 && !segments[i - 1].isBreak) {
-        segments[i - 1].text = segments[i - 1].text.trimRight();
+        segments[i - 1].text = segments[i - 1].text.replaceFirst(
+          _trailingWhitespaceRegex,
+          '',
+        );
       }
       if (i + 1 < segments.length && !segments[i + 1].isBreak) {
-        segments[i + 1].text = segments[i + 1].text.trimLeft();
+        segments[i + 1].text = segments[i + 1].text.replaceFirst(
+          _leadingWhitespaceRegex,
+          '',
+        );
       }
     }
 
     while (segments.isNotEmpty) {
       final first = segments.first;
-      first.text = first.isBreak ? '' : first.text.trimLeft();
+      first.text = first.isBreak
+          ? ''
+          : first.text.replaceFirst(_leadingWhitespaceRegex, '');
       if (first.text.isNotEmpty) break;
       segments.removeAt(0);
     }
     while (segments.isNotEmpty) {
       final last = segments.last;
-      last.text = last.isBreak ? '' : last.text.trimRight();
+      last.text = last.isBreak
+          ? ''
+          : last.text.replaceFirst(_trailingWhitespaceRegex, '');
       if (last.text.isNotEmpty) break;
       segments.removeLast();
     }
     segments.removeWhere((segment) => segment.text.isEmpty);
   }
+}
+
+/// שורת כותרת שלמה: [span] מוצג ב-[style] של רמת הכותרת.
+class SimpleHeading {
+  final TextStyle style;
+  final TextSpan span;
+
+  const SimpleHeading(this.style, this.span);
+}
+
+enum _SpanKind { footnote, raisedSup, highlight, plain }
+
+class _Highlight {
+  final Color color;
+  final Paint? background;
+
+  const _Highlight(this.color, this.background);
 }
 
 class _Segment {
