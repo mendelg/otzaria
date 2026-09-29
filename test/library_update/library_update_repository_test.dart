@@ -18,6 +18,7 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/library_update/repository/library_update_repository.dart';
 import 'package:otzaria/library_update/services/library_runtime_refresh_service.dart';
 import 'package:otzaria/library_update/services/streaming_patch_downloader.dart';
+import 'package:otzaria/library_update/services/update_sqlite_setup.dart';
 import 'package:seforim_library_updater/seforim_library_updater.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/utils/file/disk_free_space.dart';
@@ -1181,6 +1182,83 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 30)),
   );
+
+  group('applierProvider', () {
+    LibraryUpdateRepository buildRepository(
+      String dbPath,
+      String patchPath,
+      Future<PatchApplier> Function() applierProvider,
+    ) => LibraryUpdateRepository(
+      discovery: _unusedDiscovery(),
+      downloader: _PatchMapDownloader({'patch-1-2.db': patchPath}),
+      refreshService: _NoopRefreshService(),
+      dbPathProvider: () => dbPath,
+      dataRootProvider: () async => tmp.path,
+      nowTimestamp: () => '2026-09-29T00:00:00Z',
+      applierProvider: applierProvider,
+    );
+
+    LibraryUpdatePlan onePatchPlan(String expectedPath) => _schema4DeltaPlan([
+      _schema4Edge(
+        fromVersion: 1,
+        toVersion: 2,
+        patchName: 'patch-1-2.db',
+        toHash: _logicalHash(expectedPath),
+      ),
+    ]);
+
+    test('ה-applier שהוזרק הוא זה שרץ ב-isolate של ה-apply', () async {
+      final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);
+      _writeSchema4SourceDb(dbPath, version: 1, sourceName: 'old');
+      final expectedPath = p.join(tmp.path, 'expected.db');
+      _writeSchema4SourceDb(expectedPath, version: 2, sourceName: 'new');
+      final patchPath = p.join(tmp.path, 'patch-1-2.db');
+      _writeSourcePatch(
+        patchPath,
+        fromVersion: 1,
+        toVersion: 2,
+        sourceName: 'new',
+      );
+      var calls = 0;
+      // ה-patch בפורמט 4; applier שתומך רק עד 3 נכשל רק אם הוא זה שהופעל.
+      final repository = buildRepository(dbPath, patchPath, () async {
+        calls++;
+        return const PatchApplier(supportedPatchFormatVersion: 3);
+      });
+
+      await expectLater(
+        repository.applyDeltaPlan(onePatchPlan(expectedPath)),
+        throwsA(isA<PatchApplyException>()),
+      );
+
+      expect(calls, 1);
+      expect(const LocalDbVersionReader().read(dbPath).dbVersion, 1);
+    }, timeout: const Timeout(Duration(seconds: 30)));
+
+    test('cache מוקטן של mobile עובר ל-isolate וה-apply מצליח', () async {
+      final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);
+      _writeSchema4SourceDb(dbPath, version: 1, sourceName: 'old');
+      final expectedPath = p.join(tmp.path, 'expected.db');
+      _writeSchema4SourceDb(expectedPath, version: 2, sourceName: 'new');
+      final patchPath = p.join(tmp.path, 'patch-1-2.db');
+      _writeSourcePatch(
+        patchPath,
+        fromVersion: 1,
+        toVersion: 2,
+        sourceName: 'new',
+      );
+      final repository = buildRepository(
+        dbPath,
+        patchPath,
+        () async => LibraryUpdateSqliteSetup.applierForPhysicalRam(2048),
+      );
+
+      await repository.applyDeltaPlan(onePatchPlan(expectedPath));
+
+      expect(const LocalDbVersionReader().read(dbPath).dbVersion, 2);
+      expect(_readSourceName(dbPath), 'new');
+    }, timeout: const Timeout(Duration(seconds: 30)));
+  });
 
   test(
     'מניפסט עם hash לכל טבלה: אימות חלקי, שלב verifyDeferred, בלי סטייה',

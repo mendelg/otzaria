@@ -41,6 +41,8 @@ dependencies:
   flutter_settings_screens: ^0.3.4
   hive_ce: ^2.20.1
   path_provider: ^2.1.6
+  # RAM פיזי לגודל ה-cache של SQLite בעדכון הספרייה ב-mobile.
+  device_info_plus: ^13.2.0
   html: ^0.15.7
   pdfrx: ^2.6.5
   # FPDF_ImportNPagesToOne: הדפסת כמה עמודים בגיליון נשארת וקטורית.
@@ -232,6 +234,7 @@ dev_dependencies:
   bloc_test: ^10.0.0
   mockito: ^5.8.1
   mocktail: ^1.0.5
+  path_provider_platform_interface: ^2.1.2
   hooks: ^2.2.0
   dart_pre_commit: ^6.1.5
   msix: ^3.18.0
