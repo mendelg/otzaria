@@ -26,17 +26,14 @@ void main() {
   late Directory tempDir;
 
   const titles = {1: 'בראשית', 2: 'ריק', 3: 'שורה ריקה', 99: 'חסר'};
-  BookTextKey key(int id) => (id: id, title: titles[id]!, categoryId: 7);
+  BookTextKey key(int id) => (id: id, title: titles[id]!);
   db_models.Book book(int id) =>
       db_models.Book(id: id, categoryId: 7, sourceId: 1, title: titles[id]!);
 
-  /// טבלאות מינימליות: מסד חיצוני ישן שאינו נוצר מהסכמה של התוכנה.
+  /// טבלאות מינימליות כמו במסד מצורף חיצוני: `book(id, title)` בלי categoryId.
   void createBareTables(sqlite3.Database db) {
-    db.execute(
-      'CREATE TABLE book (id INTEGER PRIMARY KEY, categoryId INTEGER, '
-      'title TEXT)',
-    );
-    db.execute("INSERT INTO book VALUES (1, 7, 'בראשית'), (2, 7, 'ריק')");
+    db.execute('CREATE TABLE book (id INTEGER PRIMARY KEY, title TEXT)');
+    db.execute("INSERT INTO book VALUES (1, 'בראשית'), (2, 'ריק')");
     db.execute(
       'CREATE TABLE line (bookId INTEGER, lineIndex INTEGER, content TEXT)',
     );
@@ -219,14 +216,11 @@ void main() {
     final dbPath = await seedDb('stale');
     final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     addTearDown(db.close);
-    final BookTextKey stale = (id: 1, title: 'שמות', categoryId: 7);
-    final BookTextKey otherCategory = (id: 1, title: 'בראשית', categoryId: 8);
+    final BookTextKey stale = (id: 1, title: 'שמות');
 
-    for (final k in [stale, otherCategory]) {
-      expect(await readBookContentText(db, k), isNull);
-      expect(await readBookContentBytes(db, k), isNull);
-      expect(await readBookContentTransferable(db, k), isNull);
-    }
+    expect(await readBookContentText(db, stale), isNull);
+    expect(await readBookContentBytes(db, stale), isNull);
+    expect(await readBookContentTransferable(db, stale), isNull);
   });
 
   test(

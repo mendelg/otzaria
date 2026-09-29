@@ -10,9 +10,9 @@ import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
 
 // הזהות נבדקת באותה שאילתה (אותו snapshot): patch שהוחל בין הפתרון על ה-UI
-// לקריאה ב-worker עלול להצמיד את המזהה לספר אחר.
-const _bookMatches =
-    'EXISTS (SELECT 1 FROM book WHERE id = ?1 AND title = ?2 AND categoryId = ?3)';
+// לקריאה ב-worker עלול להצמיד את המזהה לספר אחר. רק title: במסד מצורף אין
+// בהכרח categoryId.
+const _bookMatches = 'EXISTS (SELECT 1 FROM book WHERE id = ?1 AND title = ?2)';
 const _contentBlobSql =
     'SELECT CAST(content AS BLOB) FROM line WHERE bookId = ?1 AND $_bookMatches '
     'ORDER BY lineIndex';
@@ -21,7 +21,7 @@ const _contentTextSql =
     'ORDER BY lineIndex';
 
 /// הספר שנפתר על ה-UI isolate; קריאה שהמזהה שלה כבר אינו שלו מחזירה null.
-typedef BookTextKey = ({int id, String title, int categoryId});
+typedef BookTextKey = ({int id, String title});
 
 /// נקרא כל [_rowsPerCheckpoint] שורות; זריקה ממנו קוטעת את הקריאה.
 typedef ReadCheckpoint = Future<void> Function();
@@ -78,11 +78,7 @@ class BookTextReader {
     required T? Function(Object? result) fromWorker,
     required _BookRead<T> read,
   }) async {
-    final BookTextKey key = (
-      id: book.id,
-      title: book.title,
-      categoryId: book.categoryId,
-    );
+    final BookTextKey key = (id: book.id, title: book.title);
     final database = repository.database;
     if (database.isOfficial) {
       try {
@@ -91,7 +87,6 @@ class BookTextReader {
             'dbPath': database.path,
             'bookId': key.id,
             'title': key.title,
-            'categoryId': key.categoryId,
           }),
         );
       } on DbReadWorkerUnavailable {
@@ -133,8 +128,7 @@ Future<List<Uint8List>> _readContentParts(
   try {
     final raw = statement.raw
       ..bindInt64(1, book.id)
-      ..bindText(2, book.title)
-      ..bindInt64(3, book.categoryId);
+      ..bindText(2, book.title);
     final parts = <Uint8List>[];
     while (raw.step()) {
       final part = raw.columnBlob(0);
@@ -204,11 +198,7 @@ Future<String?> readBookContentText(
   // CAST AS BLOB מחזיר את קידוד המסד; פענוח חוצץ אחד נכון רק ב-UTF-8.
   final encoding = db.select('PRAGMA encoding').first.values.first;
   if (encoding != 'UTF-8') {
-    final rows = db.select(_contentTextSql, [
-      book.id,
-      book.title,
-      book.categoryId,
-    ]);
+    final rows = db.select(_contentTextSql, [book.id, book.title]);
     if (rows.isEmpty) return null;
     return rows.map((row) => (row.values.first as String?) ?? '').join('\n');
   }

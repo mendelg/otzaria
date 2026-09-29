@@ -524,11 +524,8 @@ class _Suspended implements Exception {
   const _Suspended();
 }
 
-BookTextKey _bookTextKey(Map<String, Object?> args) => (
-  id: args['bookId'] as int,
-  title: args['title'] as String,
-  categoryId: args['categoryId'] as int,
-);
+BookTextKey _bookTextKey(Map<String, Object?> args) =>
+    (id: args['bookId'] as int, title: args['title'] as String);
 
 /// ספרים שנפתרו כבר על החיבור הנוכחי; מתנקה בכל סגירה.
 const _maxResolvedBooks = 4096;
