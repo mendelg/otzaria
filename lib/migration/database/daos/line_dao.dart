@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import '../../models/line.dart';
 import '../sqlite3_utils.dart';
@@ -40,31 +38,6 @@ class LineDao {
         .select(_queries['selectContentByBookId']!, [bookId])
         .map((row) => (row.values.first as String?) ?? '')
         .toList();
-  }
-
-  /// תוכן כל שורות הספר כבייטים גולמיים (UTF-8 כפי שמאוחסן ב-SQLite),
-  /// מאוחים ב-`\n` — בלי פענוח ל-String: מסלול האינדוקס מעביר את הבייטים
-  /// למנוע כמות-שהם וחוסך את סבב הקידוד UTF-8→UTF-16→UTF-8 על גשר ה-FFI.
-  Future<Uint8List> selectContentBytesByBookId(int bookId) async {
-    final db = await database;
-    final parts = db
-        .select(_queries['selectContentBlobByBookId']!, [bookId])
-        .map((row) => (row.values.first as Uint8List?) ?? Uint8List(0))
-        .toList();
-    if (parts.isEmpty) return Uint8List(0);
-
-    var total = parts.length - 1; // מפרידי \n
-    for (final part in parts) {
-      total += part.length;
-    }
-    final joined = Uint8List(total);
-    var offset = 0;
-    for (var i = 0; i < parts.length; i++) {
-      if (i > 0) joined[offset++] = 0x0A; // '\n'
-      joined.setAll(offset, parts[i]);
-      offset += parts[i].length;
-    }
-    return joined;
   }
 
   Future<List<Line>> selectByBookIdRange(

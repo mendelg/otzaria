@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
+import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/models/book_source.dart';
@@ -418,13 +419,10 @@ class SqliteDataProvider {
         preferSource: preferSource,
       );
       if (resolvedBook == null) return null;
-      final book = resolvedBook.book;
-
-      // מסלול רזה: תוכן בלבד, בלי בניית Map ואובייקט Line לכל שורה —
-      // האינדוקס (הקורא הכבד ביותר של טקסט מלא) רק מאחה שורות לטקסט אחד.
-      final lines = await resolvedBook.repository.getLineContents(book.id);
-      if (lines.isEmpty) return null;
-      return lines.join('\n');
+      return await BookTextReader.text(
+        resolvedBook.repository,
+        resolvedBook.book.id,
+      );
     } catch (e, st) {
       debugPrint(
         '[SqliteDataProvider] getBookTextFromDb failed for '
@@ -457,10 +455,11 @@ class SqliteDataProvider {
       );
       if (resolvedBook == null) return null;
 
-      final bytes = await resolvedBook.repository.getLineContentBytes(
+      final bytes = await BookTextReader.bytes(
+        resolvedBook.repository,
         resolvedBook.book.id,
       );
-      if (bytes.isEmpty) return null;
+      if (bytes == null || bytes.isEmpty) return null;
       return bytes;
     } catch (e, st) {
       debugPrint(

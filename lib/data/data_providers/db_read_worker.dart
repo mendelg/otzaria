@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
+import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart'
     show runRangeRequestOnConnection;
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
@@ -149,8 +150,8 @@ Future<List<Map<String, Object?>>> _readBatchOnFreshConnection(
   }
 }
 
-/// isolate קבוע שקורא את seforim.db בשביל מסלולי הקריאה החמים (טווחי טקסט
-/// וקישורים, תוכן מפרשים, נתיבי כותרות), על חיבור RO אחד שנפתח פעם אחת.
+/// isolate קבוע שקורא את seforim.db בשביל מסלולי הקריאה (טווחי טקסט וקישורים,
+/// מפרשים, נתיבי כותרות, טקסט ספר מלא), על חיבור RO אחד שנפתח פעם אחת.
 ///
 /// נפרד מ-FindRefDbIsolate: חימום ה-AltToc שם אורך שניות, ופתיחת ספר לא
 /// תמתין מאחוריו. נוצר בעצלתיים בבקשה הראשונה, לעולם לא בעלייה.
@@ -270,17 +271,23 @@ class DbReadWorker {
       throw const DbReadWorkerSuspended();
     }
     await QueryLoader.initialize();
+    final queryCache = QueryLoader.cacheSnapshot;
+    return runOnFreshIsolate(
+      () => _readBatchOnFreshConnection(items, queryCache),
+    );
+  }
+
+  /// מריץ קריאה על חיבור זמני ב-isolate חד-פעמי, כש-worker אינו זמין;
+  /// השהיה לכתיבה חיצונית ממתינה לה עד שתשחרר את הקובץ.
+  static Future<T> runOnFreshIsolate<T>(FutureOr<T> Function() read) async {
     if (_suspendedForExternalWrite || _closedUntilReopen) {
       throw const DbReadWorkerSuspended();
     }
-    final queryCache = QueryLoader.cacheSnapshot;
-    final read = Isolate.run(
-      () => _readBatchOnFreshConnection(items, queryCache),
-    );
-    final tracked = read.then<void>((_) {}, onError: (Object _) {});
+    final run = Isolate.run(read);
+    final tracked = run.then<void>((_) {}, onError: (Object _) {});
     _oneShotReads.add(tracked);
     try {
-      return await read;
+      return await run;
     } finally {
       _oneShotReads.remove(tracked);
     }
@@ -617,6 +624,18 @@ void _workerMain(_Bootstrap bootstrap) {
         return repo.getLineBreadcrumb(
           args['bookId'] as int,
           args['lineIndex'] as int,
+        );
+      case 'bookText':
+        final repo = await ensureRepo(args['dbPath'] as String);
+        return readBookContentText(
+          await repo.database.database,
+          args['bookId'] as int,
+        );
+      case 'bookTextBytes':
+        final repo = await ensureRepo(args['dbPath'] as String);
+        return readBookContentTransferable(
+          await repo.database.database,
+          args['bookId'] as int,
         );
       default:
         final repo = await ensureRepo(args['dbPath'] as String);

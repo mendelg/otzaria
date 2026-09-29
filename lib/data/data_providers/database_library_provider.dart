@@ -13,6 +13,7 @@ import 'package:otzaria/data/cache/books_cache.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
 import 'package:otzaria/data/data_providers/book_composite_key.dart';
+import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/library_provider.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
@@ -2707,8 +2708,8 @@ class DatabaseLibraryProvider implements LibraryProvider {
         preferSource: source,
       );
       if (record == null || record.source != source) return null;
-      final lines = await record.repository.getLineContents(record.book.id);
-      if (lines.isNotEmpty) return lines.join('\n');
+      final text = await BookTextReader.text(record.repository, record.book.id);
+      if (text != null) return text;
       // ספר מבוסס-קובץ: filePath כבר נפתר בתוך תיקיית המסד (או null).
       final file = record.book.filePath;
       if (file == null || !await File(file).exists()) return null;

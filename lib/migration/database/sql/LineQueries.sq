@@ -19,12 +19,6 @@ ORDER BY lineIndex;
 selectContentByBookId:
 SELECT content FROM line WHERE bookId = ? ORDER BY lineIndex;
 
--- כמו selectContentByBookId אך כבייטים גולמיים (UTF-8 כפי שמאוחסן):
--- מסלול האינדוקס מעביר אותם למנוע כמות-שהם ונמנע מפענוח ל-String
--- וקידוד חוזר על גשר ה-FFI.
-selectContentBlobByBookId:
-SELECT CAST(content AS BLOB) FROM line WHERE bookId = ? ORDER BY lineIndex;
-
 selectByBookIdAndIndex:
 SELECT * FROM line WHERE bookId = ? AND lineIndex = ?;
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:logging/logging.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
@@ -1212,12 +1211,6 @@ class SeforimRepository {
   /// (ראה [LineDao.selectContentByBookId]).
   Future<List<String>> getLineContents(int bookId) async {
     return await _database.lineDao.selectContentByBookId(bookId);
-  }
-
-  /// תוכן הספר כבייטים גולמיים (UTF-8) מאוחים ב-`\n` — מסלול האינדוקס
-  /// (ראה [LineDao.selectContentBytesByBookId]).
-  Future<Uint8List> getLineContentBytes(int bookId) async {
-    return await _database.lineDao.selectContentBytesByBookId(bookId);
   }
 
   /// האם המסד מכיל את אינדקס ההפניות `line_ref`. כשאין — הקוראים נופלים
