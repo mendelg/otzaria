@@ -1856,12 +1856,6 @@ class SeforimRepository {
     return Link.fromJson(result.first);
   }
 
-  Future<int> countLinks() async {
-    final db = await _database.database;
-    final result = db.select('SELECT COUNT(*) FROM link');
-    return result.first.values.first as int;
-  }
-
   Future<List<CommentatorInfo>> getAvailableCommentators(int bookId) async {
     final capabilities = await _capabilities;
     if (!capabilities.hasLinks) return const [];

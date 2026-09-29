@@ -570,28 +570,6 @@ class LibraryProviderManager {
     return 'שגיאה: לא נמצא תוכן';
   }
 
-  /// Gets statistics from all providers
-  Future<Map<String, dynamic>> getStats() async {
-    final stats = <String, dynamic>{
-      'providers': _providers.length,
-      'totalBooks': _bookToProvider.length,
-    };
-
-    // Add database stats
-    final dbStats = await databaseProvider.getStats();
-    stats['database'] = dbStats;
-
-    // Count books per provider
-    final bookCounts = <String, int>{};
-    for (final entry in _bookToProvider.entries) {
-      final providerName = entry.value.displayName;
-      bookCounts[providerName] = (bookCounts[providerName] ?? 0) + 1;
-    }
-    stats['booksByProvider'] = bookCounts;
-
-    return stats;
-  }
-
   /// Builds a unified library catalog from all providers.
   ///
   /// This method delegates to the highest priority provider that is initialized.
