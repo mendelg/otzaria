@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/data/cache/books_cache.dart';
+import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/book_composite_key.dart';
 import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/data_providers/file_system_library_provider.dart';
@@ -167,6 +168,57 @@ void main() {
     expect(
       await fileSystemProvider.hasBook('ישן', 1, 'txt'),
       isFalse,
+    );
+  });
+
+  group('checkLibraryIsEmpty באנדרואיד (#1483)', () {
+    late Directory booksDir;
+
+    setUp(() async {
+      NavigationRepository.debugIsAndroidOverride = true;
+      final tempDir = await Directory.systemTemp.createTemp('otzaria_1483');
+      addTearDown(() => tempDir.delete(recursive: true));
+      // יעד שנבחר בדיאלוג ההגדרה, מחוץ לתיקיות האפליקציה.
+      booksDir = await Directory(
+        '${tempDir.path}/storage/emulated/0/Documents/books',
+      ).create(recursive: true);
+      await Settings.setValue<String>(
+        SettingsRepository.keyLibraryPath,
+        booksDir.path,
+      );
+      await Settings.setValue<String>(
+        SettingsRepository.keyLibraryFolderName,
+        '',
+      );
+      await Settings.setValue<String>(
+        SettingsRepository.keyDbEffectivePath,
+        '',
+      );
+    });
+
+    tearDown(() => NavigationRepository.debugIsAndroidOverride = null);
+
+    test('מסד קריא שיובא לאחסון חיצוני אינו נחשב ספרייה ריקה', () async {
+      await File(
+        '${booksDir.path}/${DatabaseConstants.databaseFileName}',
+      ).writeAsString('db');
+
+      expect(navigationRepository.checkLibraryIsEmpty(), isFalse);
+    });
+
+    test(
+      'מסד שאינו קריא נחשב ספרייה ריקה',
+      () async {
+        final db = File(
+          '${booksDir.path}/${DatabaseConstants.databaseFileName}',
+        );
+        await db.writeAsString('db');
+        await Process.run('chmod', ['000', db.path]);
+        addTearDown(() => Process.run('chmod', ['644', db.path]));
+
+        expect(navigationRepository.checkLibraryIsEmpty(), isTrue);
+      },
+      skip: Platform.isWindows,
     );
   });
 }

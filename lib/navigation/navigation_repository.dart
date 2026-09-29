@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/data/cache/acronyms_cache.dart';
 import 'package:otzaria/data/cache/generation_cache.dart';
@@ -22,6 +23,11 @@ class NavigationRepository {
 
   final Future<void> Function() _reopenIndex;
 
+  @visibleForTesting
+  static bool? debugIsAndroidOverride;
+
+  static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
+
   /// בודק אם הספרייה ריקה - כלומר אם קובץ seforim.db לא קיים
   bool checkLibraryIsEmpty() {
     final libraryPath = Settings.getValue<String>(
@@ -44,7 +50,7 @@ class NavigationRepository {
     // לא יכול לפתוח אותו מאחסון Scoped Storage חיצוני.
     // אם אין keyDbEffectivePath, המשמעות היא שה-flow לא הושלם — נחזיר true
     // כדי שהמשתמש יגיע למסך הבחירה עם הדיאלוג המתאים.
-    if (Platform.isAndroid && !_isNativeAccessible(databasePath)) {
+    if (_isAndroid && !_isNativeAccessible(databasePath)) {
       final effectivePath =
           Settings.getValue<String>(SettingsRepository.keyDbEffectivePath) ??
           '';
