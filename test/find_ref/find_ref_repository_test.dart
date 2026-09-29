@@ -2517,6 +2517,88 @@ void main() {
       },
     );
 
+    group('dedup: עלה AltToc בשורת התוכן שמתחת לכותרת TOC', () {
+      // ערוך השולחן: כותרת "סימן א" בשורה 50, ועלה "סימן א" תחת Topic
+      // ("הלכות השכמת הבוקר") מעוגן בשורת התוכן הראשונה שאחריה.
+      const title = 'ערוך השולחן';
+      const leaf = 'אורח חיים הלכות השכמת הבוקר סימן א';
+      FindRefRepository buildRepo({
+        List<(String, int)> alts = const [],
+        String tocReference = '$title אורח חיים סימן א',
+      }) => FindRefRepository(
+        dataRepository: MockDataRepository(),
+        isReferenceBooksCacheLoaded: () => true,
+        warmUpReferenceBooksCache: () async {},
+        searchReferenceBooks: (query, {int limit = 50}) => [
+          if (query == title) _hit(bookId: 3779, title: title),
+        ],
+        getTocEntriesForReference: (id, t, {queryTokens}) async => [
+          {
+            'reference': tocReference,
+            'segment': 50,
+            'level': 2,
+            'dbLineId': 9050,
+          },
+        ],
+        getAltTocEntriesForReference: (id, t, {queryTokens}) async => [
+          for (final (reference, segment) in alts)
+            {
+              'reference': reference,
+              'segment': segment,
+              'level': 2,
+              'dbLineId': 9000 + segment,
+            },
+        ],
+      );
+
+      test('שורה מיד אחרי הכותרת — תוצאה אחת, של ה-TOC', () async {
+        final results = await buildRepo(
+          alts: [(leaf, 51)],
+        ).findRefs('ערוך השולחן סימן א');
+
+        expect(results.map((r) => (r.isAltToc, r.segment)), [(false, 50)]);
+      });
+
+      test('"[סימן כה] שם הסימן" מתחת לכותרת "סימן כה" — מתמזג', () async {
+        final results = await buildRepo(
+          tocReference: '$title סימן כה',
+          alts: [('[סימן כה] דיני הנחת תפילין', 51)],
+        ).findRefs('ערוך השולחן סימן כה');
+
+        expect(results.map((r) => (r.isAltToc, r.segment)), [(false, 50)]);
+      });
+
+      test('עלה שממוזג לכותרת עדיין חוסם עלה נוסף באותה כתובת', () async {
+        final results = await buildRepo(
+          alts: [(leaf, 51), (leaf, 80)],
+        ).findRefs('ערוך השולחן סימן א');
+
+        expect(results.map((r) => (r.isAltToc, r.segment)), [(false, 50)]);
+      });
+
+      test('עלה שמתאים ליותר מהשאילתה מהכותרת — נשאר', () async {
+        final results = await buildRepo(
+          alts: [('אורח חיים סימן א סעיף ד', 51)],
+        ).findRefs('ערוך השולחן סימן א סעיף ד');
+
+        expect(
+          results.map((r) => (r.isAltToc, r.segment)),
+          contains((true, 51)),
+        );
+      });
+
+      test('שורת תוכן מפרידה ביניהם — שתי התוצאות נשארות', () async {
+        final results = await buildRepo(
+          alts: [(leaf, 52)],
+        ).findRefs('ערוך השולחן סימן א');
+
+        expect(
+          results.map((r) => (r.isAltToc, r.segment)).toSet(),
+          {(false, 50), (true, 52)},
+        );
+      });
+    });
+
     test('פילטר AltToc פר-ספר — מאצ\' חלקי של ספר רפוי נחסם', () async {
       // "נחל שורק" נמצא עבור "נח" כי "נחל".startsWith("נח").
       // AltToc שלו מחזיר "הפטרת נח" שמתאים רק לטוקן "נח" ולא ל-"עליה" ו-"ב".
