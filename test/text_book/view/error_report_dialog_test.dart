@@ -7,6 +7,7 @@ import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/utils/canonical_json.dart';
 import 'package:otzaria/text_book/view/error_report_dialog.dart';
+import 'package:otzaria/text_book/view/text_correction_editor.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 // ignore: depend_on_referenced_packages
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -1026,12 +1027,16 @@ void main() {
               builder: (ctx) => ElevatedButton(
                 onPressed: () => showDialog<void>(
                   context: ctx,
-                  builder: (_) => const TabbedReportDialog(
+                  builder: (_) => TabbedReportDialog(
                     selectedText: 'טקסט',
                     fontSize: 18,
                     bookTitle: 'ספר בדיקה',
                     currentLineNumber: 0,
                     directReportTargetLabel: 'אוצריא',
+                    correctionTemplate: buildCorrectionTemplate(
+                      'שורה לבדיקה',
+                      'לבדיקה',
+                    ),
                   ),
                 ),
                 child: const Text('פתח'),
@@ -1179,6 +1184,88 @@ void main() {
         libraryVersion: '27',
       );
       expect(report.selectedText, text);
+    });
+  });
+
+  // בספר שהדיווח עליו לא מגיע לתיבת אוצריא (ספריא) אין עורך תיקון, והטופס קצר;
+  // בגובה המלא רוב הדיאלוג נשאר ריק (issue #1599).
+  group('גובה דיאלוג הדיווח', () {
+    Future<double> dialogHeight(
+      WidgetTester tester, {
+      TextCorrection? correctionTemplate,
+    }) async {
+      tester.view.physicalSize = const Size(1920, 1020);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () => showDialog<void>(
+                  context: ctx,
+                  builder: (_) => TabbedReportDialog(
+                    selectedText: List.filled(60, 'מילה ארוכה').join(' '),
+                    fontSize: 18,
+                    bookTitle: 'ספר בדיקה',
+                    currentLineNumber: 0,
+                    directReportTargetLabel: 'ספריא',
+                    correctionTemplate: correctionTemplate,
+                  ),
+                ),
+                child: const Text('פתח'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('פתח'));
+      await tester.pumpAndSettle();
+      return tester.getSize(find.byType(TabBarView)).height;
+    }
+
+    ScrollPosition formScroll(WidgetTester tester) => tester
+        .state<ScrollableState>(
+          find
+              .descendant(
+                of: find.byType(TabBarView),
+                matching: find.byWidgetPredicate(
+                  (w) =>
+                      w is Scrollable && w.axisDirection == AxisDirection.down,
+                ),
+              )
+              .first,
+        )
+        .position;
+
+    testWidgets('טופס בלי עורך תיקון קצר ויציב בזמן הקלדה', (tester) async {
+      final initial = await dialogHeight(tester);
+
+      expect(initial, lessThan(500), reason: 'לא בגובה של טופס עם עורך');
+      await tester.enterText(
+        find.byKey(const ValueKey('report-details-field')),
+        List.filled(12, 'שורה').join('\n'),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.getSize(find.byType(TabBarView)).height,
+        initial,
+        reason: 'הגובה אינו משתנה בזמן ההקלדה',
+      );
+      expect(
+        formScroll(tester).maxScrollExtent,
+        0,
+        reason: 'טקסט נבחר ארוך ושדה פירוט מלא נכנסים בלי גלילה',
+      );
+    });
+
+    testWidgets('טופס עם עורך תיקון נשאר בגובה הנוח', (tester) async {
+      final height = await dialogHeight(
+        tester,
+        correctionTemplate: buildCorrectionTemplate('שורה לבדיקה', 'לבדיקה'),
+      );
+
+      expect(height, greaterThan(560));
     });
   });
 }
