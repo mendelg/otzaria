@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:otzaria/attached_libraries/repository/attached_library_probe.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
+import 'package:otzaria/migration/database/daos/line_ref_dao.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
 import 'package:otzaria/models/link_types.dart';
@@ -65,6 +67,10 @@ class ExternalTargetResolver {
 
   final Map<String, (sqlite3.Database, DbCapabilities)?> _open = {};
   final Map<(String, String), List<(int, int?)>> _books = {};
+
+  /// ה-SQL האחרון של פתרון לפי הפניה — לוודא בבדיקות איזה נוסח נשלח בפועל.
+  @visibleForTesting
+  String? lastRefCandidatesSql;
 
   /// המסד שה-targetSource מצביע עליו; ריק (null בערך) — כל המסדים לפי הסדר.
   List<ExternalTargetDb> candidatesFor(String? targetSource) {
@@ -186,7 +192,13 @@ class ExternalTargetResolver {
         caps.hasLineRef &&
         caps.hasColumn('line', 'heRef') &&
         caps.hasColumn('line_ref', 'refKeyHash')) {
-      final hit = _byRef(db, books, targetTitle, ref);
+      final hit = _byRef(
+        db,
+        books,
+        targetTitle,
+        ref,
+        official: target.slug == null && !target.target.untrusted,
+      );
       if (hit != null) {
         return (
           target: target,
@@ -222,20 +234,16 @@ class ExternalTargetResolver {
     sqlite3.Database db,
     List<(int, int?)> books,
     String title,
-    String ref,
-  ) {
+    String ref, {
+    required bool official,
+  }) {
     final key = buildLineRefKey(ref, [title]);
     if (key == null) return null;
     final keyTokens = refKeyTokens(key);
     final categoryByBook = {for (final (id, cat) in books) id: cat};
-    final ids = categoryByBook.keys.join(',');
-    final rows = db.select(
-      'SELECT lr.bookId, lr.lineIndex, l.heRef FROM line_ref lr '
-      'JOIN line l ON l.bookId = lr.bookId AND l.lineIndex = lr.lineIndex '
-      'WHERE lr.refKeyHash = ? AND lr.bookId IN ($ids) '
-      'ORDER BY lr.bookId, lr.lineIndex',
-      [refKeyHash(key)],
-    );
+    final sql = refCandidatesSql(categoryByBook.keys, official: official);
+    lastRefCandidatesSql = sql;
+    final rows = db.select(sql, [refKeyHash(key)]);
     for (final row in rows) {
       final heRef = _text(row['heRef']);
       final bookId = _int(row['bookId']);
@@ -247,6 +255,17 @@ class ExternalTargetResolver {
     }
     return null;
   }
+
+  /// מסד מצורף עלול להיות בלי line.id, ולכן העמודות מצומצמות ל-heRef.
+  @visibleForTesting
+  static String refCandidatesSql(
+    Iterable<int> bookIds, {
+    required bool official,
+  }) => LineRefDao.candidatesSql(
+    bookIds,
+    official: official,
+    columns: 'lr.bookId, lr.lineIndex, l.heRef',
+  );
 
   static bool _endsWith(List<String> tokens, List<String> suffix) {
     if (suffix.isEmpty || suffix.length > tokens.length) return false;

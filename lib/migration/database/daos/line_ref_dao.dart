@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import '../query_loader.dart';
 import 'database.dart';
@@ -24,6 +25,10 @@ class LineRefDao {
 
   Future<sqlite3.Database> get database => _db.database;
 
+  /// ה-SQL האחרון של [candidatesForBooks] — לוודא בבדיקות איזה נוסח נשלח בפועל.
+  @visibleForTesting
+  String? lastCandidatesSql;
+
   /// האם המסד הנוכחי מכיל את טבלת האינדקס.
   Future<bool> isAvailable() async => (await _db.capabilities).hasLineRef;
 
@@ -36,16 +41,10 @@ class LineRefDao {
   ) async {
     if (bookIds.isEmpty || !await isAvailable()) return const [];
     final db = await database;
-    final ids = bookIds.join(',');
+    final sql = candidatesSql(bookIds, official: _db.isOfficial);
+    lastCandidatesSql = sql;
     return db
-        .select(
-          'SELECT lr.bookId, lr.lineIndex, l.id AS lineId, l.heRef '
-          'FROM line_ref lr '
-          'JOIN line l ON l.bookId = lr.bookId AND l.lineIndex = lr.lineIndex '
-          'WHERE lr.refKeyHash = ? AND lr.bookId IN ($ids) '
-          'ORDER BY lr.bookId, lr.lineIndex',
-          [refKeyHash],
-        )
+        .select(sql, [refKeyHash])
         .map(
           (row) => (
             bookId: row['bookId'] as int,
@@ -56,6 +55,20 @@ class LineRefDao {
         )
         .toList();
   }
+
+  /// בלי sqlite_stat1 המתכנן סורק את כל שורות הספר ב-line; ב-seforim.db
+  /// CROSS JOIN מתחיל ממפתח line_ref. מסד אחר שומר על השאילתה המקורית.
+  static String candidatesSql(
+    Iterable<int> bookIds, {
+    required bool official,
+    String columns = 'lr.bookId, lr.lineIndex, l.id AS lineId, l.heRef',
+  }) =>
+      'SELECT $columns '
+      'FROM line_ref lr '
+      '${official ? 'CROSS JOIN' : 'JOIN'} line l '
+      'ON l.bookId = lr.bookId AND l.lineIndex = lr.lineIndex '
+      'WHERE lr.refKeyHash = ? AND lr.bookId IN (${bookIds.join(',')}) '
+      'ORDER BY lr.bookId, lr.lineIndex';
 
   Future<void> insert(int bookId, int refKeyHash, int lineIndex) async {
     final db = await database;
