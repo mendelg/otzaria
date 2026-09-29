@@ -107,6 +107,15 @@ int findLastHeaderIndexAtOrBefore(List<TocEntry> headers, int lineIndex) {
   return result;
 }
 
+/// Alt-TOC rows as print headers; the level lets [headerSectionEndLine] keep
+/// nested sub-headers inside their parent's range.
+List<TocEntry> altHeadersForPrint(
+  Iterable<({int lineIndex, int level, String text})> rows,
+) => [
+  for (final r in rows)
+    TocEntry(text: r.text, index: r.lineIndex, level: r.level),
+];
+
 /// שורת הסיום (בלעדית) של סעיף הכותרת [index] ברשימה שטוחה בסדר המסמך:
 /// תחילת הכותרת הבאה שרמתה אינה עמוקה יותר (כך שתתי-הכותרות נכללות), או [totalLines].
 int headerSectionEndLine(List<TocEntry> headers, int index, int totalLines) {

@@ -387,9 +387,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
       );
       if (!mounted || rows.isEmpty) return;
 
-      final altEntries = rows
-          .map((r) => TocEntry(text: r.text, index: r.lineIndex))
-          .toList();
+      final altEntries = altHeadersForPrint(rows);
 
       final lastAlt = findLastHeaderIndexAtOrBefore(
         altEntries,

@@ -1732,6 +1732,102 @@ void main() {
     );
 
     test(
+      'getAltTocLineIndices מחזיר את רמת הערך, וההורה קודם לילד שבאותה שורה',
+      () async {
+        final tempDir = await Directory.systemTemp.createTemp(
+          'otzaria_db_alt_line_indices',
+        );
+        final dbPath = path.join(
+          tempDir.path,
+          DatabaseConstants.databaseFileName,
+        );
+        final database = MyDatabase.withPath(dbPath);
+        final repository = SeforimRepository(database);
+        final provider = DatabaseLibraryProvider.instance;
+        final previousLibraryPath = Settings.getValue<String>(
+          SettingsRepository.keyLibraryPath,
+        );
+        final previousEffectiveDbPath = Settings.getValue<String>(
+          SettingsRepository.keyDbEffectivePath,
+        );
+
+        try {
+          await provider.sqliteProvider.dispose();
+          provider.clearCache();
+          await repository.ensureInitialized();
+
+          await Settings.setValue<String>(
+            SettingsRepository.keyLibraryPath,
+            tempDir.path,
+          );
+          await Settings.setValue<String>(
+            SettingsRepository.keyLibraryFolderName,
+            '',
+          );
+          await Settings.setValue<String>(
+            SettingsRepository.keyDbEffectivePath,
+            '',
+          );
+
+          final sourceId = await repository.insertSource('local', -10);
+          final catId = await repository.insertCategory(
+            const migration_models.Category(
+              title: 'כללי',
+              parentId: null,
+              level: 0,
+            ),
+          );
+
+          await provider.initialize();
+
+          final db = await database.database;
+          db.execute(
+            "INSERT INTO book (id, categoryId, sourceId, title, orderIndex, totalLines, filePath, fileType) VALUES (1, $catId, $sourceId, 'ספר', 1, 20, '/tmp/b.txt', 'txt')",
+          );
+          db.execute(
+            "INSERT INTO alt_toc_structure (id, bookId, key, title, heTitle) VALUES (1, 1, 'Topic', 'Topic', 'נושא')",
+          );
+          db.execute(
+            "INSERT INTO tocText (id, text) VALUES (1, 'הלכות א'), (2, 'סימן א'), (3, 'סימן ב'), (4, 'הלכות ב')",
+          );
+          db.execute(
+            "INSERT INTO line (id, bookId, lineIndex, content) VALUES (50, 1, 5, 'א'), (80, 1, 8, 'ב'), (120, 1, 12, 'ג')",
+          );
+          // הילד נוסף לפני ההורה שחולק איתו שורה — הסדר חייב לא להיות תלוי ב-id.
+          db.execute(
+            'INSERT INTO alt_toc_entry (id, structureId, parentId, textId, level, lineId) VALUES '
+            '(1, 1, 2, 2, 2, 50), (2, 1, NULL, 1, 1, 50), (3, 1, 2, 3, 2, 80), (4, 1, NULL, 4, 1, 120)',
+          );
+
+          final rows = await provider.getAltTocLineIndices(1);
+
+          expect(
+            [for (final r in rows) (r.lineIndex, r.level, r.text)],
+            [
+              (5, 1, 'הלכות א'),
+              (5, 2, 'סימן א'),
+              (8, 2, 'סימן ב'),
+              (12, 1, 'הלכות ב'),
+            ],
+          );
+        } finally {
+          await Settings.setValue<String>(
+            SettingsRepository.keyLibraryPath,
+            previousLibraryPath ?? '',
+          );
+          await Settings.setValue<String>(
+            SettingsRepository.keyDbEffectivePath,
+            previousEffectiveDbPath ?? '',
+          );
+          await provider.sqliteProvider.dispose();
+          provider.clearCache();
+          database.close();
+          await tempDir.delete(recursive: true);
+        }
+      },
+    );
+
+    test(
       'buildLibraryCatalog ממזג ספרים אישיים קיימים מול user_books',
       () async {
         final tempDir = await Directory.systemTemp.createTemp(
