@@ -16,3 +16,9 @@ class _UnsupportedSqlite3 implements CommonSqlite3 {
 }
 
 const CommonSqlite3 sqlite3 = _UnsupportedSqlite3();
+
+/// `releaseMemory` קיים רק ב-Database הנייטיבי.
+extension DatabaseReleaseMemory on Database {
+  void releaseMemory() =>
+      throw UnsupportedError('SQLite נייטיבי אינו זמין בפלטפורמה זו');
+}

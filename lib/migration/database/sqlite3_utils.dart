@@ -91,7 +91,7 @@ void _relaxSyncIfWal(Database db, String label) {
 bool shrinkMemoryBestEffort(Database? db) {
   if (db == null) return false;
   try {
-    db.execute('PRAGMA shrink_memory');
+    db.releaseMemory();
     return true;
   } catch (_) {
     return false;
