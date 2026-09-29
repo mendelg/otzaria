@@ -13,6 +13,7 @@ import 'package:otzaria/data/cache/books_cache.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
 import 'package:otzaria/data/data_providers/book_composite_key.dart';
+import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/library_provider.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
@@ -1167,9 +1168,23 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
 
     // כל הרמות, לא רק עלים: בערוך השולחן "הלכות X" החסרה היא צומת ביניים,
     // והעלה ("סימן א") נופל בבדיקת הנראוּת.
-    final headingRows = db
-        .select(
-          '''
+    final headingRows = db.select(
+      capabilities.hasSplitLineContent
+          ? '''
+      SELECT l.lineIndex AS lineIndex, t.text AS label, lc.content AS line0,
+        (SELECT pc.content FROM line p JOIN line_content pc ON pc.id = p.id
+          WHERE p.bookId = l.bookId AND p.lineIndex = l.lineIndex - 1) AS line1,
+        (SELECT pc.content FROM line p JOIN line_content pc ON pc.id = p.id
+          WHERE p.bookId = l.bookId AND p.lineIndex = l.lineIndex - 2) AS line2
+      FROM alt_toc_structure s
+      JOIN alt_toc_entry e ON e.structureId = s.id
+      JOIN tocText t ON t.id = e.textId
+      JOIN line l ON l.id = e.lineId
+      LEFT JOIN line_content lc ON lc.id = l.id
+      WHERE s.bookId = ? AND s.key = 'Topic'
+      ORDER BY l.lineIndex, e.level
+      '''
+          : '''
       SELECT l.lineIndex AS lineIndex, t.text AS label, l.content AS line0,
         (SELECT p.content FROM line p
           WHERE p.bookId = l.bookId AND p.lineIndex = l.lineIndex - 1) AS line1,
@@ -1182,9 +1197,8 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
       WHERE s.bookId = ? AND s.key = 'Topic'
       ORDER BY l.lineIndex, e.level
       ''',
-          [bookId],
-        )
-        .toMapList();
+      [bookId],
+    ).toMapList();
 
     // השאילתה מביאה לכל כותרת את שורתה ושתיים שלפניה — חלון הבדיקה כולו.
     final linesByIndex = <int, String?>{};
@@ -1377,9 +1391,20 @@ _loadBookTextRangeRowsInIsolate({
       // מהדורה חלופית: שורות מבנה (heRef NULL — כותרות/מחברים) נשארות מהשלד;
       // שורת תוכן מקבלת את נוסח המהדורה, וסגמנט שחסר בה מוצג ריק — לעולם לא
       // נופלים בשקט לנוסח הממוזג.
-      rows = db
-          .select(
-            '''
+      rows = db.select(
+        capabilities.hasSplitLineContent
+            // סכמה 6: vl.content NULL = זהה לבסיס; שורה חסרה עדיין ריקה.
+            ? '''
+        SELECT CASE WHEN l.heRef IS NULL THEN lc.content
+                    WHEN vl.lineId IS NULL THEN ''
+                    ELSE COALESCE(vl.content, lc.content, '') END AS content
+        FROM line l
+        LEFT JOIN line_content lc ON lc.id = l.id
+        LEFT JOIN version_line vl ON vl.versionId = ? AND vl.lineId = l.id
+        WHERE l.bookId = ? AND l.lineIndex >= ? AND l.lineIndex <= ?
+        ORDER BY l.lineIndex
+      '''
+            : '''
         SELECT CASE WHEN l.heRef IS NULL THEN l.content
                     ELSE COALESCE(vl.content, '') END AS content
         FROM line l
@@ -1387,12 +1412,16 @@ _loadBookTextRangeRowsInIsolate({
         WHERE l.bookId = ? AND l.lineIndex >= ? AND l.lineIndex <= ?
         ORDER BY l.lineIndex
       ''',
-            [versionId, bookId, normalizedStart, normalizedEnd],
-          )
-          .toMapList();
+        [versionId, bookId, normalizedStart, normalizedEnd],
+      ).toMapList();
     } else {
       rows = db.select(
-        'SELECT content FROM line WHERE bookId = ? AND lineIndex >= ? AND lineIndex <= ? ORDER BY lineIndex',
+        capabilities.hasSplitLineContent
+            ? 'SELECT lc.content AS content FROM line l '
+                  'LEFT JOIN line_content lc ON lc.id = l.id '
+                  'WHERE l.bookId = ? AND l.lineIndex >= ? AND l.lineIndex <= ? '
+                  'ORDER BY l.lineIndex'
+            : 'SELECT content FROM line WHERE bookId = ? AND lineIndex >= ? AND lineIndex <= ? ORDER BY lineIndex',
         [bookId, normalizedStart, normalizedEnd],
       ).toMapList();
     }
@@ -1487,7 +1516,7 @@ Future<T> _loadOnReadWorker<T>(
         })
         as T;
   } on DbReadWorkerUnavailable {
-    return isolateRun();
+    return DbReadWorker.trackTemporaryRead(isolateRun);
   }
 }
 
@@ -1901,6 +1930,14 @@ class DatabaseLibraryProvider implements LibraryProvider {
     _instance ??= DatabaseLibraryProvider._();
     return _instance!;
   }
+
+  @visibleForTesting
+  static Future<T> loadOnReadWorkerForTesting<T>(
+    ReadOnlyDbTarget target,
+    String method,
+    Map<String, Object?> args,
+    Future<T> Function() fallback,
+  ) => _loadOnReadWorker(target, method, args, fallback);
 
   @visibleForTesting
   static List<Map<String, dynamic>> loadBookLinksRowsForTesting({
@@ -2707,8 +2744,8 @@ class DatabaseLibraryProvider implements LibraryProvider {
         preferSource: source,
       );
       if (record == null || record.source != source) return null;
-      final lines = await record.repository.getLineContents(record.book.id);
-      if (lines.isNotEmpty) return lines.join('\n');
+      final text = await BookTextReader.text(record.repository, record.book);
+      if (text != null) return text;
       // ספר מבוסס-קובץ: filePath כבר נפתר בתוך תיקיית המסד (או null).
       final file = record.book.filePath;
       if (file == null || !await File(file).exists()) return null;

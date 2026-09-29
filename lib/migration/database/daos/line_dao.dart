@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import '../../models/line.dart';
 import '../sqlite3_utils.dart';
@@ -16,9 +14,15 @@ class LineDao {
 
   Future<sqlite3.Database> get database => _db.database;
 
+  /// שאילתת תוכן לפי צורת המסד: בסכמה 6 התוכן ב-`line_content`.
+  Future<String> _forShape(String name) async =>
+      (await _db.capabilities).hasSplitLineContent
+      ? _queries['${name}Split']!
+      : _queries[name]!;
+
   Future<Line?> getLineById(int id) async {
     final db = await database;
-    final result = db.select(_queries['selectById']!, [id]).toMapList();
+    final result = db.select(await _forShape('selectById'), [id]).toMapList();
     if (result.isEmpty) return null;
     return _mapToLine(result.first);
   }
@@ -26,7 +30,7 @@ class LineDao {
   Future<List<Line>> selectByBookId(int bookId) async {
     final db = await database;
     return db
-        .select(_queries['selectByBookId']!, [bookId])
+        .select(await _forShape('selectByBookId'), [bookId])
         .toMapList()
         .map((row) => _mapToLine(row))
         .toList();
@@ -37,34 +41,9 @@ class LineDao {
   Future<List<String>> selectContentByBookId(int bookId) async {
     final db = await database;
     return db
-        .select(_queries['selectContentByBookId']!, [bookId])
+        .select(await _forShape('selectContentByBookId'), [bookId])
         .map((row) => (row.values.first as String?) ?? '')
         .toList();
-  }
-
-  /// תוכן כל שורות הספר כבייטים גולמיים (UTF-8 כפי שמאוחסן ב-SQLite),
-  /// מאוחים ב-`\n` — בלי פענוח ל-String: מסלול האינדוקס מעביר את הבייטים
-  /// למנוע כמות-שהם וחוסך את סבב הקידוד UTF-8→UTF-16→UTF-8 על גשר ה-FFI.
-  Future<Uint8List> selectContentBytesByBookId(int bookId) async {
-    final db = await database;
-    final parts = db
-        .select(_queries['selectContentBlobByBookId']!, [bookId])
-        .map((row) => (row.values.first as Uint8List?) ?? Uint8List(0))
-        .toList();
-    if (parts.isEmpty) return Uint8List(0);
-
-    var total = parts.length - 1; // מפרידי \n
-    for (final part in parts) {
-      total += part.length;
-    }
-    final joined = Uint8List(total);
-    var offset = 0;
-    for (var i = 0; i < parts.length; i++) {
-      if (i > 0) joined[offset++] = 0x0A; // '\n'
-      joined.setAll(offset, parts[i]);
-      offset += parts[i].length;
-    }
-    return joined;
   }
 
   Future<List<Line>> selectByBookIdRange(
@@ -74,7 +53,7 @@ class LineDao {
   ) async {
     final db = await database;
     return db
-        .select(_queries['selectByBookIdRange']!, [
+        .select(await _forShape('selectByBookIdRange'), [
           bookId,
           startIndex,
           endIndex,
@@ -86,7 +65,7 @@ class LineDao {
 
   Future<Line?> selectByBookIdAndIndex(int bookId, int lineIndex) async {
     final db = await database;
-    final result = db.select(_queries['selectByBookIdAndIndex']!, [
+    final result = db.select(await _forShape('selectByBookIdAndIndex'), [
       bookId,
       lineIndex,
     ]).toMapList();
@@ -96,7 +75,9 @@ class LineDao {
 
   Future<Line?> selectByHeRef(String heRef) async {
     final db = await database;
-    final result = db.select(_queries['selectByHeRef']!, [heRef]).toMapList();
+    final result = db.select(await _forShape('selectByHeRef'), [
+      heRef,
+    ]).toMapList();
     if (result.isEmpty) return null;
     return _mapToLine(result.first);
   }

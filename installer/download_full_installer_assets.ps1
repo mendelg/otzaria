@@ -11,10 +11,14 @@ $apiHeaders = @{ Authorization = "Bearer $env:GH_TOKEN" }
 try {
   # הורדת מסד הספרייה הראשי
   $latestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/Otzaria/SeforimLibrary/releases/latest" -Headers $apiHeaders
-  $dbAsset = $latestRelease.assets | Where-Object { $_.name -eq "seforim.db.zst" }
+  # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
+  $dbAsset = $latestRelease.assets | Where-Object { $_.name -eq "seforim-schema6.db.zst" }
+  if (-not $dbAsset) {
+    $dbAsset = $latestRelease.assets | Where-Object { $_.name -eq "seforim.db.zst" }
+  }
   
   if (-not $dbAsset) {
-    Write-Host "::error::Could not find seforim.db.zst in latest release"
+    Write-Host "::error::Could not find seforim-schema6.db.zst or seforim.db.zst in latest release"
     exit 1
   }
   

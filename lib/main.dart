@@ -1669,6 +1669,8 @@ class _AppBootstrapState extends State<AppBootstrap> {
                   client: GithubLibraryReleaseClient(
                     httpClient: GithubRateLimitAwareClient(),
                   ),
+                  supportedDbSchemaVersion:
+                      DatabaseConstants.readableDbSchemaVersion,
                 ),
                 // זורם לדיסק: patch גדול נפרס בלי לשבת ב-RAM (ראו את המחלקה).
                 downloader: StreamingPatchDownloader(),

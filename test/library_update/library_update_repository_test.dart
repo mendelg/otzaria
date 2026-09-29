@@ -51,6 +51,24 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
+  test('ה-planner של האפליקציה מצהיר על הסכמה שהיא קוראת', () {
+    final repository = LibraryUpdateRepository(
+      discovery: _unusedDiscovery(),
+      downloader: StreamingPatchDownloader(),
+    );
+    expect(DatabaseConstants.readableDbSchemaVersion, 6);
+    expect(
+      DatabaseConstants.readableDbSchemaVersion,
+      lessThanOrEqualTo(kSupportedDbSchemaVersion),
+    );
+    expect(
+      repository.planner.supportedDbSchemaVersion,
+      DatabaseConstants.readableDbSchemaVersion,
+    );
+    // ברירת המחדל של ה-updater נשארת 5, כדי ש-build ישן לא יוריד סכמה 6.
+    expect(const LibraryUpdatePlanner().supportedDbSchemaVersion, 5);
+  });
+
   test(
     'applyFullDownload מוריד, מחלץ, מאמת ומחליף DB קטן מקומית',
     () async {
@@ -1046,6 +1064,46 @@ void main() {
     expect(planner.seenLocalDbSizeBytes, File(dbPath).lengthSync());
   });
 
+  test('release בסכמה חדשה ללא דלתא דורש עדכון אפליקציה', () async {
+    final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);
+    _writeDb(dbPath, version: 1, marker: 'old');
+    final repository = LibraryUpdateRepository(
+      discovery: LibraryUpdateDiscovery(
+        supportedDbSchemaVersion: DatabaseConstants.readableDbSchemaVersion,
+        client: GithubLibraryReleaseClient(
+          httpClient: MockClient(
+            (request) async => http.Response(
+              jsonEncode([
+                {
+                  'tag_name': 'v2',
+                  'draft': false,
+                  'prerelease': false,
+                  'assets': [
+                    {
+                      'name': 'seforim-schema7.db.zst',
+                      'browser_download_url': 'https://example.com/schema7',
+                      'size': 100,
+                    },
+                  ],
+                },
+              ]),
+              200,
+            ),
+          ),
+        ),
+      ),
+      downloader: _PatchMapDownloader(const {}),
+      dbPathProvider: () => dbPath,
+    );
+
+    final plan = await repository.checkForUpdate(allowPrerelease: false);
+    expect(plan.kind, LibraryUpdatePlanKind.blocked);
+    expect(plan.targetVersion, 2);
+    expect(plan.reason, contains('נדרש עדכון אפליקציה'));
+    expect(plan.reason, contains('DB 7'));
+    expect(plan.fullDbAsset, isNull);
+  });
+
   test(
     'כשל בצעד דלתא מאוחר מדווח את הצעדים שכבר נכתבו ומרענן runtime',
     () async {
@@ -1539,6 +1597,7 @@ class _RecordingPlanner extends LibraryUpdatePlanner {
     required int? localSchemaVersion,
     required bool hasLocalVersionMeta,
     required int latestVersion,
+    int? latestDbSchemaVersion,
     required List<PatchEdge> edges,
     ReleaseAsset? latestFullDbAsset,
     String? latestReleaseTag,
@@ -1550,6 +1609,7 @@ class _RecordingPlanner extends LibraryUpdatePlanner {
       localSchemaVersion: localSchemaVersion,
       hasLocalVersionMeta: hasLocalVersionMeta,
       latestVersion: latestVersion,
+      latestDbSchemaVersion: latestDbSchemaVersion,
       edges: edges,
       latestFullDbAsset: latestFullDbAsset,
       latestReleaseTag: latestReleaseTag,
@@ -1769,10 +1829,14 @@ Map<String, String> _tableHashes(String dbPath, {int schemaVersion = 4}) {
   }
 }
 
+/// ה-hash הכולל בסדר של סכמה 4, כמו ה-edges של [_schema4Edge].
 String _logicalHash(String dbPath) {
   final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
   try {
-    return const LogicalContentHasher().compute(db);
+    return const LogicalContentHasher().compute(
+      db,
+      tableOrder: hashTableOrderForSchemaVersion(4),
+    );
   } finally {
     db.close();
   }

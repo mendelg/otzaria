@@ -176,7 +176,9 @@ class LibraryUpdateRepository implements LibraryUpdateService {
 
   LibraryUpdateRepository({
     required this.discovery,
-    this.planner = const LibraryUpdatePlanner(),
+    this.planner = const LibraryUpdatePlanner(
+      supportedDbSchemaVersion: DatabaseConstants.readableDbSchemaVersion,
+    ),
     this.versionReader = const LocalDbVersionReader(),
     required this.downloader,
     this.recovery = const LibraryDbRecoveryService(),
@@ -230,6 +232,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
       localSchemaVersion: local.schemaVersion,
       hasLocalVersionMeta: local.hasVersionMeta,
       latestVersion: result.latestVersion,
+      latestDbSchemaVersion: result.latestDbSchemaVersion,
       edges: result.edges,
       latestFullDbAsset: result.latestFullDbAsset,
       latestReleaseTag: result.latestReleaseTag,
@@ -818,14 +821,20 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     } finally {
       db.close();
     }
-    if (expectedVersion != null) {
-      final local = const LocalDbVersionReader().read(newDbPath);
-      if (local.dbVersion != expectedVersion) {
-        throw StateError(
-          'גרסת ה-DB שהורד (${local.dbVersion}) אינה הגרסה הצפויה '
-          '($expectedVersion)',
-        );
-      }
+    final local = const LocalDbVersionReader().read(newDbPath);
+    if (expectedVersion != null && local.dbVersion != expectedVersion) {
+      throw StateError(
+        'גרסת ה-DB שהורד (${local.dbVersion}) אינה הגרסה הצפויה '
+        '($expectedVersion)',
+      );
+    }
+    final schema = local.schemaVersion;
+    const readable = DatabaseConstants.readableDbSchemaVersion;
+    if (schema != null && schema > readable) {
+      throw StateError(
+        'ה-DB שהורד בסכמה $schema, חדשה מהנתמכת ($readable) — '
+        'נדרש עדכון אפליקציה',
+      );
     }
   }
 

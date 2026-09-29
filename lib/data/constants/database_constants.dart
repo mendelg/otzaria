@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:path/path.dart' as path;
+import 'package:seforim_library_updater/seforim_library_updater.dart'
+    show fullDbArchiveNameForSchema;
 
 /// Database configuration constants
 class DatabaseConstants {
@@ -11,6 +13,22 @@ class DatabaseConstants {
 
   /// The name of the compressed main database archive (as published on releases).
   static const String databaseArchiveFileName = 'seforim.db.zst';
+
+  /// סכמת ה-DB הגבוהה ביותר שהגרסה הזו קוראת (`DbCapabilities.hasSplitLineContent`).
+  /// מועברת ל-updater במפורש — ברירת המחדל שלו נשארת בסכמה 5.
+  static const int readableDbSchemaVersion = 6;
+
+  /// שם הארכיון לסכמה [schemaVersion]: השם הישן שמור לסכמה 5 ומטה, כדי
+  /// שגרסאות ישנות של התוכנה לעולם לא יורידו מסד שאינן יודעות לקרוא.
+  static String databaseArchiveFileNameForSchema(int schemaVersion) =>
+      fullDbArchiveNameForSchema(schemaVersion);
+
+  /// שמות הארכיון שהגרסה הזו קוראת, מהסכמה החדשה לישנה.
+  static List<String> get supportedDatabaseArchiveFileNames => [
+    for (var schema = readableDbSchemaVersion; schema >= 6; schema--)
+      databaseArchiveFileNameForSchema(schema),
+    databaseArchiveFileName,
+  ];
 
   /// The morphology dictionary used by fuzzy search.
   static const String lexicalDatabaseFileName = 'lexical.db';

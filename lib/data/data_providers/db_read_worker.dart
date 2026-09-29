@@ -3,6 +3,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
+import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart'
     show runRangeRequestOnConnection;
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
@@ -149,16 +150,19 @@ Future<List<Map<String, Object?>>> _readBatchOnFreshConnection(
   }
 }
 
-/// isolate קבוע שקורא את seforim.db בשביל מסלולי הקריאה החמים (טווחי טקסט
-/// וקישורים, תוכן מפרשים, נתיבי כותרות), על חיבור RO אחד שנפתח פעם אחת.
+/// שני isolates לקריאת seforim.db: טווחים וקישורים באחד, ספרים שלמים בשני.
+/// לכל אחד חיבור RO עצל; קריאת ספר לא מעכבת פתיחה וגלילה של ספר אחר.
 ///
 /// נפרד מ-FindRefDbIsolate: חימום ה-AltToc שם אורך שניות, ופתיחת ספר לא
 /// תמתין מאחוריו. נוצר בעצלתיים בבקשה הראשונה, לעולם לא בעלייה.
 class DbReadWorker {
-  DbReadWorker._();
+  DbReadWorker._(this._slot);
 
-  static DbReadWorker? _instance;
-  static Future<DbReadWorker>? _spawnFuture;
+  static final _ranges = _WorkerSlot('db_read_worker');
+  static final _books = _WorkerSlot('book_text_worker');
+  static final _slots = [_ranges, _books];
+  final _WorkerSlot _slot;
+  static int _generation = 0;
   static bool _suspendedForExternalWrite = false;
   static bool _closedUntilReopen = false;
   static final Set<Future<void>> _oneShotReads = {};
@@ -173,29 +177,49 @@ class DbReadWorker {
   @visibleForTesting
   static Duration lifecycleCommandTimeout = const Duration(seconds: 4);
 
-  static Future<DbReadWorker> _instanceOrSpawn() {
-    final existing = _instance;
+  /// שער בדיקה בנקודת checkpoint של ספר שלם; מקבל SendPort לשחרור הקריאה.
+  @visibleForTesting
+  static SendPort? bookReadCheckpointPort;
+
+  static Iterable<DbReadWorker> get _runningWorkers => _slots
+      .map((slot) => slot.instance)
+      .whereType<DbReadWorker>()
+      .where((worker) => !worker._disposed);
+
+  static Future<DbReadWorker> _instanceOrSpawn(_WorkerSlot slot) {
+    final existing = slot.instance;
     if (existing != null && !existing._disposed) return Future.value(existing);
-    return _spawnFuture ??= _spawn().then(
+    final pending = slot.spawnFuture;
+    if (pending != null) return pending;
+    late final Future<DbReadWorker> spawning;
+    spawning = _spawn(slot).then(
       (service) {
-        _instance = service;
-        _spawnFuture = null;
+        if (!identical(slot.spawnFuture, spawning)) {
+          service._tearDown();
+          throw const DbReadWorkerUnavailable('spawn superseded');
+        }
+        slot.instance = service;
+        slot.spawnFuture = null;
         // נשלח לפני כל בקשה שממתינה ל-spawn, כדי שלא ייפתח חיבור בחלון הכתיבה.
         if (_suspendedForExternalWrite) {
           service._send('suspend', const {}).ignore();
         }
+        if (_closedUntilReopen) {
+          service._send('close', const {}).ignore();
+        }
         return service;
       },
       onError: (Object error, StackTrace st) {
-        _spawnFuture = null;
+        if (identical(slot.spawnFuture, spawning)) slot.spawnFuture = null;
         throw DbReadWorkerUnavailable('spawn failed: $error');
       },
     );
+    return slot.spawnFuture = spawning;
   }
 
-  static Future<DbReadWorker> _spawn() async {
+  static Future<DbReadWorker> _spawn(_WorkerSlot slot) async {
     await QueryLoader.initialize();
-    final service = DbReadWorker._();
+    final service = DbReadWorker._(slot);
     service._messagesSub = service._receivePort.listen(service._handleMessage);
     service._errorSub = service._errorPort.listen(service._handleWorkerError);
     service._exitSub = service._exitPort.listen(service._handleWorkerExit);
@@ -205,8 +229,11 @@ class DbReadWorker {
         _Bootstrap(
           mainSendPort: service._receivePort.sendPort,
           queryCache: QueryLoader.cacheSnapshot,
+          bookReadCheckpointPort: identical(slot, _books)
+              ? bookReadCheckpointPort
+              : null,
         ),
-        debugName: 'db_read_worker',
+        debugName: slot.name,
         onError: service._errorPort.sendPort,
         onExit: service._exitPort.sendPort,
       );
@@ -238,28 +265,43 @@ class DbReadWorker {
     String method,
     Map<String, Object?> args,
   ) async {
+    final generation = _generation;
     // קודם ההשהיה: worker תקוע היה שולח את הקורא לפתוח את הקובץ באמצע כתיבה.
     if (_suspendedForExternalWrite || _closedUntilReopen) {
       throw const DbReadWorkerSuspended();
     }
-    final service = await _instanceOrSpawn();
-    // השהיה/סגירה שהגיעה בזמן ה-spawn: אסור לשלוח, אחרת ה-worker יפתח את הקובץ.
-    if (_suspendedForExternalWrite || _closedUntilReopen) {
-      throw const DbReadWorkerSuspended();
+    try {
+      final service = await _instanceOrSpawn(
+        method == 'bookText' || method == 'bookTextBytes' ? _books : _ranges,
+      );
+      // השהיה/סגירה שהגיעה בזמן ה-spawn: אסור לשלוח, אחרת ה-worker יפתח את הקובץ.
+      if (_suspendedForExternalWrite ||
+          _closedUntilReopen ||
+          generation != _generation) {
+        throw const DbReadWorkerSuspended();
+      }
+      if (service._stalled) {
+        throw const DbReadWorkerUnavailable('stalled');
+      }
+      final result = await service
+          ._send(method, args)
+          .timeout(
+            stallTimeout,
+            onTimeout: () {
+              if (generation != _generation) {
+                throw const DbReadWorkerSuspended();
+              }
+              service._stalled = true;
+              debugPrint('[DbReadWorker] "$method" stalled — using fallback');
+              throw const DbReadWorkerUnavailable('timeout');
+            },
+          );
+      if (generation != _generation) throw const DbReadWorkerSuspended();
+      return result;
+    } catch (_) {
+      if (generation != _generation) throw const DbReadWorkerSuspended();
+      rethrow;
     }
-    if (service._stalled) {
-      throw const DbReadWorkerUnavailable('stalled');
-    }
-    return service
-        ._send(method, args)
-        .timeout(
-          stallTimeout,
-          onTimeout: () {
-            service._stalled = true;
-            debugPrint('[DbReadWorker] "$method" stalled — using fallback');
-            throw const DbReadWorkerUnavailable('timeout');
-          },
-        );
   }
 
   /// אצוות התאוששות על חיבור זמני מחוץ ל-UI isolate.
@@ -270,17 +312,31 @@ class DbReadWorker {
       throw const DbReadWorkerSuspended();
     }
     await QueryLoader.initialize();
+    final queryCache = QueryLoader.cacheSnapshot;
+    return runOnFreshIsolate(
+      () => _readBatchOnFreshConnection(items, queryCache),
+    );
+  }
+
+  /// מריץ קריאה על חיבור זמני ב-isolate חד-פעמי, כש-worker אינו זמין;
+  /// השהיה לכתיבה חיצונית ממתינה לה עד שתשחרר את הקובץ.
+  static Future<T> runOnFreshIsolate<T>(FutureOr<T> Function() read) =>
+      trackTemporaryRead(() => Isolate.run(read));
+
+  /// עוקב אחר קריאה זמנית במסד הרשמי עד שהחיבור שלה נסגר.
+  /// גם fallback שכבר יוצר isolate חייב להשתחרר לפני כתיבה חיצונית.
+  static Future<T> trackTemporaryRead<T>(Future<T> Function() read) async {
     if (_suspendedForExternalWrite || _closedUntilReopen) {
       throw const DbReadWorkerSuspended();
     }
-    final queryCache = QueryLoader.cacheSnapshot;
-    final read = Isolate.run(
-      () => _readBatchOnFreshConnection(items, queryCache),
-    );
-    final tracked = read.then<void>((_) {}, onError: (Object _) {});
+    final generation = _generation;
+    final run = read();
+    final tracked = run.then<void>((_) {}, onError: (Object _) {});
     _oneShotReads.add(tracked);
     try {
-      return await read;
+      final result = await run;
+      if (generation != _generation) throw const DbReadWorkerSuspended();
+      return result;
     } finally {
       _oneShotReads.remove(tracked);
     }
@@ -347,18 +403,21 @@ class DbReadWorker {
   /// [resumeAfterExternalWrite]. `false` — השחרור לא אומת.
   static Future<bool> suspendForExternalWrite() async {
     _suspendedForExternalWrite = true;
-    final service = _instance;
-    final released = service == null || service._disposed
-        ? true
-        : await service._lifecycle('suspend', const {}) == true;
-    return released && await _waitForOneShotReads();
+    _generation++;
+    final released = await Future.wait([
+      for (final service in _runningWorkers)
+        service._lifecycle('suspend', const {}).then((value) => value == true),
+      _waitForOneShotReads(),
+    ]);
+    return released.every((value) => value);
   }
 
   static Future<void> resumeAfterExternalWrite() async {
     _suspendedForExternalWrite = false;
-    final service = _instance;
-    if (service == null || service._disposed) return;
-    await service._lifecycle('resume', const {});
+    await Future.wait([
+      for (final service in _runningWorkers)
+        service._lifecycle('resume', const {}),
+    ]);
   }
 
   /// סוגר את החיבור עד [allowReopen]. נקרא כשהחיבור הראשי נסגר,
@@ -366,16 +425,19 @@ class DbReadWorker {
   /// [wait] כבוי ביציאה מהתוכנה: סיום התהליך משחרר את הקובץ ממילא.
   static Future<void> closeConnectionIfRunning({bool wait = true}) async {
     _closedUntilReopen = true;
-    final service = _instance;
-    if (service != null && !service._disposed) {
+    _generation++;
+    final closings = <Future<Object?>>[];
+    for (final service in _runningWorkers) {
       final closing = service._send('close', const {});
       if (!wait || service._stalled) {
         closing.ignore();
       } else {
-        await service._awaitLifecycle(closing, 'close');
+        closings.add(service._awaitLifecycle(closing, 'close'));
       }
     }
-    if (wait) await _waitForOneShotReads();
+    if (wait) {
+      await Future.wait<Object?>([...closings, _waitForOneShotReads()]);
+    }
   }
 
   /// שוכח את הספרים שנפתרו — נקרא מיד אחרי commit של עדכון, כדי שבקשה
@@ -384,9 +446,9 @@ class DbReadWorker {
   /// מוצלח של ה-provider, כדי שקורא מקביל לא יפתח קובץ שמוחלף.
   static void allowReopen() {
     _closedUntilReopen = false;
-    final service = _instance;
-    if (service == null || service._disposed) return;
-    service._send('open', const {}).ignore();
+    for (final service in _runningWorkers) {
+      service._send('open', const {}).ignore();
+    }
   }
 
   /// משחרר את מטמון הדפים של חיבור ה-worker; לא מפעיל worker ולא פותח חיבור.
@@ -397,15 +459,20 @@ class DbReadWorker {
   }
 
   static void clearBookCacheIfRunning() {
-    final service = _instance;
-    if (service == null || service._disposed) return;
-    service._send('clearBookCache', const {}).ignore();
+    for (final service in _runningWorkers) {
+      service._send('clearBookCache', const {}).ignore();
+    }
   }
 
   @visibleForTesting
   static void disposeForTesting() {
     _closedUntilReopen = false;
-    _instance?._tearDown();
+    bookReadCheckpointPort = null;
+    _generation++;
+    for (final slot in _slots) {
+      slot.spawnFuture = null;
+      slot.instance?._tearDown();
+    }
   }
 
   Future<Object?> _lifecycle(String method, Map<String, Object?> args) =>
@@ -494,8 +561,16 @@ class DbReadWorker {
     _errorPort.close();
     _exitPort.close();
     _isolate?.kill(priority: Isolate.immediate);
-    if (identical(_instance, this)) _instance = null;
+    if (identical(_slot.instance, this)) _slot.instance = null;
   }
+}
+
+class _WorkerSlot {
+  _WorkerSlot(this.name);
+
+  final String name;
+  DbReadWorker? instance;
+  Future<DbReadWorker>? spawnFuture;
 }
 
 class _BatchItem {
@@ -507,15 +582,23 @@ class _BatchItem {
 }
 
 class _Bootstrap {
-  const _Bootstrap({required this.mainSendPort, required this.queryCache});
+  const _Bootstrap({
+    required this.mainSendPort,
+    required this.queryCache,
+    this.bookReadCheckpointPort,
+  });
 
   final SendPort mainSendPort;
   final Map<String, Map<String, String>> queryCache;
+  final SendPort? bookReadCheckpointPort;
 }
 
 class _Suspended implements Exception {
   const _Suspended();
 }
+
+BookTextKey _bookTextKey(Map<String, Object?> args) =>
+    (id: args['bookId'] as int, title: args['title'] as String);
 
 /// ספרים שנפתרו כבר על החיבור הנוכחי; מתנקה בכל סגירה.
 const _maxResolvedBooks = 4096;
@@ -585,6 +668,27 @@ void _workerMain(_Bootstrap bootstrap) {
     return resolvedBooks[key] = resolved?.book;
   }
 
+  // קריאת ספר שלם נמשכת שניות: suspend/close שהגיע קוטע אותה, במקום שיפוג
+  // ה-timeout שלו ועדכון הספרייה ייכשל על קובץ תפוס.
+  Future<void> yieldToControls() async {
+    await Future<void>.delayed(Duration.zero);
+    if (suspended || closed) throw const _Suspended();
+  }
+
+  Future<void> bookReadCheckpoint() async {
+    final checkpointPort = bootstrap.bookReadCheckpointPort;
+    if (checkpointPort != null) {
+      final release = ReceivePort();
+      try {
+        checkpointPort.send(release.sendPort);
+        await release.first;
+      } finally {
+        release.close();
+      }
+    }
+    await yieldToControls();
+  }
+
   Future<Object?> dispatch(String method, Map<String, Object?> args) async {
     switch (method) {
       case 'suspend':
@@ -617,6 +721,20 @@ void _workerMain(_Bootstrap bootstrap) {
         return repo.getLineBreadcrumb(
           args['bookId'] as int,
           args['lineIndex'] as int,
+        );
+      case 'bookText':
+        final repo = await ensureRepo(args['dbPath'] as String);
+        return readBookContentText(
+          await repo.database.database,
+          _bookTextKey(args),
+          checkpoint: bookReadCheckpoint,
+        );
+      case 'bookTextBytes':
+        final repo = await ensureRepo(args['dbPath'] as String);
+        return readBookContentTransferable(
+          await repo.database.database,
+          _bookTextKey(args),
+          checkpoint: bookReadCheckpoint,
         );
       default:
         final repo = await ensureRepo(args['dbPath'] as String);
