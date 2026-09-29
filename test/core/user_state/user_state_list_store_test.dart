@@ -28,6 +28,15 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
+  test('WAL עם synchronous=NORMAL, busy_timeout נשאר 1000', () async {
+    final db = UserStateDatabase.openAt(dbPath);
+    final conn = await db.database;
+    expect(conn.select('PRAGMA journal_mode').first.values.first, 'wal');
+    expect(conn.select('PRAGMA synchronous').first.values.first, 1);
+    expect(conn.select('PRAGMA busy_timeout').first.values.first, 1000);
+    db.close();
+  });
+
   test('קריאה של מפתח שאינו קיים מחזירה רשימה ריקה', () async {
     final db = UserStateDatabase.openAt(dbPath);
     final store = UserStateListStore(database: db);

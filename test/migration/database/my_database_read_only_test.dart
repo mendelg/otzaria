@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
+import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqlite3/sqlite3.dart' show SqliteException;
 
@@ -36,6 +37,19 @@ void main() {
     addTearDown(db.close);
     expect(db.isReadOnly, isFalse);
   });
+
+  test(
+    'repository כתיב (cache.db/user_books.db): WAL עם synchronous=NORMAL',
+    () async {
+      final database = MyDatabase.withPath(dbPath);
+      addTearDown(database.close);
+      await SeforimRepository(database).ensureInitialized();
+
+      final db = await database.database;
+      expect(db.select('PRAGMA journal_mode').first.values.first, 'wal');
+      expect(db.select('PRAGMA synchronous').first.values.first, 1);
+    },
+  );
 
   test('readOnly: true פותח חיבור שמסומן read-only', () {
     final db = MyDatabase.withPath(dbPath, readOnly: true);

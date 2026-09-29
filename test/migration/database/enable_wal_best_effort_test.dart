@@ -29,6 +29,35 @@ class _FakeDatabase implements Database {
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }
 
+/// חיבור אמיתי שנכשל ב-BEGIN כמו WAL שאינו שמיש (IOERR_SHMOPEN).
+class _ShmFailingDatabase implements Database {
+  _ShmFailingDatabase(this.inner);
+
+  final Database inner;
+
+  @override
+  void execute(String sql, [List<Object?> parameters = const []]) {
+    if (sql.startsWith('BEGIN')) {
+      throw SqliteException(
+        extendedResultCode: 4618,
+        message: 'disk I/O error',
+        causingStatement: sql,
+      );
+    }
+    inner.execute(sql, parameters);
+  }
+
+  @override
+  ResultSet select(String sql, [List<Object?> parameters = const []]) =>
+      inner.select(sql, parameters);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
+}
+
+int _synchronous(Database db) =>
+    db.select('PRAGMA synchronous').first.values.first as int;
+
 void main() {
   test('WAL מופעל על קובץ תקין', () {
     final dir = Directory.systemTemp.createTempSync('plugins_host_wal');
@@ -39,6 +68,40 @@ void main() {
     enableWalBestEffort(db, 'test');
 
     expect(db.select('PRAGMA journal_mode').first.values.first, 'wal');
+    expect(_synchronous(db), 1, reason: 'NORMAL');
+  });
+
+  test('openWritableDatabase: WAL עם synchronous=NORMAL ו-busy_timeout', () {
+    final dir = Directory.systemTemp.createTempSync('writable_sync');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final db = openWritableDatabase(p.join(dir.path, 'notes.db'), 'test');
+    addTearDown(db.close);
+
+    expect(db.select('PRAGMA journal_mode').first.values.first, 'wal');
+    expect(db.select('PRAGMA synchronous').first.values.first, 1);
+    expect(db.select('PRAGMA busy_timeout').first.values.first, 5000);
+  });
+
+  test('בלי WAL (מסד בזיכרון) synchronous נשאר FULL', () {
+    final db = sqlite3.openInMemory();
+    addTearDown(db.close);
+
+    enableWalBestEffort(db, 'test');
+
+    expect(db.select('PRAGMA journal_mode').first.values.first, 'memory');
+    expect(_synchronous(db), 2, reason: 'FULL');
+  });
+
+  test('החזרה ל-journal רגיל משאירה synchronous=FULL', () {
+    final dir = Directory.systemTemp.createTempSync('wal_fallback_sync');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final inner = sqlite3.open(p.join(dir.path, 'cache.db'));
+    addTearDown(inner.close);
+
+    enableWalBestEffort(_ShmFailingDatabase(inner), 'test');
+
+    expect(inner.select('PRAGMA journal_mode').first.values.first, 'delete');
+    expect(_synchronous(inner), 2, reason: 'FULL');
   });
 
   test('closeWithCheckpoint ממזג את ה-WAL גם כשחיבור אחר פתוח', () {
@@ -80,5 +143,6 @@ void main() {
     expect(() => enableWalBestEffort(db, 'test'), returnsNormally);
     expect(db.statements, contains('PRAGMA journal_mode=DELETE'));
     expect(db.statements, contains('PRAGMA locking_mode=NORMAL'));
+    expect(db.statements, isNot(contains('PRAGMA synchronous=NORMAL')));
   });
 }

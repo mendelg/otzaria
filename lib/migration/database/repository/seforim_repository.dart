@@ -77,15 +77,8 @@ class SeforimRepository {
     // Ensure QueryLoader and database are initialized first
     await _database.database;
 
-    // Database schema creation is handled by MyDatabase
-    // SQLite optimizations for normal operations.
-    // In read-only mode we must not run any PRAGMA that mutates the file
-    // (journal_mode/synchronous/page_size). Per-connection read tunables
-    // (cache_size/temp_store/mmap_size) are safe and still applied.
-    if (!_database.isReadOnly) {
-      await _trySetWal();
-      await _executeRawQuery('PRAGMA synchronous=NORMAL');
-    }
+    // journal_mode/synchronous נקבעים בפתיחה ([openWritableDatabase]): כאן
+    // WAL חוזר היה עוקף את החזרה ל-journal רגיל כש-WAL אינו שמיש.
     // cache_size שלילי = קילובייטים (חיובי = עמודים!). חיבור הקריאה נשאר פתוח
     // לכל אורך הריצה, ולכן מטמון ה-heap שלו תורם ישירות לצריכת ה-RAM במצב סרק.
     // 50MB מספיק; ה-OS file cache וה-mmap מכסים את רוב הקריאות ממילא.

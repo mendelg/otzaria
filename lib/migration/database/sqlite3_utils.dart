@@ -71,6 +71,19 @@ void enableWalBestEffort(Database db, String label) {
   } catch (e) {
     debugPrint('[$label] journal_mode=WAL failed: $e');
     _revertToRollbackJournal(db, label);
+    return;
+  }
+  _relaxSyncIfWal(db, label);
+}
+
+/// NORMAL חוסך fsync בכל commit, ורק ב-WAL הוא לא משחית את המסד: בנפילת
+/// חשמל לכל היותר הטרנזקציה האחרונה אובדת. ב-journal רגיל נשאר FULL.
+void _relaxSyncIfWal(Database db, String label) {
+  try {
+    final mode = db.select('PRAGMA journal_mode').first.values.first;
+    if (mode == 'wal') db.execute('PRAGMA synchronous=NORMAL');
+  } catch (e) {
+    debugPrint('[$label] synchronous=NORMAL failed: $e');
   }
 }
 
