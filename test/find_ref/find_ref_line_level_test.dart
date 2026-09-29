@@ -30,10 +30,12 @@ void main() {
   FindRefRepository buildRepo({
     bool withIndex = true,
     bool withPartialKeys = true,
+    Future<String> Function(int bookId)? getCategoryPath,
   }) {
     lookups = [];
     return FindRefRepository(
       dataRepository: MockDataRepository(),
+      getCategoryPath: getCategoryPath,
       isReferenceBooksCacheLoaded: () => true,
       warmUpReferenceBooksCache: () async {},
       searchReferenceBooks: (query, {int limit = 50}) => [
@@ -121,6 +123,16 @@ void main() {
     expect(results.first.segment, 648);
     expect(results.first.sourceLineId, 1648);
     expect(results.first.reference, 'ישעיהו לב, יא');
+  });
+
+  test('נתיב קטגוריה אינו מוחק את סימון שורת המקור', () async {
+    final results = await buildRepo(
+      getCategoryPath: (_) async => 'תנ"ך, נביאים',
+    ).findRefs('ישעיהו לב יא');
+
+    expect(results.first.bookPath, 'תנ"ך, נביאים');
+    expect(results.first.isSourceLine, isTrue);
+    expect(results.first.sourceLineId, 1648);
   });
 
   test('מילות מיקום בשאילתה שקולות לצורה הקצרה', () async {

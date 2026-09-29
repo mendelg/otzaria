@@ -1978,20 +1978,7 @@ class FindRefRepository {
       if (r.bookPath.isNotEmpty) return r; // already set — don't overwrite
       final path = r.bookId > 0 ? (pathMap[r.bookId] ?? '') : '';
       if (path.isEmpty) return r;
-      return DbReferenceResult(
-        title: r.title,
-        reference: r.reference,
-        segment: r.segment,
-        isPdf: r.isPdf,
-        filePath: r.filePath,
-        orderIndex: r.orderIndex,
-        isAltToc: r.isAltToc,
-        tocLevel: r.tocLevel,
-        bookId: r.bookId,
-        bookPath: path,
-        sourceLineId: r.sourceLineId,
-        source: r.source,
-      );
+      return r.copyWith(bookPath: path);
     }).toList();
     return _dropTalmudBavliPdfRefs(enriched);
   }

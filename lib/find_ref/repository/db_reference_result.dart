@@ -69,6 +69,38 @@ class DbReferenceResult {
     this.isSourceLine = false,
   });
 
+  DbReferenceResult copyWith({
+    String? title,
+    String? reference,
+    num? segment,
+    bool? isPdf,
+    String? filePath,
+    double? orderIndex,
+    bool? isAltToc,
+    int? tocLevel,
+    int? bookId,
+    String? bookPath,
+    int? sourceLineId,
+    BookSource? source,
+    bool? isSourceLine,
+  }) {
+    return DbReferenceResult(
+      title: title ?? this.title,
+      reference: reference ?? this.reference,
+      segment: segment ?? this.segment,
+      isPdf: isPdf ?? this.isPdf,
+      filePath: filePath ?? this.filePath,
+      orderIndex: orderIndex ?? this.orderIndex,
+      isAltToc: isAltToc ?? this.isAltToc,
+      tocLevel: tocLevel ?? this.tocLevel,
+      bookId: bookId ?? this.bookId,
+      bookPath: bookPath ?? this.bookPath,
+      sourceLineId: sourceLineId ?? this.sourceLineId,
+      source: source ?? this.source,
+      isSourceLine: isSourceLine ?? this.isSourceLine,
+    );
+  }
+
   @override
   String toString() =>
       'DbReferenceResult(title: $title, reference: $reference, segment: $segment, isPdf: $isPdf, isAltToc: $isAltToc, tocLevel: $tocLevel)';
