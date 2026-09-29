@@ -22,6 +22,41 @@ class LinkDao {
   String _forDb(String queryName) =>
       _db.isOfficial ? '${queryName}Official' : queryName;
 
+  /// A line-first join is best for a short window. For a broad range in a
+  /// sparsely linked book it probes every line, while the link-first query can
+  /// stop after scanning the book's few links. Both indexes exist only in the
+  /// official database, so keep attached databases on their original query.
+  Future<String> _forLineRange(
+    String queryName,
+    int bookId,
+    int startLineIndex,
+    int endLineIndex,
+  ) async {
+    if (!_db.isOfficial || endLineIndex - startLineIndex <= 512) {
+      return _forDb(queryName);
+    }
+
+    final db = await database;
+    final lineCount =
+        firstIntValue(
+          db.select(
+            'SELECT COUNT(*) FROM line WHERE bookId = ? '
+            'AND lineIndex >= ? AND lineIndex < ?',
+            [bookId, startLineIndex, endLineIndex],
+          ),
+        ) ??
+        0;
+    if (lineCount <= 512) return '${queryName}Official';
+
+    // The covering source-book index answers this bounded probe without
+    // reading link rows. No count of a dense book's millions of links is needed.
+    final hasEnoughLinks = db.select(
+      'SELECT 1 FROM link WHERE sourceBookId = ? LIMIT 1 OFFSET ?',
+      [bookId, lineCount ~/ 2],
+    ).isNotEmpty;
+    return hasEnoughLinks ? '${queryName}Official' : queryName;
+  }
+
   /// שאילתה עם מסנן הנראות, או null כשאין במסד קישורים.
   Future<String?> _visibilityAwareQuery(String queryName) async {
     final query = _queries[queryName]!;
@@ -90,8 +125,14 @@ class LinkDao {
     int startLineIndex,
     int endLineIndex,
   ) async {
+    if (!(await _capabilities).hasLinks) return const [];
     final query = await _visibilityAwareQuery(
-      _forDb('selectCommentatorsByLineRange'),
+      await _forLineRange(
+        'selectCommentatorsByLineRange',
+        bookId,
+        startLineIndex,
+        endLineIndex,
+      ),
     );
     if (query == null) return const [];
     final db = await database;
@@ -117,8 +158,14 @@ class LinkDao {
     int excludeBookId,
     int exactSourceLineIndex,
   ) async {
+    if (!(await _capabilities).hasLinks) return const [];
     final query = await _visibilityAwareQuery(
-      _forDb('selectCommentaryLinksByLineRange'),
+      await _forLineRange(
+        'selectCommentaryLinksByLineRange',
+        bookId,
+        startLineIndex,
+        endLineIndex,
+      ),
     );
     if (query == null) return const [];
     final db = await database;

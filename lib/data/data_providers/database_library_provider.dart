@@ -896,16 +896,20 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
 
     // סריקה יורדת של שורות הספר עוצרת בשורה המקושרת הראשונה. תנאי הספר נדרש
     // למסד מצורף, שבו רק (sourceBookId, sourceLineId) מאונדקס.
-    final maxRows = db.select(
-      official
-          ? 'SELECT (SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
-                'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
-                'AND l.sourceBookId = sl.bookId) '
-                'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx'
-          : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
-                'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
-      [bookId],
-    ).toMapList();
+    final maxRows = db
+        .select(
+          official
+              ? 'SELECT CASE WHEN EXISTS (SELECT 1 FROM link pre '
+                    'WHERE pre.sourceBookId = ?) THEN '
+                    '(SELECT sl.lineIndex FROM line sl WHERE sl.bookId = ? '
+                    'AND EXISTS (SELECT 1 FROM link l WHERE l.sourceLineId = sl.id '
+                    'AND l.sourceBookId = sl.bookId) '
+                    'ORDER BY sl.lineIndex DESC LIMIT 1) END as maxIdx'
+              : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
+                    'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
+          official ? [bookId, bookId] : [bookId],
+        )
+        .toMapList();
     final maxSourceLineIndex = maxRows.isEmpty
         ? null
         : maxRows.first['maxIdx'] as int?;

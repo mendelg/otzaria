@@ -471,6 +471,84 @@ void main() {
     }
   });
 
+  test('seforim: טווח רחב מחזיר אותו מידע בספר דל ועתיר קישורים', () async {
+    final file = path.join(tempDir.path, 'broad_range.db');
+    final db = sqlite3.sqlite3.open(file);
+    try {
+      _buildFixture(db, _Shape.seforim);
+      db.execute('BEGIN');
+      for (var i = _linesPerBook; i < 2048; i++) {
+        db.execute('INSERT INTO line VALUES (?, ?, ?, NULL)', [
+          100000 + i,
+          _baseBook,
+          i,
+        ]);
+      }
+      db.execute('COMMIT');
+
+      Future<void> verify() async {
+        final database = MyDatabase.withPath(
+          file,
+          readOnly: true,
+          official: true,
+        );
+        try {
+          final dao = database.linkDao;
+          expect(
+            _canonical(
+              await dao.selectCommentatorsByLineRange(
+                _baseBook,
+                0,
+                0x7fffffff,
+              ),
+            ),
+            _canonical(
+              db.select(
+                linkQuery(db, 'selectCommentatorsByLineRange'),
+                [_baseBook, 0, 0x7fffffff],
+              ),
+            ),
+          );
+          expect(
+            _canonical(
+              await dao.selectCommentaryLinksByLineRange(
+                _baseBook,
+                0,
+                0x7fffffff,
+                _commentaryB,
+                5,
+              ),
+            ),
+            _canonical(
+              db.select(
+                linkQuery(db, 'selectCommentaryLinksByLineRange'),
+                [5, _baseBook, 0, 0x7fffffff, _commentaryB],
+              ),
+            ),
+          );
+        } finally {
+          database.close();
+        }
+      }
+
+      await verify(); // Few links: choose the link-first query.
+
+      db.execute('BEGIN');
+      for (var i = _linesPerBook; i < 2048; i++) {
+        db.execute('INSERT INTO link VALUES (NULL, ?, ?, ?, ?, 1)', [
+          _baseBook,
+          _commentaryA,
+          100000 + i,
+          _lineId(_commentaryA, i % _linesPerBook),
+        ]);
+      }
+      db.execute('COMMIT');
+      await verify(); // Many links: choose the line-first query.
+    } finally {
+      db.close();
+    }
+  });
+
   test(
     'בלי sqlite_stat1 השאילתה המקורית בוחרת ב-idx_link_source_book',
     () {
