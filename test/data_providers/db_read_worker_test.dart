@@ -569,6 +569,20 @@ void main() {
     DbReadWorker.allowReopen();
   });
 
+  test('shrinkMemory רץ גם על worker הספרים השלמים', () async {
+    final dbPath = await seedDb('seforim');
+    await DbReadWorker.request('bookText', {
+      'dbPath': dbPath,
+      'bookId': 1,
+      'title': 'בראשית',
+    });
+    expect(await DbReadWorker.shrinkMemoryIfRunning(), isTrue);
+
+    await DbReadWorker.closeConnectionIfRunning();
+    await File(dbPath).delete();
+    DbReadWorker.allowReopen();
+  });
+
   test('worker שלא עונה בזמן נופל למסלול הישיר עד שיענה', () async {
     final dbPath = await seedDb('seforim', bigBookLines: 200000);
     // חיבור פתוח מראש — כדי שהבקשה האיטית תהיה השאילתה עצמה.

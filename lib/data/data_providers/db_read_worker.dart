@@ -451,11 +451,13 @@ class DbReadWorker {
     }
   }
 
-  /// משחרר את מטמון הדפים של חיבור ה-worker; לא מפעיל worker ולא פותח חיבור.
+  /// משחרר את מטמון הדפים של חיבורי ה-workers; לא מפעיל worker ולא פותח חיבור.
   static Future<bool> shrinkMemoryIfRunning() async {
-    final service = _instance;
-    if (service == null || service._disposed || service._stalled) return false;
-    return await service._lifecycle('shrinkMemory', const {}) == true;
+    final results = await Future.wait([
+      for (final service in _runningWorkers)
+        if (!service._stalled) service._lifecycle('shrinkMemory', const {}),
+    ]);
+    return results.any((result) => result == true);
   }
 
   static void clearBookCacheIfRunning() {
