@@ -87,6 +87,17 @@ void _relaxSyncIfWal(Database db, String label) {
   }
 }
 
+/// משחרר את מטמון הדפים של חיבור שכבר פתוח; `false` כשאין חיבור.
+bool shrinkMemoryBestEffort(Database? db) {
+  if (db == null) return false;
+  try {
+    db.execute('PRAGMA shrink_memory');
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 /// מחזיר את ה-DB ל-journal רגיל אחרי ש-WAL התגלה כלא שמיש.
 /// locking_mode=EXCLUSIVE הוא התנאי שבו SQLite עוזב WAL בלי קובץ shm.
 void _revertToRollbackJournal(Database db, String label) {

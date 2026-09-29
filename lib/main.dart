@@ -86,6 +86,7 @@ import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/core/data_root_writability_warning.dart';
 import 'package:otzaria/core/cli_command.dart';
 import 'package:otzaria/core/ui_snack.dart';
+import 'package:otzaria/core/sqlite_memory_release.dart';
 import 'package:otzaria/core/error_log_file.dart';
 import 'package:otzaria/core/messages/window_messages.dart';
 import 'package:otzaria/core/update_check_frequency.dart';
@@ -751,6 +752,20 @@ Future<void> _initializeProcessSingletons() async {
     // רישום ההתראות, לא בסיס הנתונים שמאחוריו.
     unawaited(_initializeTimeZonesOnly());
   }
+
+  // פר-isolate ולא פר-תהליך: לכל חלון חיבורי SQLite משלו.
+  unawaited(_runDeferredSqliteMemoryObserver());
+}
+
+Future<void> _runDeferredSqliteMemoryObserver() async {
+  try {
+    await _mainWindowRevealedCompleter.future.timeout(
+      const Duration(seconds: 20),
+    );
+  } on TimeoutException {
+    // ממשיכים בכל זאת — אחרת המשקיף לא יירשם כלל.
+  }
+  WidgetsBinding.instance.addObserver(SqliteMemoryPressureObserver());
 }
 
 /// משחזר עדכון ספרייה שנקטע (marker+backup) לפני פתיחת ה-DB. אימות

@@ -389,6 +389,13 @@ class DbReadWorker {
     service._send('open', const {}).ignore();
   }
 
+  /// משחרר את מטמון הדפים של חיבור ה-worker; לא מפעיל worker ולא פותח חיבור.
+  static Future<bool> shrinkMemoryIfRunning() async {
+    final service = _instance;
+    if (service == null || service._disposed || service._stalled) return false;
+    return await service._lifecycle('shrinkMemory', const {}) == true;
+  }
+
   static void clearBookCacheIfRunning() {
     final service = _instance;
     if (service == null || service._disposed) return;
@@ -595,6 +602,8 @@ void _workerMain(_Bootstrap bootstrap) {
       case 'clearBookCache':
         resolvedBooks.clear();
         return null;
+      case 'shrinkMemory':
+        return repository?.database.shrinkMemoryIfOpen() ?? false;
       case 'linkContent':
         final repo = await ensureRepo(args['dbPath'] as String);
         final book = await resolveOfficialBook(
@@ -683,6 +692,7 @@ void _workerMain(_Bootstrap bootstrap) {
       'close',
       'open',
       'clearBookCache',
+      'shrinkMemory',
     }.contains(method)) {
       if (method == 'suspend' || method == 'close') {
         // הדגל נקבע כבר כאן, כדי שגם פריטי batch שרץ כעת לא יתחילו שאילתה חדשה

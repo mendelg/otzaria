@@ -34,6 +34,9 @@ class CacheDatabaseHolder {
     });
   }
 
+  /// ה-repository רק אם כבר אותחל — בלי לפתוח את `cache.db`.
+  SeforimRepository? get repositoryIfInitialized => _repository;
+
   /// נתיב ה-DB. שימושי בזרימות isolate שצריכות לפתוח את הקובץ ישירות.
   static Future<String> resolveDbPath() => AppPaths.resolveCacheDbPath();
 
