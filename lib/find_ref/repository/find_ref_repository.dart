@@ -435,7 +435,7 @@ class FindRefRepository {
 
   /// מעל מספר ספרים זה, מנוע ההתאמה של מסד משני נבנה ב-isolate.
   @visibleForTesting
-  static int secondaryIndexIsolateThreshold = 2000;
+  static int secondaryIndexIsolateThreshold = 1000;
 
   /// בדיקות בלבד: כמה שמות של ספרים משניים נורמלו (ראו [_SecondaryBook]).
   @visibleForTesting
