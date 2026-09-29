@@ -192,6 +192,32 @@ void main() {
     );
   });
 
+  test(
+    'timeout של אצווה קורא תוכן וכותרת מחוץ ל-worker ומשחרר את הקובץ',
+    () async {
+      final dbPath = await seedDb('seforim');
+      final expectedBreadcrumb = await onDirectConnection(
+        dbPath,
+        (repo) => repo.getLineBreadcrumb(1, 3),
+      );
+      DbReadWorker.stallTimeout = Duration.zero;
+
+      final results = await Future.wait([
+        DbReadWorker.batched('linkContent', linkArgs(dbPath, 'מפרש', 2)),
+        DbReadWorker.batched('breadcrumb', {
+          'dbPath': dbPath,
+          'bookId': 1,
+          'lineIndex': 3,
+        }),
+      ]);
+
+      expect((results.first as Map)['content'], 'פירוש 1');
+      expect(results.last, expectedBreadcrumb);
+      expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+      await File(dbPath).delete();
+    },
+  );
+
   test('טווחי טקסט וקישורים מה-worker זהים לפונקציה על חיבור חדש', () async {
     final dbPath = await seedDb('seforim');
     final linksArgs = {
@@ -504,6 +530,11 @@ void main() {
         await provider.getLinkContent(link('לא קיים', 1)),
         'שגיאה: הספר לא נמצא במסד הנתונים',
       );
+    });
+    test('getLinkContent שומר על התוכן אחרי timeout של ה-worker', () async {
+      DbReadWorker.stallTimeout = Duration.zero;
+      final provider = DatabaseLibraryProvider.instance;
+      expect(await provider.getLinkContent(link('מפרש', 2)), 'פירוש 1');
     });
 
     test('טווחי טקסט וקישורים נטענים דרך ה-worker', () async {

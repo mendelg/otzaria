@@ -4518,7 +4518,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
   }
 
   /// תוכן קישור לספר ב-seforim.db, מה-[DbReadWorker] במקום על ה-UI isolate.
-  /// null — הספר אינו שם, ספר קבצים או worker לא זמין: המסלול הישיר ממשיך.
+  /// null — הספר אינו שם או שהוא ספר קבצים: המסלול הישיר ממשיך.
   Future<String?> _officialLinkContentOnWorker(
     Link link,
     String targetTitle,
@@ -4536,9 +4536,11 @@ class DatabaseLibraryProvider implements LibraryProvider {
               })
               as Map;
       return result['content'] as String?;
+    } on DbReadWorkerSuspended {
+      return 'שגיאה: מאגר לא מאותחל';
     } catch (e) {
-      debugPrint('⚠️ getLinkContent worker path failed: $e');
-      return null;
+      debugPrint('⚠️ getLinkContent worker and fallback failed: $e');
+      return 'שגיאה בטעינת תוכן המפרש';
     }
   }
 

@@ -20,7 +20,7 @@ typedef ReadOnlyConnection = ({
   DbCapabilities capabilities,
 });
 
-/// ה-worker לא ענה, נפל או לא עלה — הקורא חוזר למסלול הישיר.
+/// ה-worker לא ענה, נפל או לא עלה — הקורא עובר למסלול חלופי.
 class DbReadWorkerUnavailable implements Exception {
   const DbReadWorkerUnavailable(this.reason);
 
@@ -61,6 +61,94 @@ Future<String> linkContentFromDbLines(
   return rangeLines.map((l) => l.content).join('<br>');
 }
 
+Future<Map<String, Object?>> _officialLinkContent(
+  SeforimRepository repository,
+  db_models.Book? book,
+  Map<String, Object?> args,
+) async {
+  if (book == null) return const {'fallback': true};
+  final format = documentFormatOf(fileType: book.fileType, path: book.filePath);
+  if (book.isFileBacked &&
+      book.filePath != null &&
+      (format?.isTextual ?? false)) {
+    return const {'fallback': true};
+  }
+  return {
+    'content': await linkContentFromDbLines(
+      repository,
+      book.id,
+      args['index2'] as int,
+      args['index2End'] as int?,
+    ),
+  };
+}
+
+Future<List<Map<String, Object?>>> _readBatchOnFreshConnection(
+  List<Map<String, Object?>> items,
+  Map<String, Map<String, String>> queryCache,
+) async {
+  QueryLoader.seedCache(queryCache);
+  MyDatabase? database;
+  SeforimRepository? repository;
+  String? openPath;
+  final resolvedBooks = <(String, int?), db_models.Book?>{};
+  Future<SeforimRepository> repoFor(String path) async {
+    if (repository != null && openPath == path) return repository!;
+    database?.close();
+    resolvedBooks.clear();
+    database = MyDatabase.withPath(path, readOnly: true);
+    repository = SeforimRepository(database!);
+    await repository!.ensureInitialized();
+    openPath = path;
+    return repository!;
+  }
+
+  try {
+    final results = <Map<String, Object?>>[];
+    for (final item in items) {
+      try {
+        final method = item['method'] as String;
+        final args = (item['args'] as Map).cast<String, Object?>();
+        final repo = await repoFor(args['dbPath'] as String);
+        if (method == 'breadcrumb') {
+          results.add({
+            'result': await repo.getLineBreadcrumb(
+              args['bookId'] as int,
+              args['lineIndex'] as int,
+            ),
+          });
+          continue;
+        }
+        if (method != 'linkContent') {
+          throw StateError('Unknown DbReadWorker method: $method');
+        }
+        final key = (args['title'] as String, args['categoryId'] as int?);
+        if (!resolvedBooks.containsKey(key)) {
+          final resolved = await BookDatabaseResolver.resolveBookInCandidates(
+            title: key.$1,
+            candidates: [
+              ResolvedBookRepositoryCandidate(
+                repository: repo,
+                source: BookSource.official,
+              ),
+            ],
+            categoryId: key.$2,
+          );
+          resolvedBooks[key] = resolved?.book;
+        }
+        results.add({
+          'result': await _officialLinkContent(repo, resolvedBooks[key], args),
+        });
+      } catch (error) {
+        results.add({'error': error.toString()});
+      }
+    }
+    return results;
+  } finally {
+    database?.close();
+  }
+}
+
 /// isolate קבוע שקורא את seforim.db בשביל מסלולי הקריאה החמים (טווחי טקסט
 /// וקישורים, תוכן מפרשים, נתיבי כותרות), על חיבור RO אחד שנפתח פעם אחת.
 ///
@@ -73,9 +161,10 @@ class DbReadWorker {
   static Future<DbReadWorker>? _spawnFuture;
   static bool _suspendedForExternalWrite = false;
   static bool _closedUntilReopen = false;
+  static final Set<Future<void>> _oneShotReads = {};
 
   /// בקשה שלא נענתה בזמן הזה מסמנת את ה-worker כתקוע; עד שיענה, הבקשות
-  /// הולכות למסלול הישיר (חיבור חדש), כמו לפני שה-worker היה קיים.
+  /// עוברות למסלול חלופי מחוץ ל-UI isolate.
   @visibleForTesting
   static Duration stallTimeout = const Duration(seconds: 10);
 
@@ -167,10 +256,44 @@ class DbReadWorker {
           stallTimeout,
           onTimeout: () {
             service._stalled = true;
-            debugPrint('[DbReadWorker] "$method" stalled — using direct path');
+            debugPrint('[DbReadWorker] "$method" stalled — using fallback');
             throw const DbReadWorkerUnavailable('timeout');
           },
         );
+  }
+
+  /// אצוות התאוששות על חיבור זמני מחוץ ל-UI isolate.
+  static Future<List<Map<String, Object?>>> _batchOnFreshIsolate(
+    List<Map<String, Object?>> items,
+  ) async {
+    if (_suspendedForExternalWrite || _closedUntilReopen) {
+      throw const DbReadWorkerSuspended();
+    }
+    await QueryLoader.initialize();
+    if (_suspendedForExternalWrite || _closedUntilReopen) {
+      throw const DbReadWorkerSuspended();
+    }
+    final queryCache = QueryLoader.cacheSnapshot;
+    final read = Isolate.run(
+      () => _readBatchOnFreshConnection(items, queryCache),
+    );
+    final tracked = read.then<void>((_) {}, onError: (Object _) {});
+    _oneShotReads.add(tracked);
+    try {
+      return await read;
+    } finally {
+      _oneShotReads.remove(tracked);
+    }
+  }
+
+  static Future<bool> _waitForOneShotReads() async {
+    try {
+      await Future.wait(_oneShotReads).timeout(lifecycleCommandTimeout);
+      return true;
+    } on TimeoutException {
+      debugPrint('[DbReadWorker] fallback reads did not release DB in time');
+      return false;
+    }
   }
 
   static final List<_BatchItem> _batch = [];
@@ -188,14 +311,20 @@ class DbReadWorker {
     final items = List.of(_batch);
     _batch.clear();
     try {
-      final results =
-          await request('batch', {
-                'items': [
-                  for (final item in items)
-                    {'method': item.method, 'args': item.args},
-                ],
-              })
-              as List;
+      final requests = [
+        for (final item in items) {'method': item.method, 'args': item.args},
+      ];
+      List results;
+      try {
+        results = await request('batch', {'items': requests}) as List;
+        if (results.any(
+          (result) => result is Map && result.containsKey('error'),
+        )) {
+          results = await _batchOnFreshIsolate(requests);
+        }
+      } on DbReadWorkerUnavailable {
+        results = await _batchOnFreshIsolate(requests);
+      }
       for (var i = 0; i < items.length; i++) {
         final result = results[i] as Map;
         final completer = items[i].completer;
@@ -219,8 +348,10 @@ class DbReadWorker {
   static Future<bool> suspendForExternalWrite() async {
     _suspendedForExternalWrite = true;
     final service = _instance;
-    if (service == null || service._disposed) return true;
-    return await service._lifecycle('suspend', const {}) == true;
+    final released = service == null || service._disposed
+        ? true
+        : await service._lifecycle('suspend', const {}) == true;
+    return released && await _waitForOneShotReads();
   }
 
   static Future<void> resumeAfterExternalWrite() async {
@@ -230,19 +361,21 @@ class DbReadWorker {
     await service._lifecycle('resume', const {});
   }
 
-  /// סוגר את החיבור (הוא ייפתח מחדש בבקשה הבאה). נקרא כשהחיבור הראשי נסגר,
+  /// סוגר את החיבור עד [allowReopen]. נקרא כשהחיבור הראשי נסגר,
   /// כדי שה-worker לא יחזיק את הקובץ אחרי שה-provider שחרר אותו.
   /// [wait] כבוי ביציאה מהתוכנה: סיום התהליך משחרר את הקובץ ממילא.
   static Future<void> closeConnectionIfRunning({bool wait = true}) async {
     _closedUntilReopen = true;
     final service = _instance;
-    if (service == null || service._disposed) return;
-    final closing = service._send('close', const {});
-    if (!wait || service._stalled) {
-      closing.ignore();
-      return;
+    if (service != null && !service._disposed) {
+      final closing = service._send('close', const {});
+      if (!wait || service._stalled) {
+        closing.ignore();
+      } else {
+        await service._awaitLifecycle(closing, 'close');
+      }
     }
-    await service._awaitLifecycle(closing, 'close');
+    if (wait) await _waitForOneShotReads();
   }
 
   /// שוכח את הספרים שנפתרו — נקרא מיד אחרי commit של עדכון, כדי שבקשה
@@ -467,25 +600,7 @@ void _workerMain(_Bootstrap bootstrap) {
           args['title'] as String,
           args['categoryId'] as int?,
         );
-        // לא נמצא ברשמי, או ספר קבצים: המסלול הישיר ממשיך למועמד הבא.
-        if (book == null) return const {'fallback': true};
-        final format = documentFormatOf(
-          fileType: book.fileType,
-          path: book.filePath,
-        );
-        if (book.isFileBacked &&
-            book.filePath != null &&
-            (format?.isTextual ?? false)) {
-          return const {'fallback': true};
-        }
-        return {
-          'content': await linkContentFromDbLines(
-            repo,
-            book.id,
-            args['index2'] as int,
-            args['index2End'] as int?,
-          ),
-        };
+        return _officialLinkContent(repo, book, args);
       case 'breadcrumb':
         final repo = await ensureRepo(args['dbPath'] as String);
         return repo.getLineBreadcrumb(

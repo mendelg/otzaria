@@ -39,7 +39,7 @@ Future<String?> refFromDbLine(TextBook book, int index) async {
             })
             as String?;
       } catch (_) {
-        // worker לא זמין או מושהה — החיבור הראשי עונה כמו קודם.
+        return null;
       }
     }
     return await repository.getLineBreadcrumb(bookId, index);
