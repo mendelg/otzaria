@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ViewFocusDirection, ViewFocusEvent, ViewFocusState;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -67,7 +68,7 @@ void main() {
     await Settings.init(cacheProvider: MemoryCacheProvider());
   });
 
-  Future<TextBookTab> pumpView(WidgetTester tester) async {
+  Future<TextBookTab> pumpView(WidgetTester tester, {Widget? sibling}) async {
     tester.view.physicalSize = const Size(700, 500);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -117,13 +118,20 @@ void main() {
             BlocProvider<SettingsBloc>.value(value: settingsBloc),
           ],
           child: Scaffold(
-            body: CombinedView(
-              data: _content,
-              openBookCallback: (_) {},
-              openLeftPaneTab: (_, {searchText}) {},
-              textSize: 18,
-              showCommentaryAsExpansionTiles: false,
-              tab: tab,
+            body: Column(
+              children: [
+                Expanded(
+                  child: CombinedView(
+                    data: _content,
+                    openBookCallback: (_) {},
+                    openLeftPaneTab: (_, {searchText}) {},
+                    textSize: 18,
+                    showCommentaryAsExpansionTiles: false,
+                    tab: tab,
+                  ),
+                ),
+                ?sibling,
+              ],
             ),
           ),
         ),
@@ -148,6 +156,20 @@ void main() {
         as MultiSelectableSelectionContainerDelegate;
   }
 
+  String selectedText(WidgetTester tester) => scrollableRegistrar(
+    tester,
+  ).selectables.map((s) => s.getSelectedContent()?.plainText ?? '').join();
+
+  Future<void> selectWord(WidgetTester tester) async {
+    final line = lineRect(tester, 8);
+    final word = Offset(line.right - 20, line.center.dy);
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(selectedText(tester), 'מילה8');
+  }
+
   // קפיצה של הרשימה מאפסת את היסט הגלילה; הבחירה אסור שתנחת על טקסט אחר
   // באותו גובה על המסך (issue #1589).
   Future<void> selectThenMove(
@@ -166,22 +188,12 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
-    final line = lineRect(tester, 8);
-    final word = Offset(line.right - 20, line.center.dy);
-    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.tapAt(word, kind: PointerDeviceKind.mouse);
-    await tester.pump(const Duration(milliseconds: 400));
-
-    String selected() => scrollableRegistrar(
-      tester,
-    ).selectables.map((s) => s.getSelectedContent()?.plainText ?? '').join();
-    expect(selected(), 'מילה8');
+    await selectWord(tester);
 
     await move(tab);
     await tester.pumpAndSettle();
 
-    expect(selected(), expected);
+    expect(selectedText(tester), expected);
   }
 
   for (final scrolledBy in [0.0, 150.0]) {
@@ -230,5 +242,48 @@ void main() {
       },
       expected: 'מילה8',
     );
+  });
+
+  // ב-Windows החלון מאבד פוקוס בעוד שה-lifecycle עדיין resumed (issue #1585).
+  testWidgets('מעבר לחלון אחר שומר את הבחירה', (tester) async {
+    await pumpView(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await selectWord(tester);
+
+    tester.binding.handleViewFocusChanged(
+      ViewFocusEvent(
+        viewId: tester.view.viewId,
+        state: ViewFocusState.unfocused,
+        direction: ViewFocusDirection.undefined,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(selectedText(tester), 'מילה8');
+
+    tester.binding.handleViewFocusChanged(
+      ViewFocusEvent(
+        viewId: tester.view.viewId,
+        state: ViewFocusState.focused,
+        direction: ViewFocusDirection.undefined,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(selectedText(tester), 'מילה8');
+  });
+
+  testWidgets('מעבר פוקוס לרכיב אחר באפליקציה מנקה את הבחירה', (tester) async {
+    final otherFocus = FocusNode();
+    addTearDown(otherFocus.dispose);
+    await pumpView(
+      tester,
+      sibling: Focus(focusNode: otherFocus, child: const SizedBox.shrink()),
+    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await selectWord(tester);
+
+    otherFocus.requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(selectedText(tester), isEmpty);
   });
 }
