@@ -1516,7 +1516,7 @@ Future<T> _loadOnReadWorker<T>(
         })
         as T;
   } on DbReadWorkerUnavailable {
-    return isolateRun();
+    return DbReadWorker.trackTemporaryRead(isolateRun);
   }
 }
 
@@ -1930,6 +1930,14 @@ class DatabaseLibraryProvider implements LibraryProvider {
     _instance ??= DatabaseLibraryProvider._();
     return _instance!;
   }
+
+  @visibleForTesting
+  static Future<T> loadOnReadWorkerForTesting<T>(
+    ReadOnlyDbTarget target,
+    String method,
+    Map<String, Object?> args,
+    Future<T> Function() fallback,
+  ) => _loadOnReadWorker(target, method, args, fallback);
 
   @visibleForTesting
   static List<Map<String, dynamic>> loadBookLinksRowsForTesting({

@@ -320,12 +320,17 @@ class DbReadWorker {
 
   /// מריץ קריאה על חיבור זמני ב-isolate חד-פעמי, כש-worker אינו זמין;
   /// השהיה לכתיבה חיצונית ממתינה לה עד שתשחרר את הקובץ.
-  static Future<T> runOnFreshIsolate<T>(FutureOr<T> Function() read) async {
+  static Future<T> runOnFreshIsolate<T>(FutureOr<T> Function() read) =>
+      trackTemporaryRead(() => Isolate.run(read));
+
+  /// עוקב אחר קריאה זמנית במסד הרשמי עד שהחיבור שלה נסגר.
+  /// גם fallback שכבר יוצר isolate חייב להשתחרר לפני כתיבה חיצונית.
+  static Future<T> trackTemporaryRead<T>(Future<T> Function() read) async {
     if (_suspendedForExternalWrite || _closedUntilReopen) {
       throw const DbReadWorkerSuspended();
     }
     final generation = _generation;
-    final run = Isolate.run(read);
+    final run = read();
     final tracked = run.then<void>((_) {}, onError: (Object _) {});
     _oneShotReads.add(tracked);
     try {

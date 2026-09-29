@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -11,9 +12,11 @@ import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
+import 'package:otzaria/migration/database/untrusted_database.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:path/path.dart' as path;
+import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../test_helpers/memory_cache_provider.dart';
 
@@ -27,6 +30,25 @@ Future<int> Function() _pausedFallback(SendPort checkpoint) => () async {
     release.close();
   }
 };
+
+Future<String> Function() _pausedDbFallback(
+  String dbPath,
+  SendPort checkpoint,
+) =>
+    () => Isolate.run(() async {
+      final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      final release = ReceivePort();
+      try {
+        db.select('SELECT content FROM line LIMIT 1');
+        checkpoint.send(release.sendPort);
+        await release.first;
+        return db.select('SELECT content FROM line LIMIT 1').first['content']
+            as String;
+      } finally {
+        db.close();
+        release.close();
+      }
+    });
 
 /// ה-worker הקבוע חייב להחזיר בדיוק את מה שהמסלול הישיר מחזיר, לאגד בקשות
 /// של אותו סבב, לשחרר את הקובץ בהשהיה ובסגירה, וליפול למסלול הישיר כשנתקע.
@@ -461,6 +483,32 @@ void main() {
     DbReadWorker.allowReopen();
     release.send(null);
     expect(await read, isA<DbReadWorkerSuspended>());
+  });
+
+  test('השהיה ממתינה לחיבור RO של fallback טווח רשמי', () async {
+    final dbPath = await seedDb('seforim');
+    final checkpoint = ReceivePort();
+    addTearDown(checkpoint.close);
+    DbReadWorker.stallTimeout = Duration.zero;
+    final read = DatabaseLibraryProvider.loadOnReadWorkerForTesting(
+      trustedDbTarget(dbPath),
+      'textRange',
+      textRangeArgs(dbPath, 'בראשית'),
+      _pausedDbFallback(dbPath, checkpoint.sendPort),
+    ).then<Object?>((v) => v, onError: (Object e) => e);
+    final release = await checkpoint.first as SendPort;
+    final suspending = DbReadWorker.suspendForExternalWrite();
+    try {
+      await expectLater(
+        suspending.timeout(const Duration(milliseconds: 30)),
+        throwsA(isA<TimeoutException>()),
+      );
+    } finally {
+      release.send(null);
+    }
+    expect(await suspending, isTrue);
+    expect(await read, isA<DbReadWorkerSuspended>());
+    await File(dbPath).delete();
   });
 
   test(

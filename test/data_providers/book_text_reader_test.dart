@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -363,24 +364,24 @@ void main() {
 
     test('השהיה לכתיבה חיצונית קוטעת קריאת ספר ארוכה ב-worker', () async {
       final writer = sqlite3.sqlite3.open(dbPath);
-      insertManyLines(writer, bookId: 3, count: 600000);
+      insertManyLines(writer, bookId: 3, count: 4096);
       writer.close();
       final repository = SqliteDataProvider.instance.repository!;
       final big = book(3);
+      final checkpoint = ReceivePort();
+      addTearDown(checkpoint.close);
+      DbReadWorker.bookReadCheckpointPort = checkpoint.sendPort;
       // חימום: ה-worker והחיבור שלו כבר קיימים כשהקריאה הארוכה מתחילה.
       expect(await BookTextReader.text(repository, book(1)), isNotNull);
 
-      final started = Stopwatch()..start();
-      await BookTextReader.bytes(repository, big);
-      final fullRead = started.elapsed;
-
-      DbReadWorker.lifecycleCommandTimeout = fullRead ~/ 4;
       final read = expectLater(
         BookTextReader.text(repository, big),
         throwsA(isA<DbReadWorkerSuspended>()),
       );
-      await Future<void>.delayed(fullRead ~/ 4);
-      expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+      final release = await checkpoint.first as SendPort;
+      final suspending = DbReadWorker.suspendForExternalWrite();
+      release.send(null);
+      expect(await suspending, isTrue);
       await read;
     });
 
