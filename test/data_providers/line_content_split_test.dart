@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
@@ -243,6 +245,22 @@ void main() {
         expect(contents, [for (final (_, _, content, _) in _lines) content]);
       } finally {
         database.close();
+      }
+    });
+
+    test('$shape: טקסט הספר המלא נקרא כמו תוכן השורות', () async {
+      final db = sqlite3.sqlite3.open(
+        dbPaths[split]!,
+        mode: sqlite3.OpenMode.readOnly,
+      );
+      try {
+        const book = (id: _bookId, title: _title);
+        final expected = [for (final (_, _, content, _) in _lines) content];
+        expect(await readBookContentText(db, book), expected.join('\n'));
+        final bytes = await readBookContentBytes(db, book);
+        expect(utf8.decode(bytes!), expected.join('\n'));
+      } finally {
+        db.close();
       }
     });
   }

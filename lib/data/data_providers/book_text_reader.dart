@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
+import 'package:otzaria/migration/database/db_capabilities.dart';
 import 'package:otzaria/migration/models/book.dart' as db_models;
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
@@ -13,12 +14,14 @@ import 'package:otzaria/migration/database/untrusted_database.dart';
 // לקריאה ב-worker עלול להצמיד את המזהה לספר אחר. רק title: במסד מצורף אין
 // בהכרח categoryId.
 const _bookMatches = 'EXISTS (SELECT 1 FROM book WHERE id = ?1 AND title = ?2)';
-const _contentBlobSql =
-    'SELECT CAST(content AS BLOB) FROM line WHERE bookId = ?1 AND $_bookMatches '
-    'ORDER BY lineIndex';
-const _contentTextSql =
-    'SELECT content FROM line WHERE bookId = ?1 AND $_bookMatches '
-    'ORDER BY lineIndex';
+// סכמה 6 (DbCapabilities.hasSplitLineContent): התוכן ב-line_content לפי אותו id.
+String _contentSql(sqlite3.Database db, {required bool blob}) {
+  final split = DbCapabilities.probe(db).hasSplitLineContent;
+  final column = split ? 'lc.content' : 'l.content';
+  return 'SELECT ${blob ? 'CAST($column AS BLOB)' : column} FROM line l '
+      '${split ? 'LEFT JOIN line_content lc ON lc.id = l.id ' : ''}'
+      'WHERE l.bookId = ?1 AND $_bookMatches ORDER BY l.lineIndex';
+}
 
 /// הספר שנפתר על ה-UI isolate; קריאה שהמזהה שלה כבר אינו שלו מחזירה null.
 typedef BookTextKey = ({int id, String title});
@@ -124,7 +127,7 @@ Future<List<Uint8List>> _readContentParts(
   bool stripRowBom = false,
   ReadCheckpoint? checkpoint,
 }) async {
-  final statement = db.prepare(_contentBlobSql);
+  final statement = db.prepare(_contentSql(db, blob: true));
   try {
     final raw = statement.raw
       ..bindInt64(1, book.id)
@@ -198,7 +201,7 @@ Future<String?> readBookContentText(
   // CAST AS BLOB מחזיר את קידוד המסד; פענוח חוצץ אחד נכון רק ב-UTF-8.
   final encoding = db.select('PRAGMA encoding').first.values.first;
   if (encoding != 'UTF-8') {
-    final rows = db.select(_contentTextSql, [book.id, book.title]);
+    final rows = db.select(_contentSql(db, blob: false), [book.id, book.title]);
     if (rows.isEmpty) return null;
     return rows.map((row) => (row.values.first as String?) ?? '').join('\n');
   }
