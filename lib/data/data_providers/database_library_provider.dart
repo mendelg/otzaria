@@ -907,7 +907,7 @@ _loadBookLinkTargetsSummaryRowsInIsolate({
                       'ORDER BY sl.lineIndex DESC LIMIT 1) as maxIdx'
                 : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
                       'CROSS JOIN line sl ON sl.id = l.sourceLineId '
-                      'WHERE l.sourceBookId = ? AND sl.bookId = l.sourceBookId'
+                      'WHERE l.sourceBookId = ?'
           : 'SELECT MAX(sl.lineIndex) as maxIdx FROM link l '
                 'JOIN line sl ON sl.id = l.sourceLineId WHERE l.sourceBookId = ?',
       [bookId],
