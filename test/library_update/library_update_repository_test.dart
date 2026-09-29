@@ -51,6 +51,24 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
+  test('ה-planner של האפליקציה מצהיר על הסכמה שהיא קוראת', () {
+    final repository = LibraryUpdateRepository(
+      discovery: _unusedDiscovery(),
+      downloader: StreamingPatchDownloader(),
+    );
+    expect(DatabaseConstants.readableDbSchemaVersion, 6);
+    expect(
+      DatabaseConstants.readableDbSchemaVersion,
+      lessThanOrEqualTo(kSupportedDbSchemaVersion),
+    );
+    expect(
+      repository.planner.supportedDbSchemaVersion,
+      DatabaseConstants.readableDbSchemaVersion,
+    );
+    // ברירת המחדל של ה-updater נשארת 5, כדי ש-build ישן לא יוריד סכמה 6.
+    expect(const LibraryUpdatePlanner().supportedDbSchemaVersion, 5);
+  });
+
   test(
     'applyFullDownload מוריד, מחלץ, מאמת ומחליף DB קטן מקומית',
     () async {

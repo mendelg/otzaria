@@ -176,7 +176,9 @@ class LibraryUpdateRepository implements LibraryUpdateService {
 
   LibraryUpdateRepository({
     required this.discovery,
-    this.planner = const LibraryUpdatePlanner(),
+    this.planner = const LibraryUpdatePlanner(
+      supportedDbSchemaVersion: DatabaseConstants.readableDbSchemaVersion,
+    ),
     this.versionReader = const LocalDbVersionReader(),
     required this.downloader,
     this.recovery = const LibraryDbRecoveryService(),
@@ -826,9 +828,10 @@ class LibraryUpdateRepository implements LibraryUpdateService {
       );
     }
     final schema = local.schemaVersion;
-    if (schema != null && schema > kSupportedDbSchemaVersion) {
+    const readable = DatabaseConstants.readableDbSchemaVersion;
+    if (schema != null && schema > readable) {
       throw StateError(
-        'ה-DB שהורד בסכמה $schema, חדשה מהנתמכת ($kSupportedDbSchemaVersion) — '
+        'ה-DB שהורד בסכמה $schema, חדשה מהנתמכת ($readable) — '
         'נדרש עדכון אפליקציה',
       );
     }
