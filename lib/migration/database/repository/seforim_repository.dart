@@ -1316,7 +1316,8 @@ class SeforimRepository {
       '  SELECT te.id, te.parentId, te.textId, te.level '
       '  FROM tocEntry te JOIN chain c ON te.id = c.parentId'
       ') '
-      'SELECT t.text FROM chain c JOIN tocText t ON t.id = c.textId '
+      // CROSS JOIN: עם sqlite_stat1 המתכנן סורק את כל tocText במקום חיפוש לפי id.
+      'SELECT t.text FROM chain c CROSS JOIN tocText t ON t.id = c.textId '
       'WHERE c.level > 0 ORDER BY c.level',
       [bookId, lineIndex],
     );
@@ -1868,46 +1869,6 @@ class SeforimRepository {
     return result.first.values.first as int;
   }
 
-  Future<List<CommentaryWithText>> getCommentariesForLines(
-    List<int> lineIds,
-    Set<int> activeCommentatorIds,
-  ) async {
-    final db = await _database.database;
-    final placeholders = List.filled(lineIds.length, '?').join(',');
-    final result = db
-        .select(
-          '''
-      SELECT l.*, b.title as targetBookTitle, ln.plainText as targetText
-      FROM link l
-      JOIN book b ON l.targetBookId = b.id
-      JOIN line ln ON l.targetLineId = ln.id
-      WHERE l.sourceLineId IN ($placeholders)
-      ${activeCommentatorIds.isNotEmpty ? 'AND l.targetBookId IN (${List.filled(activeCommentatorIds.length, '?').join(',')})' : ''}
-      ORDER BY l.targetBookId, l.targetLineId
-    ''',
-          [...lineIds, ...activeCommentatorIds],
-        )
-        .toMapList();
-
-    return result.map((row) {
-      final link = Link(
-        id: row['id'] as int,
-        sourceBookId: row['sourceBookId'] as int,
-        targetBookId: row['targetBookId'] as int,
-        sourceLineId: row['sourceLineId'] as int,
-        targetLineId: row['targetLineId'] as int,
-        connectionType: ConnectionType.fromString(
-          row['connectionTypeId'].toString(),
-        ), // This needs to be mapped properly
-      );
-      return CommentaryWithText(
-        link: link,
-        targetBookTitle: row['targetBookTitle'] as String,
-        targetText: row['targetText'] as String,
-      );
-    }).toList();
-  }
-
   Future<List<CommentatorInfo>> getAvailableCommentators(int bookId) async {
     final capabilities = await _capabilities;
     if (!capabilities.hasLinks) return const [];
@@ -2006,19 +1967,6 @@ class SeforimRepository {
   }
 
   // New paginated methods for per-commentator pagination use cases
-  Future<List<CommentaryWithText>> getCommentariesForLineRange(
-    List<int> lineIds,
-    Set<int> activeCommentatorIds,
-    int offset,
-    int limit,
-  ) async {
-    final commentaries = await getCommentariesForLines(
-      lineIds,
-      activeCommentatorIds,
-    );
-    return commentaries.skip(offset).take(limit).toList();
-  }
-
   Future<List<CommentatorInfo>> getAvailableCommentatorsPaginated(
     int bookId,
     int offset,
@@ -2868,23 +2816,6 @@ class BookGenerationInfo {
   @override
   String toString() =>
       'BookGenerationInfo(id: $generationId, name: $generationName)';
-}
-
-/// A commentary with its text content.
-///
-/// @property link The link connecting the source text to the commentary
-/// @property targetBookTitle The title of the book containing the commentary
-/// @property targetText The text of the commentary
-class CommentaryWithText {
-  final Link link;
-  final String targetBookTitle;
-  final String targetText;
-
-  const CommentaryWithText({
-    required this.link,
-    required this.targetBookTitle,
-    required this.targetText,
-  });
 }
 
 /// Mapping between a line and its TOC entry

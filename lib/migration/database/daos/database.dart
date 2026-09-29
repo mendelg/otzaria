@@ -41,6 +41,9 @@ class MyDatabase {
   final bool _untrusted;
   final bool _immutable;
 
+  /// seforim.db הרשמי: רק בו מותר לבחור שאילתות שנשענות על האינדקסים שלו.
+  final bool _official;
+
   /// האם החיבור נפתח במצב read-only.
   bool get isReadOnly => _readOnly;
 
@@ -50,6 +53,8 @@ class MyDatabase {
 
   /// האם המסד אינו בשליטת התוכנה (מסד ספרים מצורף).
   bool get isUntrusted => _untrusted;
+
+  bool get isOfficial => _official;
 
   /// האם יש כרגע חיבור פתוח. אחרי [close] החיבור נפתח מחדש בגישה הבאה.
   bool get isOpen => _database != null;
@@ -195,17 +200,21 @@ class MyDatabase {
   /// אין סינגלטון ברירת-מחדל — כל קוד הצורך גישה ל-seforim.db עובר דרך
   /// [SqliteDataProvider], וקוד הצורך גישה ל-user_books.db דרך
   /// [UserBooksDatabaseHolder].
-  MyDatabase.withPath(String path, {this._readOnly = false})
-    : _path = path,
-      _untrusted = false,
-      _immutable = false;
+  MyDatabase.withPath(
+    String path, {
+    this._readOnly = false,
+    this._official = false,
+  }) : _path = path,
+       _untrusted = false,
+       _immutable = false;
 
   /// מסד ספרים מצורף: read-only ומוקשח; [immutable] — ראה
   /// [openUntrustedReadOnlyDatabase].
   MyDatabase.untrusted(String path, {this._immutable = false})
     : _path = path,
       _readOnly = true,
-      _untrusted = true;
+      _untrusted = true,
+      _official = false;
 
   Future<sqlite3.Database> get database async {
     if (_database != null) return _database!;

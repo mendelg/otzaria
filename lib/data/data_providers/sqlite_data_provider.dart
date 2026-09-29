@@ -129,7 +129,11 @@ class SqliteDataProvider {
     await normalizeJournalModeForReadOnly(_dbPath);
 
     try {
-      final database = MyDatabase.withPath(_dbPath, readOnly: true);
+      final database = MyDatabase.withPath(
+        _dbPath,
+        readOnly: true,
+        official: true,
+      );
       _repository = SeforimRepository(database);
       await _repository.ensureInitialized();
       _isInitialized = true;

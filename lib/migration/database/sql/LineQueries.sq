@@ -31,9 +31,6 @@ SELECT * FROM line WHERE bookId = ? AND lineIndex = ?;
 selectByHeRef:
 SELECT * FROM line WHERE heRef = ? LIMIT 1;
 
-selectByHeRefLike:
-SELECT * FROM line WHERE heRef LIKE ? ORDER BY bookId, lineIndex LIMIT ?;
-
 -- כל ה-heRef-ים של ספר, רזה (בלי content) — לרזולוציית הפניה לרמת שורה.
 selectRefsByBookId:
 SELECT lineIndex, heRef FROM line

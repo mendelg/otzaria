@@ -543,7 +543,9 @@ void _workerMain(_Bootstrap bootstrap) {
     final current = repository;
     if (current != null && openPath == path) return current;
     closeConnection();
-    final repo = SeforimRepository(MyDatabase.withPath(path, readOnly: true));
+    final repo = SeforimRepository(
+      MyDatabase.withPath(path, readOnly: true, official: true),
+    );
     try {
       await repo.ensureInitialized();
     } catch (_) {
