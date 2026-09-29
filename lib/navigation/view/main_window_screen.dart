@@ -3958,7 +3958,19 @@ class MainWindowScreenState extends State<MainWindowScreen>
     }
   }
 
-  void _handleSearchTabOpen(BuildContext context, {bool closeIfOpen = true}) {
+  /// פותח את דיאלוג החיפוש במסלול שעוקב אחרי `_isSearchOpen`, כדי שקיצור
+  /// החיפוש לא יפתח דיאלוג שני מעליו.
+  void openSearchDialog(SearchingTab existingTab) => _handleSearchTabOpen(
+    context,
+    closeIfOpen: false,
+    existingTab: existingTab,
+  );
+
+  void _handleSearchTabOpen(
+    BuildContext context, {
+    bool closeIfOpen = true,
+    SearchingTab? existingTab,
+  }) {
     if (_isSearchOpen) {
       if (closeIfOpen) {
         Navigator.of(context).pop();
@@ -3972,7 +3984,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
 
     showDialog(
       context: context,
-      builder: (context) => const SearchDialog(existingTab: null),
+      builder: (context) => SearchDialog(existingTab: existingTab),
     ).then((_) {
       if (!mounted) return;
       setState(() => _isSearchOpen = false);
