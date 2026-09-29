@@ -613,28 +613,6 @@ class SqliteDataProvider {
     await initialize();
   }
 
-  /// Gets statistics about the database
-  Future<Map<String, int>> getDatabaseStats() async {
-    if (!_isInitialized) {
-      await initialize();
-    }
-    if (!_isInitialized) {
-      return {'books': 0, 'lines': 0, 'links': 0};
-    }
-
-    try {
-      final bookCount = await _repository.countAllBooks();
-      final linkCount = await _repository.countLinks();
-
-      return {
-        'books': bookCount,
-        'links': linkCount,
-      };
-    } catch (e) {
-      return {'books': 0, 'lines': 0, 'links': 0};
-    }
-  }
-
   /// Performs a health check on the database
   Future<Map<String, dynamic>> performHealthCheck() async {
     final results = <String, dynamic>{

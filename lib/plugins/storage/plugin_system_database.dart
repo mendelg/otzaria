@@ -21,6 +21,9 @@ class PluginSystemDatabase {
     return _database!;
   }
 
+  /// המסד, רק אם כבר נפתח.
+  Database? get openDatabase => _database;
+
   Future<Database> _initDatabase() async {
     final dbPath = await AppPaths.resolvePluginsDbPath();
     final db = openWritableDatabase(dbPath, 'PluginSystemDatabase');

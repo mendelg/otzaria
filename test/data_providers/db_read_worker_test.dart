@@ -313,6 +313,25 @@ void main() {
     await File(dbPath).delete();
   });
 
+  test('shrinkMemory רץ על חיבור ה-worker ולא פותח חיבור סגור', () async {
+    final dbPath = await seedDb('seforim');
+    final sentBefore = DbReadWorker.sentMessageCount;
+    expect(await DbReadWorker.shrinkMemoryIfRunning(), isFalse);
+    expect(
+      DbReadWorker.sentMessageCount,
+      sentBefore,
+      reason: 'לא מפעיל worker',
+    );
+
+    await DbReadWorker.request('textRange', textRangeArgs(dbPath, 'בראשית'));
+    expect(await DbReadWorker.shrinkMemoryIfRunning(), isTrue);
+
+    await DbReadWorker.closeConnectionIfRunning();
+    expect(await DbReadWorker.shrinkMemoryIfRunning(), isFalse);
+    await File(dbPath).delete();
+    DbReadWorker.allowReopen();
+  });
+
   test('worker שלא עונה בזמן נופל למסלול הישיר עד שיענה', () async {
     final dbPath = await seedDb('seforim', bigBookLines: 200000);
     // חיבור פתוח מראש — כדי שהבקשה האיטית תהיה השאילתה עצמה.

@@ -44,6 +44,9 @@ class PersonalNotesDatabase {
     return _database!;
   }
 
+  /// המסד, רק אם כבר נפתח.
+  Database? get openDatabase => _database;
+
   /// Initialize the database
   Future<Database> _initDatabase() async {
     final dbPath = await AppPaths.resolveNotesDbPath('personal_notes.db');

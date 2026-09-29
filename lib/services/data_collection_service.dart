@@ -5,7 +5,6 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
-import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 
 /// Service for collecting data required for phone error reporting
 class DataCollectionService {
@@ -89,25 +88,6 @@ class DataCollectionService {
       return sortedPositions.first.index + 1; // Convert to 1-based
     } catch (e) {
       debugPrint('Error getting current line number: $e');
-      return 0;
-    }
-  }
-
-  /// Get total number of books from database
-  /// Returns the number of books in the database
-  Future<int> getTotalBookCount() async {
-    try {
-      final dbProvider = SqliteDataProvider.instance;
-      if (await dbProvider.databaseExists() && dbProvider.isInitialized) {
-        final stats = await dbProvider.getDatabaseStats();
-        final bookCount = stats['books'] ?? 0;
-        debugPrint('Book count from DB: $bookCount');
-        return bookCount;
-      }
-      debugPrint('Database not available');
-      return 0;
-    } catch (e) {
-      debugPrint('Error counting books from DB: $e');
       return 0;
     }
   }

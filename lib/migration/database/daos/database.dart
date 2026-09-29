@@ -437,6 +437,9 @@ class MyDatabase {
     _retired = true;
   }
 
+  /// ראה [shrinkMemoryBestEffort]; לא פותח חיבור סגור.
+  bool shrinkMemoryIfOpen() => shrinkMemoryBestEffort(_database);
+
   void close() {
     DbCapabilities.invalidate(_path);
     final db = _database;

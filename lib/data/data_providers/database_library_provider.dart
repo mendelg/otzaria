@@ -2954,11 +2954,6 @@ class DatabaseLibraryProvider implements LibraryProvider {
     _titlesCached = titlesCached;
   }
 
-  /// Gets database statistics
-  Future<Map<String, int>> getStats() async {
-    return await _sqliteProvider.getDatabaseStats();
-  }
-
   /// Gets the underlying SQLite provider for advanced operations
   SqliteDataProvider get sqliteProvider => _sqliteProvider;
 
