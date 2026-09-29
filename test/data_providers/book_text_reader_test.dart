@@ -191,6 +191,40 @@ void main() {
     expect(await readBookContentBytes(db, key(1)), legacy.bytes);
   });
 
+  test('שורות שחוצות גבול חוצץ, שורה גדולה מחוצץ ו-BOM — זהה', () async {
+    final dbPath = path.join(tempDir.path, 'chunks.db');
+    final db = sqlite3.sqlite3.open(dbPath);
+    addTearDown(db.close);
+    createBareTables(db);
+    final bom = String.fromCharCode(0xFEFF);
+    final rows = <String?>[
+      for (var i = 0; i < 3000; i++)
+        switch (i % 7) {
+          0 => '$bomא${'ב' * (i % 50)}',
+          1 => null,
+          2 => '',
+          _ => 'שורה $i ${'x' * (i % 97)}',
+        },
+      'ג' * 70000,
+      '$bom${'ד' * 40000}',
+      bom,
+    ];
+    for (var i = 0; i < rows.length; i++) {
+      db.execute('INSERT INTO line VALUES (1, ?, ?)', [i, rows[i]]);
+    }
+
+    final legacy = legacyRead(dbPath, 1);
+    expect(await readBookContentText(db, key(1)), legacy.text);
+    expect(await readBookContentBytes(db, key(1)), legacy.bytes);
+    expect(
+      (await readBookContentTransferable(
+        db,
+        key(1),
+      ))?.materialize().asUint8List(),
+      legacy.bytes,
+    );
+  });
+
   for (final encoding in ['UTF-8', 'UTF-16le']) {
     test('תוכן NULL נקרא כשורה ריקה במסד $encoding', () async {
       final dbPath = path.join(tempDir.path, '$encoding.db');
