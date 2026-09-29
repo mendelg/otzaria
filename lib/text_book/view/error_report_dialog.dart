@@ -1182,6 +1182,9 @@ class TabbedReportDialog extends StatefulWidget {
 /// הגובה שבו טופס הצעת התיקון נכנס כמעט בלי גלילה.
 const double _comfortableReportDialogHeight = 640;
 
+/// טופס בלי עורך תיקון קצר; הגובה קבוע כדי שלא ישתנה בזמן הקלדה.
+const double _freeTextReportDialogHeight = 540;
+
 class _TabbedReportDialogState extends State<TabbedReportDialog>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
@@ -1251,11 +1254,13 @@ class _TabbedReportDialogState extends State<TabbedReportDialog>
     final isNarrow = screenWidth < 600;
     final maxWidth = isNarrow ? screenWidth : screenWidth * 0.6;
     final minWidth = maxWidth < 400 ? maxWidth : 400.0;
-    // במסך נמוך 70% חותך את הטופס; Dialog עצמו מצמצם לגובה הפנוי.
-    final maxHeight = math.max(
-      availableHeight * 0.7,
-      math.min(availableHeight, _comfortableReportDialogHeight),
-    );
+    final maxHeight = widget.correctionTemplate == null && !isNarrow
+        ? math.min(availableHeight, _freeTextReportDialogHeight)
+        // במסך נמוך 70% חותך את הטופס; Dialog עצמו מצמצם לגובה הפנוי.
+        : math.max(
+            availableHeight * 0.7,
+            math.min(availableHeight, _comfortableReportDialogHeight),
+          );
     final minHeight = maxHeight < 400 ? maxHeight : 400.0;
     final isCompact = isNarrow || maxHeight > availableHeight * 0.7;
 
