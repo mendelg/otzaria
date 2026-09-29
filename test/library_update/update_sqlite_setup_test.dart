@@ -123,6 +123,7 @@ void main() {
         final global = _FakeSqliteTempDir();
         final setup = LibraryUpdateSqliteSetup(
           isMobile: true,
+          needsSqliteTempDirectory: true,
           physicalRamMb: () async => 3072,
           readSqliteTempDirectory: global.read,
           writeSqliteTempDirectory: global.write,
@@ -143,6 +144,7 @@ void main() {
       final global = _FakeSqliteTempDir('/already/set');
       final setup = LibraryUpdateSqliteSetup(
         isMobile: true,
+        needsSqliteTempDirectory: true,
         physicalRamMb: () async => 4096,
         readSqliteTempDirectory: global.read,
         writeSqliteTempDirectory: global.write,
@@ -161,6 +163,7 @@ void main() {
       final global = _FakeSqliteTempDir();
       final setup = LibraryUpdateSqliteSetup(
         isMobile: true,
+        needsSqliteTempDirectory: true,
         physicalRamMb: () async => 2048,
         readSqliteTempDirectory: global.read,
         writeSqliteTempDirectory: global.write,
@@ -187,6 +190,7 @@ void main() {
       PathProviderPlatform.instance = _FakePathProvider(systemTemp);
       final setup = LibraryUpdateSqliteSetup(
         isMobile: true,
+        needsSqliteTempDirectory: true,
         physicalRamMb: () async => 2048,
       );
 
@@ -195,11 +199,31 @@ void main() {
       expect(sqlite3.sqlite3.tempDirectory, systemTemp);
     });
 
+    test('iOS: cache לפי ה-RAM בלי לגעת בתיקיית ה-temp של SQLite', () async {
+      final fakePath = _FakePathProvider(tmp.path);
+      PathProviderPlatform.instance = fakePath;
+      final global = _FakeSqliteTempDir();
+      final setup = LibraryUpdateSqliteSetup(
+        isMobile: true,
+        needsSqliteTempDirectory: false,
+        physicalRamMb: () async => 4096,
+        readSqliteTempDirectory: global.read,
+        writeSqliteTempDirectory: global.write,
+      );
+
+      final applier = await setup.prepareApplier();
+
+      expect(applier.cacheSizeKib, 128 * mib);
+      expect(fakePath.calls, 0);
+      expect(global.writes, isEmpty);
+    });
+
     test('mobile: כשל בקריאת ה-RAM נופל להנחת 2GB', () async {
       PathProviderPlatform.instance = _FakePathProvider(tmp.path);
       final global = _FakeSqliteTempDir();
       final setup = LibraryUpdateSqliteSetup(
         isMobile: true,
+        needsSqliteTempDirectory: true,
         physicalRamMb: () async => throw StateError('no channel'),
         readSqliteTempDirectory: global.read,
         writeSqliteTempDirectory: global.write,

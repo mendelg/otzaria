@@ -13,11 +13,13 @@ import 'package:seforim_library_updater/seforim_library_updater.dart';
 class LibraryUpdateSqliteSetup {
   LibraryUpdateSqliteSetup({
     bool? isMobile,
+    bool? needsSqliteTempDirectory,
     Future<Directory> Function()? temporaryDirectory,
     Future<int?> Function()? physicalRamMb,
     String? Function()? readSqliteTempDirectory,
     void Function(String path)? writeSqliteTempDirectory,
   }) : _isMobile = isMobile ?? (Platform.isAndroid || Platform.isIOS),
+       _needsTempDir = needsSqliteTempDirectory ?? Platform.isAndroid,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
        _physicalRamMb = physicalRamMb ?? _readPhysicalRamMb,
        _readTempDir = readSqliteTempDirectory ?? _readGlobalTempDir,
@@ -26,6 +28,8 @@ class LibraryUpdateSqliteSetup {
   static final LibraryUpdateSqliteSetup instance = LibraryUpdateSqliteSetup();
 
   final bool _isMobile;
+  // ב-iOS TMPDIR מוגדר ו-SQLite מוצא אותו בעצמו; כתיבה לגלובלי רק היכן שחסר.
+  final bool _needsTempDir;
   final Future<Directory> Function() _temporaryDirectory;
   final Future<int?> Function() _physicalRamMb;
   final String? Function() _readTempDir;
@@ -39,7 +43,7 @@ class LibraryUpdateSqliteSetup {
 
   Future<PatchApplier> _prepare() async {
     if (!_isMobile) return const PatchApplier();
-    await _ensureSqliteTempDirectory();
+    if (_needsTempDir) await _ensureSqliteTempDirectory();
     int? ramMb;
     try {
       ramMb = await _physicalRamMb();
