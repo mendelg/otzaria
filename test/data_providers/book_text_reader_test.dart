@@ -12,6 +12,7 @@ import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
+import 'package:otzaria/migration/models/book.dart' as db_models;
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:path/path.dart' as path;
 
@@ -23,6 +24,23 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tempDir;
+
+  const titles = {1: 'בראשית', 2: 'ריק', 3: 'שורה ריקה', 99: 'חסר'};
+  BookTextKey key(int id) => (id: id, title: titles[id]!, categoryId: 7);
+  db_models.Book book(int id) =>
+      db_models.Book(id: id, categoryId: 7, sourceId: 1, title: titles[id]!);
+
+  /// טבלאות מינימליות: מסד חיצוני ישן שאינו נוצר מהסכמה של התוכנה.
+  void createBareTables(sqlite3.Database db) {
+    db.execute(
+      'CREATE TABLE book (id INTEGER PRIMARY KEY, categoryId INTEGER, '
+      'title TEXT)',
+    );
+    db.execute("INSERT INTO book VALUES (1, 7, 'בראשית'), (2, 7, 'ריק')");
+    db.execute(
+      'CREATE TABLE line (bookId INTEGER, lineIndex INTEGER, content TEXT)',
+    );
+  }
 
   // שורה ריקה, שורה עם \n פנימי, BOM ותו 4-בייטים.
   final contents = <String>[
@@ -120,10 +138,11 @@ void main() {
 
       for (final bookId in [1, 2, 3, 99]) {
         final legacy = legacyRead(dbPath, bookId);
-        expect(readBookContentText(db, bookId), legacy.text, reason: '$bookId');
-        expect(readBookContentBytes(db, bookId), legacy.bytes);
+        final k = key(bookId);
+        expect(readBookContentText(db, k), legacy.text, reason: '$bookId');
+        expect(readBookContentBytes(db, k), legacy.bytes);
         expect(
-          readBookContentTransferable(db, bookId)?.materialize().asUint8List(),
+          readBookContentTransferable(db, k)?.materialize().asUint8List(),
           legacy.bytes,
         );
       }
@@ -134,9 +153,7 @@ void main() {
     final dbPath = path.join(tempDir.path, 'bom.db');
     final db = sqlite3.sqlite3.open(dbPath);
     addTearDown(db.close);
-    db.execute(
-      'CREATE TABLE line (bookId INTEGER, lineIndex INTEGER, content TEXT)',
-    );
+    createBareTables(db);
     final bom = String.fromCharCode(0xFEFF);
     final rows = ['$bomא', '$bom$bomב', 'ג$bom', bom, '$bomד'];
     for (var i = 0; i < rows.length; i++) {
@@ -145,10 +162,10 @@ void main() {
 
     final legacy = legacyRead(dbPath, 1);
     expect(legacy.text, ['א', '$bomב', 'ג$bom', '', 'ד'].join('\n'));
-    expect(readBookContentText(db, 1), legacy.text);
+    expect(readBookContentText(db, key(1)), legacy.text);
     // הבייטים נשארים כפי שמאוחסנים, כולל ה-BOM.
-    expect(readBookContentBytes(db, 1), utf8.encode(rows.join('\n')));
-    expect(readBookContentBytes(db, 1), legacy.bytes);
+    expect(readBookContentBytes(db, key(1)), utf8.encode(rows.join('\n')));
+    expect(readBookContentBytes(db, key(1)), legacy.bytes);
   });
 
   for (final encoding in ['UTF-8', 'UTF-16le']) {
@@ -157,9 +174,7 @@ void main() {
       final db = sqlite3.sqlite3.open(dbPath);
       addTearDown(db.close);
       db.execute("PRAGMA encoding = '$encoding'");
-      db.execute(
-        'CREATE TABLE line (bookId INTEGER, lineIndex INTEGER, content TEXT)',
-      );
+      createBareTables(db);
       final rows = <String?>[...contents, null, 'אחרי NULL'];
       for (var i = 0; i < rows.length; i++) {
         db.execute('INSERT INTO line VALUES (1, ?, ?)', [i, rows[i]]);
@@ -167,13 +182,27 @@ void main() {
 
       final legacy = legacyRead(dbPath, 1);
       expect(legacy.text, contains('\n\nאחרי NULL'));
-      expect(readBookContentText(db, 1), legacy.text);
-      expect(readBookContentText(db, 2), isNull);
+      expect(readBookContentText(db, key(1)), legacy.text);
+      expect(readBookContentText(db, key(2)), isNull);
       if (encoding == 'UTF-8') {
-        expect(readBookContentBytes(db, 1), legacy.bytes);
+        expect(readBookContentBytes(db, key(1)), legacy.bytes);
       }
     });
   }
+
+  test('מזהה שכבר שייך לספר אחר מחזיר null ולא את תוכנו', () async {
+    final dbPath = await seedDb('stale');
+    final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    addTearDown(db.close);
+    final BookTextKey stale = (id: 1, title: 'שמות', categoryId: 7);
+    final BookTextKey otherCategory = (id: 1, title: 'בראשית', categoryId: 8);
+
+    for (final k in [stale, otherCategory]) {
+      expect(readBookContentText(db, k), isNull);
+      expect(readBookContentBytes(db, k), isNull);
+      expect(readBookContentTransferable(db, k), isNull);
+    }
+  });
 
   test('מסד מצורף נקרא ב-isolate נפרד, לא על החיבור הראשי', () async {
     final dbPath = await seedDb('attached');
@@ -183,14 +212,14 @@ void main() {
     final sentBefore = DbReadWorker.sentMessageCount;
 
     expect(
-      await BookTextReader.text(repository, 1),
+      await BookTextReader.text(repository, book(1)),
       legacyRead(dbPath, 1).text,
     );
     expect(
-      await BookTextReader.bytes(repository, 1),
+      await BookTextReader.bytes(repository, book(1)),
       legacyRead(dbPath, 1).bytes,
     );
-    expect(await BookTextReader.text(repository, 2), isNull);
+    expect(await BookTextReader.text(repository, book(2)), isNull);
     expect(BookTextReader.mainConnectionReads, 0);
     expect(DbReadWorker.sentMessageCount, sentBefore);
     expect(database.isOpen, isFalse, reason: 'החיבור הראשי לא נפתח כלל');
@@ -203,7 +232,7 @@ void main() {
     final repository = SeforimRepository(database);
 
     expect(
-      await BookTextReader.text(repository, 1),
+      await BookTextReader.text(repository, book(1)),
       legacyRead(dbPath, 1).text,
     );
     expect(BookTextReader.mainConnectionReads, 1);
@@ -253,6 +282,21 @@ void main() {
       expect(DbReadWorker.sentMessageCount - sentBefore, 6);
     });
 
+    test('patch שהחליף את הספר במזהה אחרי הפתרון — לא נקרא תוכן זר', () async {
+      final repository = SqliteDataProvider.instance.repository!;
+      final resolved = (await repository.getBookByTitleAndCategory(
+        'בראשית',
+        7,
+      ))!;
+      final writer = sqlite3.sqlite3.open(dbPath);
+      writer.execute("UPDATE book SET title = 'שמות' WHERE id = 1");
+      writer.close();
+
+      expect(await BookTextReader.text(repository, resolved), isNull);
+      expect(await BookTextReader.bytes(repository, resolved), isNull);
+      expect(BookTextReader.mainConnectionReads, 0);
+    });
+
     test('worker תקוע — הקריאה עוברת ל-isolate חד-פעמי ונשארת זהה', () async {
       DbReadWorker.stallTimeout = Duration.zero;
       final provider = SqliteDataProvider.instance;
@@ -271,7 +315,7 @@ void main() {
       expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
 
       await expectLater(
-        BookTextReader.text(repository, 1),
+        BookTextReader.text(repository, book(1)),
         throwsA(isA<DbReadWorkerSuspended>()),
       );
       await expectLater(

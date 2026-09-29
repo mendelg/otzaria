@@ -2708,7 +2708,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
         preferSource: source,
       );
       if (record == null || record.source != source) return null;
-      final text = await BookTextReader.text(record.repository, record.book.id);
+      final text = await BookTextReader.text(record.repository, record.book);
       if (text != null) return text;
       // ספר מבוסס-קובץ: filePath כבר נפתר בתוך תיקיית המסד (או null).
       final file = record.book.filePath;

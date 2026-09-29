@@ -421,7 +421,7 @@ class SqliteDataProvider {
       if (resolvedBook == null) return null;
       return await BookTextReader.text(
         resolvedBook.repository,
-        resolvedBook.book.id,
+        resolvedBook.book,
       );
     } catch (e, st) {
       debugPrint(
@@ -457,7 +457,7 @@ class SqliteDataProvider {
 
       final bytes = await BookTextReader.bytes(
         resolvedBook.repository,
-        resolvedBook.book.id,
+        resolvedBook.book,
       );
       if (bytes == null || bytes.isEmpty) return null;
       return bytes;

@@ -524,6 +524,12 @@ class _Suspended implements Exception {
   const _Suspended();
 }
 
+BookTextKey _bookTextKey(Map<String, Object?> args) => (
+  id: args['bookId'] as int,
+  title: args['title'] as String,
+  categoryId: args['categoryId'] as int,
+);
+
 /// ספרים שנפתרו כבר על החיבור הנוכחי; מתנקה בכל סגירה.
 const _maxResolvedBooks = 4096;
 
@@ -629,13 +635,13 @@ void _workerMain(_Bootstrap bootstrap) {
         final repo = await ensureRepo(args['dbPath'] as String);
         return readBookContentText(
           await repo.database.database,
-          args['bookId'] as int,
+          _bookTextKey(args),
         );
       case 'bookTextBytes':
         final repo = await ensureRepo(args['dbPath'] as String);
         return readBookContentTransferable(
           await repo.database.database,
-          args['bookId'] as int,
+          _bookTextKey(args),
         );
       default:
         final repo = await ensureRepo(args['dbPath'] as String);
