@@ -26,6 +26,7 @@ import 'package:otzaria/personal_notes/services/personal_note_draft_service.dart
 import 'package:otzaria/plugins/storage/plugin_system_database.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
 import 'package:otzaria/plugins/services/plugin_manifest_validator.dart';
+import 'package:otzaria/plugins/services/plugin_user_folder_grants.dart';
 import 'package:otzaria/plugins/services/plugin_report_service.dart';
 import 'package:otzaria/services/direct_error_report_service.dart';
 import 'package:otzaria/services/sent_reports_counter.dart';
@@ -681,6 +682,8 @@ class BackupService {
   /// צורת הדף, התאמות פר-ספר) אינו בקובץ ואינו בר-שחזור — והמשתמש חייב לדעת.
   /// [notesWithoutAnchor] — הערות שקובץ הגיבוי אינו יכול לבטא להן עיגון (נוצר
   /// לפני שהעיגון נכנס לגיבוי), ולכן תסומנה על כל השורה במקום על המילים.
+  /// [restoredPlugins] — plugins restored from the file; they come back
+  /// disabled until the user enables them.
   /// [added] — מה נוסף בפועל; רק ב-[BackupImportMode.merge], ובשחזור `null`.
   ///
   /// [mode] — `replace` (ברירת מחדל) מחליף את הנתונים הקיימים; `merge` מייבא
@@ -692,6 +695,7 @@ class BackupService {
       List<String> missingCustomFolders,
       bool hasLegacyPartialSettings,
       int notesWithoutAnchor,
+      int restoredPlugins,
       BackupImportCounts? added,
     })
   >
@@ -797,6 +801,7 @@ class BackupService {
 
     // Restore notes
     var notesWithoutAnchor = 0;
+    var restoredPlugins = 0;
     if (includes['notes'] == true && backupData.containsKey('notes')) {
       notesWithoutAnchor = await _restoreNotes(
         (backupData['notes'] as List).cast<Map<String, dynamic>>(),
@@ -831,12 +836,13 @@ class BackupService {
 
     // Restore plugins
     if (includes['plugins'] == true && backupData.containsKey('plugins')) {
-      final pluginsHadFailures = await _restorePlugins(
+      final pluginsResult = await _restorePlugins(
         (backupData['plugins'] as List).cast<Map<String, dynamic>>(),
         stores,
         counts: counts,
       );
-      if (pluginsHadFailures) runtimeSkipped.add('plugins');
+      restoredPlugins = pluginsResult.restored;
+      if (pluginsResult.hadFailures) runtimeSkipped.add('plugins');
     }
 
     // Restore Shamor Zachor
@@ -859,6 +865,7 @@ class BackupService {
       missingCustomFolders: missingCustomFolders,
       hasLegacyPartialSettings: hasLegacyPartialSettings,
       notesWithoutAnchor: notesWithoutAnchor,
+      restoredPlugins: restoredPlugins,
       added: counts,
     );
   }
@@ -1222,13 +1229,14 @@ class BackupService {
 
   // שחזור תוספים: נתיב ההתקנה מותאם לשינויי מערכות ושם משתמש.
   // אם תוסף אחד נכשל — מחזיר `true` כדי שהמשתמש יראה שחזור חלקי.
-  static Future<bool> _restorePlugins(
+  static Future<({bool hadFailures, int restored})> _restorePlugins(
     List<Map<String, dynamic>> pluginsData,
     List<BackupStore> stores, {
     BackupImportCounts? counts,
   }) async {
     final db = PluginSystemDatabase.instance;
     var hadFailures = false;
+    var restored = 0;
 
     // בייבוא ממזג תוסף שכבר מותקן כאן אינו נדרס: ההתקנה המקומית עשויה להיות
     // חדשה יותר, והנתונים שלה (kvStore) הם של המשתמש הזה.
@@ -1249,7 +1257,22 @@ class BackupService {
         }
 
         final installPath = await AppPaths.getPluginInstallPath(pluginId);
-        installation['install_path'] = installPath;
+        // A backup file is untrusted input: the plugin comes back as a disabled
+        // packaged install, and runs only once the user enables it.
+        installation
+          ..['install_path'] = installPath
+          ..['enabled'] = 0
+          ..['source_type'] = 'packaged'
+          ..['dev_root_path'] = null
+          ..['network_access_granted'] = 0
+          ..['run_on_startup_granted'] = 0;
+        final plugin = InstalledPlugin.fromDbMap(installation);
+        await PluginManifestValidator.validateManifest(
+          manifest: plugin.manifest,
+          directoryPath: installPath,
+          skipAppVersionValidation: true,
+          skipFileValidation: true,
+        );
 
         // כתיבת קבצי התוסף (דריסת התקנה קיימת אם יש).
         await _restoreDirFromBackup(
@@ -1267,15 +1290,25 @@ class BackupService {
         );
 
         // רשומת ההתקנה.
-        await db.insertOrUpdatePlugin(InstalledPlugin.fromDbMap(installation));
+        await db.insertOrUpdatePlugin(plugin);
 
-        // רשומות נלוות.
+        // Grants are limited to what the manifest declares, and the folder and
+        // file grants in `_internal` hold absolute paths, so they are dropped.
+        final declared = plugin.manifest.permissions.toSet();
         await db.importPluginAuxData(pluginId, {
-          'permissions': entry['permissions'],
-          'kvStore': entry['kvStore'],
+          'permissions': [
+            for (final row in entry['permissions'] as List? ?? const [])
+              if (declared.contains((row as Map)['permission'])) row,
+          ],
+          'kvStore': [
+            for (final row in entry['kvStore'] as List? ?? const [])
+              if ((row as Map)['namespace'] != PluginUserFolderGrants.namespace)
+                row,
+          ],
           'publishedRecords': entry['publishedRecords'],
         });
 
+        restored++;
         counts?.plugins++;
       } catch (e) {
         _logger.warning('Failed to restore plugin entry: $e');
@@ -1283,7 +1316,7 @@ class BackupService {
       }
     }
 
-    return hadFailures;
+    return (hadFailures: hadFailures, restored: restored);
   }
 
   /// כותב קבצים מגיבוי לתיקייה, אחרי ניקוי תוכן קודם. הערכים הם base64

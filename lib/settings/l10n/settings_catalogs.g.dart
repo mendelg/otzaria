@@ -520,6 +520,7 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'התוכנה תתאים את המראה באופן אוטומטי להגדרות מערכת ההפעלה': 'Otzaria will match your system\'s theme automatically',
     'התוספים אינם מפותחים ע"י אוצריא, ואין לפנות אליהם בנושא': 'Plugins are not developed by Otzaria; please do not contact Otzaria about them',
     'התוספים שהותקנו, הגדרותיהם ונתוניהם': 'Installed plugins, their settings and their data',
+    'התוספים שוחזרו מושבתים. יש להפעיל אותם בהגדרות ← ניהול כלים, ולתת מחדש גישה לתיקיות אם נדרשת.': 'Plugins were restored disabled. Enable them in Settings > Tools management, and grant folder access again if needed.',
     'התחברות לחשבון': 'Connect an Account',
     'התיקיות והספרים יוצגו ברשימה נפתחת (עץ מתרחב)': 'Folders and seforim show as an expandable list',
     'התיקיות והספרים יוצגו בתוך כרטיסים ברשת': 'Folders and seforim show as cards in a grid',

@@ -1,3 +1,4 @@
+import 'package:otzaria/plugins/services/plugin_user_folder_grants.dart';
 import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'dart:convert';
@@ -628,6 +629,62 @@ void main() {
       expect(bystander.readAsStringSync(), 'חייב לשרוד');
       expect(dataRoot.existsSync(), isTrue);
       expect(result.skippedSections, contains('plugins'));
+    });
+
+    // A backup file is untrusted input: whatever it claims, the plugin comes
+    // back as a disabled packaged install without grants it did not declare.
+    test('restoring does not trust installation state from the file', () async {
+      final db = PluginSystemDatabase.instance;
+      const pluginId = 'trusted.plugin';
+      final paths = await installTestPlugin(pluginId);
+      await db.setPermission(pluginId, 'clipboard.read', true);
+      await db.setPermission(pluginId, 'fs.user_files.write', true);
+      await db.setPluginKV(pluginId, 'settings', 'theme', '"dark"');
+      await db.setPluginKV(
+        pluginId,
+        PluginUserFolderGrants.namespace,
+        'user_folder_grants',
+        '{"C:\\Users":true}',
+      );
+      final backup = await createPluginsBackup();
+
+      final json =
+          jsonDecode(await File(backup.path).readAsString())
+              as Map<String, dynamic>;
+      final entry = (json['plugins'] as List).single as Map<String, dynamic>;
+      (entry['installation'] as Map)
+        ..['enabled'] = 1
+        ..['source_type'] = 'development'
+        ..['dev_root_path'] = tempDir.path
+        ..['network_access_granted'] = 1
+        ..['run_on_startup_granted'] = 1;
+      await File(backup.path).writeAsString(jsonEncode(json));
+      await db.deletePlugin(pluginId);
+      await Directory(paths.installPath).delete(recursive: true);
+
+      final result = await BackupService.restoreFromBackup(backup.path);
+
+      final restored = (await db.getInstalledPlugin(pluginId))!;
+      expect(restored.enabled, isFalse);
+      expect(restored.isDevelopment, isFalse);
+      expect(restored.devRootPath, isNull);
+      expect(restored.networkAccessGranted, isFalse);
+      expect(restored.runOnStartupGranted, isFalse);
+      expect(await db.getPermission(pluginId, 'clipboard.read'), isTrue);
+      expect(
+        await db.getPermission(pluginId, 'fs.user_files.write'),
+        isNot(true),
+      );
+      expect(await db.getPluginKV(pluginId, 'settings', 'theme'), '"dark"');
+      expect(
+        await db.getPluginKV(
+          pluginId,
+          PluginUserFolderGrants.namespace,
+          'user_folder_grants',
+        ),
+        isNull,
+      );
+      expect(result.restoredPlugins, 1);
     });
 
     test('גיבוי אינו עוקב אחרי symlink בתיקיית נתוני התוסף', () async {
