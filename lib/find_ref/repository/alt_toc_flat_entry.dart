@@ -117,8 +117,8 @@ class GlobalAltTocRequest {
   /// תוצאות שכבר נאספו: התאמה שחוזרת עליהן היא כפילות (כמו ב-`_dedupeRefs`).
   final List<AltTocResultKey> occupied;
 
-  /// התאמות TOC חלקיות שכבר נאספו: `_dedupeRefs` מחליף אותן בהתאמה המלאה,
-  /// ולכן התאמה שחוזרת עליהן נשלחת בכל מקרה.
+  /// התאמות TOC חלקיות שכבר נאספו: `_dedupeRefs` מחליף אותן בהתאמה המלאה
+  /// הראשונה שחוזרת עליהן, והיא נשלחת תמיד — גם מעבר לתקרות.
   final List<AltTocResultKey> replaceable;
 
   final Set<int> hiddenBookIds;
@@ -241,11 +241,12 @@ List<T> selectGlobalAltTocMatches<T>(
         return known != null && known.title == title ? known.rank : null;
       };
 
-  List<FindRefRankKey<T>> rowsOf(_GlobalAltTocBook<T> book) =>
+  _BookRows<T> rowsOf(_GlobalAltTocBook<T> book) =>
       book.rows ??= _rankedBookRows(
         book,
         query: query,
         occupied: occupiedByBook[book.id] ?? const [],
+        replaceable: replaceableByBook[book.id] ?? const [],
         suppressDescendants: request.suppressDescendants,
         perBookCap: request.perBookCap,
         segmentOf: segmentOf,
@@ -264,21 +265,9 @@ List<T> selectGlobalAltTocMatches<T>(
       query: query,
       rank: resolveRank(id, title),
     );
-    final replaceable = replaceableByBook[id];
-    if (replaceable != null) {
-      extra.addAll(
-        rowsOf(book).where(
-          (row) => replaceable.any(
-            (k) =>
-                k.title == title &&
-                ('${k.segment}' == '${row.segment}' ||
-                    k.reference == row.reference),
-          ),
-        ),
-      );
-    }
+    if (replaceableByBook.containsKey(id)) extra.addAll(rowsOf(book).replacers);
     if (book.rank == null) {
-      extra.addAll(rowsOf(book));
+      extra.addAll(rowsOf(book).ranked);
       continue;
     }
     slices.add(_GlobalAltTocSlice(book, citationMatch: true));
@@ -310,7 +299,7 @@ List<T> selectGlobalAltTocMatches<T>(
       group.addAll(
         rowsOf(
           slice.book,
-        ).where((row) => row.citationMatch == slice.key.citationMatch),
+        ).ranked.where((row) => row.citationMatch == slice.key.citationMatch),
       );
     }
     // שורות שקולות בדירוג (ספרים שונים, אותו אורך ו-segment) — לפי הספר,
@@ -363,7 +352,7 @@ class _GlobalAltTocBook<T> {
   titleMatch;
 
   /// שורות הספר אחרי הצמצום, בסדר הדירוג; מחושבות רק כשהגיעו לספר.
-  List<FindRefRankKey<T>>? rows;
+  _BookRows<T>? rows;
 
   FindRefRankKey<T> key(
     T item, {
@@ -406,38 +395,59 @@ final int _altTocSpecificity = findRefSpecificityRank(
   tocLevel: 0,
 );
 
+/// שורות ספר אחד אחרי הצמצום.
+typedef _BookRows<T> = ({
+  /// [perBookCap] הראשונות בדירוג.
+  List<FindRefRankKey<T>> ranked,
+
+  /// התאמות שמחליפות התאמה חלקית שנאספה — נשלחות תמיד, מחוץ לתקרה.
+  List<FindRefRankKey<T>> replacers,
+});
+
 /// הצמצום של ספר אחד, בדיוק כמו `_dedupeRefs` ו-`_suppressDeeperVariants`
 /// על שורותיו, ואז [perBookCap] השורות הראשונות בדירוג.
-List<FindRefRankKey<T>> _rankedBookRows<T>(
+_BookRows<T> _rankedBookRows<T>(
   _GlobalAltTocBook<T> book, {
   required FindRefRankQuery query,
   required List<AltTocResultKey> occupied,
+  required List<AltTocResultKey> replaceable,
   required bool suppressDescendants,
   required int perBookCap,
   required int Function(T) segmentOf,
   required String Function(T) referenceOf,
 }) {
-  // שני המפתחות נרשמים תמיד, גם לתוצאה שנזרקת — בדיוק כמו ב-_dedupeRefs.
+  // כמו ב-_dedupeRefs: כל מפתח ממופה למה שתפס אותו ראשון, גם כשהשורה נזרקת.
   // מפתח ה-segment שם הוא מחרוזת: 5.0 של תוצאה קיימת אינו 5 של ערך.
-  final seenSegments = <int>{};
-  final seenReferences = <String>{};
-  for (final k in occupied) {
-    if (k.title != book.title) continue;
-    if (k.segment case final int segment) seenSegments.add(segment);
-    seenReferences.add(k.reference);
+  const collected = -1, global = -2;
+  final segments = <int, int>{};
+  final references = <String, int>{};
+  void claim(num segment, String reference, int slot) {
+    if (segment case final int value) segments.putIfAbsent(value, () => slot);
+    references.putIfAbsent(reference, () => slot);
   }
+
+  for (final k in occupied) {
+    if (k.title == book.title) claim(k.segment, k.reference, collected);
+  }
+  // התאמה חלקית (slot = אינדקס) מוחלפת בהתאמה הראשונה שמתנגשת בה.
+  for (var i = 0; i < replaceable.length; i++) {
+    final k = replaceable[i];
+    if (k.title == book.title) claim(k.segment, k.reference, i);
+  }
+  final replaced = <int>{};
   final keptReferences = <String>{};
   final keptLengths = <int>{};
   var rows = <FindRefRankKey<T>>[];
+  final replacers = <FindRefRankKey<T>>[];
   for (final e in book.entries) {
     final segment = segmentOf(e);
     final reference = referenceOf(e);
-    final newSegment = seenSegments.add(segment);
-    final newReference = seenReferences.add(reference);
-    if (!newSegment || !newReference) continue;
+    final hit = segments[segment] ?? references[reference];
+    claim(segment, reference, hit ?? global);
+    if (hit != null && (hit < 0 || !replaced.add(hit))) continue;
     keptReferences.add(reference);
     keptLengths.add(reference.length);
-    rows.add(
+    (hit == null ? rows : replacers).add(
       book.key(
         e,
         citationMatch: findRefCitationMatch(query.isDafCitation, reference),
@@ -450,7 +460,10 @@ List<FindRefRankKey<T>> _rankedBookRows<T>(
   int compare(FindRefRankKey<T> a, FindRefRankKey<T> b) =>
       compareFindRefRank(a, b, query);
   if (!suppressDescendants || rows.length < 2) {
-    return _firstRanked(rows, perBookCap, compare);
+    return (
+      ranked: _firstRanked(rows, perBookCap, compare),
+      replacers: replacers,
+    );
   }
   // צאצא של התאמה נזרק. הבדיקה אינה תלויה בשורות אחרות שנזרקו, ולכן די
   // לבדוק את מי שמגיע לראש הדירוג.
@@ -462,7 +475,7 @@ List<FindRefRankKey<T>> _rankedBookRows<T>(
           (r) => _hasAncestorIn(r.reference, keptReferences, keptLengths),
         ),
       );
-    if (descendants.isEmpty) return top;
+    if (descendants.isEmpty) return (ranked: top, replacers: replacers);
     rows = [
       for (final r in rows)
         if (!descendants.contains(r)) r,

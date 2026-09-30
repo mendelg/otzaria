@@ -184,6 +184,23 @@ void main() {
     );
   });
 
+  test('המחליפה של התאמה חלקית נשלחת מעבר לתקרה, והמתנגשת אחריה נזרקת', () {
+    expect(
+      select(
+        [
+          key(2, 'סימן א', segment: 1),
+          key(2, 'סימן ב', segment: 2),
+          key(2, 'סימן ג ארוך', segment: 7),
+          key(2, 'פרק', segment: 9),
+        ],
+        perBookCap: 2,
+        replaceable: [key(2, 'פרק', segment: 7)],
+      ),
+      ['2:סימן א', '2:סימן ב', '2:סימן ג ארוך'],
+      reason: 'השלישית מחליפה (segment 7); "פרק" כבר תפוס ואינו תופס מקום',
+    );
+  });
+
   test('ספר מוסתר אינו נבחר ואינו תופס מקום', () {
     final matches = [
       for (var book = 1; book <= 3; book++) key(book, 'פרק א', segment: 1),
