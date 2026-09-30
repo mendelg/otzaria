@@ -242,12 +242,9 @@ class FindRefRepository {
   /// מסלול הייצור של ה-fallback הגלובלי: סינון קאש ה-AltToc השטוח בתוך
   /// ה-worker isolate, שמחזיר רק את ההתאמות. כשהוא `null` (בדיקות / אין
   /// isolate) — נופלים למסלול המקומי דרך [getAllAltTocFlatEntries].
-  /// [occupied] — התוצאות שכבר נאספו, כדי שהצמצום ב-worker יראה את הכפילויות.
   final Future<List<Map<String, dynamic>>> Function(
-    List<String> queryTokens, {
-    int? maxRefTokens,
-    List<AltTocResultKey> occupied,
-  })?
+    GlobalAltTocRequest request,
+  )?
   searchAltTocFlatEntries;
 
   /// בנייה מוקדמת של קאש ה-AltToc בתוך ה-worker (ראה
@@ -412,6 +409,13 @@ class FindRefRepository {
   final Map<int, ({String? path, String title, FindRefBookRank rank})>
   _bookRanks = {};
 
+  ({
+    Set<int> ids,
+    int generation,
+    Map<int, ({String title, FindRefBookRank rank})> ranks,
+  })?
+  _altBookRanksCache;
+
   /// הספרים האישיים (user_books.db). נבנה מחדש כשתוכן המסד השתנה (ראו
   /// [_userBooksJob]), ב-[clearCaches] ובסגירת המסד.
   _SecondaryIndex? _userBooksIndex;
@@ -533,6 +537,7 @@ class FindRefRepository {
     _altTocFlatCache = null;
     _altBookIdsCache = null;
     _bookRanks.clear();
+    _altBookRanksCache = null;
     _dropUserBooks();
     _userBooksDbPath = null;
     _userBooksVersion++;
@@ -723,7 +728,8 @@ class FindRefRepository {
   }
 
   /// מוסיף ל-[results] ערכי AltToc מהקאש הגלובלי שכל טוקני השאילתה מופיעים
-  /// בהם. [maxRefTokens] מגביל את אורך הערך — במילה אחת רק כותרות קצרות
+  /// בהם — רק מה שהדירוג יכול להציג ([selectGlobalAltTocMatches]).
+  /// [maxRefTokens] (מסלול מילה אחת) מגביל את אורך הערך — רק כותרות קצרות
   /// ("נח", "פרשת נח") נכללות, כדי לא להציף בצאצאים ("נח עליה ב").
   Future<void> _addGlobalAltTocMatches(
     List<DbReferenceResult> results,
@@ -732,38 +738,33 @@ class FindRefRepository {
     FindRefVisibility? visibility,
   }) async {
     try {
-      // מסלול הייצור: הסינון רץ ב-worker ומחזיר רק התאמות — הקאש כולו
-      // והנרמול שלו לא חוצים את גבול ה-isolate.
-      // התאמה חלקית אינה תופסת את השורה: `_dedupeRefs` מחליף אותה בהתאמה מלאה.
-      final occupied = [
-        for (final r in results)
-          if (r.source.isOfficial &&
-              !r.isPdf &&
-              r.bookId > 0 &&
-              !r.isPartialTocMatch)
-            (
-              bookId: r.bookId,
-              title: r.title,
-              segment: r.segment,
-              reference: r.reference,
-            ),
-      ];
+      final occupied = <AltTocResultKey>[];
+      final replaceable = <AltTocResultKey>[];
+      for (final r in results) {
+        if (!r.source.isOfficial || r.isPdf || r.bookId <= 0) continue;
+        // התאמה חלקית אינה תופסת את השורה: `_dedupeRefs` מחליף אותה בהתאמה מלאה.
+        (r.isPartialTocMatch ? replaceable : occupied).add((
+          bookId: r.bookId,
+          title: r.title,
+          segment: r.segment,
+          reference: r.reference,
+        ));
+      }
+      final singleWord = maxRefTokens != null;
+      final request = GlobalAltTocRequest(
+        queryTokens: queryTokens,
+        maxRefTokens: maxRefTokens,
+        occupied: occupied,
+        replaceable: replaceable,
+        hiddenBookIds: visibility?.hiddenOfficialTextIds ?? const {},
+        bookRanks: await _altBookRanks(),
+        substringQuota: singleWord ? _substringTailQuota : 0,
+      );
+
       final searchFn = searchAltTocFlatEntries;
       if (searchFn != null) {
-        final rows = await searchFn(
-          queryTokens,
-          maxRefTokens: maxRefTokens,
-          occupied: occupied,
-        );
-        for (final r in rows) {
-          if (visibility != null &&
-              !visibility.allowsCandidate(
-                BookSource.official,
-                r['bookId'] as int,
-                '',
-              )) {
-            continue;
-          }
+        for (final r in await searchFn(request)) {
+          if (request.hiddenBookIds.contains(r['bookId'])) continue;
           final bookTitle = r['bookTitle'] as String;
           results.add(
             DbReferenceResult(
@@ -789,33 +790,25 @@ class FindRefRepository {
       // מילות ההקשר נדרשות גם כשמספר הדף והעמוד נבדקים מיקומית.
       final matches = [
         for (final entry in flat)
-          if ((visibility == null ||
-                  visibility.allowsCandidate(
-                    BookSource.official,
-                    entry.bookId,
-                    '',
-                  )) &&
-              altTocFlatMatches(
-                entry.refTokens,
-                queryTokens,
-                maxRefTokens: maxRefTokens,
-                dafCitation: dafCitation,
-              ))
+          if (altTocFlatMatches(
+            entry.refTokens,
+            queryTokens,
+            maxRefTokens: maxRefTokens,
+            dafCitation: dafCitation,
+          ))
             entry,
       ];
-      final pruned = pruneGlobalAltTocMatches(
+      final selected = selectGlobalAltTocMatches(
         matches,
-        keyOf: (e) => (
-          bookId: e.bookId,
-          title: e.bookTitle,
-          segment: e.segment,
-          reference: qualifyAltTocReference(e.bookTitle, e.reference),
-        ),
-        queryTokens: queryTokens,
-        suppressDescendants: maxRefTokens == null,
-        occupied: occupied,
+        request: request,
+        bookIdOf: (e) => e.bookId,
+        bookTitleOf: (e) => e.bookTitle,
+        orderIndexOf: (e) => e.bookOrderIndex,
+        segmentOf: (e) => e.segment,
+        referenceOf: (e) => qualifyAltTocReference(e.bookTitle, e.reference),
+        rankOf: _officialBookRank,
       );
-      for (final entry in pruned) {
+      for (final entry in selected) {
         results.add(
           DbReferenceResult(
             title: entry.bookTitle,
@@ -837,6 +830,35 @@ class FindRefRepository {
     } catch (e, st) {
       debugPrint('[FindRef] Global AltToc fallback failed: $e\n$st');
     }
+  }
+
+  /// דירוג הספרים בעלי AltToc, לבחירה ב-worker. ספר בלי כותרת ידועה חסר כאן,
+  /// וה-worker שולח אותו במלואו. בתוך דור של [ReferenceBooksCache] הטבלה
+  /// קבועה, וכך היא נשלחת ל-worker פעם אחת.
+  Future<Map<int, ({String title, FindRefBookRank rank})>>
+  _altBookRanks() async {
+    final ids = await _getAltBookIds();
+    if (ids == null) return const {};
+    final generation = getCategoryPathSync == null
+        ? ReferenceBooksCache.instance.generation
+        : null;
+    final cached = _altBookRanksCache;
+    if (generation != null &&
+        cached != null &&
+        identical(cached.ids, ids) &&
+        cached.generation == generation) {
+      return cached.ranks;
+    }
+    final books = BooksCache.instance;
+    final ranks = {
+      for (final id in ids)
+        if (books.getBookById(id)?.title case final title?)
+          id: (title: title, rank: _officialBookRank(id, title)),
+    };
+    if (generation != null) {
+      _altBookRanksCache = (ids: ids, generation: generation, ranks: ranks);
+    }
+    return ranks;
   }
 
   /// מפתחות הדירוג של ספר רשמי, לפי נתיב הקטגוריה העדכני שלו. נשמרים בין

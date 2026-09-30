@@ -45,6 +45,9 @@ class ReferenceBooksCache {
   /// מונה דורות לזיהוי [clear] שקרה במהלך טעינה.
   int _generation = 0;
 
+  /// מתחלף בכל טעינה וניקוי — בתוך דור, נתיבי הקטגוריות קבועים.
+  int get generation => _generation;
+
   /// מנוע ההתאמה על קטלוג הספרייה הרשמית.
   late final BookTitleIndex _official = BookTitleIndex._official(
     () => debugCatalogScans++,

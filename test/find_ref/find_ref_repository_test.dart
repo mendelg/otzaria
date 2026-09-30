@@ -4548,9 +4548,8 @@ void main() {
           getTocEntriesForReference: (_, _, {queryTokens}) async => const [],
           getAllAltTocFlatEntries: () async =>
               throw StateError('המסלול המקומי לא אמור לרוץ כשיש hook'),
-          searchAltTocFlatEntries:
-              (queryTokens, {maxRefTokens, occupied = const []}) async {
-                calls.add((queryTokens, maxRefTokens));
+          searchAltTocFlatEntries: (request) async {
+                calls.add((request.queryTokens, request.maxRefTokens));
                 return const [
                   {
                     'bookId': 1,
