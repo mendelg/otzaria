@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/direct_error_report.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
+import 'package:otzaria/shortcuts/shortcut_helper.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/utils/canonical_json.dart';
 import 'package:otzaria/text_book/view/error_report_dialog.dart';
@@ -15,6 +17,7 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 // ignore: depend_on_referenced_packages
 import 'package:url_launcher_platform_interface/link.dart';
+
 import '../../test_helpers/memory_cache_provider.dart';
 
 /// משבית פתיחת קישורים — canLaunch מחזיר false כדי לדמות כשל בפתיחת הדפדפן.
@@ -90,10 +93,7 @@ void main() {
     });
 
     test('ללא state וללא override — תוכן ריק וספר null, בלי לזרוק', () {
-      expect(
-        ErrorReportHelper.resolveReportContent(state: null),
-        isEmpty,
-      );
+      expect(ErrorReportHelper.resolveReportContent(state: null), isEmpty);
       expect(ErrorReportHelper.resolveReportBook(state: null), isNull);
     });
 
@@ -472,9 +472,7 @@ void main() {
     });
 
     test('should handle special characters', () {
-      final params = {
-        'test': 'value with spaces & special = chars',
-      };
+      final params = {'test': 'value with spaces & special = chars'};
 
       final encoded = ErrorReportHelper.encodeQueryParameters(params);
 
@@ -579,10 +577,7 @@ void main() {
     test(
       'should use line fallback when selection is ambiguous in same line',
       () {
-        final content = [
-          'אחת טעות שתיים טעות שלוש',
-          'שורה נוספת לבדיקה',
-        ];
+        final content = ['אחת טעות שתיים טעות שלוש', 'שורה נוספת לבדיקה'];
 
         final result = ErrorReportHelper.resolveSelectionContext(
           content: content,
@@ -625,10 +620,7 @@ void main() {
     );
 
     test('should fallback to global search when preferred line is invalid', () {
-      final content = [
-        'שורה עם טקסט',
-        'שורה עם טקסט',
-      ];
+      final content = ['שורה עם טקסט', 'שורה עם טקסט'];
 
       final result = ErrorReportHelper.resolveSelectionContext(
         content: content,
@@ -669,29 +661,21 @@ void main() {
       expect(result.usedLineFallback, isFalse);
     });
 
-    test(
-      'should handle three occurrences in same line by returning full line context',
-      () {
-        final content = [
-          'אמר שלום ואז שלום ושוב שלום',
-        ];
+    test('should handle three occurrences in same line by returning full line context', () {
+      final content = ['אמר שלום ואז שלום ושוב שלום'];
 
-        final result = ErrorReportHelper.resolveSelectionContext(
-          content: content,
-          selectedText: 'שלום',
-          preferredLineNumber: 0,
-        );
+      final result = ErrorReportHelper.resolveSelectionContext(
+        content: content,
+        selectedText: 'שלום',
+        preferredLineNumber: 0,
+      );
 
-        expect(result.usedLineFallback, isTrue);
-        expect(result.contextText, contains('שלום ואז שלום ושוב שלום'));
-      },
-    );
+      expect(result.usedLineFallback, isTrue);
+      expect(result.contextText, contains('שלום ואז שלום ושוב שלום'));
+    });
 
     test('should handle empty selected text gracefully', () {
-      final content = [
-        'שורה ראשונה',
-        'שורה שנייה',
-      ];
+      final content = ['שורה ראשונה', 'שורה שנייה'];
 
       final result = ErrorReportHelper.resolveSelectionContext(
         content: content,
@@ -705,10 +689,7 @@ void main() {
 
     test('should handle text not found in expected line', () {
       // המילה לא נמצאת בשורה 0 אבל כן נמצאת בשורה 1
-      final content = [
-        'שורה ללא התאמה',
-        'שורה עם מילה מיוחדת',
-      ];
+      final content = ['שורה ללא התאמה', 'שורה עם מילה מיוחדת'];
 
       final result = ErrorReportHelper.resolveSelectionContext(
         content: content,
@@ -821,6 +802,91 @@ void main() {
 
       final textField = tester.widget<TextField>(find.byType(TextField));
       expect(textField.focusNode?.hasFocus ?? textField.autofocus, isTrue);
+    });
+  });
+
+  group('RegularReportTab — Ctrl+Enter שולח (#1537)', () {
+    const confirmTitle = 'אישור שליחת דיווח';
+
+    Future<List<ErrorReportAction>> pumpTab(WidgetTester tester) async {
+      final actions = <ErrorReportAction>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RegularReportTab(
+              selectedText: 'טקסט לבדיקה',
+              fontSize: 18,
+              directReportTargetLabel: 'אוצריא',
+              onActionSelected: (action, _) => actions.add(action),
+              onCancel: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return actions;
+    }
+
+    Future<void> pressWith(
+      WidgetTester tester,
+      LogicalKeyboardKey modifier,
+    ) async {
+      await tester.sendKeyDownEvent(modifier);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Ctrl+Enter מפעיל את השליחה הישירה', (tester) async {
+      ShortcutHelper.isMacForTesting = false;
+      addTearDown(() => ShortcutHelper.isMacForTesting = null);
+      final actions = await pumpTab(tester);
+
+      await tester.enterText(find.byType(TextField), 'פירוט הטעות');
+      await tester.pumpAndSettle();
+      await pressWith(tester, LogicalKeyboardKey.controlLeft);
+
+      expect(find.text(confirmTitle), findsOneWidget);
+      await tester.tap(find.text('שלח דיווח'));
+      await tester.pumpAndSettle();
+      expect(actions, [ErrorReportAction.sendDirect]);
+    });
+
+    testWidgets('ב-Mac Cmd+Enter מפעיל את השליחה', (tester) async {
+      ShortcutHelper.isMacForTesting = true;
+      addTearDown(() => ShortcutHelper.isMacForTesting = null);
+      await pumpTab(tester);
+
+      await tester.enterText(find.byType(TextField), 'פירוט הטעות');
+      await tester.pumpAndSettle();
+      await pressWith(tester, LogicalKeyboardKey.metaLeft);
+
+      expect(find.text(confirmTitle), findsOneWidget);
+    });
+
+    testWidgets('בלי פירוט חובה Ctrl+Enter לא עושה כלום', (tester) async {
+      ShortcutHelper.isMacForTesting = false;
+      addTearDown(() => ShortcutHelper.isMacForTesting = null);
+      final actions = await pumpTab(tester);
+
+      await pressWith(tester, LogicalKeyboardKey.controlLeft);
+
+      expect(find.text(confirmTitle), findsNothing);
+      expect(actions, isEmpty);
+    });
+
+    testWidgets('Enter רגיל בשדה הפירוט לא שולח', (tester) async {
+      ShortcutHelper.isMacForTesting = false;
+      addTearDown(() => ShortcutHelper.isMacForTesting = null);
+      final actions = await pumpTab(tester);
+
+      await tester.enterText(find.byType(TextField), 'פירוט הטעות');
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(find.text(confirmTitle), findsNothing);
+      expect(actions, isEmpty);
     });
   });
 

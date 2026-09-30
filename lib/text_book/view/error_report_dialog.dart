@@ -16,6 +16,7 @@ import 'package:otzaria/theme/theme_exports.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/direct_error_report.dart';
 import 'package:otzaria/settings/settings_exports.dart';
+import 'package:otzaria/shortcuts/shortcut_helper.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/models/phone_report_data.dart';
 import 'package:otzaria/services/data_collection_service.dart';
@@ -1432,6 +1433,8 @@ class RegularReportTab extends StatefulWidget {
 
 enum _ReportMode { correction, freeText }
 
+const String _sendShortcut = 'ctrl+enter';
+
 class _RegularReportTabState extends State<RegularReportTab> {
   final TextEditingController _detailsController = TextEditingController();
   late _ReportMode _mode = widget.correctionTemplate == null
@@ -1552,110 +1555,143 @@ class _RegularReportTabState extends State<RegularReportTab> {
         Settings.getValue<bool>(SettingsRepository.keyOfflineMode) ?? false;
     final showDictaSelfEdit = widget.isDictaSource && !isOfflineMode;
 
-    return Column(
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (widget.correctionTemplate != null) ...[
-                  AppSegmentedControl<_ReportMode>(
-                    options: const [
-                      SegmentOption(
-                        value: _ReportMode.correction,
-                        label: 'הצעת תיקון',
-                        icon: FluentIcons.text_edit_style_24_regular,
-                      ),
-                      SegmentOption(
-                        value: _ReportMode.freeText,
-                        label: 'דיווח חופשי',
-                        icon: FluentIcons.comment_24_regular,
-                      ),
-                    ],
-                    currentValue: _mode,
-                    onChanged: (mode) => setState(() => _mode = mode),
-                    expandToFillWidth: true,
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                if (_isCorrection)
-                  TextCorrectionEditor(
-                    original: widget.correctionTemplate!,
-                    fontSize: widget.fontSize,
-                    onChanged: (draft) => setState(() => _draft = draft),
-                  )
-                else ...[
-                  Text(
-                    'הטקסט שנבחר:',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    constraints: const BoxConstraints(
-                      maxHeight: 150,
-                    ),
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.outlineVariant,
-                      ),
-                      borderRadius: AppTokens.borderRadiusAll,
-                    ),
-                    child: SingleChildScrollView(
-                      child: Text(
-                        widget.selectedText,
-                        style: TextStyle(
-                          fontSize: widget.fontSize,
-                          fontFamily:
-                              Settings.getValue('key-font-family') ??
-                              AppFonts.defaultFont,
+    return CallbackShortcuts(
+      bindings: {
+        for (final activator in ShortcutHelper.activatorsFromShortcut(
+          _sendShortcut,
+        ))
+          activator: () {
+            if (_canSubmit) _confirmAndSendDirect();
+          },
+      },
+      child: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.correctionTemplate != null) ...[
+                    AppSegmentedControl<_ReportMode>(
+                      options: const [
+                        SegmentOption(
+                          value: _ReportMode.correction,
+                          label: 'הצעת תיקון',
+                          icon: FluentIcons.text_edit_style_24_regular,
                         ),
-                        textAlign: TextAlign.right,
+                        SegmentOption(
+                          value: _ReportMode.freeText,
+                          label: 'דיווח חופשי',
+                          icon: FluentIcons.comment_24_regular,
+                        ),
+                      ],
+                      currentValue: _mode,
+                      onChanged: (mode) => setState(() => _mode = mode),
+                      expandToFillWidth: true,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_isCorrection)
+                    TextCorrectionEditor(
+                      original: widget.correctionTemplate!,
+                      fontSize: widget.fontSize,
+                      onChanged: (draft) => setState(() => _draft = draft),
+                    )
+                  else ...[
+                    Text(
+                      'הטקסט שנבחר:',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      constraints: const BoxConstraints(
+                        maxHeight: 150,
+                      ),
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                        ),
+                        borderRadius: AppTokens.borderRadiusAll,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Text(
+                          widget.selectedText,
+                          style: TextStyle(
+                            fontSize: widget.fontSize,
+                            fontFamily:
+                                Settings.getValue('key-font-family') ??
+                                AppFonts.defaultFont,
+                          ),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (showDictaSelfEdit) ...[
+                    const SizedBox(height: 12),
+                    _buildDictaSelfEditBanner(),
+                  ],
+                  const SizedBox(height: 16),
+                  RtlTextField(
+                    key: const ValueKey('report-details-field'),
+                    controller: _detailsController,
+                    minLines: 2,
+                    maxLines: 6,
+                    autofocus: !_isCorrection,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      labelText: _isCorrection
+                          ? 'הסבר לתיקון (חובה אם אין הצעה)'
+                          : 'פירוט הטעות (חובה)',
+                      hintText: 'מה לא תקין כאן? בלא פירוט לא נוכל לטפל',
+                      helperText:
+                          _isCorrection &&
+                              _draft?.hasProposal == false &&
+                              !_hasDetails
+                          ? ReportMessages.proposalNeedsDetailsOrChange
+                          : null,
                     ),
                   ),
                 ],
-                if (showDictaSelfEdit) ...[
-                  const SizedBox(height: 12),
-                  _buildDictaSelfEditBanner(),
-                ],
-                const SizedBox(height: 16),
-                RtlTextField(
-                  key: const ValueKey('report-details-field'),
-                  controller: _detailsController,
-                  minLines: 2,
-                  maxLines: 6,
-                  autofocus: !_isCorrection,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    border: const OutlineInputBorder(),
-                    labelText: _isCorrection
-                        ? 'הסבר לתיקון (חובה אם אין הצעה)'
-                        : 'פירוט הטעות (חובה)',
-                    hintText: 'מה לא תקין כאן? בלא פירוט לא נוכל לטפל',
-                    helperText:
-                        _isCorrection &&
-                            _draft?.hasProposal == false &&
-                            !_hasDetails
-                        ? ReportMessages.proposalNeedsDetailsOrChange
-                        : null,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-          child: _buildActionButtons(),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: _buildActionButtons(),
+          ),
+        ],
+      ),
     );
+  }
+
+  ReportedErrorData get _reportData => ReportedErrorData(
+    selectedText: widget.selectedText,
+    errorDetails: _detailsController.text.trim(),
+    correction: _isCorrection ? _draft?.correction : null,
+  );
+
+  Future<void> _confirmAndSendDirect() async {
+    final reportData = _reportData;
+    final shouldSend = await showTwoActionsDialog(
+      context: context,
+      title: 'אישור שליחת דיווח',
+      content:
+          'לחיצה על שלח דיווח תשלח את השגיאה ישירות '
+          'ל${widget.directReportTargetLabel}, יש לשים לב '
+          'לתקינות הדיווח לפני השליחה',
+      cancelText: 'ביטול',
+      confirmText: 'שלח דיווח',
+    );
+    if (shouldSend == true) {
+      await _submitValidated(ErrorReportAction.sendDirect, reportData);
+    }
   }
 
   Widget _buildActionButtons() {
@@ -1663,11 +1699,7 @@ class _RegularReportTabState extends State<RegularReportTab> {
     final isOfflineMode =
         Settings.getValue<bool>(SettingsRepository.keyOfflineMode) ?? false;
 
-    final reportData = ReportedErrorData(
-      selectedText: widget.selectedText,
-      errorDetails: _detailsController.text.trim(),
-      correction: _isCorrection ? _draft?.correction : null,
-    );
+    final reportData = _reportData;
 
     return SizedBox(
       width: double.infinity,
@@ -1705,25 +1737,8 @@ class _RegularReportTabState extends State<RegularReportTab> {
                   ? 'שמור בתור ל${widget.directReportTargetLabel}'
                   : 'שלח ישירות ל${widget.directReportTargetLabel}',
               icon: FluentIcons.arrow_upload_24_regular,
-              onPressed: () async {
-                // דיאלוג אישור לפני שליחה ישירה
-                final shouldSend = await showTwoActionsDialog(
-                  context: context,
-                  title: 'אישור שליחת דיווח',
-                  content:
-                      'לחיצה על שלח דיווח תשלח את השגיאה ישירות '
-                      'ל${widget.directReportTargetLabel}, יש לשים לב '
-                      'לתקינות הדיווח לפני השליחה',
-                  cancelText: 'ביטול',
-                  confirmText: 'שלח דיווח',
-                );
-                if (shouldSend == true) {
-                  await _submitValidated(
-                    ErrorReportAction.sendDirect,
-                    reportData,
-                  );
-                }
-              },
+              tooltip: ShortcutHelper.formatShortcutForDisplay(_sendShortcut),
+              onPressed: _confirmAndSendDirect,
             ),
         ],
       ),
