@@ -329,6 +329,7 @@ jobs:
           # ⚠️ חייב להתאים לשאר ה-jobs. `pubspec.lock` דורש Flutter >=3.47.0,
           # ולכן עם 3.44.0 ה-job הזה נכשל ב-`pub get` ומעולם לא רץ ירוק.
           flutter-version: 3.47.2
+          # ה-cache של Windows נשמר על ענף הבסיס ב-warm_flutter_cache.yml.
           cache: true
 
       - name: Install dependencies
@@ -418,6 +419,7 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.2
+          # ה-cache של הקונטיינר נשמר על ענף הבסיס ב-warm_flutter_cache.yml.
           cache: true
 
       - name: Install Linux build dependencies

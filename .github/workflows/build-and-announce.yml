@@ -1827,18 +1827,6 @@ jobs:
           cargo -V
           rustup show
 
-      - name: Cache Rust
-        uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ${{ env.CARGO_HOME }}/registry
-            ${{ env.CARGO_HOME }}/git
-            ${{ env.RUSTUP_HOME }}
-          # אין Cargo.lock ב-repo — ראה ההסבר בשלב המקביל ב-build_linux.
-          key: ${{ runner.os }}-${{ runner.arch }}-rust-android-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-rust-android-
-
       - name: Pre-install Android Rust targets (with retry)
         run: |
           set -e
@@ -1889,15 +1877,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Cache Pub
-        uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ~/.pub-cache
-          key: ${{ runner.os }}-${{ runner.arch }}-pub-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-pub-
-      
       - name: Create Google Calendar Credentials
         shell: bash
         run: |
@@ -2091,7 +2070,8 @@ jobs:
         with:
           channel: stable
           flutter-version: 3.47.2
-          cache: true
+          # ב-macOS ה-cache (~2.5GB) כמעט לא נמצא בין ריצות, ושמירתו איטית מהתקנה.
+          cache: false
 
       - name: Create Google Calendar Credentials
         shell: bash
@@ -2126,18 +2106,6 @@ jobs:
           rustc -Vv
           cargo -V
           rustup show
-
-      # (רשות אבל מומלץ) קאשינג לספריות cargo כדי לזרז בניות
-      - name: Cache cargo registry and git
-        uses: actions/cache@v6.1.0
-        with:
-          path: |
-            ${{ env.CARGO_HOME }}/registry
-            ${{ env.CARGO_HOME }}/git
-          # אין Cargo.lock ב-repo — ראה ההסבר בשלב המקביל ב-build_linux.
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('pubspec.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-
 
       - name: Fetch biographies data
         uses: ./.github/actions/fetch-biographies
