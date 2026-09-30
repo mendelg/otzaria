@@ -113,6 +113,19 @@ void main() {
       expect(stored.userOrder, 3);
     });
 
+    test('the stored choice is shown and can be changed', () async {
+      final fake = _FakeDb([_plugin(id: 'a')]);
+      final repo = PluginRegistryRepository(database: fake);
+
+      final plugin = (await repo.getPlugin('a'))!;
+      expect(plugin.enabled, isFalse);
+      expect(plugin.savedEnabled, isTrue);
+
+      await repo.saveEnabledChoice('a', false);
+      expect(fake.plugins.single.enabled, isFalse);
+      expect((await repo.getPlugin('a'))!.savedEnabled, isFalse);
+    });
+
     test('turning safe mode off restores the stored state', () async {
       final repo = PluginRegistryRepository(
         database: _FakeDb([_plugin(id: 'a')]),

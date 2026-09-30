@@ -8,7 +8,13 @@ class InstalledPlugin {
   final String installPath;
   final String entrypointPath;
   final String? iconPath;
+
+  /// Whether the plugin runs in this session.
   final bool enabled;
+
+  /// The user's stored choice. Differs from [enabled] only in safe mode, where
+  /// every plugin is kept from running; settings show and edit this value.
+  final bool savedEnabled;
   final bool pinned;
   final bool pinnedToNavRail;
 
@@ -92,6 +98,7 @@ class InstalledPlugin {
     required this.entrypointPath,
     this.iconPath,
     required this.enabled,
+    bool? savedEnabled,
     required this.pinned,
     this.pinnedToNavRail = false,
     this.showInTools = true,
@@ -104,7 +111,8 @@ class InstalledPlugin {
     this.sourceType = 'packaged',
     this.devRootPath,
     this.userOrder,
-  }) : allowOrderBeforeBuiltInsGranted =
+  }) : savedEnabled = savedEnabled ?? enabled,
+       allowOrderBeforeBuiltInsGranted =
            allowOrderBeforeBuiltInsGranted ?? manifest.allowOrderBeforeBuiltIns;
 
   factory InstalledPlugin.fromDbMap(Map<String, dynamic> map) {
@@ -169,6 +177,7 @@ class InstalledPlugin {
     String? entrypointPath,
     String? iconPath,
     bool? enabled,
+    bool? savedEnabled,
     bool? pinned,
     bool? pinnedToNavRail,
     bool? showInTools,
@@ -192,6 +201,7 @@ class InstalledPlugin {
       entrypointPath: entrypointPath ?? this.entrypointPath,
       iconPath: iconPath ?? this.iconPath,
       enabled: enabled ?? this.enabled,
+      savedEnabled: savedEnabled ?? enabled ?? this.savedEnabled,
       pinned: pinned ?? this.pinned,
       pinnedToNavRail: pinnedToNavRail ?? this.pinnedToNavRail,
       showInTools: showInTools ?? this.showInTools,

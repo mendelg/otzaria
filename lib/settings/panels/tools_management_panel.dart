@@ -953,7 +953,7 @@ class _PluginRowState extends State<_PluginRow> {
   List<_RowAction> _actions(BuildContext context) {
     final plugin = widget.plugin;
     final cs = Theme.of(context).colorScheme;
-    if (!plugin.enabled) {
+    if (!plugin.savedEnabled) {
       return [
         _RowAction(
           icon: FluentIcons.play_circle_24_regular,
@@ -1156,7 +1156,7 @@ class _PluginRowState extends State<_PluginRow> {
     final icon =
         pluginIconFromName(plugin.manifest.toolTabIconName) ??
         FluentIcons.puzzle_piece_24_regular;
-    final disabled = !widget.isSelectionMode && !plugin.enabled;
+    final disabled = !widget.isSelectionMode && !plugin.savedEnabled;
     final showDragHint = !widget.isSelectionMode && _isHovering;
 
     final tile = SizedBox(
@@ -1181,7 +1181,7 @@ class _PluginRowState extends State<_PluginRow> {
             : RtlIcon(icon),
         title: Text(plugin.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: widget.isSelectionMode
-            ? _statusBadges(plugin, disabled: !plugin.enabled)
+            ? _statusBadges(plugin, disabled: !plugin.savedEnabled)
             : disabled || _isHovering
             ? Text('v${plugin.version}', style: AppTextStyles.settingSubtitle)
             : _statusBadges(plugin, disabled: false),

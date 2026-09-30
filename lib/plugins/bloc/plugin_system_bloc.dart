@@ -665,7 +665,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     Emitter<PluginSystemState> emit,
   ) async {
     if (PluginSafeMode.isActive) {
-      UiSnack.show(PluginMessages.safeModeBlocksChanges);
+      await _saveChoiceInSafeMode(event.pluginId, enabled: true);
       return;
     }
     try {
@@ -685,7 +685,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     Emitter<PluginSystemState> emit,
   ) async {
     if (PluginSafeMode.isActive) {
-      UiSnack.show(PluginMessages.safeModeBlocksChanges);
+      await _saveChoiceInSafeMode(event.pluginId, enabled: false);
       return;
     }
     try {
@@ -698,6 +698,25 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
       }
     } catch (e) {
       UiSnack.showError(PluginMessages.disablePluginError(e));
+    }
+  }
+
+  /// Nothing loads or unloads in safe mode; only the user's choice is stored
+  /// for the next normal start.
+  Future<void> _saveChoiceInSafeMode(
+    String pluginId, {
+    required bool enabled,
+  }) async {
+    try {
+      await repository.saveEnabledChoice(pluginId, enabled);
+      UiSnack.show(PluginMessages.safeModeChoiceSaved(enabled: enabled));
+      add(LoadPlugins());
+    } catch (e) {
+      UiSnack.showError(
+        enabled
+            ? PluginMessages.enablePluginError(e)
+            : PluginMessages.disablePluginError(e),
+      );
     }
   }
 

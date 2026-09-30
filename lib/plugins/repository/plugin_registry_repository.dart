@@ -23,7 +23,7 @@ class PluginRegistryRepository {
   /// saved flag is restored on write by [_keepSavedEnabled].
   static InstalledPlugin _sessionView(InstalledPlugin plugin) =>
       PluginSafeMode.isActive && plugin.enabled
-      ? plugin.copyWith(enabled: false)
+      ? plugin.copyWith(enabled: false, savedEnabled: true)
       : plugin;
 
   /// Read-modify-write paths (reordering, permissions, updates) would
@@ -64,6 +64,14 @@ class PluginRegistryRepository {
       if (maxOrder == null || uo > maxOrder) maxOrder = uo;
     }
     return maxOrder == null ? null : maxOrder + 1;
+  }
+
+  /// Stores the user's enabled choice. In safe mode this is the only write
+  /// that changes it; the plugin still stays off until a normal restart.
+  Future<void> saveEnabledChoice(String pluginId, bool enabled) async {
+    final saved = await _db.getInstalledPlugin(pluginId);
+    if (saved == null) return;
+    await _db.insertOrUpdatePlugin(saved.copyWith(enabled: enabled));
   }
 
   Future<InstalledPlugin?> getPlugin(String pluginId) async {

@@ -4,8 +4,9 @@ abstract class PluginMessages {
 
   // ===== התקנה והסרה =====
   static const String pluginInstalledSuccess = 'התוסף הותקן בהצלחה';
-  static const String safeModeBlocksChanges =
-      'במצב בטוח אי אפשר להפעיל או להשבית תוספים. יש להפעיל מחדש כרגיל';
+  static String safeModeChoiceSaved({required bool enabled}) => enabled
+      ? 'התוסף ייטען בהפעלה מחדש רגילה'
+      : 'התוסף יישאר מושבת גם בהפעלה מחדש רגילה';
   static const String pluginUpdatedSuccess = 'התוסף עודכן בהצלחה';
   static const String pluginAlreadyInstalledSameVersion =
       'תוסף זה כבר מותקן אצלך, באותה הגרסה. '

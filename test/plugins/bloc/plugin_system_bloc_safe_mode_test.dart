@@ -30,6 +30,11 @@ InstalledPlugin _plugin() => InstalledPlugin(
 
 class _FakeRepo implements PluginRegistryRepository {
   final saved = <InstalledPlugin>[];
+  final choices = <(String, bool)>[];
+
+  @override
+  Future<void> saveEnabledChoice(String pluginId, bool enabled) async =>
+      choices.add((pluginId, enabled));
 
   @override
   Future<List<InstalledPlugin>> getAllPlugins() async => [_plugin()];
@@ -109,10 +114,12 @@ void main() {
     expect(host.syncs, 0);
   });
 
-  test('enable and disable requests write nothing', () async {
+  test('enable and disable requests only store the user choice', () async {
     await send(const EnablePluginRequested('p1'));
     await send(const DisablePluginRequested('p1'));
 
+    expect(repo.choices, [('p1', true), ('p1', false)]);
     expect(repo.saved, isEmpty);
+    expect(host.syncs, 0);
   });
 }
