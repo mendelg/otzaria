@@ -83,6 +83,10 @@ class AcronymsCache {
     UserBookSource() => null,
   };
 
+  /// כל הכינויים של מסד מצורף, או `null` כשלא נטענו. מוחלף בכל טעינה מחדש.
+  Map<int, List<String>>? attachedAcronymsOf(String slug) =>
+      _attachedAcronyms[slug];
+
   /// טוען את טבלת `book_acronym` של כל מסד מצורף גלוי שעוד לא נטען, ב-isolate
   /// ובפתיחה מוקשחת. מסד בלי הטבלה או שקריאתו נכשלה נשאר בלי כינויים.
   Future<void> warmUpAttached() {

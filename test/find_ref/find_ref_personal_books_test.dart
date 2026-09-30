@@ -1,10 +1,15 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
+import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/find_ref/repository/attached_find_ref_worker.dart';
+import 'package:otzaria/find_ref/repository/db_reference_result.dart';
+import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
+import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
@@ -156,6 +161,127 @@ void main() {
     expect(results.map((r) => r.reference), contains('חלק טו, סימן ג'));
   });
 
+  test(
+    'מאות ספרים תואמים — חיפוש תוכן העניינים חסום כמו בקטלוג הרשמי',
+    () async {
+      var tocCalls = 0;
+      final books = [for (var i = 1; i <= 300; i++) _book(i, 'שות מהדורה $i')];
+      final repo = _repo(
+        books: books,
+        userToc: (_, _, {queryTokens}) async {
+          tocCalls++;
+          return const [];
+        },
+      );
+      await repo.findRefs('שות סימן ג', includePersonalBooks: true);
+      expect(tocCalls, FindRefRepository.maxSecondaryTocLookups);
+    },
+  );
+
+  group('ספרים אישיים עוברים את מנוע ההתאמה של הקטלוג הרשמי', () {
+    Future<List<DbReferenceResult>> personal(
+      FindRefRepository repo,
+      String query,
+    ) async => [
+      for (final r in await repo.findRefs(query, includePersonalBooks: true))
+        if (r.source == BookSource.user) r,
+    ];
+
+    test('שאילתה שמופיעה באמצע השם מוצאת את הספר', () async {
+      final repo = _repo(books: [_book(1, 'פירוש פלוני על בבא קמא')]);
+      expect(
+        (await personal(repo, 'בבא קמא')).map((r) => r.title),
+        contains('פירוש פלוני על בבא קמא'),
+      );
+    });
+
+    test('התאמה באמצע השם ממשיכה לתוכן העניינים עם טוקני הקטע', () async {
+      List<String>? received;
+      final repo = _repo(
+        books: [_book(1, 'פירוש פלוני על בבא קמא')],
+        userToc: (_, _, {queryTokens}) async {
+          received = queryTokens;
+          return [
+            {
+              'reference': 'פירוש פלוני על בבא קמא, ג',
+              'segment': 7,
+              'level': 2,
+            },
+          ];
+        },
+      );
+      final results = await personal(repo, 'בבא קמא ג');
+      expect(received, ['ג']);
+      expect(
+        results.map((r) => r.reference),
+        contains('פירוש פלוני על בבא קמא, ג'),
+      );
+    });
+
+    test('שגיאת כתיב בשם — התאמה מקורבת', () async {
+      final repo = _repo(books: [_book(1, 'ספר המצוות הגדול')]);
+      expect(
+        (await personal(repo, 'ספר המצות')).map((r) => r.title),
+        contains('ספר המצוות הגדול'),
+      );
+    });
+
+    test('התאמה מקורבת של ספר אישי יורדת מתחת להתאמה מילולית', () async {
+      final repo = _repo(
+        books: [_book(1, 'המצוות הגדולות'), _book(2, 'קונטרס המצות גדול')],
+      );
+      // בלי סימון ההתאמה המקורבת, orderIndex הנמוך של 1 היה מקדים אותו.
+      expect((await personal(repo, 'המצות גדול')).map((r) => r.bookId), [
+        2,
+        1,
+      ]);
+    });
+
+    test('ספר רשמי קודם לספר אישי כשהרלוונטיות שווה', () async {
+      final repo = FindRefRepository(
+        dataRepository: MockDataRepository(),
+        isReferenceBooksCacheLoaded: () => true,
+        warmUpReferenceBooksCache: () async {},
+        searchReferenceBooks: (query, {limit = 50}) => [
+          if (query == 'ספר פלוני')
+            ReferenceBookHit(
+              bookId: 900,
+              title: 'ספר פלוני',
+              normalizedTitle: 'ספר פלוני',
+              filePath: '',
+              fileType: 'txt',
+              matchRank: 0,
+              orderIndex: 50,
+            ),
+        ],
+        getTocEntriesForReference: (_, _, {queryTokens}) async => const [],
+        getAllUserBooks: () async => [_book(1, 'ספר פלוני')],
+        getUserBookTocEntries: (_, _, {queryTokens}) async => const [],
+      );
+      final results = await repo.findRefs(
+        'ספר פלוני',
+        includePersonalBooks: true,
+      );
+      expect(results.map((r) => r.source), [
+        BookSource.official,
+        BookSource.user,
+      ]);
+    });
+
+    test('ספרייה אישית גדולה נבנית ב-isolate עם אותן תוצאות', () async {
+      final previous = FindRefRepository.secondaryIndexIsolateThreshold;
+      addTearDown(
+        () => FindRefRepository.secondaryIndexIsolateThreshold = previous,
+      );
+      FindRefRepository.secondaryIndexIsolateThreshold = 0;
+      final repo = _repo(books: [_book(1, 'פירוש פלוני על בבא קמא')]);
+      expect(
+        (await personal(repo, 'בבא קמא')).map((r) => r.bookId),
+        contains(1),
+      );
+    });
+  });
+
   group('תוכן עניינים של ספר אישי ב-worker', () {
     late Directory tempDir;
     late String dbPath;
@@ -216,6 +342,12 @@ void main() {
 
     for (final count in [13, 200]) {
       test('$count ספרים באותו שם — הכותרת שבספר האחרון נמצאת', () async {
+        // כל הספרים באצווה אחת ל-worker, גם מעבר לתקרה הרגילה.
+        final previousCap = FindRefRepository.maxSecondaryTocLookups;
+        addTearDown(
+          () => FindRefRepository.maxSecondaryTocLookups = previousCap,
+        );
+        FindRefRepository.maxSecondaryTocLookups = count;
         final lastId = 10 + count;
         final db = sqlite3.sqlite3.open(dbPath);
         try {
@@ -259,5 +391,129 @@ void main() {
         );
       });
     }
+
+    void execute(String sql, [List<Object?> args = const []]) {
+      final db = sqlite3.sqlite3.open(dbPath);
+      try {
+        db.execute(sql, args);
+      } finally {
+        db.close();
+      }
+    }
+
+    test('ספר שנוסף למסד אחרי החיפוש הראשון נמצא', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      expect(await userRefs(repo, 'קונטרס חדש'), isEmpty);
+
+      execute(
+        'INSERT INTO book (id, categoryId, sourceId, title, orderIndex) '
+        'VALUES (50, ?, 1, ?, 3)',
+        [SeforimFixtureIds.torahCategoryId, 'קונטרס חדש'],
+      );
+      // כתיבה מתוך האפליקציה: רענון הספרייה מפעיל את הבדיקה ברקע.
+      FindRefRepository.revalidateUserBooks();
+      await repo.debugUserBooksRefresh;
+      expect(await userRefs(repo, 'קונטרס חדש'), contains('קונטרס חדש'));
+    });
+
+    test('ספר שנמחק מהמסד אינו מוצע עוד', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      expect(await userRefs(repo, title), contains(title));
+
+      execute('DELETE FROM book WHERE id = ?', [SeforimFixtureIds.rashiId]);
+      // כתיבה של חיבור אחר: החיפוש הראשון מחזיר מהקאש ובודק ברקע.
+      await userRefs(repo, title);
+      await repo.debugUserBooksRefresh;
+      expect(await userRefs(repo, title), isNot(contains(title)));
+    });
+
+    test('שינוי בזמן שמסד הספרים האישיים סגור נראה בחיפוש הבא', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      expect(await userRefs(repo, title), contains(title));
+
+      await UserBooksDatabaseHolder.instance.close();
+      execute('DELETE FROM book WHERE id = ?', [SeforimFixtureIds.rashiId]);
+      expect(await userRefs(repo, title), isNot(contains(title)));
+    });
+
+    test('כשיש אינדקס, החיפוש אינו ממתין ל-worker עסוק', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      expect(await userRefs(repo, title), contains(title));
+
+      final busy = AttachedFindRefWorker.instance.run(
+        dbPath,
+        immutable: false,
+        version: '0',
+        job: _slowJob,
+      );
+      final stopwatch = Stopwatch()..start();
+      expect(await userRefs(repo, title), contains(title));
+      expect(stopwatch.elapsedMilliseconds, lessThan(1000));
+      await busy;
+    });
+
+    test('חיבור חדש לאותו תוכן אינו בונה את האינדקס מחדש', () async {
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+      const title = SeforimFixtureIds.rashiTitle;
+      await userRefs(repo, title);
+      final index = repo.debugUserBooksIndex;
+      expect(index, isNotNull);
+
+      // כמו idleClose: ה-worker פותח חיבור חדש, data_version מתחיל מחדש.
+      AttachedFindRefWorker.instance.reset();
+      await userRefs(repo, title);
+      await repo.debugUserBooksRefresh;
+      expect(identical(repo.debugUserBooksIndex, index), isTrue);
+    });
   });
+
+  test('אינדקס שנבנה בזמן שהחיפוש בוטל נשמר לחיפוש הבא', () async {
+    final gate = Completer<void>();
+    var loads = 0;
+    final repo = FindRefRepository(
+      dataRepository: MockDataRepository(),
+      isReferenceBooksCacheLoaded: () => true,
+      warmUpReferenceBooksCache: () async {},
+      searchReferenceBooks: (_, {limit = 50}) => const [],
+      getTocEntriesForReference: (_, _, {queryTokens}) async => const [],
+      getAllUserBooks: () async {
+        loads++;
+        await gate.future;
+        return [_book(1, 'ספר פלוני')];
+      },
+      getUserBookTocEntries: (_, _, {queryTokens}) async => const [],
+    );
+    final first = repo.findRefs('ספר', includePersonalBooks: true);
+    await pumpEventQueue();
+    repo.cancelPendingSearch();
+    gate.complete();
+    await expectLater(first, throwsA(isA<FindRefQueryCancelled>()));
+
+    final results = await repo.findRefs('ספר', includePersonalBooks: true);
+    expect(loads, 1);
+    expect(results.map((r) => r.source), contains(BookSource.user));
+  });
+}
+
+Future<int> _slowJob(SeforimRepository repository) async {
+  await Future<void>.delayed(const Duration(milliseconds: 2000));
+  return 1;
 }

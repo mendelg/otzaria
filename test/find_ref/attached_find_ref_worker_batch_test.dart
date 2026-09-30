@@ -182,33 +182,52 @@ void main() {
     );
   });
 
-  test('timeout פעיל משחרר גם ממתינים ומשבית רק את המסד הפעיל', () async {
-    final otherPath = '${directory.path}/other.db';
-    await File(path).copy(otherPath);
-    await worker.run(path, immutable: false, version: 'v', job: _one);
-    await worker.run(otherPath, immutable: false, version: 'v', job: _one);
-    AttachedFindRefWorker.callTimeout = const Duration(milliseconds: 100);
-    final active = worker.run(path, immutable: false, version: 'v', job: _hang);
-    final activeFailure = expectLater(active, throwsA(isA<TimeoutException>()));
-    final queued = worker.run(
-      otherPath,
-      immutable: false,
-      version: 'v',
-      job: _one,
-    );
-    final queuedFailure = expectLater(queued, throwsA(isA<StateError>()));
-    await activeFailure;
-    await queuedFailure.timeout(const Duration(seconds: 5));
-    await expectLater(
-      worker.run(path, immutable: false, version: 'v', job: _one),
-      throwsA(isA<StateError>()),
-    );
-    AttachedFindRefWorker.callTimeout = timeouts.$1;
-    expect(
-      await worker.run(otherPath, immutable: false, version: 'v', job: _one),
-      1,
-    );
-  });
+  for (final background in [false, true]) {
+    test('timeout משחרר ממתינים, השבתת מסד: ${!background}', () async {
+      final otherPath = '${directory.path}/other.db';
+      await File(path).copy(otherPath);
+      await worker.run(path, immutable: false, version: 'v', job: _one);
+      await worker.run(otherPath, immutable: false, version: 'v', job: _one);
+      AttachedFindRefWorker.callTimeout = const Duration(milliseconds: 100);
+      final active = worker.run(
+        path,
+        immutable: false,
+        version: 'v',
+        job: _hang,
+        background: background,
+      );
+      final activeFailure = expectLater(
+        active,
+        throwsA(isA<TimeoutException>()),
+      );
+      final queued = worker.run(
+        otherPath,
+        immutable: false,
+        version: 'v',
+        job: _one,
+      );
+      final queuedFailure = expectLater(queued, throwsA(isA<StateError>()));
+      await activeFailure;
+      await queuedFailure.timeout(const Duration(seconds: 5));
+      if (!background) {
+        await expectLater(
+          worker.run(path, immutable: false, version: 'v', job: _one),
+          throwsA(isA<StateError>()),
+        );
+      }
+      AttachedFindRefWorker.callTimeout = timeouts.$1;
+      expect(
+        await worker.run(otherPath, immutable: false, version: 'v', job: _one),
+        1,
+      );
+      if (background) {
+        expect(
+          await worker.run(path, immutable: false, version: 'v', job: _one),
+          1,
+        );
+      }
+    });
+  }
 
   test('reset בזמן spawn משחרר את הבקשה ואפשר לפתוח שוב', () async {
     final pending = worker.run(path, immutable: false, version: 'v', job: _one);

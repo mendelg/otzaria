@@ -45,26 +45,11 @@ class ReferenceBooksCache {
   /// מונה דורות לזיהוי [clear] שקרה במהלך טעינה.
   int _generation = 0;
 
-  // Normalized titles cache (computed from BooksCache)
-  final Map<int, String> _normalizedTitles = <int, String>{};
-
-  /// טוקני הכותרת המנורמלת לכל ספר — מחושבים פעם אחת עם הכותרות, ועוברים
-  /// ל-[ReferenceBookHit] כדי שהצרכנים לא יפצלו מחדש בכל הקלדה.
-  final Map<int, List<String>> _titleTokens = <int, List<String>>{};
-
-  /// [titleMatchTokens] לכל ספר, בעצלתיים — רק מעטים מגיעים למסלול שצריך אותם.
-  final Map<int, Set<String>> _titleMatchTokens = <int, Set<String>>{};
-
-  /// כל המילים השונות שבכותרות ובכינויים, ומזהי הספרים לכל מילה. הספרייה
-  /// כולה מכילה ~6,900 מילים שונות בלבד, ולכן ההתאמה המקורבת רצה עליהן פעם
-  /// אחת לכל מילת שאילתה במקום על ~190,000 המילים שבספרים.
-  final List<String> _fuzzyVocabulary = <String>[];
-  final List<Uint32List> _fuzzyVocabularyBooks = <Uint32List>[];
-
-  /// מטמון חסום של המסננת לפי מילת שאילתה: `findRefs` קורא ל-[search] עד
-  /// ארבע פעמים על אותה שאילתה, וההקלדה הבאה חוזרת על כל המילים חוץ מהאחרונה.
-  final Map<String, Set<int>> _fuzzyWordCandidates = <String, Set<int>>{};
-  static const int _fuzzyWordCandidatesLimit = 128;
+  /// מנוע ההתאמה על קטלוג הספרייה הרשמית.
+  late final BookTitleIndex _official = BookTitleIndex._official(
+    () => debugCatalogScans++,
+    _matchFsPdfBooks,
+  );
 
   // PDF books from file system (not in DB) — stored as (normalizedTitle, hit)
   final List<(String, ReferenceBookHit)> _fsPdfBooks =
@@ -208,7 +193,7 @@ class ReferenceBooksCache {
       // Swap אטומי — רק אם הדור עדיין שלנו.
       if (myGen != _generation) return;
 
-      _installNormalizedTitles(localNormalizedTitles);
+      _official.installTitles(localNormalizedTitles);
       _fsPdfBooks
         ..clear()
         ..addAll(localFsPdfBooks);
@@ -276,10 +261,7 @@ class ReferenceBooksCache {
       // לא מסמנים loaded: כשל זמני (למשל DB נעול ביציאה ממצב שינה) יאופשר
       // retry ב-warmUp הבא, במקום קאש ריק שמחזיר "לא נמצא ספר" לכל ה-session.
       if (myGen == _generation) {
-        _installNormalizedTitles(const {});
-        _fuzzyVocabulary.clear();
-        _fuzzyVocabularyBooks.clear();
-        _fuzzyWordCandidates.clear();
+        _official.clearTitles();
         _fsPdfBooks.clear();
         _categoryPaths.clear();
         _isLoaded = false;
@@ -287,25 +269,9 @@ class ReferenceBooksCache {
     }
   }
 
-  void _installNormalizedTitles(Map<int, String> titles) {
-    _normalizedTitles
-      ..clear()
-      ..addAll(titles);
-    _titleTokens
-      ..clear()
-      ..addAll({
-        for (final entry in titles.entries)
-          entry.key: _splitTitleTokens(entry.value),
-      });
-    _titleMatchTokens.clear();
-  }
-
   void clear() {
     _generation++;
-    _installNormalizedTitles(const {});
-    _fuzzyVocabulary.clear();
-    _fuzzyVocabularyBooks.clear();
-    _fuzzyWordCandidates.clear();
+    _official.clearTitles();
     _fsPdfBooks.clear();
     _dbPdfTitles.clear();
     _pdfOutlineCache.clear();
@@ -561,7 +527,7 @@ class ReferenceBooksCache {
     required Map<int, String> normalizedTitles,
     required Map<int, String> categoryPaths,
   }) {
-    _installNormalizedTitles(normalizedTitles);
+    _official.installTitles(normalizedTitles);
     _dbPdfTitles
       ..clear()
       ..addAll(
@@ -573,8 +539,8 @@ class ReferenceBooksCache {
       ..clear()
       ..addAll(categoryPaths);
     final booksByWord = <String, List<int>>{};
-    _collectFuzzyWords(booksByWord, normalizedTitles.entries);
-    _installFuzzyVocabulary(booksByWord);
+    _official.collectFuzzyWords(booksByWord, normalizedTitles.entries);
+    _official.installFuzzyVocabulary(booksByWord);
     _isLoaded = true;
   }
 
@@ -612,70 +578,21 @@ class ReferenceBooksCache {
     required int limit,
     bool Function(int bookId, String filePath, String fileType)? allowsBook,
     Set<String> exactTitles = const <String>{},
-  }) {
-    final scanByRaw = <String, _QueryScan?>{};
-    final scans = <String, _QueryScan>{};
-    for (final raw in queries) {
-      if (scanByRaw.containsKey(raw)) continue;
-      final q = _normalizeForMatch(raw);
-      scanByRaw[raw] = q.isEmpty
-          ? null
-          : scans.putIfAbsent(q, () {
-              final words = q.split(' ');
-              return _QueryScan(
-                q,
-                words,
-                // מסננת הביגרמים חוסכת את המעבר על כינויי כל הספרים — היא
-                // קבוצת-על, ולכן הלולאה נשארת הפוסקת היחידה על הדירוג.
-                AcronymsCache.instance.candidatesFor(q),
-                // בלעדיה כל שאילתה הייתה מריצה מרחק-עריכה על כל ספר.
-                _fuzzyCandidateBooks(words),
-              );
-            });
-    }
-    final foundExactTitles = <String>{};
-    if (scans.isEmpty && exactTitles.isEmpty) {
-      return ReferenceBookSearchBatch._(
-        scanByRaw,
-        exactTitles,
-        foundExactTitles,
-      );
-    }
-    debugCatalogScans++;
+  }) => _official.searchBatch(
+    queries,
+    limit: limit,
+    allowsBook: allowsBook,
+    exactTitles: exactTitles,
+  );
 
-    // שאילתה שמכילה שאילתה קצרה ממנה ("ברכות ב" ⊃ "ברכות") נבדקת רק בספרים
-    // שהקצרה לא נפסלה בהם — הקצרות קודמות, והאב הוא הארוך שבהן.
-    final active = scans.values.toList(growable: false)
-      ..sort((a, b) => a.q.length.compareTo(b.q.length));
-    final parentOf = List<int>.filled(active.length, -1);
-    for (var i = 0; i < active.length; i++) {
-      for (var j = 0; j < i; j++) {
-        if (active[i].q.contains(active[j].q)) parentOf[i] = j;
-      }
-    }
-    final masks = List<int>.filled(active.length, 0);
-
-    final visibleDbPdfTitles = allowsBook == null ? null : <String>{};
-    for (final book in BooksCache.instance.books) {
-      if (allowsBook != null &&
-          !allowsBook(book.id, book.filePath ?? '', book.fileType)) {
-        continue;
-      }
-      final t = _normalizedTitles[book.id] ?? '';
-      if (t.isEmpty) continue;
-      if (book.fileType == 'pdf') visibleDbPdfTitles?.add(book.title);
-      if (exactTitles.contains(t)) foundExactTitles.add(t);
-      for (var i = 0; i < active.length; i++) {
-        final parent = parentOf[i];
-        masks[i] = _matchBook(
-          active[i],
-          book,
-          t,
-          parent < 0 ? _mayMatchAll : masks[parent],
-        );
-      }
-    }
-
+  /// ספרי ה-PDF שבמערכת הקבצים — מותאמים לפי כותרת בלבד, אחרי ספרי המסד.
+  void _matchFsPdfBooks(
+    List<_QueryScan> active,
+    Set<String>? visibleDbPdfTitles,
+    bool Function(int bookId, String filePath, String fileType)? allowsBook,
+    Set<String> exactTitles,
+    Set<String> foundExactTitles,
+  ) {
     for (final (t, baseHit) in _fsPdfBooks) {
       if ((visibleDbPdfTitles ?? _dbPdfTitles).contains(baseHit.title)) {
         continue;
@@ -709,121 +626,14 @@ class ReferenceBooksCache {
         );
       }
     }
-
-    for (final scan in active) {
-      scan.select(limit);
-    }
-    return ReferenceBookSearchBatch._(scanByRaw, exactTitles, foundExactTitles);
   }
-
-  /// מה שנשאר אפשרי בספר אחרי בדיקת שאילתה — מסנן את השאילתות שמכילות אותה.
-  static const int _titleMay = 1;
-  static const int _acronymMay = 2;
-  static const int _mayMatchAll = _titleMay | _acronymMay;
-
-  /// מוסיף את התאמת [book] ל-[scan], ומחזיר מה עוד אפשרי בו לשאילתה ארוכה
-  /// יותר שמכילה את `scan.q`. [parentMask] — אותו דבר, לשאילתה הקצרה שבתוכה.
-  int _matchBook(
-    _QueryScan scan,
-    BookCacheEntry book,
-    String t,
-    int parentMask,
-  ) {
-    final q = scan.q;
-    int? matchRank;
-    String? matchedTerm;
-    var tailIsTitleWords = false;
-    var mask = 0;
-
-    if (parentMask & _titleMay != 0) {
-      if (t == q) {
-        matchRank = 0;
-      } else if (t.startsWith(q)) {
-        matchRank = 1;
-      } else if (t.contains(q)) {
-        matchRank = 2;
-      }
-    }
-    if (matchRank != null) {
-      // ענף הכינויים לא נבדק — אין מידע שמותר לפסול בו.
-      mask = _mayMatchAll;
-    } else if (parentMask & _acronymMay != 0 &&
-        (scan.acronymCandidates?.contains(book.id) ?? true)) {
-      // התאמת ראשי תיבות — המונחים כבר מנורמלים בעת טעינת הקאש.
-      final normalizedAcronyms = AcronymsCache.instance.getAcronymsForBook(
-        book.id,
-      );
-      if (normalizedAcronyms != null) {
-        // עצל: רק התאמת-תחילית של ראשי-תיבות צריכה את טוקני הכותרת.
-        Set<String>? titleTokens;
-        for (final a in normalizedAcronyms) {
-          if (a == q) {
-            matchRank = 3;
-            matchedTerm = a;
-            break;
-          }
-          if (a.startsWith(q)) {
-            titleTokens ??= _titleMatchTokensFor(book.id, t);
-            final tailIsTitle = _acronymTailIsTitleWords(a, q, titleTokens);
-            // דירוג טוב יותר גובר על קודמיו — אחרת מונח "contains" (5) שנסרק
-            // קודם היה מקבע 5 ומונע מהתאמת-התחילית הזו לדרג 4.
-            if (matchRank == null ||
-                matchRank > 4 ||
-                (tailIsTitle && !tailIsTitleWords)) {
-              matchRank = 4;
-              matchedTerm = a;
-              tailIsTitleWords = tailIsTitle;
-            }
-          } else if (a.contains(q) && matchRank == null) {
-            matchRank = 5;
-            matchedTerm = a;
-          }
-        }
-      }
-      if (matchRank != null) mask = _acronymMay;
-    }
-
-    // מפלט אחרון: התאמה מקורבת (issue #1310), מדורגת מתחת לכל ההתאמות
-    // המילוליות — כך סדר התוצאות הקיים אינו זז.
-    if (matchRank == null && scan.fuzzyCandidates.contains(book.id)) {
-      final matched = _fuzzyMatchedTerm(scan.words, t, book.id);
-      if (matched != null) {
-        matchRank = fuzzyMatchRank;
-        // כותרת שהותאמה אינה "מונח" — matchedTerm שמור לראשי-תיבות.
-        if (matched != t) matchedTerm = matched;
-      }
-    }
-
-    if (matchRank == null) return mask;
-    scan.add(
-      ReferenceBookHit(
-        bookId: book.id,
-        title: book.title,
-        normalizedTitle: t,
-        filePath: book.filePath ?? '',
-        fileType: book.fileType,
-        matchRank: matchRank,
-        matchedTerm: matchedTerm,
-        orderIndex: book.orderIndex,
-        acronymTailIsTitleWords: tailIsTitleWords,
-        titleTokens: _titleTokens[book.id],
-        titleMatchTokens: _titleMatchTokens[book.id],
-      ),
-    );
-    return mask;
-  }
-
-  Set<String> _titleMatchTokensFor(int bookId, String title) =>
-      _titleMatchTokens[bookId] ??= titleMatchTokensOf(
-        _titleTokens[bookId] ?? _splitTitleTokens(title),
-      );
 
   /// מצב "דור + נושא" של איתור מקורות: מחזיר את כל הספרים שדורם (לפי נתיב
   /// הקטגוריה) הוא [era] וכותרתם תואמת את כל [topicTokens]. למשל
   /// `era=ראשונים, topic=["סנהדרין"]` → "חידושי רמב"ן על סנהדרין", "רש"י על
   /// סנהדרין" וכו'.
   ///
-  /// אפס שאילתות DB — מסתמך על [_normalizedTitles] ו-[_categoryPaths] שכבר
+  /// אפס שאילתות DB — מסתמך על הכותרות המנורמלות ו-[_categoryPaths] שכבר
   /// במטמון. ההתאמה בכותרת זהה במהותה ל-[search]: כל טוקן-נושא חייב להופיע
   /// כתחילית של טוקן כלשהו בכותרת.
   List<ReferenceBookHit> searchByEraAndTopic(
@@ -844,7 +654,7 @@ class ReferenceBooksCache {
       if (path == null || path.isEmpty) continue;
       if (eraFromCategoryPath(path) != era) continue;
 
-      final t = _normalizedTitles[book.id] ?? '';
+      final t = _official._normalizedTitles[book.id] ?? '';
       if (t.isEmpty) continue;
       final titleTokens = t.split(' ').where((w) => w.isNotEmpty);
       final matches = topicTokens.every(
@@ -903,47 +713,9 @@ class ReferenceBooksCache {
     return aTokens.skip(qTokens.length).every(titleTokens.contains);
   }
 
-  /// אורך המילה המינימלי להתאמה מקורבת.
-  static const int _minFuzzyWordLength = 3;
-
   /// דירוג ההתאמה המקורבת — מתחת לכל ההתאמות המילוליות (0–5).
   /// חשוף כי `findRefs` צריך להבחין בו: התאמה מקורבת מצטרפת כמשנית בלבד.
   static const int fuzzyMatchRank = 6;
-
-  /// אוסף ל-[booksByWord] את מילות הכותרת והכינויים של [entries]. כל ספר
-  /// נסרק במלואו בבת אחת, ולכן מזההו תמיד בקצה הרשימה — כפילות נמנעת
-  /// בהשוואה לאחרון, בלי Set לכל מילה.
-  void _collectFuzzyWords(
-    Map<String, List<int>> booksByWord,
-    Iterable<MapEntry<int, String>> entries,
-  ) {
-    void addWords(int bookId, String text) {
-      for (final word in text.split(' ')) {
-        if (word.isEmpty) continue;
-        final books = booksByWord.putIfAbsent(word, () => <int>[]);
-        if (books.isEmpty || books.last != bookId) books.add(bookId);
-      }
-    }
-
-    for (final entry in entries) {
-      addWords(entry.key, entry.value);
-      final acronyms = AcronymsCache.instance.getAcronymsForBook(entry.key);
-      if (acronyms == null) continue;
-      for (final term in acronyms) {
-        addWords(entry.key, term);
-      }
-    }
-  }
-
-  void _installFuzzyVocabulary(Map<String, List<int>> booksByWord) {
-    _fuzzyWordCandidates.clear();
-    _fuzzyVocabulary
-      ..clear()
-      ..addAll(booksByWord.keys);
-    _fuzzyVocabularyBooks
-      ..clear()
-      ..addAll(booksByWord.values.map(Uint32List.fromList));
-  }
 
   /// בונה את מסננת אוצר-המילים בפרוסות. `false` = בוטל (דור התחלף), ואז
   /// הקורא חייב לא לסמן את הקאש כ-loaded. בסביבות 140ms על ספרייה מלאה —
@@ -958,91 +730,13 @@ class ReferenceBooksCache {
 
     for (var i = 0; i < entries.length; i += batch) {
       final end = i + batch < entries.length ? i + batch : entries.length;
-      _collectFuzzyWords(booksByWord, entries.getRange(i, end));
+      _official.collectFuzzyWords(booksByWord, entries.getRange(i, end));
       await Future<void>.delayed(Duration.zero);
       if (myGen != _generation) return false;
     }
 
-    _installFuzzyVocabulary(booksByWord);
+    _official.installFuzzyVocabulary(booksByWord);
     return true;
-  }
-
-  /// מזהי הספרים שבהם לכל אחת מ-[queryWords] יש מילה מתאימה — קבוצת-העל של
-  /// ההתאמה המקורבת. [_fuzzyMatchedTerm] נשאר הפוסק, כי הוא דורש שכל המילים
-  /// יימצאו ב**אותו** טקסט; כאן הן עשויות לבוא מכינויים שונים.
-  Set<int> _fuzzyCandidateBooks(List<String> queryWords) {
-    if (!queryWords.any((w) => w.length >= _minFuzzyWordLength)) {
-      return const <int>{};
-    }
-
-    Set<int>? candidates;
-    for (final word in queryWords) {
-      if (word.isEmpty) continue;
-      final forWord = _fuzzyCandidatesForWord(word);
-
-      // העתקה ולא שימוש חוזר: הרשימה מגיעה מהמטמון, ו-retainAll היה פוגם בה.
-      candidates == null
-          ? candidates = <int>{...forWord}
-          : candidates.retainAll(forWord);
-      if (candidates.isEmpty) return const <int>{};
-    }
-    return candidates ?? const <int>{};
-  }
-
-  /// מזהי הספרים שיש בהם מילה המתאימה ל-[word], מהמטמון או בסריקת האוצר.
-  Set<int> _fuzzyCandidatesForWord(String word) {
-    final cached = _fuzzyWordCandidates[word];
-    if (cached != null) return cached;
-
-    // מילה קצרה נדרשת כמילה שלמה ולא בקירוב, ולכן גם המסננת מדויקת —
-    // `contains` עליה היה מחזיר כמעט כל מילה באוצר.
-    final exact = word.length < _minFuzzyWordLength;
-    final books = <int>{};
-    for (var i = 0; i < _fuzzyVocabulary.length; i++) {
-      final vocabWord = _fuzzyVocabulary[i];
-      final matches = exact
-          ? vocabWord == word
-          : bookSearchWordPairMatches(word, vocabWord);
-      if (matches) books.addAll(_fuzzyVocabularyBooks[i]);
-    }
-
-    if (_fuzzyWordCandidates.length >= _fuzzyWordCandidatesLimit) {
-      _fuzzyWordCandidates.remove(_fuzzyWordCandidates.keys.first);
-    }
-    _fuzzyWordCandidates[word] = books;
-    return books;
-  }
-
-  /// מחזיר את הכותרת או המונח שכל [queryWords] נמצאו בו, או `null`.
-  ///
-  /// כל מילות השאילתה חייבות להיכנס ב**אותו** טקסט — אחרת "חדושי הלכות" היה
-  /// מותאם לספר שרק "הלכות" מופיע בו. הכותרת נבדקת ראשונה, ואם נכשלה נבדק
-  /// כל כינוי, כי "רמבם תפלה" חי בכינוי ולא בכותרת.
-  ///
-  /// טוקן קצר ("ב" של פרק ב) נדרש כמילה שלמה ולא בקירוב: בלעדיו
-  /// "רמב"ם תפילה ב" היה נראה כזיהוי מלא של הספר, וטוקן המיקום לא היה מגיע
-  /// לחיפוש הכותרות הפנימיות.
-  String? _fuzzyMatchedTerm(List<String> queryWords, String title, int bookId) {
-    bool allWordsIn(String text) {
-      List<String>? textWords;
-      for (final word in queryWords) {
-        if (word.length < _minFuzzyWordLength) {
-          textWords ??= text.split(' ');
-          if (!textWords.contains(word)) return false;
-        } else if (!bookSearchWordMatchesFuzzy(word, text)) {
-          return false;
-        }
-      }
-      return true;
-    }
-
-    if (allWordsIn(title)) return title;
-    final acronyms = AcronymsCache.instance.getAcronymsForBook(bookId);
-    if (acronyms == null) return null;
-    for (final term in acronyms) {
-      if (allWordsIn(term)) return term;
-    }
-    return null;
   }
 
   static String _normalizeForMatch(String input) =>
@@ -1254,6 +948,414 @@ class ReferenceBooksCache {
         currentDepth: currentDepth + 1,
       );
     }
+  }
+}
+
+/// הספרים שמעבר לקטלוג ([ReferenceBooksCache._matchFsPdfBooks]): נסרקים אחרי
+/// ספרי הקטלוג, לתוך אותן שאילתות.
+typedef _ExtraBooksMatcher =
+    void Function(
+      List<_QueryScan> active,
+      Set<String>? visibleDbPdfTitles,
+      bool Function(int bookId, String filePath, String fileType)? allowsBook,
+      Set<String> exactTitles,
+      Set<String> foundExactTitles,
+    );
+
+/// מנוע ההתאמה של שמות ספרים לשאילתת איתור: כותרת (זהה/תחילית/מכילה),
+/// ראשי-תיבות והתאמה מקורבת. אותו מנוע משרת את הקטלוג הרשמי ואת המסדים המשניים.
+class BookTitleIndex {
+  /// אינדקס של רשימת ספרים קבועה (מסד משני). [normalizedTitles] — אחרי
+  /// [normalizeForFindRefMatch]; [acronymsOf] — מונחים מנורמלים.
+  BookTitleIndex({
+    required List<BookCacheEntry> books,
+    required Map<int, String> normalizedTitles,
+    List<String>? Function(int bookId)? acronymsOf,
+  }) : _books = (() => books),
+       _acronymsOf = acronymsOf ?? _noAcronyms,
+       _acronymCandidates = _noAcronymFilter,
+       _onCatalogScan = null,
+       _extraBooks = null {
+    installTitles(normalizedTitles);
+    final booksByWord = <String, List<int>>{};
+    collectFuzzyWords(booksByWord, normalizedTitles.entries);
+    installFuzzyVocabulary(booksByWord);
+  }
+
+  BookTitleIndex._official(this._onCatalogScan, this._extraBooks)
+    : _books = (() => BooksCache.instance.books),
+      _acronymsOf = AcronymsCache.instance.getAcronymsForBook,
+      _acronymCandidates = AcronymsCache.instance.candidatesFor;
+
+  final Iterable<BookCacheEntry> Function() _books;
+  final List<String>? Function(int bookId) _acronymsOf;
+
+  /// `null` = אין צמצום, כל ספר נבדק מול כינוייו (ראו [AcronymsCache.candidatesFor]).
+  final AcronymCandidateBooks? Function(String normalizedQuery)
+  _acronymCandidates;
+  final void Function()? _onCatalogScan;
+  final _ExtraBooksMatcher? _extraBooks;
+
+  static List<String>? _noAcronyms(int bookId) => null;
+  static AcronymCandidateBooks? _noAcronymFilter(String normalizedQuery) =>
+      null;
+
+  final Map<int, String> _normalizedTitles = <int, String>{};
+
+  /// טוקני הכותרת המנורמלת לכל ספר — מחושבים פעם אחת עם הכותרות, ועוברים
+  /// ל-[ReferenceBookHit] כדי שהצרכנים לא יפצלו מחדש בכל הקלדה.
+  final Map<int, List<String>> _titleTokens = <int, List<String>>{};
+
+  /// [titleMatchTokens] לכל ספר, בעצלתיים — רק מעטים מגיעים למסלול שצריך אותם.
+  final Map<int, Set<String>> _titleMatchTokens = <int, Set<String>>{};
+
+  /// כל המילים השונות שבכותרות ובכינויים, ומזהי הספרים לכל מילה. הספרייה
+  /// כולה מכילה ~6,900 מילים שונות בלבד, ולכן ההתאמה המקורבת רצה עליהן פעם
+  /// אחת לכל מילת שאילתה במקום על ~190,000 המילים שבספרים.
+  final List<String> _fuzzyVocabulary = <String>[];
+  final List<Uint32List> _fuzzyVocabularyBooks = <Uint32List>[];
+
+  /// מטמון חסום של המסננת לפי מילת שאילתה: `findRefs` קורא ל-[search] עד
+  /// ארבע פעמים על אותה שאילתה, וההקלדה הבאה חוזרת על כל המילים חוץ מהאחרונה.
+  final Map<String, Set<int>> _fuzzyWordCandidates = <String, Set<int>>{};
+  static const int _fuzzyWordCandidatesLimit = 128;
+
+  void installTitles(Map<int, String> titles) {
+    _normalizedTitles
+      ..clear()
+      ..addAll(titles);
+    _titleTokens
+      ..clear()
+      ..addAll({
+        for (final entry in titles.entries)
+          entry.key: _splitTitleTokens(entry.value),
+      });
+    _titleMatchTokens.clear();
+  }
+
+  void clearTitles() {
+    installTitles(const {});
+    _fuzzyVocabulary.clear();
+    _fuzzyVocabularyBooks.clear();
+    _fuzzyWordCandidates.clear();
+  }
+
+  List<ReferenceBookHit> search(
+    String query, {
+    int limit = 50,
+    bool Function(int bookId, String filePath, String fileType)? allowsBook,
+  }) {
+    if (limit <= 0) return const <ReferenceBookHit>[];
+    return searchBatch(
+      [query],
+      limit: limit,
+      allowsBook: allowsBook,
+    ).hitsFor(query, limit: limit)!;
+  }
+
+  /// כל שאילתה נענית כמו ב-[search]; [limit] — הגבול הגדול ביותר שיתבקש.
+  /// ל-[exactTitles] נבדק רק אם יש ספר גלוי שזו כותרתו (דירוג 0).
+  ReferenceBookSearchBatch searchBatch(
+    Iterable<String> queries, {
+    required int limit,
+    bool Function(int bookId, String filePath, String fileType)? allowsBook,
+    Set<String> exactTitles = const <String>{},
+  }) {
+    final scanByRaw = <String, _QueryScan?>{};
+    final scans = <String, _QueryScan>{};
+    for (final raw in queries) {
+      if (scanByRaw.containsKey(raw)) continue;
+      final q = normalizeForFindRefMatch(raw);
+      scanByRaw[raw] = q.isEmpty
+          ? null
+          : scans.putIfAbsent(q, () {
+              final words = q.split(' ');
+              return _QueryScan(
+                q,
+                words,
+                // מסננת הביגרמים חוסכת את המעבר על כינויי כל הספרים — היא
+                // קבוצת-על, ולכן הלולאה נשארת הפוסקת היחידה על הדירוג.
+                _acronymCandidates(q),
+                // בלעדיה כל שאילתה הייתה מריצה מרחק-עריכה על כל ספר.
+                _fuzzyCandidateBooks(words),
+              );
+            });
+    }
+    final foundExactTitles = <String>{};
+    if (scans.isEmpty && exactTitles.isEmpty) {
+      return ReferenceBookSearchBatch._(
+        scanByRaw,
+        exactTitles,
+        foundExactTitles,
+      );
+    }
+    _onCatalogScan?.call();
+
+    // שאילתה שמכילה שאילתה קצרה ממנה ("ברכות ב" ⊃ "ברכות") נבדקת רק בספרים
+    // שהקצרה לא נפסלה בהם — הקצרות קודמות, והאב הוא הארוך שבהן.
+    final active = scans.values.toList(growable: false)
+      ..sort((a, b) => a.q.length.compareTo(b.q.length));
+    final parentOf = List<int>.filled(active.length, -1);
+    for (var i = 0; i < active.length; i++) {
+      for (var j = 0; j < i; j++) {
+        if (active[i].q.contains(active[j].q)) parentOf[i] = j;
+      }
+    }
+    final masks = List<int>.filled(active.length, 0);
+
+    final visibleDbPdfTitles = allowsBook == null ? null : <String>{};
+    for (final book in _books()) {
+      if (allowsBook != null &&
+          !allowsBook(book.id, book.filePath ?? '', book.fileType)) {
+        continue;
+      }
+      final t = _normalizedTitles[book.id] ?? '';
+      if (t.isEmpty) continue;
+      if (book.fileType == 'pdf') visibleDbPdfTitles?.add(book.title);
+      if (exactTitles.contains(t)) foundExactTitles.add(t);
+      for (var i = 0; i < active.length; i++) {
+        final parent = parentOf[i];
+        masks[i] = _matchBook(
+          active[i],
+          book,
+          t,
+          parent < 0 ? _mayMatchAll : masks[parent],
+        );
+      }
+    }
+
+    _extraBooks?.call(
+      active,
+      visibleDbPdfTitles,
+      allowsBook,
+      exactTitles,
+      foundExactTitles,
+    );
+
+    for (final scan in active) {
+      scan.select(limit);
+    }
+    return ReferenceBookSearchBatch._(scanByRaw, exactTitles, foundExactTitles);
+  }
+
+  /// מה שנשאר אפשרי בספר אחרי בדיקת שאילתה — מסנן את השאילתות שמכילות אותה.
+  static const int _titleMay = 1;
+  static const int _acronymMay = 2;
+  static const int _mayMatchAll = _titleMay | _acronymMay;
+
+  /// מוסיף את התאמת [book] ל-[scan], ומחזיר מה עוד אפשרי בו לשאילתה ארוכה
+  /// יותר שמכילה את `scan.q`. [parentMask] — אותו דבר, לשאילתה הקצרה שבתוכה.
+  int _matchBook(
+    _QueryScan scan,
+    BookCacheEntry book,
+    String t,
+    int parentMask,
+  ) {
+    final q = scan.q;
+    int? matchRank;
+    String? matchedTerm;
+    var tailIsTitleWords = false;
+    var mask = 0;
+
+    if (parentMask & _titleMay != 0) {
+      if (t == q) {
+        matchRank = 0;
+      } else if (t.startsWith(q)) {
+        matchRank = 1;
+      } else if (t.contains(q)) {
+        matchRank = 2;
+      }
+    }
+    if (matchRank != null) {
+      // ענף הכינויים לא נבדק — אין מידע שמותר לפסול בו.
+      mask = _mayMatchAll;
+    } else if (parentMask & _acronymMay != 0 &&
+        (scan.acronymCandidates?.contains(book.id) ?? true)) {
+      // התאמת ראשי תיבות — המונחים כבר מנורמלים בעת טעינת הקאש.
+      final normalizedAcronyms = _acronymsOf(book.id);
+      if (normalizedAcronyms != null) {
+        // עצל: רק התאמת-תחילית של ראשי-תיבות צריכה את טוקני הכותרת.
+        Set<String>? titleTokens;
+        for (final a in normalizedAcronyms) {
+          if (a == q) {
+            matchRank = 3;
+            matchedTerm = a;
+            break;
+          }
+          if (a.startsWith(q)) {
+            titleTokens ??= _titleMatchTokensFor(book.id, t);
+            final tailIsTitle = ReferenceBooksCache._acronymTailIsTitleWords(
+              a,
+              q,
+              titleTokens,
+            );
+            // דירוג טוב יותר גובר על קודמיו — אחרת מונח "contains" (5) שנסרק
+            // קודם היה מקבע 5 ומונע מהתאמת-התחילית הזו לדרג 4.
+            if (matchRank == null ||
+                matchRank > 4 ||
+                (tailIsTitle && !tailIsTitleWords)) {
+              matchRank = 4;
+              matchedTerm = a;
+              tailIsTitleWords = tailIsTitle;
+            }
+          } else if (a.contains(q) && matchRank == null) {
+            matchRank = 5;
+            matchedTerm = a;
+          }
+        }
+      }
+      if (matchRank != null) mask = _acronymMay;
+    }
+
+    // מפלט אחרון: התאמה מקורבת (issue #1310), מדורגת מתחת לכל ההתאמות
+    // המילוליות — כך סדר התוצאות הקיים אינו זז.
+    if (matchRank == null && scan.fuzzyCandidates.contains(book.id)) {
+      final matched = _fuzzyMatchedTerm(scan.words, t, book.id);
+      if (matched != null) {
+        matchRank = ReferenceBooksCache.fuzzyMatchRank;
+        // כותרת שהותאמה אינה "מונח" — matchedTerm שמור לראשי-תיבות.
+        if (matched != t) matchedTerm = matched;
+      }
+    }
+
+    if (matchRank == null) return mask;
+    scan.add(
+      ReferenceBookHit(
+        bookId: book.id,
+        title: book.title,
+        normalizedTitle: t,
+        filePath: book.filePath ?? '',
+        fileType: book.fileType,
+        matchRank: matchRank,
+        matchedTerm: matchedTerm,
+        orderIndex: book.orderIndex,
+        acronymTailIsTitleWords: tailIsTitleWords,
+        titleTokens: _titleTokens[book.id],
+        titleMatchTokens: _titleMatchTokens[book.id],
+      ),
+    );
+    return mask;
+  }
+
+  Set<String> _titleMatchTokensFor(int bookId, String title) =>
+      _titleMatchTokens[bookId] ??= titleMatchTokensOf(
+        _titleTokens[bookId] ?? _splitTitleTokens(title),
+      );
+
+  /// אורך המילה המינימלי להתאמה מקורבת.
+  static const int _minFuzzyWordLength = 3;
+
+  /// אוסף ל-[booksByWord] את מילות הכותרת והכינויים של [entries]. כל ספר
+  /// נסרק במלואו בבת אחת, ולכן מזההו תמיד בקצה הרשימה — כפילות נמנעת
+  /// בהשוואה לאחרון, בלי Set לכל מילה.
+  void collectFuzzyWords(
+    Map<String, List<int>> booksByWord,
+    Iterable<MapEntry<int, String>> entries,
+  ) {
+    void addWords(int bookId, String text) {
+      for (final word in text.split(' ')) {
+        if (word.isEmpty) continue;
+        final books = booksByWord.putIfAbsent(word, () => <int>[]);
+        if (books.isEmpty || books.last != bookId) books.add(bookId);
+      }
+    }
+
+    for (final entry in entries) {
+      addWords(entry.key, entry.value);
+      final acronyms = _acronymsOf(entry.key);
+      if (acronyms == null) continue;
+      for (final term in acronyms) {
+        addWords(entry.key, term);
+      }
+    }
+  }
+
+  void installFuzzyVocabulary(Map<String, List<int>> booksByWord) {
+    _fuzzyWordCandidates.clear();
+    _fuzzyVocabulary
+      ..clear()
+      ..addAll(booksByWord.keys);
+    _fuzzyVocabularyBooks
+      ..clear()
+      ..addAll(booksByWord.values.map(Uint32List.fromList));
+  }
+
+  /// מזהי הספרים שבהם לכל אחת מ-[queryWords] יש מילה מתאימה — קבוצת-העל של
+  /// ההתאמה המקורבת. [_fuzzyMatchedTerm] נשאר הפוסק, כי הוא דורש שכל המילים
+  /// יימצאו ב**אותו** טקסט; כאן הן עשויות לבוא מכינויים שונים.
+  Set<int> _fuzzyCandidateBooks(List<String> queryWords) {
+    if (!queryWords.any((w) => w.length >= _minFuzzyWordLength)) {
+      return const <int>{};
+    }
+
+    Set<int>? candidates;
+    for (final word in queryWords) {
+      if (word.isEmpty) continue;
+      final forWord = _fuzzyCandidatesForWord(word);
+
+      // העתקה ולא שימוש חוזר: הרשימה מגיעה מהמטמון, ו-retainAll היה פוגם בה.
+      candidates == null
+          ? candidates = <int>{...forWord}
+          : candidates.retainAll(forWord);
+      if (candidates.isEmpty) return const <int>{};
+    }
+    return candidates ?? const <int>{};
+  }
+
+  /// מזהי הספרים שיש בהם מילה המתאימה ל-[word], מהמטמון או בסריקת האוצר.
+  Set<int> _fuzzyCandidatesForWord(String word) {
+    final cached = _fuzzyWordCandidates[word];
+    if (cached != null) return cached;
+
+    // מילה קצרה נדרשת כמילה שלמה ולא בקירוב, ולכן גם המסננת מדויקת —
+    // `contains` עליה היה מחזיר כמעט כל מילה באוצר.
+    final exact = word.length < _minFuzzyWordLength;
+    final books = <int>{};
+    for (var i = 0; i < _fuzzyVocabulary.length; i++) {
+      final vocabWord = _fuzzyVocabulary[i];
+      final matches = exact
+          ? vocabWord == word
+          : bookSearchWordPairMatches(word, vocabWord);
+      if (matches) books.addAll(_fuzzyVocabularyBooks[i]);
+    }
+
+    if (_fuzzyWordCandidates.length >= _fuzzyWordCandidatesLimit) {
+      _fuzzyWordCandidates.remove(_fuzzyWordCandidates.keys.first);
+    }
+    _fuzzyWordCandidates[word] = books;
+    return books;
+  }
+
+  /// מחזיר את הכותרת או המונח שכל [queryWords] נמצאו בו, או `null`.
+  ///
+  /// כל מילות השאילתה חייבות להיכנס ב**אותו** טקסט — אחרת "חדושי הלכות" היה
+  /// מותאם לספר שרק "הלכות" מופיע בו. הכותרת נבדקת ראשונה, ואם נכשלה נבדק
+  /// כל כינוי, כי "רמבם תפלה" חי בכינוי ולא בכותרת.
+  ///
+  /// טוקן קצר ("ב" של פרק ב) נדרש כמילה שלמה ולא בקירוב: בלעדיו
+  /// "רמב"ם תפילה ב" היה נראה כזיהוי מלא של הספר, וטוקן המיקום לא היה מגיע
+  /// לחיפוש הכותרות הפנימיות.
+  String? _fuzzyMatchedTerm(List<String> queryWords, String title, int bookId) {
+    bool allWordsIn(String text) {
+      List<String>? textWords;
+      for (final word in queryWords) {
+        if (word.length < _minFuzzyWordLength) {
+          textWords ??= text.split(' ');
+          if (!textWords.contains(word)) return false;
+        } else if (!bookSearchWordMatchesFuzzy(word, text)) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    if (allWordsIn(title)) return title;
+    final acronyms = _acronymsOf(bookId);
+    if (acronyms == null) return null;
+    for (final term in acronyms) {
+      if (allWordsIn(term)) return term;
+    }
+    return null;
   }
 }
 

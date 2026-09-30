@@ -111,9 +111,12 @@ void main() {
     final results = attachedOnly(
       await buildRepo().findRefs(_title, includePersonalBooks: true),
     );
-    expect(results, hasLength(1));
-    expect(results.single.bookId, _bookId);
-    expect(results.single.bookPath, isNotEmpty);
+    // הכותרת המדויקת ראשונה; "רש"י על בראשית" מצטרף כהתאמת "מכיל".
+    expect(results.map((r) => r.bookId), [
+      _bookId,
+      SeforimFixtureIds.rashiId,
+    ]);
+    expect(results.first.bookPath, isNotEmpty);
   });
 
   test('מסד מצורף אינו נחקר כשספרים אישיים אינם כלולים', () async {
@@ -148,16 +151,143 @@ void main() {
   });
 
   test('כינוי מ-book_acronym של המסד', () async {
-    await attach(createDb(withLineRef: true));
-    final results = attachedOnly(
-      await buildRepo().findRefs('זזז', includePersonalBooks: true),
+    final path = createDb(withLineRef: true);
+    final db = sqlite3.sqlite3.open(path);
+    db.execute(
+      "INSERT INTO book_acronym (bookId, term) VALUES (?, 'זזז זזז')",
+      [
+        _bookId,
+      ],
     );
-    expect(results.map((r) => r.bookId), [_bookId]);
+    db.close();
+    await attach(path);
+    final repo = buildRepo();
+    for (final query in ['זזז', 'זזז זזז']) {
+      final results = attachedOnly(
+        await repo.findRefs(query, includePersonalBooks: true),
+      );
+      expect(results.map((r) => r.bookId), [_bookId]);
+      expect(results.single.segment, 0);
+    }
     expect(AcronymsCache.instance.acronymsFor(_source, _bookId), isNotEmpty);
     expect(
       AcronymsCache.instance.acronymsFor(BookSource.official, _bookId),
       isNull,
     );
+  });
+
+  test('שגיאת כתיב בשם ספר ממסד מצורף — התאמה מקורבת', () async {
+    await attach(createDb(withLineRef: true));
+    final results = attachedOnly(
+      await buildRepo().findRefs('בראשיס', includePersonalBooks: true),
+    );
+    expect(results.map((r) => r.bookId), contains(_bookId));
+  });
+
+  test('זנב כינוי שאינו בכותרת מצמצם את תוכן העניינים לחלק', () async {
+    final path = createDb(withLineRef: false);
+    final db = sqlite3.sqlite3.open(path);
+    // שני חלקים, ובכל אחד כותרת 'ה'; הכינוי 'ספר בראשית יב' מציין את השני.
+    db.execute(
+      "INSERT INTO tocText (id, text) VALUES (910, 'יא'), (911, 'ה'), "
+      "(912, 'יב')",
+    );
+    db.execute(
+      'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId) '
+      'VALUES (910, ?1, NULL, 910, 1, 901), (911, ?1, 910, 911, 2, 901), '
+      '(912, ?1, NULL, 912, 1, 902), (913, ?1, 912, 911, 2, 902)',
+      [_bookId],
+    );
+    db.execute(
+      "INSERT INTO book_acronym (bookId, term) VALUES (?, 'ספר בראשית יב')",
+      [_bookId],
+    );
+    db.close();
+    await attach(path);
+
+    final results = attachedOnly(
+      await buildRepo().findRefs('ספר בראשית יב ה', includePersonalBooks: true),
+    );
+    final lineIds = results.map((r) => r.sourceLineId).toSet();
+    expect(lineIds, contains(902));
+    expect(lineIds, isNot(contains(901)));
+  });
+
+  test('זנב כינוי שאינו חלק בספר משאיר תוצאת ספר בלבד', () async {
+    final path = createDb(withLineRef: false);
+    final db = sqlite3.sqlite3.open(path);
+    db.execute("UPDATE book SET title = 'חזקוני' WHERE id = ?", [_bookId]);
+    final aliases = ['חזקוני על התורה', 'חזקוני על חומש'];
+    for (final alias in aliases) {
+      db.execute('INSERT INTO book_acronym (bookId, term) VALUES (?, ?)', [
+        _bookId,
+        alias,
+      ]);
+    }
+    db.close();
+    await attach(path);
+    final repo = buildRepo();
+    for (final alias in aliases) {
+      final results = attachedOnly(
+        await repo.findRefs(alias, includePersonalBooks: true),
+      );
+      expect(results.map((r) => (r.reference, r.segment)), [('חזקוני', 0)]);
+    }
+  });
+
+  test('כינוי של חלק בטור פותח את החלק גם בלי סעיף נוסף', () async {
+    final path = createDb(withLineRef: false);
+    final db = sqlite3.sqlite3.open(path);
+    db.execute("UPDATE book SET title = 'טור' WHERE id = ?", [_bookId]);
+    final sections = [
+      ('יורה דעה', 1409),
+      ('חושן משפט', 2593),
+      ('אבן העזר', 2223),
+    ];
+    for (final (index, (title, segment)) in sections.indexed) {
+      final id = 910 + index;
+      db.execute(
+        'INSERT INTO line (id, bookId, lineIndex, content) VALUES (?, ?, ?, ?)',
+        [id, _bookId, segment, title],
+      );
+      db.execute('INSERT INTO tocText (id, text) VALUES (?, ?)', [id, title]);
+      db.execute(
+        'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId) '
+        'VALUES (?, ?, NULL, ?, 1, ?)',
+        [id, _bookId, id, id],
+      );
+      db.execute('INSERT INTO book_acronym (bookId, term) VALUES (?, ?)', [
+        _bookId,
+        'טור $title',
+      ]);
+    }
+    db.execute(
+      'INSERT INTO line (id, bookId, lineIndex, content) VALUES (915, ?, 1410, ?)',
+      [_bookId, 'סימן א'],
+    );
+    db.execute("INSERT INTO tocText (id, text) VALUES (915, 'א')");
+    db.execute(
+      'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId) '
+      'VALUES (915, ?, 910, 915, 2, 915)',
+      [_bookId],
+    );
+    db.close();
+    await attach(path);
+    final repo = buildRepo();
+    for (final (title, segment) in sections) {
+      final results = attachedOnly(
+        await repo.findRefs('טור $title', includePersonalBooks: true),
+      );
+      expect(results.map((r) => (r.reference, r.segment)), [
+        ('טור $title', segment),
+      ]);
+    }
+    final chapter = attachedOnly(
+      await repo.findRefs('טור יורה דעה א', includePersonalBooks: true),
+    );
+    expect(chapter.map((r) => (r.reference, r.segment)), [
+      ('טור יורה דעה א', 1410),
+    ]);
   });
 
   test('ספר רשמי וספר מצורף באותו id וכותרת אינם מתאחדים', () async {
@@ -207,9 +337,9 @@ void main() {
   });
 
   test('תקרת ספרים לשלב תוכן העניינים', () async {
-    final previous = FindRefRepository.maxAttachedTocBooks;
-    addTearDown(() => FindRefRepository.maxAttachedTocBooks = previous);
-    FindRefRepository.maxAttachedTocBooks = 0;
+    final previous = FindRefRepository.maxSecondaryTocLookups;
+    addTearDown(() => FindRefRepository.maxSecondaryTocLookups = previous);
+    FindRefRepository.maxSecondaryTocLookups = 0;
     await attach(createDb(withLineRef: false));
     final results = attachedOnly(
       await buildRepo().findRefs('$_title ג', includePersonalBooks: true),
@@ -251,6 +381,42 @@ void main() {
         greaterThan(0),
       );
     });
+
+    test(
+      'timeout של עבודת רקע אינו משבית את המסד ואינו נוטש את ה-worker',
+      () async {
+        final path = createDb(withLineRef: false);
+        final previous = AttachedFindRefWorker.callTimeout;
+        addTearDown(() {
+          AttachedFindRefWorker.callTimeout = previous;
+          AttachedFindRefWorker.instance.reset();
+        });
+        AttachedFindRefWorker.callTimeout = const Duration(milliseconds: 300);
+        final worker = AttachedFindRefWorker.instance;
+
+        await expectLater(
+          worker.run(
+            path,
+            immutable: false,
+            version: '',
+            job: _slowJob,
+            background: true,
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+        // העבודה האיטית ממשיכה; הבאה בתור ממתינה לה ולא נדחית.
+        AttachedFindRefWorker.callTimeout = const Duration(seconds: 5);
+        expect(
+          await worker.run(
+            path,
+            immutable: false,
+            version: '',
+            job: _countBooksJob,
+          ),
+          greaterThan(0),
+        );
+      },
+    );
 
     test('עבודה מאוגדת מקבלת תוספת קטנה לכל שאילתה, לא כפולה', () async {
       final path = createDb(withLineRef: false);
