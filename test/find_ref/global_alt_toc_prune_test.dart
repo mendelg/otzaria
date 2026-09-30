@@ -202,6 +202,18 @@ void main() {
     );
   });
 
+  test('צאצאי דף המדורגים לפני האב אינם תופסים את מכסת הספר', () {
+    final matches = [
+      key(1, 'כרך א', segment: 0),
+      for (var i = 1; i <= 250; i++) key(1, 'כרך א דף $i', segment: i),
+      key(1, 'חלק א כרך אחר', segment: 999),
+    ];
+    expect(
+      select(matches, queryTokens: const ['כרך', 'א'], perBookCap: 2),
+      ['1:כרך א', '1:חלק א כרך אחר'],
+    );
+  });
+
   test('ספר מוסתר אינו נבחר ואינו תופס מקום', () {
     final matches = [
       for (var book = 1; book <= 3; book++) key(book, 'פרק א', segment: 1),

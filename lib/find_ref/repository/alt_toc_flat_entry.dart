@@ -459,22 +459,22 @@ _BookRows<T> _rankedBookRows<T>(
       replacers: replacers,
     );
   }
-  // צאצא של התאמה נזרק. הבדיקה אינה תלויה בשורות אחרות שנזרקו, ולכן די
-  // לבדוק את מי שמגיע לראש הדירוג.
-  while (true) {
-    final top = _firstRanked(rows, perBookCap, compare);
-    final descendants = Set<FindRefRankKey<T>>.identity()
-      ..addAll(
-        top.where(
-          (r) => _hasAncestorIn(r.reference, keptReferences, keptLengths),
-        ),
-      );
-    if (descendants.isEmpty) return (ranked: top, replacers: replacers);
-    rows = [
-      for (final r in rows)
-        if (!descendants.contains(r)) r,
-    ];
+  final top = _firstRanked(rows, perBookCap, compare);
+  if (!top.any(
+    (row) => _hasAncestorIn(row.reference, keptReferences, keptLengths),
+  )) {
+    return (ranked: top, replacers: replacers);
   }
+  // בציון דף צאצאים עשויים להיות מדורגים לפני האב, ולכן מסננים את כולם
+  // לפני הבחירה כדי שלא לדרג שוב ושוב את אותה רשימה.
+  rows = [
+    for (final row in rows)
+      if (!_hasAncestorIn(row.reference, keptReferences, keptLengths)) row,
+  ];
+  return (
+    ranked: _firstRanked(rows, perBookCap, compare),
+    replacers: replacers,
+  );
 }
 
 /// [count] הראשונות לפי [compare], ממוינות — בלי למיין את כל הרשימה.
