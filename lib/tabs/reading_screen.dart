@@ -125,6 +125,34 @@ class _ReadingScreenState extends State<ReadingScreen>
     super.dispose();
   }
 
+  /// Handing Flutter the same widget instance skips rebuilding that subtree, so
+  /// a tab switch only rebuilds the tabs whose content actually changed.
+  final Map<OpenedTab, ({bool enableTourTargets, Widget view})> _tabViewCache =
+      Map.identity();
+  int? _tabViewCacheCounter;
+
+  Widget _cachedTabView(OpenedTab tab, {required bool enableTourTargets}) {
+    final cached = _tabViewCache[tab];
+    if (cached != null && cached.enableTourTargets == enableTourTargets) {
+      return cached.view;
+    }
+    final view = _buildTabView(tab, enableTourTargets: enableTourTargets);
+    _tabViewCache[tab] = (enableTourTargets: enableTourTargets, view: view);
+    return view;
+  }
+
+  void _pruneTabViewCache(TabsState state) {
+    // updateCounter marks tabs mutated in place (pin, split ratio); their
+    // content must be rebuilt.
+    if (_tabViewCacheCounter != state.updateCounter) {
+      _tabViewCacheCounter = state.updateCounter;
+      _tabViewCache.clear();
+      return;
+    }
+    final open = Set<OpenedTab>.identity()..addAll(state.tabs);
+    _tabViewCache.removeWhere((tab, _) => !open.contains(tab));
+  }
+
   void _ensurePageController(int initialIndex) {
     _pageController ??= PageController(initialPage: initialIndex);
   }
@@ -397,6 +425,7 @@ class _ReadingScreenState extends State<ReadingScreen>
           }
           // שינוי כרטיסיות באותו אורך אינו מגיע ל-BlocListener.
           TabContentBoundaries.instance.retainOnly(state.tabs);
+          _pruneTabViewCache(state);
           return Theme(
             data: Theme.of(context).copyWith(
               scaffoldBackgroundColor: readerBg,
@@ -472,7 +501,7 @@ class _ReadingScreenState extends State<ReadingScreen>
                                       key: TabContentBoundaries.instance.keyFor(
                                         state.tabs[i],
                                       ),
-                                      child: _buildTabView(
+                                      child: _cachedTabView(
                                         state.tabs[i],
                                         enableTourTargets: i == validIndex,
                                       ),
