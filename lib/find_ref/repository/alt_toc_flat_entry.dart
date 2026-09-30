@@ -79,10 +79,21 @@ typedef AltTocResultKey = ({
   String reference,
 });
 
-/// תקרת השורות לכל ספר ב-fallback הגלובלי של שאילתה מרובת מילים: בלי שם ספר
-/// כל שורות הספר שוות-רלוונטיות, והרחבת ה-cap לשוויון הציפה ספר אחד בעשרות
-/// שורות. 2 שומר את שני העמודים של "מאימתי דף ב".
+/// בלי שם ספר כל שורות הספר שוות-רלוונטיות, והרחבת ה-cap לשוויון הציפה ספר
+/// אחד בעשרות שורות ("סעיף א") — לכן לכל ספר רק הראשונות.
 const int globalAltTocDiversityCap = 2;
+
+/// תקרת השורות לכל ספר ב-fallback הגלובלי. ציון דף אינו מוגבל: סדר התצוגה
+/// (אורך) מעדיף את "דף א:" ואת "דף ב." על "דף ב:" המבוקש.
+int globalAltTocPerBookCap(
+  List<String> queryTokens, {
+  required bool singleWord,
+}) =>
+    singleWord ||
+        queryTokens.contains('דף') ||
+        queryLooksDafCitation(queryTokens)
+    ? findRefMaxResultCap
+    : globalAltTocDiversityCap;
 
 /// בקשת ה-fallback הגלובלי: השאילתה, והמצב שמשפיע על הבחירה ב-worker.
 class GlobalAltTocRequest {

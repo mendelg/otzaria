@@ -424,6 +424,29 @@ void main() {
       );
     });
 
+    test('ציון דף בלי שם ספר שומר את "דף ב:" בירושלמי', () async {
+      // כמו בירושלמי: "דף א:" ו-"דף ב." מכילים "דף" ו-"ב", ובאותו אורך.
+      seedLibrary(const [
+        (id: 140, title: 'תלמוד ירושלמי ברכות', acronyms: []),
+        (id: 141, title: 'תלמוד ירושלמי פאה', acronyms: []),
+      ]);
+      final rows = [
+        for (final (id, title) in [
+          (140, 'תלמוד ירושלמי ברכות'),
+          (141, 'תלמוד ירושלמי פאה'),
+        ]) ...[
+          row(id, 'מאימתי דף א:', id * 10 + 1, title: title),
+          row(id, 'מאימתי דף ב.', id * 10 + 2, title: title),
+          row(id, 'מאימתי דף ב:', id * 10 + 3, title: title),
+        ],
+      ];
+      for (final query in ['מאימתי דף ב', 'דף ב']) {
+        final results = await run(query, rows, truncate: true);
+        expect(results, contains('140|תלמוד ירושלמי ברכות מאימתי דף ב:|1403'));
+        expect(results, contains('141|תלמוד ירושלמי פאה מאימתי דף ב:|1413'));
+      }
+    });
+
     test('בלי שם ספר: מעט שורות לכל ספר, וספר יסוד מאוחר בסדר ראשון', () async {
       seedLibrary(
         const [

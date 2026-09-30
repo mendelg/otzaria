@@ -758,7 +758,10 @@ class FindRefRepository {
         replaceable: replaceable,
         hiddenBookIds: visibility?.hiddenOfficialTextIds ?? const {},
         bookRanks: await _altBookRanks(),
-        perBookCap: singleWord ? findRefMaxResultCap : globalAltTocDiversityCap,
+        perBookCap: globalAltTocPerBookCap(
+          queryTokens,
+          singleWord: singleWord,
+        ),
         substringQuota: singleWord ? _substringTailQuota : 0,
       );
 
