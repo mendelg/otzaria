@@ -246,7 +246,12 @@ void main() {
 
   // ב-Windows החלון מאבד פוקוס בעוד שה-lifecycle עדיין resumed (issue #1585).
   testWidgets('מעבר לחלון אחר שומר את הבחירה', (tester) async {
-    await pumpView(tester);
+    final otherFocus = FocusNode();
+    addTearDown(otherFocus.dispose);
+    await pumpView(
+      tester,
+      sibling: Focus(focusNode: otherFocus, child: const SizedBox.shrink()),
+    );
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await selectWord(tester);
 
@@ -269,6 +274,10 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(selectedText(tester), 'מילה8');
+
+    otherFocus.requestFocus();
+    await tester.pumpAndSettle();
+    expect(selectedText(tester), isEmpty);
   });
 
   testWidgets('מעבר פוקוס לרכיב אחר באפליקציה מנקה את הבחירה', (tester) async {

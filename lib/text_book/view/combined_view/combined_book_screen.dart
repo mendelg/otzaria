@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter/gestures.dart' show kPrimaryMouseButton;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:otzaria/text_book/utils/visible_index.dart';
 
 import 'package:flutter/services.dart';
@@ -3168,7 +3169,8 @@ class _CombinedViewState extends State<CombinedView> {
 class _KeepSelectionOnWindowBlurFocusNode extends FocusNode {
   @override
   void notifyListeners() {
-    if (FocusManager.instance.primaryFocus == FocusManager.instance.rootScope) {
+    if (SchedulerBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+        FocusManager.instance.primaryFocus == FocusManager.instance.rootScope) {
       return;
     }
     super.notifyListeners();
