@@ -17,6 +17,10 @@ class PluginSafeMode {
 
   static bool get isActive => active.value;
 
+  /// Safe mode was turned on because the previous launches crashed while
+  /// starting, not by the user.
+  static bool enteredAfterCrashes = false;
+
   static const String _markerFileName = 'safe_mode_session.json';
 
   /// Called once from main(); reads the flag only, with no file access.
@@ -62,7 +66,10 @@ class PluginSafeMode {
       File(p.join(await AppPaths.getDataRootPath(), _markerFileName));
 
   @visibleForTesting
-  static void resetForTesting() => active.value = false;
+  static void resetForTesting() {
+    active.value = false;
+    enteredAfterCrashes = false;
+  }
 }
 
 /// Whether [arg] is `--safe-mode` (also `/safe-mode`, bare, or with `_`).

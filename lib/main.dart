@@ -17,6 +17,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:otzaria/plugins/view/safe_mode_controls.dart';
+import 'package:otzaria/plugins/services/startup_crash_counter.dart';
 import 'package:otzaria/attached_libraries/bloc/attached_libraries_bloc.dart';
 import 'package:otzaria/attached_libraries/repository/attached_libraries_repository.dart';
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
@@ -910,12 +912,19 @@ Future<void> _initializeRestartableRuntime() async {
   if (WindowRole.isSecondary) {
     await PluginSafeMode.initForSecondaryWindow();
   } else {
+    final earlyEnds = await StartupCrashCounter.recordLaunch();
+    if (earlyEnds >= StartupCrashCounter.safeModeThreshold &&
+        !PluginSafeMode.isActive) {
+      PluginSafeMode.active.value = true;
+      PluginSafeMode.enteredAfterCrashes = true;
+    }
     unawaited(PluginSafeMode.publishForSecondaryWindows());
   }
 
   // אינם נחוצים להצגת ה-UI הראשי. unawaited לבדו אינו דוחה: הקוד שעד ה-await
   // הראשון בכל אחד מהם רץ כאן, ולכן עבודה סינכרונית חייבת לחכות לחשיפה בעצמה.
   unawaited(_runDeferredAutoBackup());
+  unawaited(_runDeferredStartupStability());
   unawaited(_runDeferredRestoreWindows());
   unawaited(_runDeferredProtocolRegistration());
   unawaited(_runDeferredSwapRecovery());
@@ -1104,6 +1113,39 @@ Future<void> _runDeferredCrashCheck() async {
     ).handle(candidate);
   } catch (error, stackTrace) {
     _logNonFatalInitializationError('Crash report check', error, stackTrace);
+  }
+}
+
+/// Clears the startup crash count once the app has run stably, and explains
+/// a safe mode that was entered because of it.
+Future<void> _runDeferredStartupStability() async {
+  // Per process: the count belongs to the main window's launch.
+  if (WindowRole.isSecondary) return;
+  try {
+    await _mainWindowRevealedCompleter.future.timeout(
+      const Duration(seconds: 20),
+    );
+  } on TimeoutException {
+    // Continue anyway, or a slow reveal would count as a crash.
+  }
+  try {
+    if (PluginSafeMode.enteredAfterCrashes) {
+      final context = navigatorKey.currentContext;
+      // Not awaited: a dialog left open must not keep the run from counting
+      // as stable.
+      if (context != null && context.mounted) {
+        unawaited(showSafeModeAfterCrashesDialog(context));
+      }
+    }
+    // Mobile has no window close event; leaving the app shows it ran fine.
+    final lifecycle = AppLifecycleListener(
+      onPause: () => unawaited(StartupCrashCounter.markStable()),
+    );
+    await Future<void>.delayed(StartupCrashCounter.stableAfter);
+    lifecycle.dispose();
+    await StartupCrashCounter.markStable();
+  } catch (error, stackTrace) {
+    _logNonFatalInitializationError('Startup stability', error, stackTrace);
   }
 }
 

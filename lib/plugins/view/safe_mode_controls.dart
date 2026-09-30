@@ -24,7 +24,12 @@ Future<void> restartWithSafeMode(
     confirmText: 'הפעל מחדש',
   );
   if (confirmed != true || !context.mounted) return;
-  await PluginSafeMode.set(on);
+  await _restart(context, safeMode: on);
+}
+
+Future<void> _restart(BuildContext context, {required bool safeMode}) async {
+  await PluginSafeMode.set(safeMode);
+  PluginSafeMode.enteredAfterCrashes = false;
   await resetRuntimeStateForAppRestart();
   if (!context.mounted) return;
   MultiWindowService.restartPeers();
@@ -32,6 +37,24 @@ Future<void> restartWithSafeMode(
     context,
     afterRestart: WebViewEnvironmentHolder.disposeForAppRestart,
   );
+}
+
+/// Explains that safe mode started on its own after crashes while starting,
+/// and offers a normal restart.
+Future<void> showSafeModeAfterCrashesDialog(BuildContext context) async {
+  final restartNormally = await showConfirmationDialog(
+    context: context,
+    title: 'אוצריא הופעלה במצב בטוח',
+    content:
+        'התוכנה נסגרה באופן לא צפוי פעמיים ברציפות בזמן הפתיחה, ולכן הופעלה '
+        'הפעם בלי תוספים. אם תוסף גורם לתקלה, אפשר להשבית אותו בהגדרות ← '
+        'ניהול כלים, ואחר כך להפעיל מחדש כרגיל.',
+    cancelText: 'הישאר במצב בטוח',
+    confirmText: 'הפעל מחדש כרגיל',
+  );
+  if (restartNormally == true && context.mounted) {
+    await _restart(context, safeMode: false);
+  }
 }
 
 /// Title bar chip shown while safe mode is on; tapping it offers a normal
