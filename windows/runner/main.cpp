@@ -335,6 +335,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   }
 
   flutter::DartProject project(L"data");
+  // Impeller compiles every shader through ANGLE before the first frame, with
+  // no disk cache: ~2s on each launch (#1565, flutter/flutter#191860).
+  // TODO: Please follow: https://github.com/flutter/flutter/issues/191860
+  // https://github.com/Otzaria/otzaria/issues/1565
+  project.set_impeller_switch(flutter::ImpellerSwitch::Disabled);
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
