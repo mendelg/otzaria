@@ -8,6 +8,7 @@ import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_ranking.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
+import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart';
 import 'package:path/path.dart' as path;
@@ -208,6 +209,61 @@ void main() {
       ),
       ['1:נח', '3:נח'],
     );
+  });
+
+  test('מסכת הטוקנים אינה פוסלת ערך שמכיל את כל טוקני השאילתה', () {
+    final random = Random(7);
+    const vocabulary = ['א', 'ב', 'סעיף', 'סימן', 'דף', 'עא', 'נח', 'פרשת'];
+    for (var i = 0; i < 2000; i++) {
+      final ref = [
+        for (var j = 0; j < 1 + random.nextInt(6); j++)
+          vocabulary[random.nextInt(vocabulary.length)],
+      ];
+      final query = [
+        for (var j = 0; j < 1 + random.nextInt(3); j++)
+          vocabulary[random.nextInt(vocabulary.length)],
+      ];
+      if (!altTocFlatMatches(ref, query)) continue;
+      final queryMask = altTocTokenMask(query);
+      expect(altTocTokenMask(ref) & queryMask, queryMask);
+    }
+  });
+
+  test('הנתיב עם שם הספר זהה ל-qualifyAltTocReference', () {
+    const book = AltTocBook(1, 'ספר חמש', 1);
+    AltTocIndexEntry entry(String text, [AltTocIndexEntry? parent]) =>
+        AltTocIndexEntry(
+          id: 0,
+          book: book,
+          parent: parent,
+          text: text,
+          segment: 0,
+          level: 0,
+          dbLineId: 0,
+          ownTokens: const [],
+        );
+    final root = entry('פרק א');
+    final titled = entry('ספר');
+    final empty = entry('', root);
+    final entries = [
+      root,
+      entry('סימן ב', root),
+      entry('ספר חמש'),
+      entry('חמש', titled),
+      entry('חמש סימן', titled),
+      entry('ספר חמשה', root),
+      empty,
+      entry('סעיף', empty),
+      entry('', entry('')),
+    ];
+    final references = AltTocQualifiedReferences();
+    for (final e in entries) {
+      expect(
+        references.of(e),
+        qualifyAltTocReference(book.title, e.reference),
+        reason: e.reference,
+      );
+    }
   });
 
   group('הרשימה הסופית זהה עם חיתוך ב-worker ובלעדיו', () {

@@ -732,8 +732,47 @@ class _AltTocFlatBuild {
     final end = math.min(_normalized + _normalizeChunk, entries.length);
     for (; _normalized < end; _normalized++) {
       final entry = entries[_normalized];
-      entry.refTokens = _source.refTokensOf(entry);
+      final refTokens = entry.refTokens = _source.refTokensOf(entry);
+      entry.refTokenMask = altTocTokenMask(refTokens);
     }
+  }
+}
+
+/// [qualifyAltTocReference] של [AltTocIndexEntry.reference] בשרשור אחד לערך:
+/// נתיבי האבות נשמרים, גם עם שם הספר.
+class AltTocQualifiedReferences {
+  final Map<AltTocIndexEntry, String> _paths = {};
+  final Map<AltTocIndexEntry, String> _qualifiedPaths = {};
+
+  String of(AltTocIndexEntry entry) {
+    final title = entry.book.title;
+    final parent = entry.parent;
+    final text = entry.text;
+    if (parent == null || text.isEmpty || title.isEmpty) {
+      return qualifyAltTocReference(title, entry.referenceUsing(_paths));
+    }
+    final parentPath = parent.pathUsing(_paths);
+    if (parentPath.isEmpty) return qualifyAltTocReference(title, text);
+    if (_startsWithTitle(parentPath, text, title)) return '$parentPath $text';
+    final qualified = _qualifiedPaths[parent] ??= '$title $parentPath';
+    return '$qualified $text';
+  }
+
+  /// האם "$parentPath $text" הוא [title] או מתחיל ב-"$title " — אז
+  /// [qualifyAltTocReference] לא מצרף את שם הספר.
+  static bool _startsWithTitle(String parentPath, String text, String title) {
+    final length = parentPath.length + 1 + text.length;
+    if (length < title.length) return false;
+    int unitAt(int i) => i < parentPath.length
+        ? parentPath.codeUnitAt(i)
+        : i == parentPath.length
+        ? 0x20
+        : text.codeUnitAt(i - parentPath.length - 1);
+    if (length > title.length && unitAt(title.length) != 0x20) return false;
+    for (var i = 0; i < title.length; i++) {
+      if (unitAt(i) != title.codeUnitAt(i)) return false;
+    }
+    return true;
   }
 }
 
@@ -1011,16 +1050,24 @@ void _workerMain(_Bootstrap bootstrap) {
           bookRanksVersion = ranksVersion;
         }
         final dafCitation = parseDafCitationFromDafToken(request.queryTokens);
+        // אחרי "דף" הכתיבים נבדקים מיקומית, ולכן אינם נדרשים כטוקנים במסכה.
+        final queryMask = altTocTokenMask(
+          dafCitation == null
+              ? request.queryTokens
+              : request.queryTokens.takeWhile((t) => t != 'דף'),
+        );
         final matches = [
           for (final e in cache)
-            if (altTocFlatMatches(
-              e.refTokens,
-              request.queryTokens,
-              maxRefTokens: request.maxRefTokens,
-              dafCitation: dafCitation,
-            ))
+            if (e.refTokenMask & queryMask == queryMask &&
+                altTocFlatMatches(
+                  e.refTokens,
+                  request.queryTokens,
+                  maxRefTokens: request.maxRefTokens,
+                  dafCitation: dafCitation,
+                ))
               e,
         ];
+        final references = AltTocQualifiedReferences();
         final rows = [
           for (final e in selectGlobalAltTocMatches(
             matches,
@@ -1029,8 +1076,7 @@ void _workerMain(_Bootstrap bootstrap) {
             bookTitleOf: (e) => e.book.title,
             orderIndexOf: (e) => e.book.orderIndex,
             segmentOf: (e) => e.segment,
-            referenceOf: (e) =>
-                qualifyAltTocReference(e.book.title, e.reference),
+            referenceOf: references.of,
           ))
             e.toFlatRow(),
         ];

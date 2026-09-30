@@ -61,6 +61,16 @@ bool altTocFlatMatches(
   return true;
 }
 
+/// ביט לכל טוקן לפי ה-hash שלו: ערך שחסר בו ביט של טוקן בשאילתה אינו מכיל
+/// את הטוקן, וכך רוב הספרייה נפסלת בלי השוואת מחרוזות.
+int altTocTokenMask(Iterable<String> tokens) {
+  var mask = 0;
+  for (final token in tokens) {
+    mask |= 1 << (token.hashCode & 63);
+  }
+  return mask;
+}
+
 /// מפתח תוצאה לצמצום ה-fallback הגלובלי; [reference] כפי שהוא מוצג (עם שם הספר).
 typedef AltTocResultKey = ({
   int bookId,
@@ -481,7 +491,12 @@ AltTocResultKey decodeAltTocResultKey(Map<dynamic, dynamic> map) => (
 String qualifyAltTocReference(String bookTitle, String reference) {
   if (bookTitle.isEmpty) return reference;
   if (reference == bookTitle) return reference;
-  if (reference.startsWith('$bookTitle ')) return reference;
+  // "מתחיל ב-'$bookTitle '" בלי לבנות מחרוזת לכל ערך.
+  if (reference.length > bookTitle.length &&
+      reference.codeUnitAt(bookTitle.length) == 0x20 &&
+      reference.startsWith(bookTitle)) {
+    return reference;
+  }
   return '$bookTitle $reference';
 }
 
