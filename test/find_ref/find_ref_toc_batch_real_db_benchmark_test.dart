@@ -5,6 +5,7 @@ import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/data/cache/acronyms_cache.dart';
 import 'package:otzaria/data/cache/books_cache.dart';
+import 'package:otzaria/find_ref/repository/alt_toc_flat_entry.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_factory.dart';
 import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
@@ -106,10 +107,14 @@ void main() {
         ['פרק', 'א'],
         ['סימן', 'א'],
         ['הלכות', 'שבת'],
+        ['כרך', 'א'],
+        ['כרך', 'ב'],
       ];
       for (final tokens in altQueries) {
         final stopwatch = Stopwatch()..start();
-        final rows = await worker.searchAltTocFlat(tokens);
+        final rows = await worker.searchAltTocFlat(
+          GlobalAltTocRequest(queryTokens: tokens),
+        );
         debugPrint(
           'bench alt#${altQueries.indexOf(tokens)} rows=${rows.length} '
           'ms=${stopwatch.elapsedMilliseconds}',
@@ -145,6 +150,8 @@ void main() {
         'שמות כ',
         'ירושלמי ברכות',
         'ברכות ב ע"א',
+        'כרך א',
+        'כרך ב',
       ];
       final outPath = Platform.environment['OTZARIA_BENCH_OUT'];
       final out = StringBuffer();

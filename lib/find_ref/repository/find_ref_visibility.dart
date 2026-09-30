@@ -41,6 +41,12 @@ class FindRefVisibility {
 
   bool allowsBook(Book book) => !_hiddenBooks.contains(book);
 
+  /// מזהי ספרי הטקסט הרשמיים המוסתרים — [allowsCandidate] של ספר רשמי בלי נתיב.
+  Set<int> get hiddenOfficialTextIds => {
+    for (final (source, id) in _hiddenTextIds)
+      if (source == BookSource.official) id,
+  };
+
   bool allowsCandidate(
     BookSource source,
     int bookId,

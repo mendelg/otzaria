@@ -4,6 +4,7 @@ import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
+import 'package:otzaria/find_ref/repository/alt_toc_flat_entry.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
@@ -180,17 +181,23 @@ void main() {
           ['דף', 'מג', 'עמוד', amud],
           ['אלו', 'טרפות', 'דף', 'מג', amud],
         ]) {
-          final rows = await isolate.searchAltTocFlat(tokens);
+          final rows = await isolate.searchAltTocFlat(
+            GlobalAltTocRequest(queryTokens: tokens),
+          );
           expect(rows.map((r) => r['reference']), [
             'אלו טרפות דף מג ע"$amud',
           ]);
         }
         expect(
-          await isolate.searchAltTocFlat(['מאימתי', 'דף', 'מג', amud]),
+          await isolate.searchAltTocFlat(
+            GlobalAltTocRequest(queryTokens: ['מאימתי', 'דף', 'מג', amud]),
+          ),
           isEmpty,
         );
         expect(
-          await isolate.searchAltTocFlat(['דף', 'מד', amud]),
+          await isolate.searchAltTocFlat(
+            GlobalAltTocRequest(queryTokens: ['דף', 'מד', amud]),
+          ),
           isEmpty,
         );
       });
@@ -209,7 +216,9 @@ void main() {
       final isolate = await FindRefDbIsolate.instance();
       addTearDown(isolate.disposeForTesting);
 
-      final rows = await isolate.searchAltTocFlat(const ['דף', 'ב', 'א']);
+      final rows = await isolate.searchAltTocFlat(
+        const GlobalAltTocRequest(queryTokens: ['דף', 'ב', 'א']),
+      );
       expect(rows.map((r) => r['reference']), equals(['מאימתי דף ב.']));
     });
   });

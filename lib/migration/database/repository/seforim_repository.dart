@@ -3889,6 +3889,9 @@ final class AltTocIndexEntry implements _TocSpan {
   /// טוקני [reference] המנורמל כמחרוזת אחת — נקבעים רק בקאש הגלובלי.
   late final List<String> refTokens;
 
+  /// [altTocTokenMask] של [refTokens] — סינון מהיר לפני בדיקת הטוקנים.
+  late final int refTokenMask;
+
   String get _path {
     final parentPath = parent?._path ?? '';
     return parentPath.isEmpty ? text : '$parentPath $text';
@@ -3896,6 +3899,21 @@ final class AltTocIndexEntry implements _TocSpan {
 
   /// הנתיב המלא, יחסי לספר (בלי שם הספר), למשל "פרשת לך לך עליה ו".
   String get reference => text.isEmpty ? (parent?._path ?? '') : _path;
+
+  /// [reference], עם נתיבי האבות מ-[paths] — לערכים רבים מאותו עץ.
+  String referenceUsing(Map<AltTocIndexEntry, String> paths) {
+    final parentPath = parent?.pathUsing(paths) ?? '';
+    if (text.isEmpty) return parentPath;
+    return parentPath.isEmpty ? text : '$parentPath $text';
+  }
+
+  /// הנתיב שממנו נבנה [reference] של ילדיו, נשמר ב-[paths].
+  String pathUsing(Map<AltTocIndexEntry, String> paths) {
+    final cached = paths[this];
+    if (cached != null) return cached;
+    final parentPath = parent?.pathUsing(paths) ?? '';
+    return paths[this] = parentPath.isEmpty ? text : '$parentPath $text';
+  }
 
   List<String> get pathTokens => [...?parent?.pathTokens, ...ownTokens];
 

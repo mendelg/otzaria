@@ -7,6 +7,7 @@ import 'package:otzaria/core/error_log_file.dart';
 import 'package:otzaria/data/cache/acronym_cache_data.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/find_ref/repository/alt_toc_flat_entry.dart';
+import 'package:otzaria/find_ref/repository/find_ref_ranking.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
@@ -262,28 +263,41 @@ class FindRefDbIsolate {
     return _castRows(res);
   }
 
-  /// מסנן את קאש ה-AltToc השטוח **בתוך ה-worker** ומחזיר רק את ההתאמות,
-  /// מצומצמות ב-[pruneGlobalAltTocMatches] — הקאש כולו לא חוצה את גבול ה-isolate.
+  /// מסנן את קאש ה-AltToc השטוח **בתוך ה-worker** ומחזיר רק את מה שהדירוג
+  /// יכול להציג ([selectGlobalAltTocMatches]) — הקאש לא חוצה את גבול ה-isolate.
   Future<List<Map<String, dynamic>>> searchAltTocFlat(
-    List<String> queryTokens, {
-    int? maxRefTokens,
-    List<AltTocResultKey> occupied = const [],
+    GlobalAltTocRequest request, {
     int searchScope = 0,
     int? searchEpoch,
   }) async {
+    // הטבלה נשלחת רק כשתוכנה התחלף (כל repository בונה עותק משלו); worker
+    // שאין לו אותה (בקשה שבוטלה בתור) מדווח, והיא נשלחת שוב.
+    final sent = _sentBookRanks;
+    final send =
+        sent == null ||
+        !identical(request.bookRanks, sent) &&
+            !mapEquals(request.bookRanks, sent);
+    if (send) {
+      _sentBookRanks = request.bookRanks;
+      _bookRanksVersion++;
+    }
     final res = await _request(
       'searchAltTocFlat',
       {
-        'queryTokens': queryTokens,
-        'maxRefTokens': maxRefTokens,
-        'occupied': [for (final key in occupied) encodeAltTocResultKey(key)],
+        ...request.encode(includeBookRanks: send),
+        'bookRanksVersion': _bookRanksVersion,
       },
       cancellable: true,
       searchScope: searchScope,
       searchEpoch: searchEpoch,
     );
-    return _castRows(res);
+    final reply = res as Map;
+    if (reply['bookRanksMissing'] == true) _sentBookRanks = null;
+    return _castRows(reply['rows']);
   }
+
+  Map<int, ({String title, FindRefBookRank rank})>? _sentBookRanks;
+  int _bookRanksVersion = 0;
 
   /// בונה מראש את קאש ה-AltToc השטוח בתוך ה-worker, כדי שהחיפוש הראשון
   /// לא ישלם את המחיר. רץ בנתיב הרקע במקטעים, כך שאינו מעכב בקשות אחרות.
@@ -722,8 +736,47 @@ class _AltTocFlatBuild {
     final end = math.min(_normalized + _normalizeChunk, entries.length);
     for (; _normalized < end; _normalized++) {
       final entry = entries[_normalized];
-      entry.refTokens = _source.refTokensOf(entry);
+      final refTokens = entry.refTokens = _source.refTokensOf(entry);
+      entry.refTokenMask = altTocTokenMask(refTokens);
     }
+  }
+}
+
+/// [qualifyAltTocReference] של [AltTocIndexEntry.reference] בשרשור אחד לערך:
+/// נתיבי האבות נשמרים, גם עם שם הספר.
+class AltTocQualifiedReferences {
+  final Map<AltTocIndexEntry, String> _paths = {};
+  final Map<AltTocIndexEntry, String> _qualifiedPaths = {};
+
+  String of(AltTocIndexEntry entry) {
+    final title = entry.book.title;
+    final parent = entry.parent;
+    final text = entry.text;
+    if (parent == null || text.isEmpty || title.isEmpty) {
+      return qualifyAltTocReference(title, entry.referenceUsing(_paths));
+    }
+    final parentPath = parent.pathUsing(_paths);
+    if (parentPath.isEmpty) return qualifyAltTocReference(title, text);
+    if (_startsWithTitle(parentPath, text, title)) return '$parentPath $text';
+    final qualified = _qualifiedPaths[parent] ??= '$title $parentPath';
+    return '$qualified $text';
+  }
+
+  /// האם "$parentPath $text" הוא [title] או מתחיל ב-"$title " — אז
+  /// [qualifyAltTocReference] לא מצרף את שם הספר.
+  static bool _startsWithTitle(String parentPath, String text, String title) {
+    final length = parentPath.length + 1 + text.length;
+    if (length < title.length) return false;
+    int unitAt(int i) => i < parentPath.length
+        ? parentPath.codeUnitAt(i)
+        : i == parentPath.length
+        ? 0x20
+        : text.codeUnitAt(i - parentPath.length - 1);
+    if (length > title.length && unitAt(title.length) != 0x20) return false;
+    for (var i = 0; i < title.length; i++) {
+      if (unitAt(i) != title.codeUnitAt(i)) return false;
+    }
+    return true;
   }
 }
 
@@ -789,6 +842,11 @@ void _workerMain(_Bootstrap bootstrap) {
   // את פקודת searchAltTocFlat. חי עד reset (רענון/החלפת ספרייה).
   List<AltTocIndexEntry>? altTocFlatCache;
   _AltTocFlatBuild? altTocBuild;
+
+  // דירוג הספרים מ-main (ראו GlobalAltTocRequest.bookRanks); אינו נגזר מהמסד
+  // ולכן שורד reset — ספרייה חדשה מביאה טבלה חדשה.
+  Map<int, ({String title, FindRefBookRank rank})> bookRanks = const {};
+  int? bookRanksVersion;
 
   Future<SeforimRepository?> ensureRepo() async {
     if (suspended) return null;
@@ -984,38 +1042,49 @@ void _workerMain(_Bootstrap bootstrap) {
         return repo.getAllAltTocFlatEntries();
       case 'searchAltTocFlat':
         final cache = await ensureAltTocFlatCache();
-        final queryTokens = (args['queryTokens'] as List).cast<String>();
-        final maxRefTokens = args['maxRefTokens'] as int?;
-        final dafCitation = parseDafCitationFromDafToken(queryTokens);
+        final ranksVersion = args['bookRanksVersion'] as int;
+        final ranksSent = args.containsKey('rankIds');
+        final ranksMissing = !ranksSent && ranksVersion != bookRanksVersion;
+        final request = GlobalAltTocRequest.decode(
+          args,
+          bookRanks: ranksMissing ? const {} : bookRanks,
+        );
+        if (ranksSent) {
+          bookRanks = request.bookRanks;
+          bookRanksVersion = ranksVersion;
+        }
+        final dafCitation = parseDafCitationFromDafToken(request.queryTokens);
+        // אחרי "דף" הכתיבים נבדקים מיקומית, ולכן אינם נדרשים כטוקנים במסכה.
+        final queryMask = altTocTokenMask(
+          dafCitation == null
+              ? request.queryTokens
+              : request.queryTokens.takeWhile((t) => t != 'דף'),
+        );
         final matches = [
           for (final e in cache)
-            if (altTocFlatMatches(
-              e.refTokens,
-              queryTokens,
-              maxRefTokens: maxRefTokens,
-              dafCitation: dafCitation,
-            ))
+            if (e.refTokenMask & queryMask == queryMask &&
+                altTocFlatMatches(
+                  e.refTokens,
+                  request.queryTokens,
+                  maxRefTokens: request.maxRefTokens,
+                  dafCitation: dafCitation,
+                ))
               e,
         ];
-        // מסלול המילה האחת אינו מסנן צאצאים בדירוג, ולכן גם לא כאן.
-        return [
-          for (final e in pruneGlobalAltTocMatches(
+        final references = AltTocQualifiedReferences();
+        final rows = [
+          for (final e in selectGlobalAltTocMatches(
             matches,
-            keyOf: (e) => (
-              bookId: e.book.id,
-              title: e.book.title,
-              segment: e.segment,
-              reference: qualifyAltTocReference(e.book.title, e.reference),
-            ),
-            queryTokens: queryTokens,
-            suppressDescendants: maxRefTokens == null,
-            occupied: [
-              for (final map in (args['occupied'] as List?) ?? const [])
-                decodeAltTocResultKey(map as Map),
-            ],
+            request: request,
+            bookIdOf: (e) => e.book.id,
+            bookTitleOf: (e) => e.book.title,
+            orderIndexOf: (e) => e.book.orderIndex,
+            segmentOf: (e) => e.segment,
+            referenceOf: references.of,
           ))
             e.toFlatRow(),
         ];
+        return {'rows': rows, if (ranksMissing) 'bookRanksMissing': true};
       case 'altBookIds':
         final repo = await ensureRepo();
         if (repo == null) return null;

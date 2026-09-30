@@ -45,6 +45,10 @@ class ReferenceBooksCache {
   /// מונה דורות לזיהוי [clear] שקרה במהלך טעינה.
   int _generation = 0;
 
+  /// מתחלף רק ב-[clear]. נתיבי הקטגוריות נבנים רק בטעינה שאחרי ניקוי או
+  /// אחרי כשל, ולכן כל עוד הקאש טעון הם קבועים בתוך דור.
+  int get generation => _generation;
+
   /// מנוע ההתאמה על קטלוג הספרייה הרשמית.
   late final BookTitleIndex _official = BookTitleIndex._official(
     () => debugCatalogScans++,
