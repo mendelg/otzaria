@@ -183,17 +183,14 @@ class BookDao {
 
     if (books.isEmpty) return [];
 
-    // Get all book IDs
-    final bookIds = books.map((b) => b['id'] as int).toList();
-    final bookIdsStr = bookIds.join(',');
-
+    // The query selects every book, so the relation queries need no id
+    // filter; an IN list of all ids made SQLite parse thousands of literals.
     final authorsData = !capabilities.hasAuthors
         ? const <Map<String, dynamic>>[]
         : db.select('''
         SELECT ba.bookId, a.id, a.name
         FROM book_author ba
         JOIN author a ON ba.authorId = a.id
-        WHERE ba.bookId IN ($bookIdsStr)
         ORDER BY ba.bookId
       ''').toMapList();
     final topicsData = !capabilities.hasTopics
@@ -202,7 +199,6 @@ class BookDao {
         SELECT bt.bookId, t.id, t.name
         FROM book_topic bt
         JOIN topic t ON bt.topicId = t.id
-        WHERE bt.bookId IN ($bookIdsStr)
         ORDER BY bt.bookId
       ''').toMapList();
     final pubPlacesData = !capabilities.hasPubPlaces
@@ -211,7 +207,6 @@ class BookDao {
         SELECT bpp.bookId, pp.id, pp.name
         FROM book_pub_place bpp
         JOIN pub_place pp ON bpp.pubPlaceId = pp.id
-        WHERE bpp.bookId IN ($bookIdsStr)
         ORDER BY bpp.bookId
       ''').toMapList();
     final pubDatesData = !capabilities.hasPubDates
@@ -220,7 +215,6 @@ class BookDao {
         SELECT bpd.bookId, pd.id, pd.date
         FROM book_pub_date bpd
         JOIN pub_date pd ON bpd.pubDateId = pd.id
-        WHERE bpd.bookId IN ($bookIdsStr)
         ORDER BY bpd.bookId
       ''').toMapList();
 
