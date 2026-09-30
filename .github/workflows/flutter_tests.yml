@@ -152,8 +152,8 @@ jobs:
           print(f'Search engine package root: {root}')
           PYTHON
 
-      # The pinned Git revision has no release artifact yet. Cache by the
-      # immutable package reference so the six test shards compile it once.
+      # Cache by the immutable package reference so later runs can reuse the
+      # native library. The first uncached run builds it through Cargokit.
       - name: Cache search engine library
         id: engine-cache
         uses: actions/cache@v6.1.0
@@ -177,7 +177,8 @@ jobs:
             esac
             pkg_root=$(realpath "$pkg_root")
             echo "Fetching $pkg at: $pkg_root"
-            if [ "$pkg" = "otzaria_search_engine" ] &&                 [ -s "$ENGINE_PACKAGE_ROOT/rust/target/release/libsearch_engine.so" ]; then
+            if [ "$pkg" = "otzaria_search_engine" ] && \
+                [ -s "$ENGINE_PACKAGE_ROOT/rust/target/release/libsearch_engine.so" ]; then
               echo "Using cached search engine native library"
               continue
             fi
