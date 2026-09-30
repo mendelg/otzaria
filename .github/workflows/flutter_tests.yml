@@ -452,18 +452,35 @@ jobs:
       - name: Run Windows-relevant tests
         run: flutter test test/core/ test/tabs/ test/navigation/ test/workspaces/ test/personal_notes/
 
-      # רץ גם בכישלון: כשהבנייה נופלת, הלוג של MSBuild הוא הדבר היחיד
+      # שומר לוגים בכישלון: כשהבנייה נופלת, הלוג של MSBuild הוא הדבר היחיד
       # שמסביר למה — ההודעה ב-stdout מפנה לכיוון הלא נכון בדרך כלל.
+      - name: Collect native build logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $source = $env:CARGOKIT_TEMP_DIR
+          $destination = Join-Path $env:GITHUB_WORKSPACE 'build/ci-native-logs'
+          if (Test-Path -LiteralPath $source) {
+            Get-ChildItem -LiteralPath $source -Recurse -File |
+              Where-Object { $_.Extension -in '.log', '.tlog' } |
+              ForEach-Object {
+                $relative = [IO.Path]::GetRelativePath($source, $_.FullName)
+                $target = Join-Path $destination $relative
+                New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+                Copy-Item -LiteralPath $_.FullName -Destination $target
+              }
+          }
+
       - name: Upload build logs on failure
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7.0.1
         with:
           name: windows-build-logs
           path: |
             build/windows/x64/**/*.log
             build/windows/x64/**/*.tlog
-            D:/ck/**/*.log
-            D:/ck/**/*.tlog
+            build/ci-native-logs/**/*.log
+            build/ci-native-logs/**/*.tlog
           if-no-files-found: ignore
           retention-days: 7
 
