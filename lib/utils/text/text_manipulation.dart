@@ -9,7 +9,11 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/search/models/search_match_policy.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show HighlightPattern, generateHighlightPattern;
+    show
+        HighlightPattern,
+        HighlightMatcher,
+        HighlightMatch,
+        generateHighlightPattern;
 
 /// רגקס להסרת תגי HTML.
 final RegExp _htmlStripper = RegExp(r'<[^>]*>');
@@ -432,23 +436,17 @@ bool hasNikud(String text) {
   return _vowelsAndCantillation.hasMatch(text);
 }
 
-/// תבנית הדגשה מקומפלת שמקורה במנוע החיפוש (Rust).
-///
-/// כל בניית הרג'קסים — וריאציות כתיב, מילים חילופיות, סובלנות ניקוד,
-/// מפרידים ומרווחים — מתבצעת במנוע (`generateHighlightPattern`); צד ה-Dart
-/// רק מקמפל את המחרוזות שהתקבלו ומחיל אותן.
+/// תוכנית התאמה מוכנה מהמנוע, הנשמרת פעם אחת לכל פרמטרי חיפוש.
 class _CompiledHighlightPattern {
-  /// רגקס שתופס את הביטוי השלם (כל המילים והמפרידים ביניהן).
-  final RegExp combined;
+  final HighlightMatcher? matcher;
 
-  /// רגקס פר-מילה — לאיתור תת-הטווח של כל מילה בתוך התאמה משולבת.
+  /// תאימות לתבניות ידניות ישנות; תבניות מהמנוע משתמשות במתאם המוכן.
+  final RegExp? combined;
   final List<RegExp> words;
-
-  /// פר-מילה: האם מותר לדרוש גבולות מילה סביב ההתאמה (אין למילה
-  /// אפשרות הרחבה מורפולוגית).
   final List<bool> boundaryEligible;
 
   const _CompiledHighlightPattern(
+    this.matcher,
     this.combined,
     this.words,
     this.boundaryEligible,
@@ -486,16 +484,21 @@ final ValueNotifier<int> _highlightPatternRevision = ValueNotifier<int>(0);
 /// המדויקת — אחרת התאמות קידומת/וריאנט נשארות ללא הדגשה עד גלילה.
 ValueListenable<int> get highlightPatternRevision => _highlightPatternRevision;
 
-/// מקמפל את תבניות ה-RegExp שהמנוע החזיר. כל הלוגיקה של בניית התבניות חיה
-/// ב-Rust; כאן קומפילציה בלבד.
+/// שומר את המתאם המוכן בלי לקמפל מחדש בכל פסקה.
 _CompiledHighlightPattern? _compileHighlightPattern(HighlightPattern? pattern) {
   if (pattern == null) return null;
+  final matcher = pattern.matcher;
   return _CompiledHighlightPattern(
-    RegExp(pattern.combinedPattern, caseSensitive: false),
-    [
-      for (final wordPattern in pattern.wordPatterns)
-        RegExp(wordPattern, caseSensitive: false),
-    ],
+    matcher,
+    matcher == null
+        ? RegExp(pattern.combinedPattern, caseSensitive: false)
+        : null,
+    matcher == null
+        ? [
+            for (final wordPattern in pattern.wordPatterns)
+              RegExp(wordPattern, caseSensitive: false),
+          ]
+        : const [],
     pattern.wordBoundaryEligible,
   );
 }
@@ -639,10 +642,20 @@ _CompiledHighlightPattern? _resolveHighlightPattern(
 }
 
 class _HighlightMatch {
-  final Match match;
+  final int start;
+  final int end;
   final List<_HighlightRange> ranges;
 
-  const _HighlightMatch(this.match, this.ranges);
+  const _HighlightMatch(this.start, this.end, this.ranges);
+
+  factory _HighlightMatch.fromNative(HighlightMatch match) => _HighlightMatch(
+    match.start,
+    match.end,
+    [
+      for (final range in match.wordRanges)
+        _HighlightRange(range.start, range.end),
+    ],
+  );
 }
 
 class _HighlightRange {
@@ -739,6 +752,27 @@ List<_HighlightRange>? _collectMatchedSearchWordRanges(
   return ranges;
 }
 
+/// עוטף טקסט גלוי ושומר תגים, בסריקה אחת גם כשאין תג סוגר.
+String _highlightTextOutsideTags(String text, String style) {
+  final result = StringBuffer();
+  var position = 0;
+  void writeText(String part) {
+    if (part.isNotEmpty) result.write('<span style="$style">$part</span>');
+  }
+
+  while (position < text.length) {
+    final tagStart = text.indexOf('<', position);
+    if (tagStart < 0) break;
+    final tagEnd = text.indexOf('>', tagStart + 1);
+    if (tagEnd < 0) break;
+    writeText(text.substring(position, tagStart));
+    result.write(text.substring(tagStart, tagEnd + 1));
+    position = tagEnd + 1;
+  }
+  writeText(text.substring(position));
+  return result.toString();
+}
+
 /// מדגיש את כל הטווח מהמילה הראשונה עד האחרונה ברצף (כולל רווחים ופיסוק).
 /// תגי HTML פנימיים נשארים מחוץ ל-span כדי לא לשבור קינון תגים.
 String _highlightContinuousMatch(
@@ -748,13 +782,10 @@ String _highlightContinuousMatch(
 ) {
   final start = ranges.first.start;
   final end = ranges.last.end;
-  final highlighted = matchedText
-      .substring(start, end)
-      .splitMapJoin(
-        RegExp(r'<[^>]*>'),
-        onNonMatch: (text) =>
-            text.isEmpty ? text : '<span style="$style">$text</span>',
-      );
+  final highlighted = _highlightTextOutsideTags(
+    matchedText.substring(start, end),
+    style,
+  );
   return matchedText.substring(0, start) +
       highlighted +
       matchedText.substring(end);
@@ -772,9 +803,12 @@ String _highlightMatchedSearchWords(
     if (range.start > currentPosition) {
       result.write(matchedText.substring(currentPosition, range.start));
     }
-    result.write('<span style="$style">');
-    result.write(matchedText.substring(range.start, range.end));
-    result.write('</span>');
+    result.write(
+      _highlightTextOutsideTags(
+        matchedText.substring(range.start, range.end),
+        style,
+      ),
+    );
 
     currentPosition = range.end;
   }
@@ -786,8 +820,7 @@ String _highlightMatchedSearchWords(
   return result.toString();
 }
 
-/// מאתר את התאמות ההדגשה בטקסט: התאמות התבנית המשולבת שעוברות גם את
-/// בדיקת גבולות המילה פר-מילה. משותף ל-[highLight] ול-[countMatches], כך
+/// מאתר התאמות של הביטוי באמצעות המתאם המוכן וגבולות המילה פר-מילה. משותף ל-[highLight] ול-[countMatches], כך
 /// שהמונה סופר בדיוק את מה שמודגש בפועל.
 ///
 /// [matchPolicy] שאינה ברירת המחדל (טווח פסקה/כותרת, או התאמה חלקית של מילות
@@ -814,21 +847,32 @@ List<_HighlightMatch> _findHighlightMatches(
       requireTokenBoundaries,
     );
   }
-  final phraseMatches = compiled.combined
-      .allMatches(data)
-      .map((match) {
-        final matchedText = match.group(0)!;
-        final ranges = _collectMatchedSearchWordRanges(
-          data,
-          matchedText,
-          match.start,
-          compiled.words,
-          requireTokenBoundaries,
-        );
-        return ranges == null ? null : _HighlightMatch(match, ranges);
-      })
-      .whereType<_HighlightMatch>()
-      .toList();
+  final matcher = compiled.matcher;
+  final phraseMatches = matcher != null
+      ? matcher
+            .findMatches(
+              data: data,
+              requireTokenBoundaries: requireTokenBoundaries,
+            )
+            .map(_HighlightMatch.fromNative)
+            .toList()
+      : compiled.combined!
+            .allMatches(data)
+            .map((match) {
+              final matchedText = match.group(0)!;
+              final ranges = _collectMatchedSearchWordRanges(
+                data,
+                matchedText,
+                match.start,
+                compiled.words,
+                requireTokenBoundaries,
+              );
+              return ranges == null
+                  ? null
+                  : _HighlightMatch(match.start, match.end, ranges);
+            })
+            .whereType<_HighlightMatch>()
+            .toList();
   if (!isFuzzy || phraseMatches.isNotEmpty || !isSearchResultLine) {
     return phraseMatches;
   }
@@ -843,6 +887,16 @@ List<_HighlightMatch> _findPerWordHighlightMatches(
   _CompiledHighlightPattern compiled,
   List<bool> requireTokenBoundaries,
 ) {
+  final matcher = compiled.matcher;
+  if (matcher != null) {
+    return matcher
+        .findWordMatches(
+          data: data,
+          requireTokenBoundaries: requireTokenBoundaries,
+        )
+        .map(_HighlightMatch.fromNative)
+        .toList();
+  }
   final matches = <_HighlightMatch>[];
   for (var i = 0; i < compiled.words.length; i++) {
     final requireBoundary =
@@ -855,18 +909,20 @@ List<_HighlightMatch> _findPerWordHighlightMatches(
         continue;
       }
       matches.add(
-        _HighlightMatch(match, [_HighlightRange(0, match.end - match.start)]),
+        _HighlightMatch(match.start, match.end, [
+          _HighlightRange(0, match.end - match.start),
+        ]),
       );
     }
   }
 
-  matches.sort((a, b) => a.match.start.compareTo(b.match.start));
+  matches.sort((a, b) => a.start.compareTo(b.start));
   final result = <_HighlightMatch>[];
   var lastEnd = -1;
   for (final match in matches) {
-    if (match.match.start < lastEnd) continue;
+    if (match.start < lastEnd) continue;
     result.add(match);
-    lastEnd = match.match.end;
+    lastEnd = match.end;
   }
   return result;
 }
@@ -888,8 +944,8 @@ String highLight(
   if (searchQuery.isEmpty) return data;
 
   // בניית תבניות ההדגשה מתבצעת כולה במנוע החיפוש (Rust) — כולל וריאציות
-  // כתיב, מילים חילופיות, סובלנות ניקוד ומרווחים בין מילים. כאן רק
-  // מקמפלים את התבניות שהתקבלו ומחילים אותן על הטקסט.
+  // כתיב, מילים חילופיות, סובלנות ניקוד ומרווחים בין מילים. המתאם המוכן
+  // נשמר במטמון ומחזיר טווחים ישירות, בלי חיפוש רגקס משולב ב-Dart.
   final compiled = _resolveHighlightPattern(
     searchQuery,
     searchOptions,
@@ -925,7 +981,7 @@ String highLight(
 
   for (int i = 0; i < matches.length; i++) {
     final highlightMatch = matches[i];
-    final match = highlightMatch.match;
+    final match = highlightMatch;
     final matchedText = data.substring(match.start, match.end);
 
     final String replacement;
@@ -1003,7 +1059,7 @@ List<List<int>> computeHighlightRanges(
   );
   final ranges = <List<int>>[];
   for (final highlightMatch in matches) {
-    final base = highlightMatch.match.start;
+    final base = highlightMatch.start;
     for (final range in highlightMatch.ranges) {
       ranges.add([base + range.start, base + range.end]);
     }

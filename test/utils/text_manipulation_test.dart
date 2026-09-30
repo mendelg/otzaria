@@ -11,6 +11,79 @@ Future<void> main() async {
   group(
     'highLight',
     () {
+      test('repeated affixes with an absent ending stay bounded', () {
+        final text = List.filled(100, 'ואמר').join(' ');
+        const query = 'אמר אמר אמר אמר גיטין';
+        final options = {
+          for (var i = 0; i < 4; i++) 'אמר_$i': {'קידומות': true},
+        };
+        final watch = Stopwatch()..start();
+        expect(
+          computeHighlightRanges(
+            text,
+            query,
+            searchOptions: options,
+            searchDistance: 30,
+          ),
+          isEmpty,
+        );
+        expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+      });
+
+      test('short spelling variant keeps its own affix allowance', () {
+        const text = 'אמר אאבתרה';
+        final ranges = computeHighlightRanges(
+          text,
+          'אמר תורה',
+          searchOptions: const {
+            'תורה_1': {'חלק ממילה': true, 'כתיב מלא/חסר': true},
+          },
+        );
+        expect(
+          [for (final range in ranges) text.substring(range[0], range[1])],
+          ['אמר', 'תרה'],
+        );
+      });
+
+      test('continuous highlighting handles unterminated markup linearly', () {
+        final text = 'תורה ${List.filled(100000, '<').join()} מצוות';
+        final watch = Stopwatch()..start();
+        final highlighted = highLight(
+          text,
+          'תורה מצוות',
+          yellowBackground: true,
+        );
+        expect(highlighted, contains('background-color: yellow'));
+        expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+      });
+
+      test('native UTF-16 ranges preserve emoji, marks and inline tags', () {
+        const text = '😀 תּ<b>וֹרָ</b>ה מִצְווֹת';
+        final ranges = computeHighlightRanges(text, 'תורה מצוות');
+        expect(ranges.length, 2);
+        expect(text.substring(ranges[0][0], ranges[0][1]), 'תּ<b>וֹרָ</b>ה');
+        expect(text.substring(ranges[1][0], ranges[1][1]), 'מִצְווֹת');
+        final highlighted = highLight(text, 'תורה מצוות');
+        expect(highlighted.startsWith('😀 '), isTrue);
+        expect(
+          highlighted,
+          contains('<b><span style="color: red">וֹרָ</span></b>'),
+        );
+        expect(
+          highlighted,
+          contains('<span style="color: red">מִצְווֹת</span>'),
+        );
+      });
+
+      test('word highlighting preserves inline HTML nesting', () {
+        expect(
+          highLight('ת<b>ור</b>ה', 'תורה'),
+          '<span style="color: red">ת</span><b>'
+          '<span style="color: red">ור</span></b>'
+          '<span style="color: red">ה</span>',
+        );
+      });
+
       test('single word - highlights the word', () {
         const text = 'כל יום טוב';
         final result = highLight(text, 'יום');

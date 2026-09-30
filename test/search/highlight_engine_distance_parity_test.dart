@@ -24,6 +24,11 @@ Future<void> main() async {
       'maqaf': 'תדע כי־גר יהיה זרעך',
       'maqafPlain': 'תדע כי גר יהיה זרעך',
       'pasek': 'תדע כי ׀ גר זרעך',
+      'paired': 'הארץ (הוצא) [היצא] אתך',
+      'pairedCompact': 'הארץ(הוצא) [היצא] אתך',
+      'notPairedMaqaf': 'הארץ (א־ב) [ג] אתך',
+      'notPairedComma': 'הארץ (א,ב) [ג] אתך',
+      'pairedTrailing': 'הארץ (לך) [לכה־]אתך',
     };
 
     setUpAll(() async {
@@ -103,6 +108,29 @@ Future<void> main() async {
         );
       }
     }
+
+    test('קרי וכתיב תופסים מיקום אחד גם ללא רווח חיצוני', () async {
+      await expectParity('paired', 'הארץ אתך');
+      await expectParity('pairedCompact', 'הארץ אתך');
+      await expectParity('paired', 'הוצא אתך');
+      await expectParity('paired', 'היצא אתך');
+      await expectParity('pairedTrailing', 'הארץ אתך');
+    });
+
+    test('קרי שמכיל שתי מילים אינו קורס למיקום אחד', () async {
+      await expectParity('notPairedMaqaf', 'הארץ אתך');
+      await expectParity('notPairedComma', 'הארץ אתך');
+    });
+
+    test('קרי וכתיב חוזרים עם סיום חסר אינם תוקעים את ההדגשה', () {
+      final text = List.filled(30, '(א) [ב]').join(' ');
+      final watch = Stopwatch()..start();
+      expect(
+        utils.computeHighlightRanges(text, 'הארץ אתך', searchDistance: 30),
+        isEmpty,
+      );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+    });
 
     test('מילים רגילות במרווח מילה', () => expectParity('gap1', 'אלף גימל'));
 
