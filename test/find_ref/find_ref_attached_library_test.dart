@@ -151,11 +151,24 @@ void main() {
   });
 
   test('כינוי מ-book_acronym של המסד', () async {
-    await attach(createDb(withLineRef: true));
-    final results = attachedOnly(
-      await buildRepo().findRefs('זזז', includePersonalBooks: true),
+    final path = createDb(withLineRef: true);
+    final db = sqlite3.sqlite3.open(path);
+    db.execute(
+      "INSERT INTO book_acronym (bookId, term) VALUES (?, 'זזז זזז')",
+      [
+        _bookId,
+      ],
     );
-    expect(results.map((r) => r.bookId), [_bookId]);
+    db.close();
+    await attach(path);
+    final repo = buildRepo();
+    for (final query in ['זזז', 'זזז זזז']) {
+      final results = attachedOnly(
+        await repo.findRefs(query, includePersonalBooks: true),
+      );
+      expect(results.map((r) => r.bookId), [_bookId]);
+      expect(results.single.segment, 0);
+    }
     expect(AcronymsCache.instance.acronymsFor(_source, _bookId), isNotEmpty);
     expect(
       AcronymsCache.instance.acronymsFor(BookSource.official, _bookId),
@@ -198,6 +211,83 @@ void main() {
     final lineIds = results.map((r) => r.sourceLineId).toSet();
     expect(lineIds, contains(902));
     expect(lineIds, isNot(contains(901)));
+  });
+
+  test('זנב כינוי שאינו חלק בספר משאיר תוצאת ספר בלבד', () async {
+    final path = createDb(withLineRef: false);
+    final db = sqlite3.sqlite3.open(path);
+    db.execute("UPDATE book SET title = 'חזקוני' WHERE id = ?", [_bookId]);
+    final aliases = ['חזקוני על התורה', 'חזקוני על חומש'];
+    for (final alias in aliases) {
+      db.execute('INSERT INTO book_acronym (bookId, term) VALUES (?, ?)', [
+        _bookId,
+        alias,
+      ]);
+    }
+    db.close();
+    await attach(path);
+    final repo = buildRepo();
+    for (final alias in aliases) {
+      final results = attachedOnly(
+        await repo.findRefs(alias, includePersonalBooks: true),
+      );
+      expect(results.map((r) => (r.reference, r.segment)), [('חזקוני', 0)]);
+    }
+  });
+
+  test('כינוי של חלק בטור פותח את החלק גם בלי סעיף נוסף', () async {
+    final path = createDb(withLineRef: false);
+    final db = sqlite3.sqlite3.open(path);
+    db.execute("UPDATE book SET title = 'טור' WHERE id = ?", [_bookId]);
+    final sections = [
+      ('יורה דעה', 1409),
+      ('חושן משפט', 2593),
+      ('אבן העזר', 2223),
+    ];
+    for (final (index, (title, segment)) in sections.indexed) {
+      final id = 910 + index;
+      db.execute(
+        'INSERT INTO line (id, bookId, lineIndex, content) VALUES (?, ?, ?, ?)',
+        [id, _bookId, segment, title],
+      );
+      db.execute('INSERT INTO tocText (id, text) VALUES (?, ?)', [id, title]);
+      db.execute(
+        'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId) '
+        'VALUES (?, ?, NULL, ?, 1, ?)',
+        [id, _bookId, id, id],
+      );
+      db.execute('INSERT INTO book_acronym (bookId, term) VALUES (?, ?)', [
+        _bookId,
+        'טור $title',
+      ]);
+    }
+    db.execute(
+      'INSERT INTO line (id, bookId, lineIndex, content) VALUES (915, ?, 1410, ?)',
+      [_bookId, 'סימן א'],
+    );
+    db.execute("INSERT INTO tocText (id, text) VALUES (915, 'א')");
+    db.execute(
+      'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId) '
+      'VALUES (915, ?, 910, 915, 2, 915)',
+      [_bookId],
+    );
+    db.close();
+    await attach(path);
+    final repo = buildRepo();
+    for (final (title, segment) in sections) {
+      final results = attachedOnly(
+        await repo.findRefs('טור $title', includePersonalBooks: true),
+      );
+      expect(results.map((r) => (r.reference, r.segment)), [
+        ('טור $title', segment),
+      ]);
+    }
+    final chapter = attachedOnly(
+      await repo.findRefs('טור יורה דעה א', includePersonalBooks: true),
+    );
+    expect(chapter.map((r) => (r.reference, r.segment)), [
+      ('טור יורה דעה א', 1410),
+    ]);
   });
 
   test('ספר רשמי וספר מצורף באותו id וכותרת אינם מתאחדים', () async {

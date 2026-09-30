@@ -2290,7 +2290,10 @@ class FindRefRepository {
     // מקורב) ואז לפי כיסוי השם ("שות פלוני חלק טו ג" → "חלק טו").
     final wantsToc = <ReferenceBookHit>[
       for (final (book: _, :hit) in matches)
-        if (queryTokens.length > 1 && remainingByHit[hit]!.isNotEmpty) hit,
+        if (queryTokens.length > 1 &&
+            (remainingByHit[hit]!.isNotEmpty ||
+                _acronymSectionTokens(hit).isNotEmpty))
+          hit,
     ];
     final significant = _significantTokens(queryTokens);
     final ranked = [
@@ -2329,7 +2332,9 @@ class FindRefRepository {
         bookId: book.record.id,
         bookTitle: book.record.title,
         queryTokens: [...sectionTokens, ...remainingTokens],
-        fallbackTokens: sectionTokens.isEmpty ? null : remainingTokens,
+        fallbackTokens: sectionTokens.isEmpty || remainingTokens.isEmpty
+            ? null
+            : remainingTokens,
       ));
     }
     final tocs = tocRequests.isEmpty
@@ -2399,10 +2404,14 @@ class FindRefRepository {
           ),
         );
       }
-      // כמו בקטלוג הרשמי: הזנב הוא שם התיקייה שהספר יושב בה.
+      // כשכינוי אינו מציין חלק, או שהזנב הוא שם התיקייה, מציגים את הספר.
       if (toc.isEmpty &&
-          record.folderTitles.isNotEmpty &&
-          _tokensNameLeafCategory(record.folderTitles.last, remainingTokens)) {
+          (remainingTokens.isEmpty ||
+              (record.folderTitles.isNotEmpty &&
+                  _tokensNameLeafCategory(
+                    record.folderTitles.last,
+                    remainingTokens,
+                  )))) {
         out.add(result(reference: record.title, segment: 0));
       }
     }
@@ -2590,10 +2599,8 @@ class FindRefRepository {
     return score;
   }
 
-  /// טוקני הזנב של ראש-התיבות שהותאם שאינם מילים מכותרת הספר — הם מציינים חלק
-  /// *בתוך* הספר ("טור יורה דעה" / "טור יו"ד" מול הכותרת "טור"), ולכן חייבים
-  /// להגיע לחיפוש ה-TOC ולא להיבלע עם שם הספר. מוחזר ריק כשראש-התיבות כולו
-  /// מזהה את הספר ("שוע אוח" ← "שולחן ערוך אורח חיים").
+  /// זנב כינוי שאינו בשם הספר מציין חלק בתוכו: "טור יורה דעה" → "יורה דעה".
+  /// כינוי שמזהה רק את הספר, כמו "שוע אוח", אינו מוסיף טוקני חלק.
   static List<String> _acronymSectionTokens(ReferenceBookHit hit) {
     final term = hit.matchedTerm;
     if (hit.matchRank != 3 || term == null) return const [];

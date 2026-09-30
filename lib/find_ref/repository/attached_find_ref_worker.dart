@@ -60,7 +60,7 @@ class AttachedFindRefWorker {
   SendPort? _commandPort;
 
   /// מריץ עבודה אחת; ההמתנה בתור אינה נחשבת לזמן הריצה שלה.
-  /// ב-[background] timeout אינו משבית את המסד ואינו נוטש את ה-worker.
+  /// ב-[background] timeout משחרר את ה-worker בלי להשבית את המסד.
   Future<R> run<R>(
     String path, {
     required bool immutable,
@@ -129,8 +129,9 @@ class AttachedFindRefWorker {
             result.completeError(
               TimeoutException('secondary database job', callTimeout),
             );
-            if (background) return;
-            _failedUntil[path] = DateTime.now().add(failureBackoff);
+            if (!background) {
+              _failedUntil[path] = DateTime.now().add(failureBackoff);
+            }
             if (identical(_port, portFuture)) _abandon();
           });
         } else if (message is _Progress) {
