@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,6 +7,7 @@ import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/find_ref/repository/attached_find_ref_worker.dart';
 import 'package:otzaria/find_ref/repository/db_reference_result.dart';
+import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
 import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
@@ -481,6 +483,33 @@ void main() {
       await repo.debugUserBooksRefresh;
       expect(identical(repo.debugUserBooksIndex, index), isTrue);
     });
+  });
+
+  test('אינדקס שנבנה בזמן שהחיפוש בוטל נשמר לחיפוש הבא', () async {
+    final gate = Completer<void>();
+    var loads = 0;
+    final repo = FindRefRepository(
+      dataRepository: MockDataRepository(),
+      isReferenceBooksCacheLoaded: () => true,
+      warmUpReferenceBooksCache: () async {},
+      searchReferenceBooks: (_, {limit = 50}) => const [],
+      getTocEntriesForReference: (_, _, {queryTokens}) async => const [],
+      getAllUserBooks: () async {
+        loads++;
+        await gate.future;
+        return [_book(1, 'ספר פלוני')];
+      },
+      getUserBookTocEntries: (_, _, {queryTokens}) async => const [],
+    );
+    final first = repo.findRefs('ספר', includePersonalBooks: true);
+    await pumpEventQueue();
+    repo.cancelPendingSearch();
+    gate.complete();
+    await expectLater(first, throwsA(isA<FindRefQueryCancelled>()));
+
+    final results = await repo.findRefs('ספר', includePersonalBooks: true);
+    expect(loads, 1);
+    expect(results.map((r) => r.source), contains(BookSource.user));
   });
 }
 

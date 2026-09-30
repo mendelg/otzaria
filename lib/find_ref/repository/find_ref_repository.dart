@@ -594,8 +594,9 @@ class FindRefRepository {
       final index = await _SecondaryIndex.build([
         for (final record in records) _SecondaryBook(record),
       ]);
-      throwIfSearchCancelled();
+      // נשמר גם כשהחיפוש בוטל בינתיים — החיפוש הבא ישתמש בו.
       if (epoch == _userBooksEpoch) _userBooksIndex = index;
+      throwIfSearchCancelled();
       return index;
     }
 
