@@ -1,9 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/search_engine_gateway.dart';
+import 'package:otzaria/search/utils/literal_search_pattern.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart';
 import 'package:otzaria/widgets/smart_text/render_settings.dart';
 import 'package:otzaria/widgets/smart_text/text_renderer_service.dart';
+import 'package:otzaria_search_engine/otzaria_search_engine.dart'
+    show HighlightPattern;
 
 import '../support/recording_search_engine.dart';
 import '../support/search_engine_test_init.dart';
@@ -125,4 +128,72 @@ Future<void> main() async {
     },
     skip: engineReady ? false : searchEngineSkipReason,
   );
+
+  group('הערות הביקורת', () {
+    test('מילה מנוקדת ו"יקוק" בתוך רשימת החלופות מורחבים גם הם', () {
+      expect(
+        withHolyNameAlternatives('לַיקֹוָק', const {}),
+        {
+          0: ['ל$_name'],
+        },
+      );
+      expect(
+        withHolyNameAlternatives('אדני', const {
+          0: [_placeholder],
+        }),
+        {
+          0: [_placeholder, _name],
+        },
+      );
+    });
+
+    test('השאילתה השלילית מורחבת כמו החיובית', () async {
+      final engine = RecordingSearchEngine();
+      await const SearchEngineGateway().search(
+        engine,
+        const SearchEngineRequest(
+          query: 'ברוך',
+          negativeQuery: _placeholder,
+          facets: ['/'],
+          searchMode: SearchMode.advanced,
+        ),
+      );
+      expect(engine.lastRequest!.negativeAlternativeWords, {
+        0: [_name],
+      });
+    });
+
+    test('במקורב ההדגשה נשענת על התבנית שהמנוע הכין, בלי הרחבה', () async {
+      const query = '$_placeholder אלהינו';
+      await primeHighlightPattern(
+        searchQuery: query,
+        searchOptions: const {},
+        alternativeWords: const {},
+        spacingValues: const {},
+        searchDistance: 0,
+        isFuzzy: true,
+        fetch: () async => const HighlightPattern(
+          combinedPattern: 'ברא',
+          wordPatterns: ['ברא'],
+          wordBoundaryEligible: [true],
+        ),
+      );
+      expect(
+        highLight('בראשית ברא אלהים', query, isFuzzy: true),
+        contains('<span style="color: red">ברא</span>'),
+      );
+    });
+
+    test('החיפוש הליטרלי בספר מוצא את השם כשהוקלד "יקוק"', () {
+      for (final wholeWord in [true, false]) {
+        final pattern = buildLiteralPattern(
+          'ל$_placeholder אלהינו',
+          wholeWord: wholeWord,
+        )!;
+        expect(pattern.regExp.hasMatch('שירו ל$_name אלהינו'), isTrue);
+        expect(pattern.regExp.hasMatch('שירו ל$_placeholder אלהינו'), isTrue);
+        expect(pattern.regExp.hasMatch('שירו אלהינו'), isFalse);
+      }
+    });
+  }, skip: engineReady ? false : searchEngineSkipReason);
 }

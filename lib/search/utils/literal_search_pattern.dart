@@ -113,9 +113,18 @@ LiteralSearchPattern? buildLiteralPattern(
   if (q.isNotEmpty) {
     final source = engine.generateLiteralHighlightPattern(query: q);
     if (source != null) {
-      final effective = partial
-          ? (_partialPhrase(q, source) ?? source)
-          : source;
+      var effective = partial ? (_partialPhrase(q, source) ?? source) : source;
+      // התצוגה מחליפה את שם הוי"ה ב"יקוק", והתוכן שנסרק הוא המקורי.
+      final variant = utils.withHolyNameInPlaceOfPlaceholder(q);
+      final variantSource = variant == null
+          ? null
+          : engine.generateLiteralHighlightPattern(query: variant);
+      if (variantSource != null) {
+        final variantEffective = partial
+            ? (_partialPhrase(variant!, variantSource) ?? variantSource)
+            : variantSource;
+        effective = '(?:$effective)|(?:$variantEffective)';
+      }
       try {
         result = LiteralSearchPattern(
           effective,

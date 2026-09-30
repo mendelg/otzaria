@@ -608,7 +608,9 @@ _CompiledHighlightPattern? _resolveHighlightPattern(
   int searchDistance,
   bool isFuzzy,
 ) {
-  alternativeWords = withHolyNameAlternatives(searchQuery, alternativeWords);
+  if (!isFuzzy) {
+    alternativeWords = withHolyNameAlternatives(searchQuery, alternativeWords);
+  }
   final key = _highlightRequestKey(
     searchQuery,
     searchOptions,
@@ -1415,19 +1417,44 @@ Map<int, List<String>> withHolyNameAlternatives(
   String query,
   Map<int, List<String>> alternativeWords,
 ) {
-  if (!query.contains(_holyNamePlaceholder)) return alternativeWords;
+  final mentioned = [query, ...alternativeWords.values.expand((w) => w)].any(
+    (text) => removeVolwels(text).contains(_holyNamePlaceholder),
+  );
+  if (!mentioned) return alternativeWords;
   Map<int, List<String>>? result;
   final words = splitQueryWords(query: query);
   for (var i = 0; i < words.length; i++) {
-    final match = _holyNamePlaceholderWord.firstMatch(words[i]);
-    if (match == null) continue;
-    final name = '${match[1]}$_holyNameLetters';
     final existing = alternativeWords[i] ?? const <String>[];
-    if (existing.contains(name)) continue;
+    final added = <String>{
+      for (final word in [words[i], ...existing])
+        if (_holyNameFor(word) case final name? when !existing.contains(name))
+          name,
+    };
+    if (added.isEmpty) continue;
     result ??= Map<int, List<String>>.of(alternativeWords);
-    result[i] = [...existing, name];
+    result[i] = [...existing, ...added];
   }
   return result ?? alternativeWords;
+}
+
+String? _holyNameFor(String word) {
+  final match = _holyNamePlaceholderWord.firstMatch(removeVolwels(word));
+  return match == null ? null : '${match[1]}$_holyNameLetters';
+}
+
+final RegExp _holyNamePlaceholderInText = RegExp(
+  '(?<![\u05D0-\u05EA])([\u05D5\u05D1\u05DB\u05DC\u05DE\u05E9\u05D4]{0,2})'
+  '\u05D9\u05E7\u05D5\u05E7(?![\u05D0-\u05EA])',
+);
+
+/// [query] (בלי ניקוד) עם שם הוי"ה במקום כל מילת "יקוק", או `null` כשאין
+/// כזו — לחיפוש הליטרלי בספר, שאין בו מילים חלופיות.
+String? withHolyNameInPlaceOfPlaceholder(String query) {
+  final replaced = query.replaceAllMapped(
+    _holyNamePlaceholderInText,
+    (match) => '${match[1]}$_holyNameLetters',
+  );
+  return replaced == query ? null : replaced;
 }
 
 /// סגנון החלפת שם הקודש בתצוגה.

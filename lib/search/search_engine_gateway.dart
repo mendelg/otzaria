@@ -857,11 +857,21 @@ class SearchEngineGateway {
       request.query,
       request.alternativeWords,
     );
-    if (identical(alternatives, request.alternativeWords)) return request;
+    final negativeAlternatives = text_utils.withHolyNameAlternatives(
+      request.negativeQuery,
+      request.negativeAlternativeWords,
+    );
+    if (identical(alternatives, request.alternativeWords) &&
+        identical(negativeAlternatives, request.negativeAlternativeWords)) {
+      return request;
+    }
     final advanced = request.searchMode == SearchMode.exact
         ? RustSearchEngineOperations.exactAsAdvanced(request)
         : request;
-    return advanced.copyWith(alternativeWords: alternatives);
+    return advanced.copyWith(
+      alternativeWords: alternatives,
+      negativeAlternativeWords: negativeAlternatives,
+    );
   }
 
   Future<SemanticSearchResponse> searchSemantic(
