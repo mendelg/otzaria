@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/data/cache/books_cache.dart';
+import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/book_composite_key.dart';
 import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/data_providers/file_system_library_provider.dart';
@@ -16,6 +17,7 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/navigation/navigation_repository.dart';
 import 'package:otzaria/settings/settings_exports.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../test_helpers/memory_cache_provider.dart';
 
@@ -168,5 +170,67 @@ void main() {
       await fileSystemProvider.hasBook('ישן', 1, 'txt'),
       isFalse,
     );
+  });
+
+  void createDatabase(File file) {
+    final database = sqlite3.sqlite3.open(file.path);
+    database.execute('CREATE TABLE sample (id INTEGER PRIMARY KEY)');
+    database.close();
+  }
+
+  group('checkLibraryIsEmpty באנדרואיד (#1483)', () {
+    late Directory booksDir;
+
+    setUp(() async {
+      NavigationRepository.debugIsAndroidOverride = true;
+      final tempDir = await Directory.systemTemp.createTemp('otzaria_1483');
+      addTearDown(() => tempDir.delete(recursive: true));
+      // יעד שנבחר בדיאלוג ההגדרה, מחוץ לתיקיות האפליקציה.
+      booksDir = await Directory(
+        '${tempDir.path}/storage/emulated/0/Documents/books',
+      ).create(recursive: true);
+      await Settings.setValue<String>(
+        SettingsRepository.keyLibraryPath,
+        booksDir.path,
+      );
+      await Settings.setValue<String>(
+        SettingsRepository.keyLibraryFolderName,
+        '',
+      );
+      await Settings.setValue<String>(
+        SettingsRepository.keyDbEffectivePath,
+        '',
+      );
+    });
+
+    tearDown(() {
+      NavigationRepository.debugIsAndroidOverride = null;
+      NavigationRepository.debugCanOpenSqliteOverride = null;
+    });
+
+    test('מסד קריא שיובא לאחסון חיצוני אינו נחשב ספרייה ריקה', () async {
+      final db = File('${booksDir.path}/${DatabaseConstants.databaseFileName}');
+      createDatabase(db);
+
+      expect(await navigationRepository.checkLibraryIsEmpty(), isFalse);
+    });
+
+    test('קובץ קריא ש-SQLite אינו יכול לפתוח נחשב ספרייה ריקה', () async {
+      final db = File('${booksDir.path}/${DatabaseConstants.databaseFileName}');
+      createDatabase(db);
+      db.openSync().closeSync();
+      NavigationRepository.debugCanOpenSqliteOverride = (_) => false;
+
+      expect(await navigationRepository.checkLibraryIsEmpty(), isTrue);
+    });
+
+    test('מסד שאינו קריא נחשב ספרייה ריקה', () async {
+      final db = File('${booksDir.path}/${DatabaseConstants.databaseFileName}');
+      createDatabase(db);
+      await Process.run('chmod', ['000', db.path]);
+      addTearDown(() => Process.run('chmod', ['644', db.path]));
+
+      expect(await navigationRepository.checkLibraryIsEmpty(), isTrue);
+    }, skip: Platform.isWindows);
   });
 }

@@ -52,11 +52,11 @@ class NavigationBloc extends Bloc<NavigationEvent, NavigationState> {
     emit(state.copyWith(currentScreen: target));
   }
 
-  void _onCheckLibrary(
+  Future<void> _onCheckLibrary(
     CheckLibrary event,
     Emitter<NavigationState> emit,
-  ) {
-    final isEmpty = _repository.checkLibraryIsEmpty();
+  ) async {
+    final isEmpty = await _repository.checkLibraryIsEmpty();
     if (!isEmpty) {
       unawaited(AppPaths.markLibraryLoadedOnce());
     }

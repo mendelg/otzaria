@@ -140,12 +140,8 @@ class SqliteDataProvider {
       _isInitialized = true;
       DbReadWorker.allowReopen();
     } on SqliteException catch (e) {
-      // SQLITE_CANTOPEN (code 14): the native library cannot open the file.
-      // On Android this happens when the DB is in Scoped Storage and sqlite3
-      // native cannot access it via a raw file path.
-      // Clear any stale keyDbEffectivePath so that the next
-      // checkLibraryIsEmpty() returns true and the user reaches the
-      // "select library" screen where the copy-to-internal flow is offered.
+      // SQLITE_CANTOPEN (code 14) on Android: clear a stale keyDbEffectivePath
+      // so the library path is re-resolved on the next check.
       if (Platform.isAndroid && e.resultCode == 14) {
         debugPrint(
           '[SqliteDataProvider] SQLITE_CANTOPEN on Android — '

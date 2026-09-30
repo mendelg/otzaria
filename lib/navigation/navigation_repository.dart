@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'dart:isolate';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/data/cache/acronyms_cache.dart';
 import 'package:otzaria/data/cache/generation_cache.dart';
@@ -7,6 +10,8 @@ import 'package:otzaria/data/cache/books_cache.dart';
 import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/data_providers/library_provider_manager.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
+import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
+import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/data/data_providers/tantivy_data_provider.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
@@ -22,8 +27,16 @@ class NavigationRepository {
 
   final Future<void> Function() _reopenIndex;
 
-  /// בודק אם הספרייה ריקה - כלומר אם קובץ seforim.db לא קיים
-  bool checkLibraryIsEmpty() {
+  @visibleForTesting
+  static bool? debugIsAndroidOverride;
+
+  @visibleForTesting
+  static bool Function(String path)? debugCanOpenSqliteOverride;
+
+  static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
+
+  /// בודק אם הספרייה ריקה או ש-SQLite אינו יכול לפתוח את המסד באנדרואיד.
+  Future<bool> checkLibraryIsEmpty() async {
     final libraryPath = Settings.getValue<String>(
       SettingsRepository.keyLibraryPath,
     );
@@ -40,28 +53,31 @@ class NavigationRepository {
       return true;
     }
 
-    // Android: גם אם הקובץ "קיים" (stat עובד), ייתכן שה-native sqlite3
-    // לא יכול לפתוח אותו מאחסון Scoped Storage חיצוני.
-    // אם אין keyDbEffectivePath, המשמעות היא שה-flow לא הושלם — נחזיר true
-    // כדי שהמשתמש יגיע למסך הבחירה עם הדיאלוג המתאים.
-    if (Platform.isAndroid && !_isNativeAccessible(databasePath)) {
-      final effectivePath =
-          Settings.getValue<String>(SettingsRepository.keyDbEffectivePath) ??
-          '';
-      if (effectivePath.isEmpty) {
-        return true;
-      }
+    if (_isAndroid) {
+      final canOpen = await DatabaseLibraryProvider.operationQueue.enqueue(() {
+        final canOpenSqlite = debugCanOpenSqliteOverride;
+        return canOpenSqlite == null
+            ? Isolate.run(() => _canOpenSqlite(databasePath))
+            : Future.value(canOpenSqlite(databasePath));
+      });
+      if (!canOpen) return true;
     }
 
     return false;
   }
 
-  /// בודק אם נתיב נגיש ל-sqlite3 native ב-Android.
-  static bool _isNativeAccessible(String filePath) {
-    if (filePath.startsWith('/data/')) return true;
-    if (filePath.contains('/Android/data/')) return true;
-    if (filePath.contains('/Android/obb/')) return true;
-    return false;
+  static bool _canOpenSqlite(String path) {
+    sqlite3.Database? database;
+    try {
+      database = sqlite3.sqlite3.open(path, mode: sqlite3.OpenMode.readOnly);
+      return true;
+    } on FileSystemException {
+      return false;
+    } on sqlite3.SqliteException {
+      return false;
+    } finally {
+      database?.close();
+    }
   }
 
   Future<void> refreshLibrary() async {

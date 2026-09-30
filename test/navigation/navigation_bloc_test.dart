@@ -24,7 +24,7 @@ class _FakeNavigationRepository implements NavigationRepository {
   _FakeNavigationRepository({this.libraryIsEmpty = false});
 
   @override
-  bool checkLibraryIsEmpty() => libraryIsEmpty;
+  Future<bool> checkLibraryIsEmpty() async => libraryIsEmpty;
 
   @override
   Future<void> refreshLibrary() async {}
