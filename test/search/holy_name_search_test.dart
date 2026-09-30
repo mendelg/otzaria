@@ -134,7 +134,8 @@ Future<void> main() async {
       expect(
         withHolyNameAlternatives('לַיקֹוָק', const {}),
         {
-          0: ['ל$_name'],
+          // הניקוד שהוקלד נשמר בחלופה, כדי שהתאמת ניקוד לא תתרחב.
+          0: ['לַיהֹוָה'],
         },
       );
       expect(
@@ -194,6 +195,32 @@ Future<void> main() async {
         expect(pattern.regExp.hasMatch('שירו ל$_placeholder אלהינו'), isTrue);
         expect(pattern.regExp.hasMatch('שירו אלהינו'), isFalse);
       }
+    });
+
+    test('בחיפוש בספר כל מופע של "יקוק" מוחלף בנפרד', () {
+      for (final wholeWord in [true, false]) {
+        final pattern = buildLiteralPattern(
+          '$_placeholder אחד $_placeholder',
+          wholeWord: wholeWord,
+        )!;
+        for (final first in [_placeholder, _name]) {
+          for (final second in [_placeholder, _name]) {
+            expect(
+              pattern.regExp.hasMatch('$first אחד $second'),
+              isTrue,
+              reason: 'wholeWord=$wholeWord',
+            );
+          }
+        }
+      }
+    });
+
+    test('שני המסלולים מזהים את מילת "יקוק" לפי אותו כלל', () {
+      const query = '${_placeholder}2';
+      expect(withHolyNameAlternatives(query, const {}), isEmpty);
+      final pattern = buildLiteralPattern(query)!;
+      expect(pattern.regExp.hasMatch('${_placeholder}2'), isTrue);
+      expect(pattern.regExp.hasMatch('${_name}2'), isFalse);
     });
   }, skip: engineReady ? false : searchEngineSkipReason);
 }

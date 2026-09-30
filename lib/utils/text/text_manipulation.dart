@@ -1403,13 +1403,22 @@ int _htmlTagEnd(String text, int start) {
   return -1;
 }
 
-/// מילת שאילתה "יקוק" — הצורה שבה התצוגה מחליפה את שם הוי"ה — עם עד שתי
-/// אותיות שימוש לפניה, כמו ש-[replaceHolyNames] משאיר.
+/// מילת "יקוק" (כך מוצג שם הוי"ה) עם עד שתי אותיות שימוש, כל אות עם הניקוד
+/// שלה. הכלל היחיד לזיהוי — בחיפוש הכללי ובחיפוש בתוך ספר.
 final RegExp _holyNamePlaceholderWord = RegExp(
-  '^([\u05D5\u05D1\u05DB\u05DC\u05DE\u05E9\u05D4]{0,2})\u05D9\u05E7\u05D5\u05E7\$',
+  r'^((?:[\u05D5\u05D1\u05DB\u05DC\u05DE\u05E9\u05D4]\p{Mn}*){0,2})'
+  r'\u05D9(\p{Mn}*)\u05E7(\p{Mn}*)\u05D5(\p{Mn}*)\u05E7(\p{Mn}*)$',
+  unicode: true,
 );
-const String _holyNamePlaceholder = '\u05D9\u05E7\u05D5\u05E7';
-const String _holyNameLetters = '\u05D9\u05D4\u05D5\u05D4';
+const String holyNamePlaceholder = '\u05D9\u05E7\u05D5\u05E7';
+
+/// [token] — מילה אחת של [splitQueryWords] — עם שם הוי"ה במקום "יקוק" ועם
+/// הניקוד שהוקלד, או `null` כשאינה מילת "יקוק".
+String? holyNameForPlaceholderWord(String token) {
+  final m = _holyNamePlaceholderWord.firstMatch(token);
+  if (m == null) return null;
+  return '${m[1]}\u05D9${m[2]}\u05D4${m[3]}\u05D5${m[4]}\u05D4${m[5]}';
+}
 
 /// מוסיף לכל מילת "יקוק" ב-[query] את שם הוי"ה כמילה חלופית: החיפוש וההדגשה
 /// רצים על הטקסט המקורי, לא על התצוגה. קריאה חוזרת אינה משנה דבר.
@@ -1418,7 +1427,7 @@ Map<int, List<String>> withHolyNameAlternatives(
   Map<int, List<String>> alternativeWords,
 ) {
   final mentioned = [query, ...alternativeWords.values.expand((w) => w)].any(
-    (text) => removeVolwels(text).contains(_holyNamePlaceholder),
+    (text) => removeVolwels(text).contains(holyNamePlaceholder),
   );
   if (!mentioned) return alternativeWords;
   Map<int, List<String>>? result;
@@ -1427,7 +1436,8 @@ Map<int, List<String>> withHolyNameAlternatives(
     final existing = alternativeWords[i] ?? const <String>[];
     final added = <String>{
       for (final word in [words[i], ...existing])
-        if (_holyNameFor(word) case final name? when !existing.contains(name))
+        if (holyNameForPlaceholderWord(word) case final name?
+            when !existing.contains(name))
           name,
     };
     if (added.isEmpty) continue;
@@ -1435,26 +1445,6 @@ Map<int, List<String>> withHolyNameAlternatives(
     result[i] = [...existing, ...added];
   }
   return result ?? alternativeWords;
-}
-
-String? _holyNameFor(String word) {
-  final match = _holyNamePlaceholderWord.firstMatch(removeVolwels(word));
-  return match == null ? null : '${match[1]}$_holyNameLetters';
-}
-
-final RegExp _holyNamePlaceholderInText = RegExp(
-  '(?<![\u05D0-\u05EA])([\u05D5\u05D1\u05DB\u05DC\u05DE\u05E9\u05D4]{0,2})'
-  '\u05D9\u05E7\u05D5\u05E7(?![\u05D0-\u05EA])',
-);
-
-/// [query] (בלי ניקוד) עם שם הוי"ה במקום כל מילת "יקוק", או `null` כשאין
-/// כזו — לחיפוש הליטרלי בספר, שאין בו מילים חלופיות.
-String? withHolyNameInPlaceOfPlaceholder(String query) {
-  final replaced = query.replaceAllMapped(
-    _holyNamePlaceholderInText,
-    (match) => '${match[1]}$_holyNameLetters',
-  );
-  return replaced == query ? null : replaced;
 }
 
 /// סגנון החלפת שם הקודש בתצוגה.

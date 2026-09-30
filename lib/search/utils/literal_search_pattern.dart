@@ -83,11 +83,55 @@ String? _partialPhrase(String q, String source) {
   if (phrase == null || regular == null) return phrase;
 
   final altQuery = '${q.substring(0, q.length - 1)}$regular';
-  final altSource = engine.generateLiteralHighlightPattern(query: altQuery);
+  final altSource = _literalSource(altQuery);
   final altPhrase = altSource == null
       ? null
       : stripWordBoundaryWrapper(altSource);
   return altPhrase == null ? phrase : '(?:$phrase|$altPhrase)';
+}
+
+/// תבנית המנוע ל-[query], שבה כל מופע של מילת "יקוק" מתאים גם לשם הוי"ה
+/// שבתוכן המקורי — כל מופע בנפרד, לפי אותו זיהוי של החיפוש הכללי.
+String? _literalSource(String query) {
+  final source = engine.generateLiteralHighlightPattern(query: query);
+  if (source == null || !query.contains(utils.holyNamePlaceholder)) {
+    return source;
+  }
+  // המופע ה-k של "יקוק" בתבנית הוא המופע ה-k בשאילתה.
+  final isPlaceholderWord = [
+    for (final word in engine.splitQueryWords(query: query))
+      for (final _ in utils.holyNamePlaceholder.allMatches(word))
+        utils.holyNameForPlaceholderWord(word) != null,
+  ];
+  final placeholder = _wordPhrase(utils.holyNamePlaceholder);
+  final name = _wordPhrase(
+    utils.holyNameForPlaceholderWord(
+      utils.holyNamePlaceholder,
+    )!,
+  );
+  final parts = placeholder == null
+      ? const <String>[]
+      : source.split(placeholder);
+  if (name == null || parts.length - 1 != isPlaceholderWord.length) {
+    return source;
+  }
+  final buffer = StringBuffer(parts.first);
+  for (var i = 0; i < isPlaceholderWord.length; i++) {
+    buffer.write(isPlaceholderWord[i] ? '(?:$placeholder|$name)' : placeholder);
+    buffer.write(parts[i + 1]);
+  }
+  return buffer.toString();
+}
+
+/// תבנית המילה בלי גבולות ובלי עטיפת `(?:…)` של הביטוי — כפי שהיא מופיעה
+/// בתוך תבנית של שאילתה ארוכה יותר.
+String? _wordPhrase(String word) {
+  final source = engine.generateLiteralHighlightPattern(query: word);
+  final phrase = source == null ? null : stripWordBoundaryWrapper(source);
+  if (phrase == null || !phrase.startsWith('(?:') || !phrase.endsWith(')')) {
+    return null;
+  }
+  return phrase.substring(3, phrase.length - 1);
 }
 
 /// בונה (עם קאש) תבנית ליטרלית לשאילתה, לאחר נרמול.
@@ -111,20 +155,11 @@ LiteralSearchPattern? buildLiteralPattern(
   // רשומה חלקית לשאילתה החדשה.
   LiteralSearchPattern? result;
   if (q.isNotEmpty) {
-    final source = engine.generateLiteralHighlightPattern(query: q);
+    final source = _literalSource(q);
     if (source != null) {
-      var effective = partial ? (_partialPhrase(q, source) ?? source) : source;
-      // התצוגה מחליפה את שם הוי"ה ב"יקוק", והתוכן שנסרק הוא המקורי.
-      final variant = utils.withHolyNameInPlaceOfPlaceholder(q);
-      final variantSource = variant == null
-          ? null
-          : engine.generateLiteralHighlightPattern(query: variant);
-      if (variantSource != null) {
-        final variantEffective = partial
-            ? (_partialPhrase(variant!, variantSource) ?? variantSource)
-            : variantSource;
-        effective = '(?:$effective)|(?:$variantEffective)';
-      }
+      final effective = partial
+          ? (_partialPhrase(q, source) ?? source)
+          : source;
       try {
         result = LiteralSearchPattern(
           effective,
