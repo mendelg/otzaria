@@ -22,7 +22,7 @@ import '../helpers/memory_settings_cache.dart';
 
 class _FakeNavigationRepository implements NavigationRepository {
   @override
-  bool checkLibraryIsEmpty() => false;
+  Future<bool> checkLibraryIsEmpty() async => false;
   @override
   Future<void> refreshLibrary() async {}
 }

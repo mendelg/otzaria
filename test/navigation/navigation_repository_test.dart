@@ -17,6 +17,7 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/navigation/navigation_repository.dart';
 import 'package:otzaria/settings/settings_exports.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../test_helpers/memory_cache_provider.dart';
 
@@ -171,6 +172,12 @@ void main() {
     );
   });
 
+  void createDatabase(File file) {
+    final database = sqlite3.sqlite3.open(file.path);
+    database.execute('CREATE TABLE sample (id INTEGER PRIMARY KEY)');
+    database.close();
+  }
+
   group('checkLibraryIsEmpty באנדרואיד (#1483)', () {
     late Directory booksDir;
 
@@ -196,29 +203,34 @@ void main() {
       );
     });
 
-    tearDown(() => NavigationRepository.debugIsAndroidOverride = null);
-
-    test('מסד קריא שיובא לאחסון חיצוני אינו נחשב ספרייה ריקה', () async {
-      await File(
-        '${booksDir.path}/${DatabaseConstants.databaseFileName}',
-      ).writeAsString('db');
-
-      expect(navigationRepository.checkLibraryIsEmpty(), isFalse);
+    tearDown(() {
+      NavigationRepository.debugIsAndroidOverride = null;
+      NavigationRepository.debugCanOpenSqliteOverride = null;
     });
 
-    test(
-      'מסד שאינו קריא נחשב ספרייה ריקה',
-      () async {
-        final db = File(
-          '${booksDir.path}/${DatabaseConstants.databaseFileName}',
-        );
-        await db.writeAsString('db');
-        await Process.run('chmod', ['000', db.path]);
-        addTearDown(() => Process.run('chmod', ['644', db.path]));
+    test('מסד קריא שיובא לאחסון חיצוני אינו נחשב ספרייה ריקה', () async {
+      final db = File('${booksDir.path}/${DatabaseConstants.databaseFileName}');
+      createDatabase(db);
 
-        expect(navigationRepository.checkLibraryIsEmpty(), isTrue);
-      },
-      skip: Platform.isWindows,
-    );
+      expect(await navigationRepository.checkLibraryIsEmpty(), isFalse);
+    });
+
+    test('קובץ קריא ש-SQLite אינו יכול לפתוח נחשב ספרייה ריקה', () async {
+      final db = File('${booksDir.path}/${DatabaseConstants.databaseFileName}');
+      createDatabase(db);
+      db.openSync().closeSync();
+      NavigationRepository.debugCanOpenSqliteOverride = (_) => false;
+
+      expect(await navigationRepository.checkLibraryIsEmpty(), isTrue);
+    });
+
+    test('מסד שאינו קריא נחשב ספרייה ריקה', () async {
+      final db = File('${booksDir.path}/${DatabaseConstants.databaseFileName}');
+      createDatabase(db);
+      await Process.run('chmod', ['000', db.path]);
+      addTearDown(() => Process.run('chmod', ['644', db.path]));
+
+      expect(await navigationRepository.checkLibraryIsEmpty(), isTrue);
+    }, skip: Platform.isWindows);
   });
 }
