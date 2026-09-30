@@ -197,14 +197,8 @@ class GlobalAltTocRequest {
   }
 }
 
-/// בוחרת מהתאמות ה-AltToc הגלובליות (בסדר הקאש) את מה שהדירוג ב-main יכול
-/// להציג, בלי לשנות את התוצאה: כפילויות (כמו `_dedupeRefs`, מול
-/// [GlobalAltTocRequest.occupied]), צאצאי התאמה, תקרה לכל ספר, ואז רק
-/// הראשונות בסדר [compareFindRefRank] — כל שורה אחרת נחותה מ-limit שורות.
-///
-/// הדירוג רץ לפי קבוצות ספרים שוות-רלוונטיות, והצמצום של ספר רץ רק כשהגיעו
-/// אליו. [referenceOf] מחזיר את הנתיב עם שם הספר ([qualifyAltTocReference]).
-/// [rankOf] ברירת מחדל: [GlobalAltTocRequest.bookRanks].
+/// מהתאמות ה-AltToc הגלובליות (בסדר הקאש) רק מה שהדירוג של main יכול להציג.
+/// [referenceOf] — הנתיב עם שם הספר; [rankOf] ברירת מחדל: הטבלה שבבקשה.
 List<T> selectGlobalAltTocMatches<T>(
   List<T> matches, {
   required GlobalAltTocRequest request,

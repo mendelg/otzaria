@@ -4549,19 +4549,19 @@ void main() {
           getAllAltTocFlatEntries: () async =>
               throw StateError('המסלול המקומי לא אמור לרוץ כשיש hook'),
           searchAltTocFlatEntries: (request) async {
-                calls.add((request.queryTokens, request.maxRefTokens));
-                return const [
-                  {
-                    'bookId': 1,
-                    'bookTitle': 'בראשית',
-                    'bookOrderIndex': 1.0,
-                    'reference': 'נח',
-                    'segment': 30,
-                    'level': 0,
-                    'dbLineId': 7,
-                  },
-                ];
+            calls.add((request.queryTokens, request.maxRefTokens));
+            return const [
+              {
+                'bookId': 1,
+                'bookTitle': 'בראשית',
+                'bookOrderIndex': 1.0,
+                'reference': 'נח',
+                'segment': 30,
+                'level': 0,
+                'dbLineId': 7,
               },
+            ];
+          },
         );
 
         final single = await repo.findRefs('נח');

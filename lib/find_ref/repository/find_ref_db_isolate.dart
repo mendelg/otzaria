@@ -270,9 +270,13 @@ class FindRefDbIsolate {
     int searchScope = 0,
     int? searchEpoch,
   }) async {
-    // טבלת דירוג הספרים נשלחת רק כשהתחלפה; worker שאין לו אותה (בקשה שבוטלה
-    // בתור) מדווח, והיא נשלחת שוב.
-    final send = !identical(request.bookRanks, _sentBookRanks);
+    // הטבלה נשלחת רק כשתוכנה התחלף (כל repository בונה עותק משלו); worker
+    // שאין לו אותה (בקשה שבוטלה בתור) מדווח, והיא נשלחת שוב.
+    final sent = _sentBookRanks;
+    final send =
+        sent == null ||
+        !identical(request.bookRanks, sent) &&
+            !mapEquals(request.bookRanks, sent);
     if (send) {
       _sentBookRanks = request.bookRanks;
       _bookRanksVersion++;
@@ -292,7 +296,7 @@ class FindRefDbIsolate {
     return _castRows(reply['rows']);
   }
 
-  Object? _sentBookRanks;
+  Map<int, ({String title, FindRefBookRank rank})>? _sentBookRanks;
   int _bookRanksVersion = 0;
 
   /// בונה מראש את קאש ה-AltToc השטוח בתוך ה-worker, כדי שהחיפוש הראשון

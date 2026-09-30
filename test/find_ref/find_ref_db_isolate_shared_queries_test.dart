@@ -463,7 +463,9 @@ void main() {
 
       await prewarm;
       expect(
-        await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה'])),
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        ),
         hasLength(entryCount),
       );
     });
@@ -487,7 +489,9 @@ void main() {
 
       await prewarm;
       expect(
-        await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה'])),
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        ),
         hasLength(entryCount),
       );
     });
@@ -503,13 +507,17 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 250));
 
       expect(
-        await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה'])),
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        ),
         hasLength(entryCount),
       );
       expect(prewarmDone, isFalse);
       await prewarm;
       expect(
-        await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה', '3'])),
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה', '3']),
+        ),
         hasLength(1),
       );
     });
@@ -525,8 +533,18 @@ void main() {
       FindRefDbIsolate.resetIfRunning();
       await prewarm;
 
-      expect(await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה'])), isEmpty);
-      expect(await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['סימן'])), hasLength(3));
+      expect(
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        ),
+        isEmpty,
+      );
+      expect(
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['סימן']),
+        ),
+        hasLength(3),
+      );
     });
 
     test('ביטול הקלדה ממשיך לזרוק בקשות ממתינות בזמן חימום', () async {
@@ -588,11 +606,18 @@ void main() {
       );
       await prewarm;
       expect(prewarmDone, isTrue);
-      expect(await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה'])), isEmpty);
+      expect(
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        ),
+        isEmpty,
+      );
 
       await FindRefDbIsolate.resumeAfterExternalWrite();
       expect(
-        await isolate.searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה'])),
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        ),
         hasLength(entryCount),
       );
     });
