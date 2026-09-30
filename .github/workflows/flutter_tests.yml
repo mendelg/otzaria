@@ -375,6 +375,9 @@ jobs:
   build_windows:
     name: Build (Windows)
     runs-on: windows-2022
+    env:
+      # MSBuild FileTracker still limits llama.cpp scratch paths to MAX_PATH.
+      CARGOKIT_TEMP_DIR: D:/ck
     # מדידה מקומית: בנייה קרה 6 דקות. ראנר CI איטי יותר ומוסיף checkout,
     # setup ו-pub get. 30 נותן מרווח בלי לתת ל-job תקוע לשרוף שעה שלמה.
     # לכווץ אחרי הריצה הראשונה לפי הזמן שנמדד בפועל.
@@ -459,6 +462,8 @@ jobs:
           path: |
             build/windows/x64/**/*.log
             build/windows/x64/**/*.tlog
+            D:/ck/**/*.log
+            D:/ck/**/*.tlog
           if-no-files-found: ignore
           retention-days: 7
 
