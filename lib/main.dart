@@ -98,6 +98,7 @@ import 'package:otzaria/core/info/app_install_timeline.dart';
 import 'package:otzaria/core/external_activation_queue.dart';
 import 'package:otzaria/core/portable_paths.dart';
 import 'package:otzaria/core/startup_timeline.dart';
+import 'package:otzaria/core/diagnostics/developer_diagnostics.dart';
 import 'package:otzaria/core/window_listener.dart';
 import 'package:otzaria/core/window_persistence.dart';
 import 'package:otzaria/core/windowing/app_window_scope.dart';
@@ -354,6 +355,7 @@ void main(List<String> args) async {
   Pdfrx.normalizeHebrewText = true;
 
   SentryWidgetsFlutterBinding.ensureInitialized();
+  DeveloperDiagnostics.instance.initFromLaunch(args);
 
   // אישור קבלה מוקדם לאתר החנות עבור קישורי התקנת תוסף שהגיעו כארגומנטים —
   // נורה כאן, לפני כל אתחול כבד ולפני עליית החלון, כדי שדף החנות יידע תוך

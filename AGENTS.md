@@ -232,6 +232,37 @@ appends `=== Startup stall` with module+RVA frames to `errors.txt`. It stops its
 is silent on a healthy launch. That is how #1192 was found after three rounds of Dart instrumentation
 missed it.
 
+## Developer diagnostics (measuring the real app)
+
+To compare performance before and after a change, run the real app with developer diagnostics
+instead of guessing from code. It records frame timings, memory, slow frames with app context,
+the startup timeline and, in debug builds, rebuild counts per widget type.
+
+**Enable it** with Ctrl+Shift+I in the running app (for this run only), or at launch:
+
+```bash
+build/windows/x64/runner/Release/otzaria.exe --dev-diagnostics       # panel + log
+build/windows/x64/runner/Release/otzaria.exe --dev-diagnostics=log   # log only, no panel
+OTZARIA_DEV_DIAGNOSTICS=log flutter run -d windows --profile          # env var form
+```
+
+**Output:** JSON lines appended to `<data root>/logs/developer_diagnostics.jsonl` (next to
+`errors.txt`; `%APPDATA%\otzaria\logs` on Windows). Override with `OTZARIA_DEV_DIAGNOSTICS_OUT`.
+
+| `type` | When | Fields |
+|---|---|---|
+| `session` | collection starts | version, buildMode, os, cores, pid, launchMode |
+| `startup` | once, after the window is revealed | revealMs, phases, marks |
+| `context` | the screen or current tab changed | screen, tabs, currentTab, currentTitle |
+| `stats` | every second with frames or rebuilds | fps, build/raster avg and max ms, slowInWindow, slowTotal, rssMb, peakRssMb, rebuilds (debug) |
+| `slow_frame` | a frame took 100 ms or more | buildMs, rasterMs, totalMs, context |
+| `snapshot` | the panel's camera button | stats + context + startup (also written to errors.txt) |
+
+`t` is milliseconds since collection started. Use profile or release builds for timings; debug
+builds are several times slower but are the only ones with `rebuilds`, repaint rainbow and layout
+bounds. Compare runs on the same machine, library and scenario, and repeat each side at least
+twice.
+
 ## UI rules
 
 Read the relevant section of `docs/agent_ui_reference.md` before changing UI; do not load it for unrelated tasks.
