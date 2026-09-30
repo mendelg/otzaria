@@ -51,3 +51,22 @@ jobs:
           esac
           echo "Building search engine at: $pkg_root"
           cargo build --release --manifest-path "$pkg_root/rust/Cargo.toml"
+
+      - name: Cache OpenType shaper library
+        id: shaper-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.pub-cache/hosted/pub.dev/opentype_shaper-*/rust/target/release/libopentype_shaper.so
+          key: ${{ runner.os }}-opentype-shaper-lib-${{ hashFiles('pubspec.lock') }}
+
+      - name: Build OpenType shaper native library
+        if: steps.shaper-cache.outputs.cache-hit != 'true'
+        run: |
+          pkg_root=$(jq -r '.packages[] | select(.name == "opentype_shaper") | .rootUri' .dart_tool/package_config.json)
+          pkg_root=${pkg_root#file://}
+          case "$pkg_root" in
+            /*) ;;
+            *) pkg_root=".dart_tool/$pkg_root" ;;
+          esac
+          echo "Building OpenType shaper at: $pkg_root"
+          cargo build --release --manifest-path "$pkg_root/rust/Cargo.toml"
