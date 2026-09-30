@@ -28,7 +28,6 @@ import 'package:otzaria/widgets/navigation/reader_nav_center.dart';
 import 'package:otzaria/tabs/models/commentators_tab.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/bloc/tabs_event.dart';
-import 'package:otzaria/tabs/bloc/tabs_state.dart';
 import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/utils/book_versions_action.dart';
 import 'package:otzaria/text_book/utils/dibburim_structure.dart';
@@ -1279,230 +1278,205 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
     super.build(context);
     return BlocBuilder<SettingsBloc, SettingsState>(
       builder: (context, settingsState) {
-        return BlocConsumer<TabsBloc, TabsState>(
-          listenWhen: (previous, current) =>
-              previous.currentTabIndex != current.currentTabIndex,
-          listener: (context, tabsState) {
-            // בקשת focus כשהטאב הנוכחי הוא הטאב של הספר הזה
-            // הסרת החזרה אוטומטית של פוקוס כדי לאפשר לדיאלוגים וחלוניות לקבל פוקוס
-            // final currentTab = tabsState.tabs.isNotEmpty &&
-            //         tabsState.currentTabIndex < tabsState.tabs.length
-            //     ? tabsState.tabs[tabsState.currentTabIndex]
-            //     : null;
-            // if (currentTab == widget.tab && mounted) {
-            //   WidgetsBinding.instance.addPostFrameCallback((_) {
-            //     if (mounted && !_bookContentFocusNode.hasFocus) {
-            //       _bookContentFocusNode.requestFocus();
-            //     }
-            //   });
+        return BlocConsumer<TextBookBloc, TextBookState>(
+          bloc: context.read<TextBookBloc>(),
+          // ה-listener ממשיך לרוץ על כל מצב; רק הבנייה מדלגת.
+          buildWhen: shouldRebuildReader,
+          listener: (context, state) {
+            // [EDITING DISABLED]
+            // if (state is TextBookLoaded &&
+            //     state.isEditorOpen &&
+            //     state.editorIndex != null) {
+            //   _openEditorDialog(context, state);
             // }
+
+            if (state is TextBookLoaded) {
+              // איתור ה-PDF המלווה נדחה עד שהתוכן נטען, כדי שלא יחנוק את
+              // שאילתת התוכן בעלייה (ראו _resolveCompanionPdf).
+              _resolveCompanionPdf();
+              // פתיחת/סגירת חלונית הצד משנה את רוחב הטקסט; מעגנים מחדש
+              // לפריט העליון הנראה כדי שהתצוגה לא תקפוץ בזרימה-מחדש.
+              if (state.showLeftPane != _lastShowLeftPaneForReanchor) {
+                _lastShowLeftPaneForReanchor = state.showLeftPane;
+                if (_paneUsesPushLayout) {
+                  reanchorOnPaneToggleCount++;
+                  _reanchorMainContentToTopmostVisible();
+                }
+              }
+              // שינוי גודל גופן משנה את גובה כל הפריטים; בלי עיגון-מחדש
+              // ההיסט בפיקסלים נוחת על מקום אחר (issue #915).
+              if (state.fontSize != _lastFontSizeForReanchor) {
+                final isFirstLoadedState = _lastFontSizeForReanchor == null;
+                _lastFontSizeForReanchor = state.fontSize;
+                if (!isFirstLoadedState) {
+                  reanchorOnFontSizeCount++;
+                  _reanchorMainContentToTopmostVisible();
+                }
+              }
+              final pendingSidebarTab = Settings.getValue<int>(
+                'key-sidebar-tab-index-pending',
+              );
+              if (pendingSidebarTab != null && pendingSidebarTab >= 0) {
+                if (_sidebarTabIndex != pendingSidebarTab) {
+                  setState(() {
+                    _sidebarTabIndex = pendingSidebarTab;
+                  });
+                }
+                if (state.showSplitView) {
+                  Settings.setValue<int>(
+                    'key-sidebar-tab-index-pending',
+                    -1,
+                  );
+                }
+              } else if (!state.showSplitView && _sidebarTabIndex != null) {
+                setState(() {
+                  _sidebarTabIndex = null;
+                });
+              }
+            }
           },
-          builder: (context, tabsState) {
-            return BlocConsumer<TextBookBloc, TextBookState>(
-              bloc: context.read<TextBookBloc>(),
-              // ה-listener ממשיך לרוץ על כל מצב; רק הבנייה מדלגת.
-              buildWhen: shouldRebuildReader,
-              listener: (context, state) {
-                // [EDITING DISABLED]
-                // if (state is TextBookLoaded &&
-                //     state.isEditorOpen &&
-                //     state.editorIndex != null) {
-                //   _openEditorDialog(context, state);
-                // }
+          builder: (context, state) {
+            if (state is TextBookInitial) {
+              // איפוס אינדקס הכרטיסייה כשטוענים ספר חדש
+              final pendingSidebarTab = Settings.getValue<int>(
+                'key-sidebar-tab-index-pending',
+              );
+              if (_sidebarTabIndex != null &&
+                  (pendingSidebarTab == null || pendingSidebarTab < 0)) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  setState(() {
+                    _sidebarTabIndex = null;
+                  });
+                });
+              }
 
-                if (state is TextBookLoaded) {
-                  // איתור ה-PDF המלווה נדחה עד שהתוכן נטען, כדי שלא יחנוק את
-                  // שאילתת התוכן בעלייה (ראו _resolveCompanionPdf).
-                  _resolveCompanionPdf();
-                  // פתיחת/סגירת חלונית הצד משנה את רוחב הטקסט; מעגנים מחדש
-                  // לפריט העליון הנראה כדי שהתצוגה לא תקפוץ בזרימה-מחדש.
-                  if (state.showLeftPane != _lastShowLeftPaneForReanchor) {
-                    _lastShowLeftPaneForReanchor = state.showLeftPane;
-                    if (_paneUsesPushLayout) {
-                      reanchorOnPaneToggleCount++;
-                      _reanchorMainContentToTopmostVisible();
-                    }
-                  }
-                  // שינוי גודל גופן משנה את גובה כל הפריטים; בלי עיגון-מחדש
-                  // ההיסט בפיקסלים נוחת על מקום אחר (issue #915).
-                  if (state.fontSize != _lastFontSizeForReanchor) {
-                    final isFirstLoadedState = _lastFontSizeForReanchor == null;
-                    _lastFontSizeForReanchor = state.fontSize;
-                    if (!isFirstLoadedState) {
-                      reanchorOnFontSizeCount++;
-                      _reanchorMainContentToTopmostVisible();
-                    }
-                  }
-                  final pendingSidebarTab = Settings.getValue<int>(
-                    'key-sidebar-tab-index-pending',
-                  );
-                  if (pendingSidebarTab != null && pendingSidebarTab >= 0) {
-                    if (_sidebarTabIndex != pendingSidebarTab) {
-                      setState(() {
-                        _sidebarTabIndex = pendingSidebarTab;
-                      });
-                    }
-                    if (state.showSplitView) {
-                      Settings.setValue<int>(
-                        'key-sidebar-tab-index-pending',
-                        -1,
-                      );
-                    }
-                  } else if (!state.showSplitView && _sidebarTabIndex != null) {
-                    setState(() {
-                      _sidebarTabIndex = null;
-                    });
-                  }
-                }
-              },
-              builder: (context, state) {
-                if (state is TextBookInitial) {
-                  // איפוס אינדקס הכרטיסייה כשטוענים ספר חדש
-                  final pendingSidebarTab = Settings.getValue<int>(
-                    'key-sidebar-tab-index-pending',
-                  );
-                  if (_sidebarTabIndex != null &&
-                      (pendingSidebarTab == null || pendingSidebarTab < 0)) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      setState(() {
-                        _sidebarTabIndex = null;
-                      });
-                    });
-                  }
+              context.read<TextBookBloc>().add(
+                LoadContent(
+                  fontSize: settingsState.fontSize,
+                  showSplitView: state.splitedView,
+                  removeNikud: settingsState.defaultRemoveNikud,
+                  // בתצוגה משולבת, חלונית הצד תמיד סגורה
+                  forceCloseLeftPane: widget.isInCombinedView,
+                ),
+              );
+            }
 
-                  context.read<TextBookBloc>().add(
-                    LoadContent(
-                      fontSize: settingsState.fontSize,
-                      showSplitView: state.splitedView,
-                      removeNikud: settingsState.defaultRemoveNikud,
-                      // בתצוגה משולבת, חלונית הצד תמיד סגורה
-                      forceCloseLeftPane: widget.isInCombinedView,
-                    ),
-                  );
-                }
-
-                if (state is TextBookInitial || state is TextBookLoading) {
-                  return Scaffold(
-                    body: Column(
-                      children: [
-                        AppTopBar(
-                          leadingItems: [
-                            AppTopBarItem(
-                              widget: NavPanelToggleButton(
-                                isOpen: false,
-                                onToggle: () {},
-                              ),
-                            ),
-                          ],
-                          center: Text(
-                            widget.tab.book.title,
-                            style: AppTopBar.titleStyle(context),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+            if (state is TextBookInitial || state is TextBookLoading) {
+              return Scaffold(
+                body: Column(
+                  children: [
+                    AppTopBar(
+                      leadingItems: [
+                        AppTopBarItem(
+                          widget: NavPanelToggleButton(
+                            isOpen: false,
+                            onToggle: () {},
                           ),
                         ),
-                        const Expanded(
-                          child: Center(child: CircularProgressIndicator()),
-                        ),
                       ],
-                    ),
-                  );
-                }
-
-                if (state is TextBookError) {
-                  return Center(child: Text('Error: ${(state).message}'));
-                }
-
-                if (state is TextBookLoaded) {
-                  // בקשת focus אוטומטית כשהספר נטען
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!mounted) {
-                      return;
-                    }
-
-                    if (state.showPageShapeView) {
-                      // hasPrimaryFocus ולא hasFocus: ה-KeyboardListener הזה עוטף
-                      // את כל גוף המסך (כולל פאנל החיפוש), ו-hasFocus מחזיר true
-                      // גם כשצאצא (שדה החיפוש) ממוקד. unfocus כזה היה מסיר פוקוס
-                      // מכל התת-עץ ומבריח את הסמן משדה החיפוש בכל הקלדה. כאן
-                      // משחררים פוקוס רק אם ה-node הזה עצמו מחזיק בפוקוס.
-                      if (_bookContentFocusNode.hasPrimaryFocus) {
-                        _bookContentFocusNode.unfocus();
-                      }
-                      return;
-                    }
-
-                    // ה-callback הזה נרשם בכל build — כולל כשפתיחת מקלדת
-                    // וירטואלית משנה את ה-viewport וגורמת rebuild. אסור לחטוף
-                    // פוקוס כשהמשתמש נמצא בדיאלוג מעל המסך (חיפוש/איתור) או
-                    // בשדה קלט כלשהו — חטיפה כזו סוגרת את המקלדת מיד אחרי
-                    // שנפתחה (ראה תקדים דומה ב-resolveLeftPaneSearchFocus).
-                    if (!(ModalRoute.of(context)?.isCurrent ?? true)) {
-                      return;
-                    }
-                    if (isTextInputFocusNode(
-                      FocusManager.instance.primaryFocus,
-                    )) {
-                      return;
-                    }
-                    // בטאב מפוצל רק החלונית הפעילה תופסת פוקוס: rebuild של
-                    // חלונית אחרת (טעינת טווח תוכן) היה חוטף אותו באמצע גלילה.
-                    final activePane = context
-                        .read<TabsBloc>()
-                        .state
-                        .activePane;
-                    if (activePane != null &&
-                        !identical(activePane, widget.tab)) {
-                      return;
-                    }
-
-                    if (!_bookContentFocusNode.hasFocus &&
-                        !textSearchFocusNode.hasFocus &&
-                        !navigationSearchFocusNode.hasFocus &&
-                        !altTitlesSearchFocusNode.hasFocus) {
-                      // ממקד את אזור הגלילה (ProgressiveScroll) דרך ה-requester
-                      // שרשם CombinedView; הוא צאצא של ה-KeyboardListener הזה,
-                      // לכן Ctrl+P/Home וכו' ממשיכים לעבוד. fallback ל-node הזה
-                      // אם אין requester (למשל צורת הדף).
-                      final didFocus =
-                          _focusRepository?.requestTabContentFocus(
-                            widget.tab,
-                          ) ??
-                          false;
-                      if (!didFocus) _bookContentFocusNode.requestFocus();
-                    }
-                  });
-
-                  return KeyboardListener(
-                    focusNode: _bookContentFocusNode,
-                    autofocus: false,
-                    onKeyEvent: (event) => _handleGlobalKeyEvent(
-                      event,
-                      context,
-                      state,
-                      widget.tab,
-                      openSearchFromToolbar: _openSearchFromToolbar,
-                      openNotesForCurrentView: () =>
-                          _openPersonalNotesForCurrentView(state),
-                      selectedTextForNote: _selectedTextForSearch,
-                      selectedLineForNote: _selectedLineForNote,
-                      selectedColumnForNote: _selectedColumnForNote,
-                    ),
-                    child: Scaffold(
-                      body: Column(
-                        children: [
-                          _buildAppBar(context, state),
-                          Expanded(child: _buildBody(context, state)),
-                        ],
+                      center: Text(
+                        widget.tab.book.title,
+                        style: AppTopBar.titleStyle(context),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  );
+                    const Expanded(
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            if (state is TextBookError) {
+              return Center(child: Text('Error: ${(state).message}'));
+            }
+
+            if (state is TextBookLoaded) {
+              // בקשת focus אוטומטית כשהספר נטען
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) {
+                  return;
                 }
 
-                // Fallback
-                return const Center(child: Text('Unknown state'));
-              },
-            );
+                if (state.showPageShapeView) {
+                  // hasPrimaryFocus ולא hasFocus: ה-KeyboardListener הזה עוטף
+                  // את כל גוף המסך (כולל פאנל החיפוש), ו-hasFocus מחזיר true
+                  // גם כשצאצא (שדה החיפוש) ממוקד. unfocus כזה היה מסיר פוקוס
+                  // מכל התת-עץ ומבריח את הסמן משדה החיפוש בכל הקלדה. כאן
+                  // משחררים פוקוס רק אם ה-node הזה עצמו מחזיק בפוקוס.
+                  if (_bookContentFocusNode.hasPrimaryFocus) {
+                    _bookContentFocusNode.unfocus();
+                  }
+                  return;
+                }
+
+                // ה-callback הזה נרשם בכל build — כולל כשפתיחת מקלדת
+                // וירטואלית משנה את ה-viewport וגורמת rebuild. אסור לחטוף
+                // פוקוס כשהמשתמש נמצא בדיאלוג מעל המסך (חיפוש/איתור) או
+                // בשדה קלט כלשהו — חטיפה כזו סוגרת את המקלדת מיד אחרי
+                // שנפתחה (ראה תקדים דומה ב-resolveLeftPaneSearchFocus).
+                if (!(ModalRoute.of(context)?.isCurrent ?? true)) {
+                  return;
+                }
+                if (isTextInputFocusNode(
+                  FocusManager.instance.primaryFocus,
+                )) {
+                  return;
+                }
+                // בטאב מפוצל רק החלונית הפעילה תופסת פוקוס: rebuild של
+                // חלונית אחרת (טעינת טווח תוכן) היה חוטף אותו באמצע גלילה.
+                final activePane = context.read<TabsBloc>().state.activePane;
+                if (activePane != null && !identical(activePane, widget.tab)) {
+                  return;
+                }
+
+                if (!_bookContentFocusNode.hasFocus &&
+                    !textSearchFocusNode.hasFocus &&
+                    !navigationSearchFocusNode.hasFocus &&
+                    !altTitlesSearchFocusNode.hasFocus) {
+                  // ממקד את אזור הגלילה (ProgressiveScroll) דרך ה-requester
+                  // שרשם CombinedView; הוא צאצא של ה-KeyboardListener הזה,
+                  // לכן Ctrl+P/Home וכו' ממשיכים לעבוד. fallback ל-node הזה
+                  // אם אין requester (למשל צורת הדף).
+                  final didFocus =
+                      _focusRepository?.requestTabContentFocus(
+                        widget.tab,
+                      ) ??
+                      false;
+                  if (!didFocus) _bookContentFocusNode.requestFocus();
+                }
+              });
+
+              return KeyboardListener(
+                focusNode: _bookContentFocusNode,
+                autofocus: false,
+                onKeyEvent: (event) => _handleGlobalKeyEvent(
+                  event,
+                  context,
+                  state,
+                  widget.tab,
+                  openSearchFromToolbar: _openSearchFromToolbar,
+                  openNotesForCurrentView: () =>
+                      _openPersonalNotesForCurrentView(state),
+                  selectedTextForNote: _selectedTextForSearch,
+                  selectedLineForNote: _selectedLineForNote,
+                  selectedColumnForNote: _selectedColumnForNote,
+                ),
+                child: Scaffold(
+                  body: Column(
+                    children: [
+                      _buildAppBar(context, state),
+                      Expanded(child: _buildBody(context, state)),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // Fallback
+            return const Center(child: Text('Unknown state'));
           },
         );
       },
