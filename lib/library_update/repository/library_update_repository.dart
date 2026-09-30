@@ -175,6 +175,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   final String Function() nowTimestamp;
   final Future<DiskSpaceInfo> Function(String dirPath) diskSpaceProvider;
   final Future<PatchApplier> Function() applierProvider;
+  final Future<void> Function() sqliteTempDirectoryInitializer;
 
   LibraryUpdateRepository({
     required this.discovery,
@@ -191,6 +192,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     String Function()? nowTimestamp,
     Future<DiskSpaceInfo> Function(String dirPath)? diskSpaceProvider,
     Future<PatchApplier> Function()? applierProvider,
+    Future<void> Function()? sqliteTempDirectoryInitializer,
   }) : dbPathProvider = dbPathProvider ?? DatabaseConstants.getDatabasePath,
        dataRootProvider = dataRootProvider ?? AppPaths.getDataRootPath,
        nowTimestamp = nowTimestamp ?? (() => DateTime.now().toIso8601String()),
@@ -198,7 +200,21 @@ class LibraryUpdateRepository implements LibraryUpdateService {
        diskSpaceProvider = diskSpaceProvider ?? getDiskSpaceInfo,
        applierProvider =
            applierProvider ??
-           (() => LibraryUpdateSqliteSetup.instance.prepareApplier());
+           (() => LibraryUpdateSqliteSetup.instance.prepareApplier()),
+       sqliteTempDirectoryInitializer =
+           sqliteTempDirectoryInitializer ??
+           _installSqliteTempDirectoryWhenQuiesced;
+
+  static Future<void> _installSqliteTempDirectoryWhenQuiesced() async {
+    final setup = LibraryUpdateSqliteSetup.instance;
+    if (!setup.hasPendingTempDirectoryInstall) return;
+    await SqliteDataProvider.instance.closeForExternalWrite();
+    try {
+      setup.installTempDirectoryWhenQuiesced();
+    } finally {
+      await SqliteDataProvider.instance.reopenAfterExternalWrite();
+    }
+  }
 
   /// גודל הקובץ, או null כשהוא חסר/ריק — ה-planner מתעלם מגודל לא ידוע.
   static int? _fileSizeOrNull(String path) {
@@ -282,8 +298,9 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     // לפני בדיקת המקום: patch של תוכנית אחרת שנשאר בקאש תופס גיגה-בייטים
     // שבלעדיהם הבדיקה תיכשל, והניקוי שבסוף לא היה מגיע לעולם.
     _deleteStalePatchFiles(cacheDir, steps);
-    // לפני ה-isolate הראשון: ב-mobile זה מגדיר את תיקיית ה-temp של SQLite.
+    // מכינים את הנתיב כעת; מתקינים אותו רק אחרי השהיית חיבורי SQLite.
     final applier = await applierProvider();
+    var sqliteTempDirectoryInitialized = false;
     try {
       for (var i = 0; i < steps.length; i++) {
         final step = steps[i];
@@ -372,6 +389,11 @@ class LibraryUpdateRepository implements LibraryUpdateService {
           String? currentStage;
           final stepResult = await _applyStepInQueue(
             applier: applier,
+            initializeSqliteTempDirectory: () async {
+              if (sqliteTempDirectoryInitialized) return;
+              await sqliteTempDirectoryInitializer();
+              sqliteTempDirectoryInitialized = true;
+            },
             dbPath: dbPath,
             patchPath: patchPath,
             step: step,
@@ -905,6 +927,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
 
   Future<PatchApplyResult> _applyStepInQueue({
     required PatchApplier applier,
+    required Future<void> Function() initializeSqliteTempDirectory,
     required String dbPath,
     required String patchPath,
     required PatchEdge step,
@@ -915,6 +938,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     void Function(int rowsDone, int rowsTotal)? onApplyProgress,
   }) {
     return DatabaseLibraryProvider.operationQueue.enqueue(() async {
+      await initializeSqliteTempDirectory();
       // WAL מאפשר לקוראים להמשיך לקרוא את ה-snapshot שלפני העדכון בזמן
       // שהאיזולייט כותב — בלי לסגור את חיבור ה-RO (שחסם פתיחת ספרים לדקות).
       // אם ההמרה נכשלת, נסוגים למסלול הישן: סגירת ה-RO למשך הכתיבה.

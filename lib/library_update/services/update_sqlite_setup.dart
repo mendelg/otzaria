@@ -36,6 +36,13 @@ class LibraryUpdateSqliteSetup {
   final void Function(String path) _writeTempDir;
 
   Future<PatchApplier>? _applier;
+  String? _preparedTempDirectory;
+  bool _tempDirectoryInstallAttempted = false;
+
+  bool get hasPendingTempDirectoryInstall =>
+      _needsTempDir &&
+      _preparedTempDirectory != null &&
+      !_tempDirectoryInstallAttempted;
 
   /// ה-[PatchApplier] לכל ה-apply וה-verify של העדכון. ב-desktop — ברירות
   /// המחדל של ה-updater, שנמדדו שם.
@@ -43,7 +50,7 @@ class LibraryUpdateSqliteSetup {
 
   Future<PatchApplier> _prepare() async {
     if (!_isMobile) return const PatchApplier();
-    if (_needsTempDir) await _ensureSqliteTempDirectory();
+    if (_needsTempDir) await _prepareSqliteTempDirectory();
     int? ramMb;
     try {
       ramMb = await _physicalRamMb();
@@ -70,14 +77,11 @@ class LibraryUpdateSqliteSetup {
     );
   }
 
-  // משתנה C גלובלי לכל התהליך, ו-set משחרר את המחרוזת הקודמת בזמן שחיבור
-  // ב-isolate אחר עלול לקרוא אותה — לכן כותבים רק כשהוא ריק, ורק פעם אחת.
-  Future<void> _ensureSqliteTempDirectory() async {
-    if (_readTempDir() != null) return;
+  Future<void> _prepareSqliteTempDirectory() async {
     try {
       final dir = await _temporaryDirectory();
       await dir.create(recursive: true);
-      if (_readTempDir() == null) _writeTempDir(dir.path);
+      _preparedTempDirectory = dir.path;
     } catch (error, stackTrace) {
       // בלי תיקייה ה-updater נשאר ב-temp_store של ה-build (זיכרון).
       try {
@@ -87,6 +91,26 @@ class LibraryUpdateSqliteSetup {
           stackTrace: stackTrace,
         );
       } catch (_) {}
+    }
+  }
+
+  /// מתקין את הנתיב רק כשהאפליקציה משהה את כל חיבורי SQLite המקבילים.
+  void installTempDirectoryWhenQuiesced() {
+    if (!hasPendingTempDirectoryInstall) return;
+    try {
+      if (_readTempDir() == null) {
+        _writeTempDir(_preparedTempDirectory!);
+      }
+    } catch (error, stackTrace) {
+      try {
+        ErrorLogFile.append(
+          title: 'Library Update: sqlite temp directory unavailable',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } catch (_) {}
+    } finally {
+      _tempDirectoryInstallAttempted = true;
     }
   }
 

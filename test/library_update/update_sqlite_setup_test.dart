@@ -131,6 +131,8 @@ void main() {
 
         final applier = await setup.prepareApplier();
 
+        expect(global.writes, isEmpty);
+        setup.installTempDirectoryWhenQuiesced();
         expect(global.writes, [tempPath]);
         expect(Directory(tempPath).existsSync(), isTrue);
         expect(applier.cacheSizeKib, 96 * mib);
@@ -151,10 +153,11 @@ void main() {
       );
 
       await setup.prepareApplier();
+      setup.installTempDirectoryWhenQuiesced();
 
       expect(global.writes, isEmpty);
       expect(global.value, '/already/set');
-      expect(fakePath.calls, 0);
+      expect(fakePath.calls, 1);
     });
 
     test('mobile: קריאות חוזרות ומקבילות מגדירות פעם אחת בלבד', () async {
@@ -174,6 +177,9 @@ void main() {
         setup.prepareApplier(),
       ]);
       await setup.prepareApplier();
+      expect(global.writes, isEmpty);
+      setup.installTempDirectoryWhenQuiesced();
+      setup.installTempDirectoryWhenQuiesced();
 
       expect(identical(results[0], results[1]), isTrue);
       expect(fakePath.calls, 1);
@@ -195,6 +201,7 @@ void main() {
       );
 
       await setup.prepareApplier();
+      setup.installTempDirectoryWhenQuiesced();
 
       expect(sqlite3.sqlite3.tempDirectory, systemTemp);
     });
@@ -212,6 +219,7 @@ void main() {
       );
 
       final applier = await setup.prepareApplier();
+      setup.installTempDirectoryWhenQuiesced();
 
       expect(applier.cacheSizeKib, 128 * mib);
       expect(fakePath.calls, 0);
@@ -230,6 +238,7 @@ void main() {
       );
 
       final applier = await setup.prepareApplier();
+      setup.installTempDirectoryWhenQuiesced();
 
       expect(applier.cacheSizeKib, 64 * mib);
       expect(global.writes, [tmp.path]);

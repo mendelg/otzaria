@@ -1187,8 +1187,9 @@ void main() {
     LibraryUpdateRepository buildRepository(
       String dbPath,
       String patchPath,
-      Future<PatchApplier> Function() applierProvider,
-    ) => LibraryUpdateRepository(
+      Future<PatchApplier> Function() applierProvider, {
+      Future<void> Function()? sqliteTempDirectoryInitializer,
+    }) => LibraryUpdateRepository(
       discovery: _unusedDiscovery(),
       downloader: _PatchMapDownloader({'patch-1-2.db': patchPath}),
       refreshService: _NoopRefreshService(),
@@ -1196,6 +1197,7 @@ void main() {
       dataRootProvider: () async => tmp.path,
       nowTimestamp: () => '2026-09-29T00:00:00Z',
       applierProvider: applierProvider,
+      sqliteTempDirectoryInitializer: sqliteTempDirectoryInitializer,
     );
 
     LibraryUpdatePlan onePatchPlan(String expectedPath) => _schema4DeltaPlan([
@@ -1247,16 +1249,21 @@ void main() {
         toVersion: 2,
         sourceName: 'new',
       );
+      var setupCalls = 0;
       final repository = buildRepository(
         dbPath,
         patchPath,
         () async => LibraryUpdateSqliteSetup.applierForPhysicalRam(2048),
+        sqliteTempDirectoryInitializer: () async {
+          setupCalls++;
+        },
       );
 
       await repository.applyDeltaPlan(onePatchPlan(expectedPath));
 
       expect(const LocalDbVersionReader().read(dbPath).dbVersion, 2);
       expect(_readSourceName(dbPath), 'new');
+      expect(setupCalls, 1);
     }, timeout: const Timeout(Duration(seconds: 30)));
   });
 
