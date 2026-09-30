@@ -1292,7 +1292,7 @@ class FindRefRepository {
 
     await _addSecondaryBookResults(results, search);
 
-    final unique = _dedupeRefs(results);
+    final unique = _dedupeRefs(results, queryTokens: queryTokens);
     final ranked = _rankResults(
       unique,
       queryTokens,
@@ -1394,7 +1394,7 @@ class FindRefRepository {
 
     await _addSecondaryBookResults(results, search);
 
-    final unique = _dedupeRefs(results);
+    final unique = _dedupeRefs(results, queryTokens: queryTokens);
     final pruned = _suppressDeeperVariants(unique);
     final ranked = _rankResults(
       pruned,
@@ -2858,28 +2858,63 @@ class FindRefRepository {
     return remaining;
   }
 
-  List<DbReferenceResult> _dedupeRefs(List<DbReferenceResult> results) {
+  List<DbReferenceResult> _dedupeRefs(
+    List<DbReferenceResult> results, {
+    List<String> queryTokens = const [],
+  }) {
     final seen = <String>{};
     final out = <DbReferenceResult>[];
+    // Reference tokens of TOC results, per book and heading line.
+    final headings = <String, Map<num, Set<String>>>{};
+    for (final r in results) {
+      if (r.isAltToc || r.isSourceLine || r.isPdf || r.sourceLineId == 0) {
+        continue;
+      }
+      headings
+          .putIfAbsent(_dedupeBookKey(r), () => {})
+          .putIfAbsent(r.segment, () => {})
+          .addAll(_tokenize(_normalizeForMatch(r.reference)));
+    }
 
     // המלאות תופסות את המפתחות תחילה, בלי להחליף תוצאה שכבר נשמרה.
     for (final partial in [false, true]) {
       for (final r in results) {
         if (r.isPartialTocMatch != partial) continue;
-        // ל-PDF מהדיסק אין bookId ייחודי; ב-DB נתיב ריק של fallback אינו ספר אחר.
-        final filePathKey = r.bookId == -1 ? r.filePath : '';
-        final bookKey =
-            '${r.bookId}|${r.source.wireKey}|${r.title}|${r.isPdf}|$filePathKey';
+        final bookKey = _dedupeBookKey(r);
         final segmentKey = '$bookKey|${r.segment}';
         final referenceKey = '$bookKey|ref:${r.reference}';
         // גם שורה או כתובת של כפילה נשארות מוכרות לרשומות הבאות.
         final newSegment = seen.add(segmentKey);
         final newReference = seen.add(referenceKey);
-        if (newSegment && newReference) out.add(r);
+        if (newSegment &&
+            newReference &&
+            !_restatesHeadingAbove(r, headings[bookKey], queryTokens)) {
+          out.add(r);
+        }
       }
     }
 
     return out;
+  }
+
+  /// An AltToc leaf on the line right under a TOC heading ("[סימן כה] ..." vs
+  /// "סימן כה") that covers no query token the heading lacks: same place.
+  bool _restatesHeadingAbove(
+    DbReferenceResult r,
+    Map<num, Set<String>>? headings,
+    List<String> queryTokens,
+  ) {
+    if (!r.isAltToc) return false;
+    final heading = headings?[r.segment - 1];
+    if (heading == null) return false;
+    final own = _tokenize(_normalizeForMatch(r.reference));
+    return queryTokens.every((t) => heading.contains(t) || !own.contains(t));
+  }
+
+  static String _dedupeBookKey(DbReferenceResult r) {
+    // ל-PDF מהדיסק אין bookId ייחודי; ב-DB נתיב ריק של fallback אינו ספר אחר.
+    final filePathKey = r.bookId == -1 ? r.filePath : '';
+    return '${r.bookId}|${r.source.wireKey}|${r.title}|${r.isPdf}|$filePathKey';
   }
 
   List<DbReferenceResult> _rankResults(
