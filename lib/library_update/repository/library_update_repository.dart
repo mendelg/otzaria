@@ -17,6 +17,7 @@ import 'package:seforim_library_updater/seforim_library_updater.dart';
 
 import '../services/library_runtime_refresh_service.dart';
 import '../services/streaming_patch_downloader.dart';
+import '../services/update_sqlite_setup.dart';
 
 /// שלבי תהליך העדכון — לתצוגת הודעות למשתמש.
 enum LibraryUpdatePhase {
@@ -173,6 +174,8 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   final Future<String> Function() dataRootProvider;
   final String Function() nowTimestamp;
   final Future<DiskSpaceInfo> Function(String dirPath) diskSpaceProvider;
+  final Future<PatchApplier> Function() applierProvider;
+  final Future<void> Function() sqliteTempDirectoryInitializer;
 
   LibraryUpdateRepository({
     required this.discovery,
@@ -188,11 +191,30 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     Future<String> Function()? dataRootProvider,
     String Function()? nowTimestamp,
     Future<DiskSpaceInfo> Function(String dirPath)? diskSpaceProvider,
+    Future<PatchApplier> Function()? applierProvider,
+    Future<void> Function()? sqliteTempDirectoryInitializer,
   }) : dbPathProvider = dbPathProvider ?? DatabaseConstants.getDatabasePath,
        dataRootProvider = dataRootProvider ?? AppPaths.getDataRootPath,
        nowTimestamp = nowTimestamp ?? (() => DateTime.now().toIso8601String()),
        fullDbExtractor = fullDbExtractor ?? _defaultFullDbExtractor,
-       diskSpaceProvider = diskSpaceProvider ?? getDiskSpaceInfo;
+       diskSpaceProvider = diskSpaceProvider ?? getDiskSpaceInfo,
+       applierProvider =
+           applierProvider ??
+           (() => LibraryUpdateSqliteSetup.instance.prepareApplier()),
+       sqliteTempDirectoryInitializer =
+           sqliteTempDirectoryInitializer ??
+           _installSqliteTempDirectoryWhenQuiesced;
+
+  static Future<void> _installSqliteTempDirectoryWhenQuiesced() async {
+    final setup = LibraryUpdateSqliteSetup.instance;
+    if (!setup.hasPendingTempDirectoryInstall) return;
+    await SqliteDataProvider.instance.closeForExternalWrite();
+    try {
+      setup.installTempDirectoryWhenQuiesced();
+    } finally {
+      await SqliteDataProvider.instance.reopenAfterExternalWrite();
+    }
+  }
 
   /// גודל הקובץ, או null כשהוא חסר/ריק — ה-planner מתעלם מגודל לא ידוע.
   static int? _fileSizeOrNull(String path) {
@@ -276,6 +298,9 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     // לפני בדיקת המקום: patch של תוכנית אחרת שנשאר בקאש תופס גיגה-בייטים
     // שבלעדיהם הבדיקה תיכשל, והניקוי שבסוף לא היה מגיע לעולם.
     _deleteStalePatchFiles(cacheDir, steps);
+    // מכינים את הנתיב כעת; מתקינים אותו רק אחרי השהיית חיבורי SQLite.
+    final applier = await applierProvider();
+    var sqliteTempDirectoryInitialized = false;
     try {
       for (var i = 0; i < steps.length; i++) {
         final step = steps[i];
@@ -363,6 +388,12 @@ class LibraryUpdateRepository implements LibraryUpdateService {
           // ('upserts' או 'deletes'), וה-BLoC גוזר ממנו את ההודעה.
           String? currentStage;
           final stepResult = await _applyStepInQueue(
+            applier: applier,
+            initializeSqliteTempDirectory: () async {
+              if (sqliteTempDirectoryInitialized) return;
+              await sqliteTempDirectoryInitializer();
+              sqliteTempDirectoryInitialized = true;
+            },
             dbPath: dbPath,
             patchPath: patchPath,
             step: step,
@@ -446,6 +477,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
         refreshError = error;
       }
       final drifted = await _verifyDeferredTables(
+        applier: applier,
         dbPath: dbPath,
         manifest: lastAppliedManifest,
         deferred: deferredIntersection,
@@ -471,6 +503,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     // אחרי שחיבור ה-RO נפתח מחדש והריענון הסתיים — מעבר קריאה
     // בלבד, בלי תור פעולות, כך שניתן להמשיך לקרוא בזמן הבדיקה.
     final drifted = await _verifyDeferredTables(
+      applier: applier,
       dbPath: dbPath,
       manifest: lastAppliedManifest,
       deferred: deferredIntersection,
@@ -506,6 +539,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   /// בודק את הטבלאות שאף צעד לא נגע בהן מול ה-hash של הצעד האחרון, ומחזיר
   /// את אלה שסטו. כשל בבדיקה עצמה אינו הופך עדכון תקין לשגיאה.
   Future<List<String>> _verifyDeferredTables({
+    required PatchApplier applier,
     required String dbPath,
     required DeltaManifest? manifest,
     required Set<String>? deferred,
@@ -523,6 +557,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     );
     try {
       return await _verifyTablesInIsolateWithProgress(
+        applier: applier,
         dbPath: dbPath,
         schemaVersion: manifest.toSchemaVersion,
         expected: expected,
@@ -891,6 +926,8 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   }
 
   Future<PatchApplyResult> _applyStepInQueue({
+    required PatchApplier applier,
+    required Future<void> Function() initializeSqliteTempDirectory,
     required String dbPath,
     required String patchPath,
     required PatchEdge step,
@@ -901,6 +938,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     void Function(int rowsDone, int rowsTotal)? onApplyProgress,
   }) {
     return DatabaseLibraryProvider.operationQueue.enqueue(() async {
+      await initializeSqliteTempDirectory();
       // WAL מאפשר לקוראים להמשיך לקרוא את ה-snapshot שלפני העדכון בזמן
       // שהאיזולייט כותב — בלי לסגור את חיבור ה-RO (שחסם פתיחת ספרים לדקות).
       // אם ההמרה נכשלת, נסוגים למסלול הישן: סגירת ה-RO למשך הכתיבה.
@@ -921,6 +959,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
           createBackup: false,
         );
         final booksTouched = await _applyPatchInIsolate(
+          applier: applier,
           dbPath: dbPath,
           patchPath: patchPath,
           manifest: step.manifest,
@@ -1002,6 +1041,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   // מאזין לתת-שלבי ה-apply דרך ReceivePort ומעביר ל-onStage (רץ ב-main isolate).
   // ה-onStage עצמו אסור שייכנס ל-scope של ה-Isolate.run (ראה [_runApplyIsolate]).
   static Future<PatchApplyResult> _applyPatchInIsolate({
+    required PatchApplier applier,
     required String dbPath,
     required String patchPath,
     required DeltaManifest manifest,
@@ -1025,6 +1065,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     });
     try {
       return await _runApplyIsolate(
+        applier: applier,
         dbPath: dbPath,
         patchPath: patchPath,
         manifest: manifest,
@@ -1042,6 +1083,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   // שאינם בשימוש), לכן המתודה מקבלת *רק* ערכים sendable. onStage/onProgress
   // נשארים ב-caller — אחרת הם גוררים את ה-bloc הלא-sendable ל-spawn.
   static Future<PatchApplyResult> _runApplyIsolate({
+    required PatchApplier applier,
     required String dbPath,
     required String patchPath,
     required DeltaManifest manifest,
@@ -1050,7 +1092,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     Map<String, int>? verifyTableBytesHint,
   }) {
     return Isolate.run(
-      () => const PatchApplier().apply(
+      () => applier.apply(
         dbPath: dbPath,
         patchPath: patchPath,
         manifest: manifest,
@@ -1078,6 +1120,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   // כמו [_applyPatchInIsolate]: ה-callback נשאר ב-caller, ל-isolate נכנסים
   // ערכים sendable בלבד.
   static Future<List<String>> _verifyTablesInIsolateWithProgress({
+    required PatchApplier applier,
     required String dbPath,
     required int schemaVersion,
     required Map<String, String> expected,
@@ -1091,6 +1134,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     });
     try {
       return await _runVerifyTablesIsolate(
+        applier: applier,
         dbPath: dbPath,
         schemaVersion: schemaVersion,
         expected: expected,
@@ -1105,6 +1149,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   }
 
   static Future<List<String>> _runVerifyTablesIsolate({
+    required PatchApplier applier,
     required String dbPath,
     required int schemaVersion,
     required Map<String, String> expected,
@@ -1113,7 +1158,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     Map<String, int>? tableBytesHint,
   }) {
     return Isolate.run(
-      () => const PatchApplier().verifyTableHashes(
+      () => applier.verifyTableHashes(
         dbPath: dbPath,
         schemaVersion: schemaVersion,
         expected: expected,
