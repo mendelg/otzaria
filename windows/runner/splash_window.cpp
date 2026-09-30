@@ -25,9 +25,6 @@ constexpr BYTE kIconAlpha = 178;
 constexpr UINT kFadeIntervalMs = 15;  // ~60fps
 constexpr int kFadeInStep = 14;        // 178/14 ≈ 13 צעדים ≈ 195ms (fade-in)
 constexpr int kFadeOutStep = 30;       // 178/30 ≈ 6 צעדים ≈ 90ms (fade-out)
-// זמן תצוגה מינימלי (החזקה אחרי ה-fade-in): גם אם החשיפה (Close) מגיעה מוקדם
-// (האפליקציה נטענת מהר), הסמל יוחזק לפחות זמן זה לפני ה-fade-out — מונע "הבזק".
-constexpr ULONGLONG kMinDisplayMs = 800;
 
 // g_splash_hwnd נכתב ע"י ה-thread *לפני* SetEvent(g_created_event) ונקרא ע"י
 // Close רק *אחרי* שה-WaitForSingleObject ב-Show חזר — האירוע מספק happens-before.
@@ -258,7 +255,6 @@ DWORD WINAPI SplashThreadProc(LPVOID) {
     // שואבים הודעות (מונע "not responding") וממתינים לאות הסגירה (g_close_event)
     // ואז מבצעים fade-out מבוסס Sleep + UpdateLayeredWindow ישיר (לא WM_TIMER).
     int alpha = kIconAlpha;
-    const ULONGLONG start = GetTickCount64();
     bool closing = false;
     for (;;) {
       MSG msg;
@@ -269,8 +265,9 @@ DWORD WINAPI SplashThreadProc(LPVOID) {
       if (!closing && WaitForSingleObject(g_close_event, 0) == WAIT_OBJECT_0) {
         closing = true;
       }
-      // מתחילים fade-out רק אחרי שעבר זמן התצוגה המינימלי (מונע הבזק).
-      if (closing && (GetTickCount64() - start) >= kMinDisplayMs) {
+      // Close arrives once the main window is visible; holding the icon longer
+      // would leave it floating over the app.
+      if (closing) {
         alpha -= kFadeOutStep;
         if (alpha <= 0) {
           break;
