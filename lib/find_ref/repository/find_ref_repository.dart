@@ -387,9 +387,7 @@ class FindRefRepository {
   /// מסלול "מכיל" סורק את שורות הספר ולכן מוגבל לראש הרשימה בלבד.
   static const int _maxDibburContainsBooks = 10;
 
-  /// issue #839: מכסת התאמות תת-מחרוזת המובטחת בזנב תוצאות של שאילתת
-  /// מילה-אחת — בלעדיה ה-cap מחק אותן כליל ("מא" לא הציג את יומא).
-  static const int _substringTailQuota = 10;
+  static const int _substringTailQuota = findRefSubstringTailQuota;
 
   /// מילות-דור של טוקן יחיד שמפעילות את מצב "דור + נושא".
   static const Map<String, CommentaryEra> _singleTokenEras = {
@@ -409,6 +407,10 @@ class FindRefRepository {
 
   /// קאש מזהי הספרים בעלי מבנה AltToc (ראה [getAltStructureBookIds]).
   Set<int>? _altBookIdsCache;
+
+  /// מפתחות הדירוג של ספרים רשמיים ונתיב הקטגוריה שממנו חושבו.
+  final Map<int, ({String? path, String title, FindRefBookRank rank})>
+  _bookRanks = {};
 
   /// הספרים האישיים (user_books.db). נבנה מחדש כשתוכן המסד השתנה (ראו
   /// [_userBooksJob]), ב-[clearCaches] ובסגירת המסד.
@@ -530,6 +532,7 @@ class FindRefRepository {
     _commentatorsCache.clear();
     _altTocFlatCache = null;
     _altBookIdsCache = null;
+    _bookRanks.clear();
     _dropUserBooks();
     _userBooksDbPath = null;
     _userBooksVersion++;
@@ -835,6 +838,30 @@ class FindRefRepository {
       debugPrint('[FindRef] Global AltToc fallback failed: $e\n$st');
     }
   }
+
+  /// מפתחות הדירוג של ספר רשמי, לפי נתיב הקטגוריה העדכני שלו. נשמרים בין
+  /// שאילתות: ה-AltToc הגלובלי מביא אלפי שורות מעשרות ספרים בלבד.
+  FindRefBookRank _officialBookRank(int bookId, String title) {
+    final path =
+        (getCategoryPathSync ??
+        ReferenceBooksCache.instance.getCategoryPathForBookSync)(bookId);
+    final cached = _bookRanks[bookId];
+    if (cached != null && cached.path == path && cached.title == title) {
+      return cached.rank;
+    }
+    final rank = _bookRankFor(path, title);
+    _bookRanks[bookId] = (path: path, title: title, rank: rank);
+    return rank;
+  }
+
+  static FindRefBookRank _bookRankFor(String? categoryPath, String title) => (
+    foundationalTier: FoundationalBookClassifier.classify(categoryPath, title),
+    eraOrder:
+        (categoryPath == null
+                ? CommentaryEra.other
+                : ReferenceBooksCache.eraFromCategoryPath(categoryPath))
+            .order,
+  );
 
   /// מחזיר רשימת רשומות מפרשים זמינים עבור תוצאה, מוכנות לפתיחה ישירה.
   ///
@@ -2926,8 +2953,7 @@ class FindRefRepository {
   }) {
     if (results.length < 2) return results;
 
-    final query = queryTokens.join(' ');
-    final needsTokenWiseRanking = queryTokens.length >= 2;
+    final query = FindRefRankQuery(queryTokens);
     // ה-dedupe עשוי לשמור תוצאת ספר שהופיעה לפני AltToc גלובלי באותו מקטע.
     // גם במקרה הזה התוצאה ששרדה מייצגת התאמה ישירה, ולא שם ספר מקורב בלבד.
     final directSegments = {
@@ -2939,170 +2965,81 @@ class FindRefRepository {
         (r.bookId, r.source, r.title, r.isPdf, r.reference),
     };
 
-    // זיהוי סגנון ציון גמרא: הטוקן האחרון הוא "א" או "ב" + לפחות עוד טוקן.
-    // כשמזוהה — ערכים שה-reference שלהם מכיל "דף" יקבלו עדיפות על פני ערכים
-    // שאינם מכילים "דף" (כגון משנה), כדי ש-"שבת עא ב" יציג גמרא לפני משנה.
-    final isDafCitation = queryLooksDafCitation(queryTokens);
+    // מפתחות הכותרת פעם אחת לכל כותרת; השאילתה מנורמלת במלואה, וכותרת בנרמול
+    // חלקי (עם גרשיים) לא תשתווה לה.
+    final titleKeys =
+        <
+          String,
+          ({
+            String normTitle,
+            ({bool exactMatch, bool startsWithMatch, List<String> titleTokens})
+            match,
+          })
+        >{};
+    final decorated = List<FindRefRankKey<DbReferenceResult>>.generate(
+      results.length,
+      (i) {
+        final r = results[i];
+        final title = titleKeys.putIfAbsent(r.title, () {
+          final normTitle = _normalizeForMatch(r.title);
+          return (normTitle: normTitle, match: query.titleMatch(normTitle));
+        });
+        return FindRefRankKey(
+          item: r,
+          normTitle: title.normTitle,
+          fuzzyBookMatch:
+              !r.isSourceLine &&
+              !directMatches.contains(r) &&
+              !directSegments.contains((
+                r.bookId,
+                r.source,
+                r.title,
+                r.isPdf,
+                r.segment,
+              )) &&
+              !directReferences.contains((
+                r.bookId,
+                r.source,
+                r.title,
+                r.isPdf,
+                r.reference,
+              )) &&
+              bookMatchRanks[_bookKey(r.source, r.bookId, r.filePath)] ==
+                  ReferenceBooksCache.fuzzyMatchRank,
+          exactMatch: title.match.exactMatch,
+          startsWithMatch: title.match.startsWithMatch,
+          titleTokens: title.match.titleTokens,
+          citationMatch: findRefCitationMatch(
+            query.isDafCitation,
+            r.reference,
+          ),
+          // ספר שאינו רשמי: ה-bookId שלו במרחב של מסד אחר ועלול להתנגש במזהה
+          // רשמי — שליפת נתיב לפיו הייתה מסווגת אותו לפי ספר זר.
+          bookRank: r.bookId > 0 && r.source.isOfficial
+              ? _officialBookRank(r.bookId, r.title)
+              : _bookRankFor(null, r.title),
+          isOfficial: r.source.isOfficial,
+          orderIndex: r.orderIndex,
+          specificity: _specificityRank(r),
+          reference: r.reference,
+          segment: r.segment,
+          bookId: r.bookId,
+        );
+      },
+    );
 
-    // resolver של categoryPath לסיווג tier יסוד. בייצור — ReferenceBooksCache;
-    // בטסטים — דרך ה-injection `getCategoryPathSync`.
-    final pathResolver =
-        getCategoryPathSync ??
-        ReferenceBooksCache.instance.getCategoryPathForBookSync;
-
-    // השאילתה מנורמלת במלואה; כותרת בנרמול חלקי (עם גרשיים) לא תשתווה לה.
-    final normTitles = <String, String>{};
-    // Decorate: כל מפתחות המיון מחושבים פעם אחת לכל תוצאה.
-    final decorated = List<_RankKey>.generate(results.length, (i) {
-      final r = results[i];
-      final normTitle = normTitles.putIfAbsent(
-        r.title,
-        () => _normalizeForMatch(r.title),
-      );
-      // citationMatch=true  → מתאים לסגנון הציון שהוזן
-      // citationMatch=false → אינו מתאים (ירד מתחת לספרים שמתאימים)
-      final citationMatch = findRefCitationMatch(isDafCitation, r.reference);
-      // tier יסוד: 1=מקרא ... 10=שו"ע, null=מפרש/ספרות עזר.
-      // ספר שאינו רשמי: ה-bookId שלו במרחב של מסד אחר ועלול להתנגש במזהה
-      // רשמי — שליפת נתיב לפיו הייתה מסווגת אותו לפי ספר זר.
-      final categoryPath = (r.bookId > 0 && r.source.isOfficial)
-          ? pathResolver(r.bookId)
-          : null;
-      final foundationalTier = FoundationalBookClassifier.classify(
-        categoryPath,
-        r.title,
-      );
-      final era = categoryPath == null
-          ? CommentaryEra.other
-          : ReferenceBooksCache.eraFromCategoryPath(categoryPath);
-      return _RankKey(
-        result: r,
-        normTitle: normTitle,
-        fuzzyBookMatch:
-            !r.isSourceLine &&
-            !directMatches.contains(r) &&
-            !directSegments.contains((
-              r.bookId,
-              r.source,
-              r.title,
-              r.isPdf,
-              r.segment,
-            )) &&
-            !directReferences.contains((
-              r.bookId,
-              r.source,
-              r.title,
-              r.isPdf,
-              r.reference,
-            )) &&
-            bookMatchRanks[_bookKey(r.source, r.bookId, r.filePath)] ==
-                ReferenceBooksCache.fuzzyMatchRank,
-        exactMatch: normTitle == query,
-        startsWithMatch: normTitle.startsWith(query),
-        titleTokens: needsTokenWiseRanking ? _tokenize(normTitle) : const [],
-        citationMatch: citationMatch,
-        foundationalTier: foundationalTier,
-        era: era,
-      );
-    });
-
-    // משווה שתי תוצאות לפי **רלוונטיות** בלבד (שכבות 1-8). שובר-השוויון
-    // האלפביתי/אורך-ה-reference אינו רלוונטיות אלא סדר-תצוגה, ולכן אינו כאן —
-    // כך ה-cap המודע-רלוונטיות לא יחתוך באמצע קבוצת תוצאות שווֹת-רלוונטיות.
-    int compareRelevance(_RankKey a, _RankKey b) {
-      // התאמה מקורבת בשם הספר תמיד מתחת להתאמה מילולית או לכינוי מדויק.
-      if (a.fuzzyBookMatch != b.fuzzyBookMatch) {
-        return a.fuzzyBookMatch ? 1 : -1;
-      }
-
-      // 1. התאמה מלאה של שם הספר
-      if (a.exactMatch != b.exactMatch) return a.exactMatch ? -1 : 1;
-
-      // 2. התאמה של התחלת שם הספר
-      if (a.startsWithMatch != b.startsWithMatch) {
-        return a.startsWithMatch ? -1 : 1;
-      }
-
-      // 3. התאמת מילים בודדות (מילה שנייה ואילך)
-      // טוקנים שהם אות בודדת (מספר פרק/פסוק/דף) מדולגים — הם אינם חלק משם הספר.
-      if (needsTokenWiseRanking) {
-        for (int i = 1; i < queryTokens.length; i++) {
-          final queryToken = queryTokens[i];
-          if (queryToken.length == 1) {
-            continue; // ← skip single-char location tokens
-          }
-          final aHasMatch =
-              i < a.titleTokens.length &&
-              a.titleTokens[i].startsWith(queryToken);
-          final bHasMatch =
-              i < b.titleTokens.length &&
-              b.titleTokens[i].startsWith(queryToken);
-          if (aHasMatch != bHasMatch) return aHasMatch ? -1 : 1;
-        }
-      }
-
-      // 4. התאמה לסגנון הציון (גמרא/משנה/תנ"ך)
-      if (a.citationMatch != b.citationMatch) return a.citationMatch ? -1 : 1;
-
-      // 5. ספר יסוד — מקרא → משנה → בבלי → ירושלמי → מדרש → זוהר →
-      // רמב"ם → טור → שו"ע. ספרים שאינם יסוד (מפרשים, ספרות עזר וכו')
-      // יורדים מתחת לכל היסודות. מופיע **לפני** orderIndex כדי ש"שבת יג"
-      // יחזיר את הספרים עצמם (משנה, בבלי, ירושלמי, רמב"ם) ולא את מפרשיהם.
-      final aTier = a.foundationalTier;
-      final bTier = b.foundationalTier;
-      if (aTier != bTier) {
-        if (aTier == null) return 1; // a לא יסוד → b קודם
-        if (bTier == null) return -1; // a יסוד, b לא → a קודם
-        return aTier.compareTo(bTier); // שניהם יסודות — tier קטן יותר ראשון
-      }
-
-      // 6. סדר הדורות בין מפרשים (ראשונים → אחרונים → מחברי זמננו) — לפי
-      // תיוג הדור בנתיב הקטגוריה. orderIndex לבדו מערבב דורות מענפי-עץ שונים.
-      if (aTier == null && a.era != b.era) {
-        return a.era.order.compareTo(b.era.order);
-      }
-
-      // ספר רשמי קודם לספר ממסד משני כשסימני הרלוונטיות שווים: orderIndex
-      // של מסדים שונים אינו בר-השוואה.
-      if (a.result.source.isOfficial != b.result.source.isOfficial) {
-        return a.result.source.isOfficial ? -1 : 1;
-      }
-
-      // 7. סדר ספר בספרייה — ספרים בסדר הספרייה (בתוך אותו tier יסוד או
-      // אותו דור, מיון לפי orderIndex).
-      final orderCmp = a.result.orderIndex.compareTo(b.result.orderIndex);
-      if (orderCmp != 0) return orderCmp;
-
-      // 8. סדר: TOC L1 < TOC L2 < AltToc < TOC L3+
-      // AltToc (כותרות-משנה) מופיע אחרי הכותרות הבסיסיות (רמה 2) אך לפני הכותרות הפנימיות (רמה 3+).
-      final aRank = _specificityRank(a.result);
-      final bRank = _specificityRank(b.result);
-      if (aRank != bRank) return aRank.compareTo(bRank);
-
-      return 0;
-    }
-
-    decorated.sort((a, b) {
-      final rel = compareRelevance(a, b);
-      if (rel != 0) return rel;
-      return compareFindRefDisplayOrder(
-        a.result.reference,
-        a.result.segment,
-        b.result.reference,
-        b.result.segment,
-      );
-    });
+    decorated.sort((a, b) => compareFindRefRank(a, b, query));
 
     // cap מודע-רלוונטיות: חותכים ב-[_baseResultCap], אך מרחיבים לכל מי שחולק
     // את מפתח-הרלוונטיות של התוצאה האחרונה שבחיתוך — כך שתוצאות שווֹת-רלוונטיות
     // מוצגות יחד. הרשימה נעצרת רק כשמגיעים לתוצאה *פחות* רלוונטית.
     if (decorated.length <= _baseResultCap) {
-      return decorated.map((d) => d.result).toList();
+      return decorated.map((d) => d.item).toList();
     }
     final boundary = decorated[_baseResultCap - 1];
     var end = _baseResultCap;
     while (end < decorated.length &&
-        compareRelevance(decorated[end], boundary) == 0) {
+        compareFindRefRelevance(decorated[end], boundary, query) == 0) {
       end++;
     }
     if (end > _maxResultCap) {
@@ -3117,22 +3054,22 @@ class FindRefRepository {
     // issue #839: התאמות תת-מחרוזת מדורגות אחרי כל התאמות-התחילית, וחיתוך
     // שגבולו בתוכן מחק אותן כליל — מובטחת להן מכסה בזנב, בלי לשנות דירוג.
     if (preserveSubstringTail && end < decorated.length) {
-      bool isSubstringMatch(_RankKey d) =>
-          !d.startsWithMatch && d.normTitle.contains(query);
-      var quota = _substringTailQuota - capped.where(isSubstringMatch).length;
+      var quota =
+          _substringTailQuota -
+          capped.where((d) => d.isSubstringMatch(query.text)).length;
       for (
         var i = end;
         i < decorated.length && quota > 0 && capped.length < _maxResultCap;
         i++
       ) {
-        if (isSubstringMatch(decorated[i])) {
+        if (decorated[i].isSubstringMatch(query.text)) {
           capped.add(decorated[i]);
           quota--;
         }
       }
     }
 
-    return [for (final d in capped) d.result];
+    return [for (final d in capped) d.item];
   }
 
   String _normalizeForMatch(String input) => normalizeForFindRefMatch(input);
@@ -3168,40 +3105,6 @@ class FindRefRepository {
     }
     return false;
   }
-}
-
-/// מפתחות מיון מחושבים מראש לדירוג תוצאות (decorate-sort-undecorate).
-/// מאפשר ל-comparator להישאר זול — בלי נורמליזציה/טוקניזציה חוזרת.
-class _RankKey {
-  final DbReferenceResult result;
-  final String normTitle;
-  final bool fuzzyBookMatch;
-  final bool exactMatch;
-  final bool startsWithMatch;
-  final List<String> titleTokens;
-
-  /// true = ה-reference מתאים לסגנון הציון שהוזן (למשל: מכיל "דף" כשמדובר
-  /// בציון גמרא). false = אינו מתאים וירד בדירוג.
-  final bool citationMatch;
-
-  /// tier "ספר יסוד" של הספר: 1=מקרא, 2=משנה, ..., 10=שו"ע. `null` עבור
-  /// ספרים שאינם יסוד (מפרשים וכד'). ראה [FoundationalBookClassifier.classify].
-  final int? foundationalTier;
-
-  /// דור הספר לפי נתיב הקטגוריה — ממיין מפרשים בסדר הדורות.
-  final CommentaryEra era;
-
-  const _RankKey({
-    required this.result,
-    required this.normTitle,
-    required this.fuzzyBookMatch,
-    required this.exactMatch,
-    required this.startsWithMatch,
-    required this.titleTokens,
-    required this.citationMatch,
-    required this.foundationalTier,
-    required this.era,
-  });
 }
 
 typedef _ExactLine = ({int lineIndex, int lineId, String? heRef});
