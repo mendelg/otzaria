@@ -424,8 +424,7 @@ void main() {
       );
     });
 
-    test('ספר יסוד מאוחר בסדר אינו נחתך בגלל ספרים קודמים', () async {
-      // כמו "סעיף א": ספר מוקדם עם מאות התאמות, וספר יסוד מאוחר שמדורג ראשון.
+    test('בלי שם ספר: מעט שורות לכל ספר, וספר יסוד מאוחר בסדר ראשון', () async {
       seedLibrary(
         const [
           (id: 1, title: 'ספר אחר', acronyms: []),
@@ -441,6 +440,10 @@ void main() {
       final results = await run('סעיף א', rows, truncate: true);
       expect(results, await run('סעיף א', rows, truncate: false));
       expect(results.first, startsWith('7|'));
+      expect(
+        results.where((r) => r.startsWith('6|')),
+        hasLength(globalAltTocDiversityCap),
+      );
     });
 
     /// ספרייה סינתטית: הרבה ספרים באותו orderIndex ובאותו דור, ספרי יסוד

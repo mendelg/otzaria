@@ -79,6 +79,11 @@ typedef AltTocResultKey = ({
   String reference,
 });
 
+/// תקרת השורות לכל ספר ב-fallback הגלובלי של שאילתה מרובת מילים: בלי שם ספר
+/// כל שורות הספר שוות-רלוונטיות, והרחבת ה-cap לשוויון הציפה ספר אחד בעשרות
+/// שורות. 2 שומר את שני העמודים של "מאימתי דף ב".
+const int globalAltTocDiversityCap = 2;
+
 /// בקשת ה-fallback הגלובלי: השאילתה, והמצב שמשפיע על הבחירה ב-worker.
 class GlobalAltTocRequest {
   const GlobalAltTocRequest({
