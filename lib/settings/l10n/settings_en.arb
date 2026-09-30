@@ -1,14 +1,12 @@
 {
   "@@locale": "en",
   "@@comment": "קטלוג התרגום של מסך ההגדרות. המפתח הוא המקור העברי, כדי שחיפוש בקוד לפי מה שכתוב על המסך ימשיך למצוא את מקום השימוש. מפתח שנושא הקשר מופרד ב-'|'. הרץ dart run tool/generate_settings_l10n.dart אחרי עריכה.",
-
   "הגדרות": "Settings",
   "אוצריא": "Otzaria",
   "חיפוש": "Search",
   "אין תוצאות": "No results",
   "תוצאות חיפוש": "Search Results",
   "חזור (Esc)": "Back (Esc)",
-
   "מראה": "Appearance",
   "כתב": "Text",
   "ספרייה|titleBar": "Library",
@@ -16,19 +14,15 @@
   "קיצורי מקשים": "Keyboard Shortcuts",
   "מערכת": "System",
   "אודות": "About",
-
   "תצוגה ותוכן": "Display and Content",
-
   "חיפוש בהגדרות": "Search Settings",
   "נקה חיפוש": "Clear Search",
   "לא נמצאו הגדרות תואמות": "No matching settings found",
   "נסה לחפש מילים אחרות": "Try searching for different words",
-
   "שפת ההגדרות": "Settings Language",
   "שפת התצוגה של מסך ההגדרות בלבד; שאר התוכנה נשארת בעברית": "Display language for the settings screen only; the rest of Otzaria stays in Hebrew",
   "שפת התצוגה של מסך ההגדרות בלבד": "Display language for the settings screen only",
   "לפי שפת מערכת ההפעלה": "Use device language",
-
   "מעקב אחר צבע המערכת": "Follow system color",
   "התאמת ערכת הנושא לצבע מערכת ההפעלה": "Match the theme to your device's color",
   "מצב כהה": "Dark mode",
@@ -41,7 +35,6 @@
   "הצגה / אוטומטי / הסתרה של חלונית הניווט": "Show / Automatic / Hide for the navigation panel",
   "תצוגת רשימות הערות בפתיחה": "How note lists appear when opened",
   "מפרשים בחלונית מפוצלת או בתוך הטקסט": "Meforshim in a side panel or inside the text",
-
   "ערכת נושא": "Theme",
   "מצב ערכת נושא": "Theme",
   "בהיר": "Light",
@@ -49,7 +42,6 @@
   "התוכנה תתאים את המראה באופן אוטומטי להגדרות מערכת ההפעלה": "Otzaria will match your system's theme automatically",
   "כהה": "Dark",
   "התוכנה תשתמש בצבעים כהים": "The system will use dark colors",
-
   "תצוגה": "Display",
   "צפיפות ממשק": "Toolbar Density",
   "רגיל": "Normal",
@@ -112,7 +104,6 @@
   "העבר לחלון חדש": "Move to new window",
   "העבר לחלון קיים": "Move to existing window",
   "חלון חדש": "New window",
-
   "תצוגת PDF": "PDF view",
   "תצוגת ספר בPDF": "Sefer view for PDFs",
   "ספרי PDF ייפתחו בתצוגת ספר": "PDF seforim will open in Sefer view",
@@ -123,7 +114,6 @@
   "טקסט": "Text",
   "מסכתות הבבלי ייפתחו במהדורת הטקסט (מהספרייה, מתוצאות חיפוש, מאיתור מקורות ומקישורים)": "Gemaros will open in text format",
   "מסכתות הבבלי ייפתחו במהדורת ה-PDF בדף המתאים, גם בפתיחה מהספרייה ובתצוגה המקדימה": "Gemaros in PDF will open at the right daf, including from the library and the preview pane",
-
   "חלוניות עזר": "Side Panels",
   "חלונית ניווט בין כותרות": "Navigation Panel",
   "הצגה": "Show",
@@ -139,7 +129,6 @@
   "רשימות ההערות יוצגו כשהן סגורות": "Note lists will appear collapsed",
   "רשימות ההערות יוצגו כשהן פתוחות": "Note lists will appear expanded",
   "הצגת המפרשים בחלונית בצד": "Show meforshim in a side panel",
-
   "תצוגת ספרייה": "Library Display Settings",
   "סוג תצוגה": "Layout",
   "רשת": "Grid",
@@ -164,7 +153,6 @@
   "הצג ספרי היברובוקס שברשותך": "Show HebrewBooks Seforim You Own",
   "ספרים מתיקיית היברובוקס יוצגו בתוצאות איתור הספר": "Seforim from the HebrewBooks folder will appear in the sefer search results",
   "ספרים מתיקיית היברובוקס לא יוצגו בתוצאות איתור הספר": "Seforim from the HebrewBooks folder will not appear in the sefer search results",
-
   "הזן סיסמה": "Enter Password",
   "הנך במצב סייפר.\nהזן את הסיסמה כדי לגשת להגדרות": "You are in Safer Mode.\nEnter the password to access the settings",
   "הנך במצב סייפר.\nהזן את הסיסמה כדי לבצע פעולה זו": "You are in Safer Mode.\nEnter the password to perform this action",
@@ -175,7 +163,6 @@
   "החלפת הספרייה בספרייה אחרת": "Replace Library with a Different One",
   "הספרייה הקיימת תוחלף (עם גיבוי אוטומטי עד להצלחה)": "The current library will be replaced (with an automatic backup until the operation succeeds)",
   "קיצורים לפתיחה מהירה של כלי מתוך מסך הכלים": "Shortcuts to quickly open a tool from the Tools screen",
-
   "צבע מותאם אישית": "Custom Color",
   "אדום": "Red",
   "כתום": "Orange",
@@ -194,15 +181,12 @@
   "שינוי צבע": "Change Color",
   "בחר צבע בסיס": "Select a System Color",
   "בחר בצבע ברירת מחדל": "Use the Default Color",
-
   "בחר מיקום לשמירת רשימת הספרים": "Choose Where to Save the Seforim List",
   "רשימת הספרים": "Seforim List",
   "חיפוש לפי שם, מחבר או קטגוריה": "Search by name, author or category",
   "לא נמצאו ספרים": "No seforim found",
   "ייצוא ל-CSV": "Export to CSV",
-
   "הגדרות תצוגת הספרים": "Sefer Display Settings",
-
   "הזן את הסיסמה": "Enter the password",
   "הסרת סיסמה": "Remove Password",
   "לא תידרש עוד סיסמה לגישה להגדרות.": "A password will no longer be needed to access the settings.",
@@ -215,7 +199,6 @@
   "הזן שוב את הסיסמה": "Enter the password again",
   "לא ניתן למחוק את הסיסמה כשמצב סייפר פעיל": "The password cannot be removed while Safer Mode is on",
   "מחיקת סיסמה": "Delete the Password",
-
   " אם הכרטיס יוסר, האפליקציה לא תוכל לגשת לספרים עד שיוחזר.\n\nשים לב: תיקיית האפליקציה שבכרטיס נספרת כמטמון של האפליקציה — \"ניקוי מטמון\" בהגדרות המכשיר ימחק ממנה את הספרייה.": " If the SD card is removed, Otzaria will not be able to access the seforim until it is back.\n\nNote: the app folder on the card is counted as app cache — clearing the app's cache in the device settings will delete the library stored there.",
   "העברת הספרייה אל {target}": "Move the library to {target}",
   "הספרייה ומסדי הנתונים יועברו אל {target}; אינדקס החיפוש נשאר באחסון הפנימי. בזמן ההעברה התוכנה תיטען מחדש ולא תהיה זמינה עד לסיום הפעולה.{warning}": "The library and the databases will move to {target}; the search index stays in internal storage. During the move Otzaria will reload and will not be available until the operation finishes.{warning}",
@@ -227,7 +210,6 @@
   "לא נתמך — הכרטיס מפורמט ב-FAT32 (מגבלת 4GB לקובץ)": "Not supported — the card is formatted FAT32 (4GB per file limit)",
   "בשימוש": "In Use",
   "העבר לכאן": "Move Here",
-
   "מעביר את הספרייה למיקום החדש…\nהתוכנה לא תהיה פעילה עד לסיום הפעולה.": "Moving the library to its new location…\nOtzaria will be inactive until the operation completes.",
   "הספרייה הועברה": "Library Moved",
   "הספרייה הועברה בהצלחה למיקום החדש. התוכנה תיטען מחדש כעת, והספרים הפתוחים ייטענו מהמיקום החדש.": "The library was moved successfully to the new location. Otzaria will reload now, and any open seforim will load from the new location.",
@@ -248,7 +230,6 @@
   "טרם נבחר מיקום": "No Location Chosen Yet",
   "בחר תיקייה": "Select Folder",
   "שנה מיקום": "Change Location",
-
   "בחר את תיקיית היעד לספרייה": "Select the target folder for the library",
   "בחר את תיקיית הספרייה הקיימת": "Select the folder containing Your existing library",
   "שימוש בספרייה קיימת במקומה": "Use an Existing Library In Place",
@@ -281,7 +262,6 @@
   "בחר כיצד לעדכן או להעביר את הספרייה, ולאחר מכן אשר": "Choose how to update or move the library, then confirm",
   "בחר להוריד את הספרייה מהאינטרנט, להצביע על ספרייה קיימת או לייבא אותה": "Choose an option: download the library, select an existing one, or import it.",
   "העברת תוכן התיקייה": "Move the Folder's Contents",
-
   "עדכוני מערכת": "System Updates",
   "סינכרון ומצב רשת": "Sync and Network Mode",
   "מקוון": "Online",
@@ -302,7 +282,6 @@
   "עדכון לגרסאות פיתוח": "Update to Development Builds",
   "בדיקת העדכונים הבאה תחפש גם גרסאות בדיקה — ייתכנו באגים": "The next update check will also look for development builds — expect bugs",
   "בדיקת העדכונים הבאה תחפש גרסאות יציבות בלבד": "The next update check will look for stable builds only",
-
   "דיווחי טעויות": "Text Corrections",
   "שליחה ישירה לצוות אוצריא, כולל תור אוטומטי במצב אופליין.": "Sent directly to Otzaria, with offline requests handled automatically when you reconnect.",
   "כתובת דואר אלקטרוני לזיהוי": "Email Address for Identification",
@@ -352,7 +331,6 @@
   "הטקסט שנבחר": "The Selected Text",
   "פירוט הטעות": "What needs to be corrected?",
   "הקשר": "Context",
-
   "מערכת אוצריא": "Otzaria System",
   "גרסת תוכנה": "Program Version",
   "טוען...": "Loading...",
@@ -366,7 +344,6 @@
   "סיור מודרך להכרת התוכנה": "Guided tour of Otzaria",
   "הפעל סיור מודרך להדרכה והכרת כל מסכי אוצריא": "Take a guided tour and discover Otzaria’s features.",
   "פתח מיקום קובץ": "Open File Location",
-
   "גיבוי ושחזור": "Backup and Restore",
   "צור גיבוי, או שחזר מהגיבוי האחרון או מהארכיון המלא": "Make a backup, or restore from the last backup or the full archive",
   "צור כעת": "Back up Now",
@@ -451,7 +428,6 @@
   "ארכיון": "Archive",
   "כעת: {parts}": "Now: {parts}",
   "נקה עכשיו": "Clean Now",
-
   "מצב סייפר": "Safer Mode",
   "נעילת ההגדרות וסייר הקבצים פעילה": "Settings and the file browser are locked",
   "נעילת ההגדרות וסייר הקבצים מושבתת": "Settings and the file browser are unlocked",
@@ -467,13 +443,11 @@
   "הפעלת מצב סייפר": "Turn on Safer Mode",
   "האם להפעיל כעת את מצב הסייפר?\nניתן להפעיל ולבטל אותו מאוחר יותר דרך ההגדרות.": "Turn on safer mode now?\nYou can turn it on and off later from the settings.",
   "לא עכשיו": "Not now",
-
   "איפוס הגדרות": "Reset Settings",
   "מחיקת כל ההגדרות וחזרה למצב ההתחלתי": "Delete every setting and start fresh",
   "אפס הגדרות": "Reset settings",
   "איפוס הגדרות?": "Reset settings?",
   "כל ההגדרות האישיות שלך ימחקו.": "Every setting you personalized will be deleted.",
-
   "קיצורי מקשים זמינים רק בדסקטופ": "Keyboard shortcuts are for desktop only",
   "כללי": "General",
   "איפוס קיצורי מקשים": "Reset Keyboard Shortcuts",
@@ -550,7 +524,6 @@
   "{count} פעולות זמינות": "{count} actions available",
   "הוסף קיצור": "Add shortcut",
   "בחר פעולה להוספת קיצור": "Select an action to shortcut",
-
   "סיוע ללומדי תורה": "Support for Lomdei Torah in Eretz Yisroel",
   "אוצריא מתגייסת לעזרת לומדי התורה": "Otzaria is Joining the Fight for Lomdei Torah in Eretz Yisroel",
   "מרכז המידע על ארגוני סיוע ללומדי התורה": "Information Hub for Organizations that Help Lomdei Torah",
@@ -584,7 +557,6 @@
   "מספר קופה:": "Fund number:",
   "קטגוריה:": "Category:",
   "העתק פרטים": "Copy Details",
-
   "לוח שנה": "Calendar",
   "סוג לוח שנה": "Calendar type",
   "עברי": "Hebrew",
@@ -642,7 +614,6 @@
   "רענן": "Refresh",
   "הסר": "Remove",
   "רענון אחרון: {time}": "Last refresh: {time}",
-
   "חיפוש גימטריה": "Gematria Search",
   "מספר תוצאות": "Number of Results",
   "כמות התוצאות המקסימלית להצגה": "The maximum number of results to show",
@@ -662,7 +633,6 @@
   "מנצפ\"ך בערכים שונים": "Mnatzpa\"ch get their own values",
   "עם הכולל": "Im Hakollel",
   "הוספת מספר האותיות לסכום": "Add the letter count to the total",
-
   "תיקון קוראים": "Tikkun Korim",
   "פתיחה בהפעלה": "Open On Startup",
   "פרשת השבוע": "Weekly Parashah",
@@ -676,7 +646,6 @@
   "הסתרת שם השם": "Hide The Divine Name",
   "י-ה-ו-ה יוצג כ-י-ק-ו-ק": "The Divine Name is shown in a substituted spelling",
   "שם השם יוצג ככתבו": "The Name is shown as written",
-
   "כלים מובנים": "Built-In Tools",
   "רשימת הכלים": "Tool List",
   "הסתר כלים מהממשק או הצמד אותם לסרגל הניווט הראשי.": "Hide tools from the menu, or pin them to the main navigation bar.",
@@ -719,7 +688,6 @@
   "בסרגל ניווט": "On the Navigation Bar",
   "משתמש ברשת": "Uses the Network",
   "מנותק מהרשת": "No Network",
-
   "הסרת תיקייה": "Remove Folder",
   "האם להסיר את התיקייה \"{name}\" מהספרייה?\nהספרים יוסרו מהתוכנה, אך הקבצים המקוריים בדיסק לא יימחקו.": "Remove the folder \"{name}\" from the library?\nThe seforim will be removed from Otzaria, but the original files on disk will not be deleted.",
   "שמירת עותק עצמאי בתוכנה": "Keep a Copy In the Database",
@@ -775,7 +743,6 @@
   "ייבוא נתונים": "Import Data",
   "בחר קובצי \"דורות.csv\", \"כותרות.csv\", \"גרסאות.csv\", \"<שם הספר>.links.csv\" או קובצי קישורים של אוצריא (\"<שם הספר>_links.json\") והם יכנסו לספרייה. ייבוא חוזר מעדכן ערכים קיימים ומוסיף חדשים.": "Select \"דורות.csv\", \"כותרות.csv\", \"גרסאות.csv\", \"<sefer name>.links.csv\", or Otzaria link files (\"<sefer name>_links.json\") and they go into the library. Reimporting updates existing entries and adds any new ones.",
   "נקה הכל": "Clear All",
-
   "בחר קבצי ספרים לייבוא": "Select Files to Import",
   "מחיקת ספר": "Delete Sefer",
   "האם למחוק את \"{title}\" מהספרים האישיים?": "Delete \"{title}\" from Personal Seforim?",
@@ -788,7 +755,6 @@
   "ייבוא תיקייה": "Import Folder",
   "בטל ייבוא": "Cancel Import",
   "נמצאו {count} קבצי ספרים ({size}). להעתיק אותם לספרייה?": "Found {count} sefer files ({size}). Copy them into the library?",
-
   "מיקום הספרייה": "Library Folder",
   "לא זוהתה ספרייה — הגדר מיקום, הורד או ייבא ספרייה": "No library found — set a location, download one, or import one",
   "הגדרת ספרייה": "Set Up Library",
@@ -839,7 +805,6 @@
   "האם למחוק את אינדקס החיפוש? תצטרך לבנות אותו מחדש כדי להשתמש בחיפוש.": "Delete the search index? You will have to rebuild it before you can use search again.",
   "אפס": "Reset",
   "עדכן": "Update",
-
   "הגדרות גופן ועיצוב": "Font and Layout",
   "גודל גופן הספר": "Sefer Font Size",
   "גופן טקסט": "Text Font",
@@ -860,7 +825,6 @@
   "כל שורה תוצג בנפרד": "Each posuk or line shows on its own",
   "שורות בודדות": "Separate Lines",
   "רצף": "Running Text",
-
   "הצג תמיד": "Always Show",
   "אל תציג": "Never Show",
   "הצגת סימני פיסוק": "Show Punctuation",
@@ -868,7 +832,6 @@
   "יקוק": "Yud-Kuf-Vav-Kuf",
   "ה'": "Hashem (ה')",
   "הצגת טעמי המקרא": "Show Taamim",
-
   "העתקת כותרות ופרקים": "Sources in Copied Text",
   "העתקת הכותרת": "Select Sources to Copy",
   "ללא": "Nothing",
@@ -890,7 +853,6 @@
   "הכותרת תופיע בפסקה נפרדת אחרי הטקסט": "The mareh makom comes in its own paragraph after the text",
   "פסקה נפרדת לפני": "Separate paragraph, before",
   "הכותרת תופיע בפסקה נפרדת לפני הטקסט": "The mareh makom comes in its own paragraph before the text",
-
   "הגדרות לפי ספר": "Individual Sefer Settings",
   "שמירת התאמות לכל ספר בנפרד": "Save adjustments for each sefer separately",
   "גודל הגופן, הניקוד והמפרשים שנקבעו בספר יישמרו לו בנפרד. סוג הגופן נשאר כללי": "Font size, nikud and commentators set in a sefer are saved for that sefer. The font itself stays global",
@@ -904,9 +866,7 @@
   "ביטול": "Cancel",
   "המפרשים יוצגו בחלונית מפוצלת": "The meforshim will show in a split panel",
   "המפרשים יוצגו בתוך הטקסט": "The meforshim will show inside the text",
-
   "@@tour": "הסיור המודרך והטיפים החיים — lib/tour/. הטקסטים מגיעים ל-settingsText דרך משתנה, ולכן הכיסוי נבדק ב-test/settings/l10n/settings_variable_labels_test.dart.",
-
   "הסיור המודרך": "The Guided Tour",
   "הסיור יעבור על כל הפיצ׳רים המרכזיים של אוצריא.\nלחץ \"אני מוכן\" כשתהיה מוכן להתחיל.": "The tour goes through everything Otzaria can do.\nPress \"I'm ready\" when you want to begin.",
   "ללא ספרייה טעונה יוצג סיור מקוצר.\nלאחר טעינת הספרייה תוכל לצפות בסיור המלא.\nלחץ \"אני מוכן\" כשתהיה מוכן להתחיל.": "Without a library loaded you get a short tour.\nOnce the library is loaded you can watch the full one.\nPress \"I'm ready\" when you want to begin.",
@@ -973,7 +933,6 @@
   "כמעט לכל פעולה באוצריא יש קיצור מקלדת, ואפשר גם להתאים אותו אישית. היכנסו להגדרות ← קיצורי מקלדת כדי לצפות בכל הקיצורים ולשנות אותם להרגלי העבודה שלכם.": "Almost everything in Otzaria has a keyboard shortcut, and you can change any of them. Go to Settings → Keyboard Shortcuts to view or change them.",
   "אפשר להדפיס את הפרק הנוכחי ישירות מסרגל הכלים של הספר — כולל המפרשים המוצגים. לחצו על כפתור ההדפסה ובחרו את הפורמט המתאים.": "You can print the current perek straight from the sefer toolbar — including the meforshim on screen. Press the print button and pick the format you want.",
   "אוצריא מגבה אוטומטית את הסימניות, ההיסטוריה וההערות שלך. בהגדרות ← מערכת אפשר לייצא את הגיבוי לקובץ ולשחזר אותו בכל עת — גם לאחר התקנה מחדש.": "Otzaria automatically backs up your bookmarks, history and notes. In Settings → System you can export the backup to a file and restore it any time.",
-
   "@@comment_library": "מסך הספרייה (issue #1101)",
   "העדכון הושלם": "Update complete",
   "הספרייה מעודכנת": "Library is up to date",
@@ -995,7 +954,6 @@
   "כל הספרים ({count})": "All books ({count})",
   "מחפש...": "Searching...",
   "טוען ספרייה": "Loading library",
-
   "@@comment_find_ref": "דיאלוג איתור מקורות (issue #1101)",
   "גלול לסוף הרשימה": "Scroll to the end of the list",
   "איתור מקורות": "Find Sources",
@@ -1028,7 +986,6 @@
   "החיפוש בוטל לפני שהסתיים": "The search was cancelled before it finished",
   "אירעה שגיאה בזמן האיתור": "An error occurred while finding the source",
   "Enter פותח את המקור המסומן, מקשי החצים מנווטים בין התוצאות": "Enter opens the highlighted result; arrow keys move between results",
-
   "@@comment_search_dialog": "דיאלוג החיפוש בספרייה (issue #1101)",
   "עריכת חיפוש": "Edit search",
   "חיפוש ב{book}": "Search in {book}",
@@ -1101,7 +1058,6 @@
   "החיפוש יתאפשר כשבניית האינדקס תסתיים. ניתן להמשיך לעיין בספרים בינתיים.": "Search will be available once the index is built. You can keep reading in the meantime.",
   "{processed} מתוך {total} ספרים": "{processed} of {total} books",
   "בנה אינדקס": "Build index",
-
   "@@comment_tools_panel": "פאנל כלים ותוספים (issue #1101)",
   "כלים ותוספים": "Tools & Plugins",
   "חיפוש כלי או תוסף": "Search for a tool or plugin",
@@ -1125,7 +1081,6 @@
   "מילון ארמי-עברי": "Aramaic-Hebrew Dictionary",
   "ראשי תיבות": "Acronyms",
   "ביוגרפיות": "Biographies",
-
   "@@comment_text_display": "כרטיס תצוגת הטקסט (ניקוד/טעמים/פיסוק/שם הוי\"ה/ציונים) ועורך הפרופיל",
   "תצוגת הטקסט": "Text Display",
   "מה מוצג בטקסט, וכיצד הוא מועתק ומיוצא": "What is shown in the text, and how it is copied and exported",
@@ -1156,7 +1111,6 @@
   "יורש מהצירוף הכללי יותר: {parent}": "Inherits from the broader combination: {parent}",
   "זהו הצירוף הבסיסי — הוא נערך למעלה": "This is the base combination — edit it above",
   "איפוס כל ההתאמות הנוספות": "Reset all additional adjustments",
-
   "@@comment_dynamic_shortcuts": "קיצורים דינמיים",
   "קיצור דינמי חדש": "New Dynamic Shortcut",
   "עריכת קיצור דינמי": "Edit Dynamic Shortcut",
@@ -1183,7 +1137,6 @@
   "{count} קבוצות סימניות": "{count} bookmark groups",
   "כל החלונות שהיו פתוחים בסגירה ייפתחו שוב, במקומם": "Every window that was open at exit reopens where it was",
   "ייפתח חלון אחד, עם הכרטיסיות של כל החלונות": "A single window opens, with the tabs of all windows",
-
   "דיווחים על התוכנה": "App Reports",
   "דיווח על תקלות בתוכנה עצמה. הדיווח נפתח כדיווח ציבורי ב-GitHub, וקובצי האבחון גלויים למפתחי אוצריא בלבד.": "Report problems with Otzaria itself. A public GitHub issue is opened; the diagnostic files are visible to Otzaria developers only.",
   "דווח על תקלה בתוכנה": "Report an App Problem",
@@ -1208,7 +1161,6 @@
   "דואר אלקטרוני (לא חובה)": "Email (optional)",
   "המערכת מעתיקה את הקובץ שנבחר… זה עלול להימשך כמה דקות": "The system is copying the selected file… this may take a few minutes",
   "העתקת הקובץ שנבחר נכשלה — בדוק שיש די מקום פנוי באחסון הפנימי": "Copying the selected file failed — check that there is enough free space in internal storage",
-
   "@@comment_attached_libraries": "מסדי ספרים אישיים — lib/attached_libraries/view/attached_libraries_panel.dart",
   "בחר קובץ מסד ספרים": "Choose a Seforim Database File",
   "הסרת תיקיית מסדים": "Remove Database Folder",
@@ -1248,7 +1200,6 @@
   "הפניות": "References",
   "מפרשי ברירת מחדל": "Default Commentators",
   "קישורים לספרים אחרים": "Links to Other Books",
-
   "@@comment_attached_updates": "Attached-library updates — lib/attached_libraries/view/attached_library_update_view.dart",
   "אין מקור עדכונים": "No update source",
   "מקור העדכון השתנה — לא יעודכן": "Update source changed — will not be updated",
@@ -1295,5 +1246,6 @@
   "החזר לשימוש": "Restore",
   "ייצוא": "Export",
   "מחיקה": "Delete",
-  "מושהה": "Paused"
+  "מושהה": "Paused",
+  "כרטיסייה חדשה": "New tab"
 }

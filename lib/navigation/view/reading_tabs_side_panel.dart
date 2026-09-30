@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
 import 'package:otzaria/navigation/view/tab_search_menu.dart';
 import 'package:otzaria/navigation/view/vertical_reading_tab_strip.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
@@ -165,6 +166,21 @@ class _ReadingTabsSidePanelState extends State<ReadingTabsSidePanel> {
     final buttons = [
       _buildCollapseButton(context, collapsed: collapsed),
       const TabSearchButton(),
+      ListenableBuilder(
+        listenable: PluginNewTabPageRegistry.instance,
+        builder: (context, _) {
+          if (!PluginNewTabPageRegistry.instance.hasActiveRegistration) {
+            return const SizedBox.shrink();
+          }
+          return IconButton(
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            tooltip: context.settingsText('כרטיסייה חדשה'),
+            icon: const Icon(FluentIcons.add_24_regular),
+            onPressed: PluginNewTabPageRegistry.instance.open,
+          );
+        },
+      ),
     ];
 
     if (collapsed) {

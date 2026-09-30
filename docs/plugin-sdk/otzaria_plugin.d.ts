@@ -2030,6 +2030,7 @@ export type OtzariaMethod =
   | 'fs.deleteFile'
   | 'shortcut.create'
   | 'plugin.openSelf'
+  | 'plugin.setNewTabPage'
   | 'plugin.openOther'
   /** @internal חנות התוספים בלבד — לא מתועד ב-API_REFERENCE ואינו חוזה יציב. */
   | 'plugin.requestInstall'
@@ -2115,6 +2116,16 @@ export interface OtzariaGlobal {
   call(
     method: 'fs.revokeFolder',
     payload: { folderToken: string }
+  ): Promise<OtzariaResponse<boolean>>;
+
+  /**
+   * Registers this plugin page as the target of the reader "+" button.
+   * Pass { enabled: false } to restore the built-in library fallback.
+   * Requires navigation.write.
+   */
+  call(
+    method: 'plugin.setNewTabPage',
+    payload?: { enabled?: boolean }
   ): Promise<OtzariaResponse<boolean>>;
 
   /** מחזיר רשימה של כל התוספים המותקנים. */

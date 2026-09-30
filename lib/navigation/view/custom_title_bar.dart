@@ -45,6 +45,7 @@ import 'package:otzaria/history/bloc/history_event.dart';
 import 'package:otzaria/library/bloc/library_bloc.dart';
 import 'package:otzaria/library/bloc/library_state.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
+import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/tour/tour_target_keys.dart';
 import 'package:otzaria/update/my_update_widget.dart';
@@ -562,25 +563,53 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
   }
 
   Widget _buildScrollableTabsArea(TabsState state) {
-    // LayoutBuilder נפרד מודד רק את הרוחב (ילדו SizedBox ריק) ושומר אותו ב-state;
-    // הרשימה — שמכילה Tooltip/OverlayPortal ומפתחות גלובליים — נבנית כאח שלו,
-    // לא תחתיו. אחרת רינדור-מחדש של טאב בזמן layout מפעיל את ה-OverlayPortal
-    // וזורק "_RenderLayoutBuilder was mutated".
-    return Stack(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            if (_tabsAreaWidth == null || (_tabsAreaWidth! - w).abs() > 0.5) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) setState(() => _tabsAreaWidth = w);
-              });
-            }
-            return const SizedBox.shrink();
-          },
-        ),
-        _buildTabsContent(state),
-      ],
+    final registry = PluginNewTabPageRegistry.instance;
+    return ListenableBuilder(
+      listenable: registry,
+      builder: (context, _) {
+        final showNewTabButton = registry.hasActiveRegistration;
+
+        return Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final reservedForPlus = showNewTabButton ? 32.0 : 0.0;
+                final availableForTabs = math.max(
+                  0.0,
+                  constraints.maxWidth - reservedForPlus,
+                );
+                final widths = _computeTabWidths(
+                  availableForTabs,
+                  state.tabs.length,
+                );
+                final visibleTabsWidth = math.min(
+                  availableForTabs,
+                  widths.selected +
+                      widths.unselected * math.max(0, state.tabs.length - 1),
+                );
+                if (_tabsAreaWidth == null ||
+                    (_tabsAreaWidth! - visibleTabsWidth).abs() > 0.5) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _tabsAreaWidth = visibleTabsWidth);
+                  });
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+            _buildTabsContent(state),
+            if (showNewTabButton)
+              PositionedDirectional(
+                start: _tabsAreaWidth ?? 0,
+                top: 4,
+                child: MetaData(
+                  metaData: _kTabHitMarker,
+                  behavior: HitTestBehavior.opaque,
+                  child: _buildOpenLibraryButton(context),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -705,6 +734,15 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
     );
   }
 
+  Widget _buildOpenLibraryButton(BuildContext context) {
+    return IconButton(
+      icon: const Icon(FluentIcons.add_24_regular, size: 18),
+      tooltip: context.settingsText('כרטיסייה חדשה'),
+      onPressed: PluginNewTabPageRegistry.instance.open,
+      style: _kIconButtonStyle,
+    );
+  }
+
   Widget _buildReadingSettingsButton(BuildContext context) {
     return DragToMoveArea(
       child: Padding(
@@ -734,7 +772,11 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
         return Container(
           color: AppSurfaces.readerBackground(context),
           height: _kTopBarHeight,
-          child: _buildScrollableTabsArea(state),
+          child: Row(
+            children: [
+              Expanded(child: _buildScrollableTabsArea(state)),
+            ],
+          ),
         );
       },
     );
