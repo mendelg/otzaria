@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/find_ref/repository/alt_toc_flat_entry.dart';
+import 'package:otzaria/find_ref/repository/db_reference_result.dart';
 import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/find_ref/repository/find_ref_ranking.dart';
 import 'package:otzaria/find_ref/repository/find_ref_repository.dart';
@@ -302,15 +303,27 @@ void main() {
       'dbLineId': segment,
     };
 
-    /// כמו ה-worker: סינון, ואז הבחירה. בלי חיתוך — אותה בחירה בלי תקרת שורות.
-    Future<List<String>> run(
+    List<Map<String, dynamic>> matching(
+      List<Map<String, dynamic>> rows,
+      GlobalAltTocRequest request,
+      bool matchTokens,
+    ) => [
+      for (final r in rows)
+        if (!matchTokens ||
+            altTocFlatMatches(
+              normalizeForFindRefMatch(r['reference'] as String).split(' '),
+              request.queryTokens,
+              maxRefTokens: request.maxRefTokens,
+            ))
+          r,
+    ];
+
+    Future<List<DbReferenceResult>> search(
       String query,
-      List<Map<String, dynamic>> rows, {
-      required bool truncate,
-      Map<int, List<Map<String, dynamic>>> tocByBookId = const {},
-      List<int>? sentRows,
-      bool matchTokens = true,
-    }) async {
+      List<Map<String, dynamic>> rows,
+      Map<int, List<Map<String, dynamic>>> tocByBookId,
+      Future<List<Map<String, dynamic>>> Function(GlobalAltTocRequest) global,
+    ) async {
       final repo = FindRefRepository(
         isReferenceBooksCacheLoaded: () => true,
         getAltStructureBookIds: () async => [
@@ -320,45 +333,81 @@ void main() {
             tocByBookId[id] ?? const [],
         getAltTocEntriesForReference: (id, title, {queryTokens}) async =>
             const [],
-        searchAltTocFlatEntries: (request) async {
-          final effective = truncate
-              ? request
-              : GlobalAltTocRequest.decode({
-                  ...request.encode(),
-                  'limit': 1 << 30,
-                });
-          final selected = selectGlobalAltTocMatches(
-            [
-              for (final r in rows)
-                if (!matchTokens ||
-                    altTocFlatMatches(
-                      normalizeForFindRefMatch(
-                        r['reference'] as String,
-                      ).split(' '),
-                      request.queryTokens,
-                      maxRefTokens: request.maxRefTokens,
-                    ))
-                  r,
-            ],
-            request: effective,
-            bookIdOf: (r) => r['bookId'] as int,
-            bookTitleOf: (r) => r['bookTitle'] as String,
-            orderIndexOf: (r) => r['bookOrderIndex'] as double,
-            segmentOf: (r) => r['segment'] as int,
-            referenceOf: (r) => qualifyAltTocReference(
-              r['bookTitle'] as String,
-              r['reference'] as String,
-            ),
-          );
-          sentRows?.add(selected.length);
-          return selected;
-        },
+        searchAltTocFlatEntries: global,
         getCategoryPath: (_) async => 'ספרייה',
       );
       addTearDown(repo.dispose);
+      return repo.findRefs(query);
+    }
+
+    /// [oracle] = הדירוג של main על כל ההתאמות הגולמיות (`_dedupeRefs`,
+    /// `_suppressDeeperVariants`, `_rankResults`), בלי הבחירה ב-worker. תקרת
+    /// הגיוון נגזרת גם היא מהדירוג של main: לכל ספר לבדו, הראשונות שלו.
+    /// אחרת — מסלול הייצור: [selectGlobalAltTocMatches] כמו ב-worker.
+    Future<List<String>> run(
+      String query,
+      List<Map<String, dynamic>> rows, {
+      required bool oracle,
+      Map<int, List<Map<String, dynamic>>> tocByBookId = const {},
+      List<int>? sentRows,
+      bool matchTokens = true,
+    }) async {
+      Future<List<Map<String, dynamic>>> oracleRows(
+        GlobalAltTocRequest request,
+      ) async {
+        final matched = matching(rows, request, matchTokens);
+        sentRows?.add(matched.length);
+        if (request.perBookCap >= findRefMaxResultCap) return matched;
+        final keep = <(int, int)>{};
+        for (final id in {for (final r in matched) r['bookId'] as int}) {
+          final own = [
+            for (final r in matched)
+              if (r['bookId'] == id) r,
+          ];
+          final ranked = await search(
+            query,
+            own,
+            tocByBookId,
+            (_) async => own,
+          );
+          keep.addAll(
+            ranked
+                .where((r) => r.isAltToc && r.bookId == id)
+                .take(request.perBookCap)
+                .map((r) => (r.bookId, r.segment.toInt())),
+          );
+        }
+        return [
+          for (final r in matched)
+            if (keep.contains((r['bookId'] as int, r['segment'] as int))) r,
+        ];
+      }
+
+      final results = await search(
+        query,
+        rows,
+        tocByBookId,
+        oracle
+            ? oracleRows
+            : (request) async {
+                final selected = selectGlobalAltTocMatches(
+                  matching(rows, request, matchTokens),
+                  request: request,
+                  bookIdOf: (r) => r['bookId'] as int,
+                  bookTitleOf: (r) => r['bookTitle'] as String,
+                  orderIndexOf: (r) => r['bookOrderIndex'] as double,
+                  segmentOf: (r) => r['segment'] as int,
+                  referenceOf: (r) => qualifyAltTocReference(
+                    r['bookTitle'] as String,
+                    r['reference'] as String,
+                  ),
+                );
+                sentRows?.add(selected.length);
+                return selected;
+              },
+      );
       return [
-        for (final r in await repo.findRefs(query))
-          '${r.bookId}|${r.reference}|${r.segment}',
+        for (final r in results) '${r.bookId}|${r.reference}|${r.segment}',
       ];
     }
 
@@ -374,9 +423,9 @@ void main() {
         row(5, 'פרשת נח עליה ב', 7),
         row(6, 'פרשת נח עליה ג', 2),
       ];
-      final full = await run('פרשת נח', rows, truncate: false);
-      expect(full, hasLength(2));
-      expect(await run('פרשת נח', rows, truncate: true), full);
+      final expected = await run('פרשת נח', rows, oracle: true);
+      expect(expected, hasLength(2));
+      expect(await run('פרשת נח', rows, oracle: false), expected);
     });
 
     test('אב שהתנגש בשורת TOC של אותו ספר — צאצאיו נשארים', () async {
@@ -392,16 +441,16 @@ void main() {
         row(5, 'פרשת נח עליה א', 11, title: 'פרשת השבוע'),
         row(5, 'פרשת נח עליה ב', 12, title: 'פרשת השבוע'),
       ];
-      final full = await run(
+      final expected = await run(
         'פרשת נח',
         rows,
-        truncate: false,
+        oracle: true,
         tocByBookId: toc,
       );
-      expect(full, contains('5|פרשת השבוע פרשת נח עליה א|11'));
+      expect(expected, contains('5|פרשת השבוע פרשת נח עליה א|11'));
       expect(
-        await run('פרשת נח', rows, truncate: true, tocByBookId: toc),
-        full,
+        await run('פרשת נח', rows, oracle: false, tocByBookId: toc),
+        expected,
       );
     });
 
@@ -421,23 +470,23 @@ void main() {
         row(5, 'פרק א', 10, title: 'ספר חמש'),
         row(5, 'פרק ב סימן א', 20, title: 'ספר חמש'),
       ];
-      final full = await run(
+      final expected = await run(
         'ספר חמש פרק א',
         rows,
-        truncate: false,
+        oracle: true,
         tocByBookId: toc,
         matchTokens: false,
       );
-      expect(full.first, '5|ספר חמש פרק א|10');
+      expect(expected.first, '5|ספר חמש פרק א|10');
       expect(
         await run(
           'ספר חמש פרק א',
           rows,
-          truncate: true,
+          oracle: false,
           tocByBookId: toc,
           matchTokens: false,
         ),
-        full,
+        expected,
       );
     });
 
@@ -458,7 +507,8 @@ void main() {
         ],
       ];
       for (final query in ['מאימתי דף ב', 'דף ב']) {
-        final results = await run(query, rows, truncate: true);
+        final results = await run(query, rows, oracle: false);
+        expect(results, await run(query, rows, oracle: true), reason: query);
         expect(results, contains('140|תלמוד ירושלמי ברכות מאימתי דף ב:|1403'));
         expect(results, contains('141|תלמוד ירושלמי פאה מאימתי דף ב:|1413'));
       }
@@ -477,8 +527,8 @@ void main() {
         for (var i = 0; i < 600; i++) row(6, 'סימן $i סעיף א', i, order: 1),
         for (var i = 0; i < 50; i++) row(7, 'פרק $i סעיף א', 1000 + i),
       ];
-      final results = await run('סעיף א', rows, truncate: true);
-      expect(results, await run('סעיף א', rows, truncate: false));
+      final results = await run('סעיף א', rows, oracle: false);
+      expect(results, await run('סעיף א', rows, oracle: true));
       expect(results.first, startsWith('7|'));
       expect(
         results.where((r) => r.startsWith('6|')),
@@ -547,22 +597,22 @@ void main() {
           final lib = library(seed);
           seedLibrary(lib.books, categoryPaths: lib.paths);
           for (final query in ['סעיף א', 'סימן קכג', 'שבת עא ב', 'נח']) {
-            final fullSent = <int>[];
+            final rawCount = <int>[];
             final sent = <int>[];
-            final full = await run(
+            final expected = await run(
               query,
               lib.rows,
-              truncate: false,
-              sentRows: fullSent,
+              oracle: true,
+              sentRows: rawCount,
             );
             final truncated = await run(
               query,
               lib.rows,
-              truncate: true,
+              oracle: false,
               sentRows: sent,
             );
-            expect(truncated, full, reason: query);
-            expect(full, isNotEmpty, reason: query);
+            expect(truncated, expected, reason: query);
+            expect(expected, isNotEmpty, reason: query);
             expect(
               sent.single,
               lessThanOrEqualTo(
@@ -572,7 +622,7 @@ void main() {
             );
             if (query == 'סעיף א') {
               expect(
-                fullSent.single,
+                rawCount.single,
                 greaterThan(sent.single),
                 reason: 'החיתוך פעל',
               );
@@ -705,5 +755,52 @@ void main() {
         reason: 'בלי דירוג ידוע כל הספרים נשלחים',
       );
     });
+
+    test(
+      'בקשה שנשאה את הטבלה ובוטלה בתור — הבאה מקבלת תשובה בלי דירוג, והטבלה נשלחת שוב',
+      () async {
+        final isolate = await seedWorker(books: 3);
+        final ranks = {
+          for (var b = 1; b <= 3; b++)
+            b: (
+              title: 'ספר $b',
+              rank: b == 3
+                  ? (foundationalTier: 1, eraOrder: 5)
+                  : (foundationalTier: null, eraOrder: 5),
+            ),
+        };
+        GlobalAltTocRequest request() => GlobalAltTocRequest(
+          queryTokens: const ['פרשה'],
+          bookRanks: ranks,
+          perBookCap: 1,
+          limit: 2,
+        );
+        final scope = FindRefDbIsolate.allocateSearchScope();
+        addTearDown(() => FindRefDbIsolate.releaseSearchScope(scope));
+        FindRefDbIsolate.cancelSearchScopeIfRunning(scope, 5);
+        await expectLater(
+          isolate.searchAltTocFlat(
+            request(),
+            searchScope: scope,
+            searchEpoch: 1,
+          ),
+          throwsA(isA<FindRefQueryCancelled>()),
+        );
+
+        Future<List<String>> search() async => refs(
+          await isolate.searchAltTocFlat(
+            request(),
+            searchScope: scope,
+            searchEpoch: 5,
+          ),
+        );
+        expect(
+          await search(),
+          ['1:פרשה נח', '2:פרשה נח', '3:פרשה נח'],
+          reason: 'הטבלה לא הגיעה: כל הספרים נשלחים, והתוצאה נשארת נכונה',
+        );
+        expect(await search(), ['3:פרשה נח', '1:פרשה נח']);
+      },
+    );
   });
 }
