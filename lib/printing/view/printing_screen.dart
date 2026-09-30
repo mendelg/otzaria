@@ -381,13 +381,15 @@ class _PrintingScreenState extends State<PrintingScreen> {
       if (structures.isEmpty || !mounted) return;
 
       // שימוש ב-structure הראשון בלבד - ריבוי structures מערבב ערכים
-      final rows = await DatabaseLibraryProvider.instance.getAltTocLineIndices(
-        structures.first.id,
-        source: structures.first.source,
-      );
-      if (!mounted || rows.isEmpty) return;
+      final rows = await DatabaseLibraryProvider.instance
+          .getAltTocEntriesWithLineIndex(
+            structures.first.id,
+            source: structures.first.source,
+          );
+      if (!mounted) return;
 
-      final altEntries = altHeadersForPrint(rows);
+      final altEntries = buildAltHeaderEntries(rows);
+      if (altEntries.isEmpty) return;
 
       final lastAlt = findLastHeaderIndexAtOrBefore(
         altEntries,

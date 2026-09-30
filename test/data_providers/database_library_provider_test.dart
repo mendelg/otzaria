@@ -21,6 +21,7 @@ import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/pdf_book/utils/pdf_links_window.dart';
+import 'package:otzaria/printing/printing_helpers.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:path/path.dart' as path;
@@ -1732,7 +1733,7 @@ void main() {
     );
 
     test(
-      'getAltTocLineIndices מחזיר את רמת הערך, וההורה קודם לילד שבאותה שורה',
+      'כותרות ההדפסה מהמסד שומרות רמות ומקדימות הורה לילד באותה שורה',
       () async {
         final tempDir = await Directory.systemTemp.createTemp(
           'otzaria_db_alt_line_indices',
@@ -1799,14 +1800,15 @@ void main() {
             '(1, 1, 2, 2, 2, 50), (2, 1, NULL, 1, 1, 50), (3, 1, 2, 3, 2, 80), (4, 1, NULL, 4, 1, 120)',
           );
 
-          final rows = await provider.getAltTocLineIndices(1);
+          final rows = await provider.getAltTocEntriesWithLineIndex(1);
+          final headers = buildAltHeaderEntries(rows);
 
           expect(
-            [for (final r in rows) (r.lineIndex, r.level, r.text)],
+            [for (final h in headers) (h.index, h.level, h.text)],
             [
               (5, 1, 'הלכות א'),
-              (5, 2, 'סימן א'),
-              (8, 2, 'סימן ב'),
+              (5, 2, 'הלכות א, סימן א'),
+              (8, 2, 'הלכות א, סימן ב'),
               (12, 1, 'הלכות ב'),
             ],
           );

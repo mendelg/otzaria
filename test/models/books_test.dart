@@ -47,6 +47,45 @@ void main() {
     expect(restored.author, 'מחבר כלשהו');
   });
 
+  group('TocEntry.fullText', () {
+    test('ספר מהמסד (שם הספר ברמה 0): הכותרת ברמה 1 נכללת בנתיב', () {
+      final root = TocEntry(text: 'ספר הזהר', index: 0, level: 0);
+      final parasha = TocEntry(
+        text: 'בראשית',
+        index: 5,
+        level: 1,
+        parent: root,
+      );
+      final perek = TocEntry(
+        text: 'פרק א',
+        index: 6,
+        level: 2,
+        parent: parasha,
+      );
+
+      expect(perek.fullText, 'בראשית, פרק א');
+      expect(parasha.fullText, 'בראשית');
+    });
+
+    test('ספר מקובץ (שם הספר ב-h1, רמה 1): שם הספר אינו נכלל', () {
+      final root = TocEntry(text: 'שם הספר', index: 0, level: 1);
+      final chapter = TocEntry(
+        text: 'פרק א',
+        index: 1,
+        level: 2,
+        parent: root,
+      );
+      final halacha = TocEntry(
+        text: 'הלכה ב',
+        index: 2,
+        level: 3,
+        parent: chapter,
+      );
+
+      expect(halacha.fullText, 'פרק א, הלכה ב');
+    });
+  });
+
   group('flattenToc', () {
     test('משטח עץ של מסכת (root יחיד + דפים כצאצאים)', () {
       // מבנה כמו ביומא: root "יומא" וכל הדפים children שלו.

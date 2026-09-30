@@ -271,11 +271,11 @@ void main() {
       expect(headerSectionEndLine(alt, 2, 20), 12);
     });
 
-    test('altHeadersForPrint נושא את הרמה מהמסד לכותרות ההדפסה', () {
-      final headers = altHeadersForPrint([
-        (lineIndex: 5, level: 1, text: 'הלכות א'),
-        (lineIndex: 5, level: 2, text: 'סימן א'),
-        (lineIndex: 8, level: 2, text: 'סימן ב'),
+    test('buildAltHeaderEntries שומר רמות ומקדים הורה לילד באותה שורה', () {
+      final headers = buildAltHeaderEntries([
+        (id: 1, parentId: 2, level: 2, lineIndex: 5, text: 'סימן א'),
+        (id: 2, parentId: null, level: 1, lineIndex: 5, text: 'הלכות א'),
+        (id: 3, parentId: 2, level: 2, lineIndex: 8, text: 'סימן ב'),
       ]);
 
       expect(
@@ -384,6 +384,28 @@ void main() {
         ),
         '2 עמודים מתוך 4 (גיליון אחד)',
       );
+    });
+  });
+
+  group('buildAltHeaderEntries', () {
+    test('דף שחוזר בכמה כרכים מקבל את נתיב האבות, לפי סדר השורות', () {
+      final entries = buildAltHeaderEntries([
+        (id: 1, parentId: null, level: 0, lineIndex: null, text: 'כרך א'),
+        (id: 2, parentId: 1, level: 1, lineIndex: 0, text: 'הקדמה'),
+        (id: 3, parentId: 2, level: 2, lineIndex: 0, text: 'דף א.'),
+        (id: 4, parentId: null, level: 0, lineIndex: null, text: 'כרך ב'),
+        (id: 5, parentId: 4, level: 1, lineIndex: null, text: 'שמות'),
+        (id: 6, parentId: 5, level: 2, lineIndex: 90, text: 'דף א.'),
+        (id: 7, parentId: 2, level: 2, lineIndex: 40, text: 'דף א:'),
+      ]);
+
+      expect(entries.map((e) => e.fullText), [
+        'כרך א, הקדמה',
+        'כרך א, הקדמה, דף א.',
+        'כרך א, הקדמה, דף א:',
+        'כרך ב, שמות, דף א.',
+      ]);
+      expect(entries.map((e) => e.index), [0, 0, 40, 90]);
     });
   });
 }
