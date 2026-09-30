@@ -83,8 +83,7 @@ Future<void> main() async {
         expect(typographic[1].word, 'משה');
         expect(typographic[1].index, 1);
 
-        // '' שמאוחד ל-" משנה אורך — המילה מקבלת את גבולות המקטע כולו,
-        // כך שהסמן בכל מקום בתוכו עדיין בוחר אותה.
+        // נרמול משנה-אורך עדיין מחזיר את גבולות המילה המקורית.
         final doubled = SearchQueryBuilder.queryWordSpans("רמב''ם משה");
         expect(doubled[0].word, 'רמב"ם');
         expect(doubled[0].start, 0);
@@ -98,13 +97,11 @@ Future<void> main() async {
     test(
       'queryWordSpans: מקטע מעורב — משנה-אורך שגם מתפצל לכמה מילים',
       () {
-        // כישלון איתור של מילה אחת אינו גורר את שאר מילות המקטע: במקטע
-        // רמב''ם-משה המילה רמב"ם מקבלת את הפער עד משה, ומשה מאותרת
-        // במדויק — הסמן עליה בוחר אותה ולא את הראשונה.
+        // נרמול הגרשיים אינו מרחיב את הטווח לתו המקף או למילה הבאה.
         final spans = SearchQueryBuilder.queryWordSpans("רמב''ם-משה");
         expect(spans.map((s) => s.word).toList(), ['רמב"ם', 'משה']);
         expect(spans[0].start, 0);
-        expect(spans[0].end, 7);
+        expect(spans[0].end, 6);
         expect(spans[1].start, 7);
         expect(spans[1].end, 10);
 
@@ -113,11 +110,60 @@ Future<void> main() async {
         expect(reversed.map((s) => s.word).toList(), ['משה', 'רמב"ם']);
         expect(reversed[0].start, 0);
         expect(reversed[0].end, 3);
-        expect(reversed[1].start, 3);
+        expect(reversed[1].start, 4);
         expect(reversed[1].end, 10);
       },
       skip: engineReady ? false : searchEngineSkipReason,
     );
+
+    test(
+      'queryWordSpans שומר אינדקסים וגבולות מלאים בקרי/כתיב',
+      () {
+        for (final query in [
+          'הארץ (הוצא) [היצא] אתך',
+          'הארץ(הוצא)[היצא] אתך',
+          'הארץ (הוצא)\n[היצא] אתך',
+          '😀 הארץ (הוצא) [היצא] אתך',
+          'הארץ (היצא) [היצא] אתך',
+        ]) {
+          final spans = SearchQueryBuilder.queryWordSpans(query);
+          expect(spans.map((s) => s.word).toList(), ['הארץ', 'היצא', 'אתך']);
+          expect(spans.map((s) => s.index).toList(), [0, 1, 2]);
+          expect(query.substring(spans[1].start, spans[1].end), 'היצא');
+          expect(query.substring(spans[2].start, spans[2].end), 'אתך');
+          final key = SearchQueryBuilder.buildWordKey(
+            spans[2].word,
+            spans[2].index,
+          );
+          expect(key, 'אתך_2');
+          expect(
+            SearchQueryBuilder.restoredPerWordStateMatches(
+              SearchQueryBuilder.sanitizeQuery(query),
+              searchOptions: {
+                key: {'קידומות': true},
+              },
+              alternativeWords: const {
+                2: ['עמך'],
+              },
+              spacingValues: const {'1-2': '3'},
+            ),
+            isTrue,
+          );
+        }
+      },
+      skip: engineReady ? false : searchEngineSkipReason,
+    );
+
+    test('sanitizeQuery שומר גבולות של קרי/כתיב צמוד', () {
+      expect(
+        SearchQueryBuilder.sanitizeQuery('אמר(ת) [רבא] משום'),
+        'אמר רבא משום',
+      );
+      expect(
+        SearchQueryBuilder.sanitizeQuery('הארץ(הוצא) [היצא] אתך'),
+        'הארץ היצא אתך',
+      );
+    }, skip: engineReady ? false : searchEngineSkipReason);
 
     test(
       'restoredPerWordStateMatches מזהה state שנשמר על פיצול ישן',

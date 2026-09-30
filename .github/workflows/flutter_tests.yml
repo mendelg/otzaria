@@ -126,10 +126,47 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # flutter test רץ ב-VM בלי נכסי plugin, והטסטים טוענים את ספריות ה-Rust
-      # מ-rust/target/release שבחבילה. cargokit מוריד את הבינארי החתום מה-release
-      # של החבילה (כמו בבניית האפליקציה), ובונה מקומית רק אם אין כזה.
+      # Resolve the Git or hosted package to cache the native library under the
+      # exact root used by flutter_test_config.dart.
+      - name: Resolve search engine package root
+        id: engine-package
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.parse import urljoin, urlparse
+          from urllib.request import url2pathname
+
+          config = Path('.dart_tool/package_config.json').resolve()
+          packages = json.loads(config.read_text())['packages']
+          package = next(p for p in packages if p['name'] == 'otzaria_search_engine')
+          uri = urlparse(urljoin(config.as_uri(), package['rootUri']))
+          if uri.scheme != 'file' or uri.netloc:
+              raise ValueError(f'Expected a local package root, got {uri.geturl()}')
+          root = Path(url2pathname(uri.path)).resolve()
+          if not (root / 'rust/Cargo.toml').is_file():
+              raise FileNotFoundError(f'Engine Cargo.toml missing in {root}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              print(f'root={root}', file=output)
+          print(f'Search engine package root: {root}')
+          PYTHON
+
+      # The pinned Git revision has no release artifact yet. Cache by the
+      # immutable package reference so the six test shards compile it once.
+      - name: Cache search engine library
+        id: engine-cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ steps.engine-package.outputs.root }}/rust/target/release/libsearch_engine.so
+          key: ${{ runner.os }}-search-engine-lib-v3-${{ hashFiles('pubspec.yaml', 'pubspec.lock') }}
+
+      # flutter_test has no plugin assets. Cargokit downloads signed release
+      # artifacts when available and builds the pinned Git engine from source
+      # when that crate hash has not been published.
       - name: Fetch native libraries (search engine, OpenType shaper)
+        env:
+          ENGINE_PACKAGE_ROOT: ${{ steps.engine-package.outputs.root }}
         run: |
           for pkg in otzaria_search_engine opentype_shaper; do
             pkg_root=$(jq -r --arg pkg "$pkg" '.packages[] | select(.name == $pkg) | .rootUri' .dart_tool/package_config.json)
@@ -140,6 +177,10 @@ jobs:
             esac
             pkg_root=$(realpath "$pkg_root")
             echo "Fetching $pkg at: $pkg_root"
+            if [ "$pkg" = "otzaria_search_engine" ] &&                 [ -s "$ENGINE_PACKAGE_ROOT/rust/target/release/libsearch_engine.so" ]; then
+              echo "Using cached search engine native library"
+              continue
+            fi
             mkdir -p "$pkg_root/rust/target/release"
             CARGOKIT_CONFIGURATION=Release \
             CARGOKIT_TARGET_PLATFORM=linux-x64 \
@@ -151,6 +192,7 @@ jobs:
               bash "$pkg_root/cargokit/run_build_tool.sh" build-cmake
             ls -la "$pkg_root/rust/target/release"
           done
+          test -s "$ENGINE_PACKAGE_ROOT/rust/target/release/libsearch_engine.so"
 
       # הטסטים תלויים בקבצים המחוללים, לכן החילול רץ גם בכל shard (~20 שניות).
       - name: Generate settings search index
@@ -182,6 +224,26 @@ jobs:
 
       - name: Generate settings translation catalog
         run: dart run tool/generate_settings_l10n.dart
+
+      # Fail immediately if a missing or incompatible binary would make the
+      # engine-dependent test groups skip themselves.
+      - name: Verify the cached native engine loads
+        run: |
+          preflight=$(mktemp --suffix=_test.dart test/search_engine_ci_XXXXXX)
+          trap 'rm -f "$preflight"' EXIT
+          cat > "$preflight" <<'DART'
+          import 'package:flutter_test/flutter_test.dart';
+          import 'support/search_engine_test_init.dart';
+
+          void main() {
+            test('CI loads the resolved native search engine', () async {
+              if (!await tryInitSearchEngine()) {
+                throw StateError(searchEngineSkipReason);
+              }
+            });
+          }
+          DART
+          flutter test "$preflight"
 
       # הרצת הטסטים עם retry: אם הריצה הראשונה נכשלה, נחלץ את קבצי הטסט
       # שנכשלו ונריץ אותם שוב. רק אם הם נכשלים גם בריצה השנייה - הסטפ נכשל.
@@ -340,6 +402,10 @@ jobs:
           git config --global core.longpaths true
           flutter pub get
 
+      # The Git-pinned engine may not have precompiled release assets yet.
+      - name: Install Rust for native source fallback
+        uses: dtolnay/rust-toolchain@stable
+
       # זה הצעד שבגללו ה-job קיים: MSBuild, רישום התוספים הנייטיביים
       # ו-cargokit. debug ולא release — הוא מפעיל את אותה שרשרת נייטיבית
       # בשבריר מהזמן, ובניית ה-release כבר מכוסה ב-build-and-announce.
@@ -357,6 +423,29 @@ jobs:
       # personal_notes), והקבוצות הידועות כתלויות-סביבה או flaky (migration,
       # installer, tools/calendar) נשארות ל-Linux בלבד. הרחבת ההיקף מחייבת אימות
       # מקומי ב-Windows קודם — אחרת ה-job נהיה רועש ומתחילים להתעלם ממנו.
+      - name: Verify the built native engine loads
+        shell: pwsh
+        run: |
+          $preflight = Join-Path "test" ("search_engine_ci_{0}_test.dart" -f [guid]::NewGuid().ToString("N"))
+          try {
+            @'
+          import 'package:flutter_test/flutter_test.dart';
+          import 'support/search_engine_test_init.dart';
+
+          void main() {
+            test('CI loads the resolved native search engine', () async {
+              if (!await tryInitSearchEngine()) {
+                throw StateError(searchEngineSkipReason);
+              }
+            });
+          }
+          '@ | Set-Content -Path $preflight -Encoding utf8
+            flutter test $preflight
+            if ($LASTEXITCODE -ne 0) { throw "Native engine initialization failed" }
+          } finally {
+            Remove-Item -Path $preflight -ErrorAction SilentlyContinue
+          }
+
       - name: Run Windows-relevant tests
         run: flutter test test/core/ test/tabs/ test/navigation/ test/workspaces/ test/personal_notes/
 
@@ -386,6 +475,8 @@ jobs:
       run:
         shell: bash
     env:
+      RUSTUP_HOME: ${{ github.workspace }}/.rustup
+      CARGO_HOME: ${{ github.workspace }}/.cargo
       WPE_SDK: /opt/wpe-sdk
       PKG_CONFIG_PATH: /opt/wpe-sdk/lib/pkgconfig
       LD_LIBRARY_PATH: /opt/wpe-sdk/lib
@@ -433,6 +524,18 @@ jobs:
             openjdk-17-jdk-headless pkg-config xvfb xauth
           update-alternatives --install /usr/bin/clang clang /usr/bin/clang-14 100
           update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-14 100
+
+      # Bookworm-slim has no rustup. Unpublished crate hashes fall back to
+      # building the Git-pinned engine from source through Cargokit.
+      - name: Install Rust for native source fallback
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify native Rust toolchain
+        run: |
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+          rustc -Vv
+          cargo -V
+          rustup show
 
       - name: Download prebuilt WPE runtime SDK
         env:

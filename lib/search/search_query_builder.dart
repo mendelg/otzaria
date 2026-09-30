@@ -23,8 +23,7 @@ class QueryWordSpan {
   /// האינדקס בפיצול המלא של השאילתה.
   final int index;
 
-  /// גבולות בטקסט הגולמי. כשלא ניתן לאתר את המילה בתוך המקטע
-  /// (נורמליזציה משנת-אורך) — גבולות מקטע-הרווח כולו.
+  /// גבולות UTF-16 מדויקים בטקסט הגולמי, כפי שהטוקנייזר מחזיר.
   final int start;
   final int end;
 
@@ -148,75 +147,13 @@ class SearchQueryBuilder {
   static List<String> splitQueryWords(String query) =>
       engine.splitQueryWords(query: query);
 
-  /// קיפול שומר-אורך של צורות הגרשיים/גרש — העבריות (`״`/`׳`) והטיפוגרפיות
-  /// (`“`/`”`/`‘`/`’`) — לצורת ה-ASCII שמילות [splitQueryWords] נושאות,
-  /// באותו מיפוי כמו המנוע, כדי שאיתור מילה בטקסט הגולמי לא יזיז
-  /// offsets. נורמליזציות משנות-אורך (`''`→`"`) אינן מטופלות כאן —
-  /// [queryWordSpans] נופל לגבולות המקטע כולו במקרים אלה.
-  static String foldQuoteForms(String text) =>
-      text.replaceAll(RegExp('[״“”]'), '"').replaceAll(RegExp("[׳‘’]"), "'");
-
-  /// מיפוי מילות [splitQueryWords] לטווחיהן בטקסט הגולמי, מקטע-רווח
-  /// אחרי מקטע-רווח. מקטע שמתפצל לכמה מילות מנוע (`בית-דין`) מקבל
-  /// טווח נפרד לכל מילה, כך שהסמן על `דין` בוחר את `דין` ולא את
-  /// `בית`. מילה שלא ניתן לאתר בתוך המקטע — נורמליזציה משנת-אורך
-  /// (`רמב''ם`→`רמב"ם`) או פיסוק שקוף בתוך מילה (`א.ב`→`אב`) —
-  /// מקבלת את הפער שבין שכנותיה המאותרות (או את גבולות המקטע כשאין),
-  /// כך שגם במקטע מעורב כמו `רמב''ם-משה` הסמן על `משה` בוחר את `משה`:
-  /// עדיף טווח גס ממיקום שגוי.
+  /// הטוקנייזר ממפה את השאילתה כולה, כולל קרי/כתיב ונרמול משנה-אורך.
   static List<QueryWordSpan> queryWordSpans(String text) {
-    final spans = <QueryWordSpan>[];
-    var index = 0;
-    for (final match in RegExp(r'\S+').allMatches(text)) {
-      final chunk = match.group(0)!;
-      final words = splitQueryWords(chunk);
-      final folded = foldQuoteForms(chunk);
-
-      // שלב 1: איתור לפי הסדר. כישלון (מילה ששונתה ע"י הנורמליזציה)
-      // אינו עוצר את איתור המילים שאחריו — הן נבדקות מאותו מיקום.
-      final locatedStarts = List<int?>.filled(words.length, null);
-      var searchPos = 0;
-      for (var i = 0; i < words.length; i++) {
-        final rel = folded.indexOf(words[i], searchPos);
-        if (rel != -1) {
-          locatedStarts[i] = rel;
-          searchPos = rel + words[i].length;
-        }
-      }
-
-      // שלב 2: טווחים. מילה מאותרת — טווח מדויק; לא-מאותרת — הפער
-      // מסוף המילה המאותרת הקודמת עד תחילת המאותרת הבאה.
-      var prevEnd = 0;
-      for (var i = 0; i < words.length; i++) {
-        final located = locatedStarts[i];
-        int startRel;
-        int endRel;
-        if (located != null) {
-          startRel = located;
-          endRel = located + words[i].length;
-          prevEnd = endRel;
-        } else {
-          startRel = prevEnd;
-          endRel = folded.length;
-          for (var j = i + 1; j < words.length; j++) {
-            if (locatedStarts[j] != null) {
-              endRel = locatedStarts[j]!;
-              break;
-            }
-          }
-        }
-        spans.add(
-          QueryWordSpan(
-            words[i],
-            index,
-            match.start + startRel,
-            match.start + endRel,
-          ),
-        );
-        index++;
-      }
-    }
-    return spans;
+    final words = engine.queryWordSpans(query: text);
+    return [
+      for (var i = 0; i < words.length; i++)
+        QueryWordSpan(words[i].word, i, words[i].start, words[i].end),
+    ];
   }
 
   /// אימות state פר-מילה משוחזר (סשן/היסטוריה) מול הפיצול הנוכחי:
