@@ -126,53 +126,31 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # sanitizeQuery/splitQueryWords מאצילים ל-Rust דרך FRB,
-      # ו-flutter_test_config.dart טוען את הספרייה מ-rust/target שבחבילה.
-      # ה-cache מיוצר ב-warm_search_engine_cache.yml על ענף הבסיס.
-      - name: Cache search engine library
-        id: engine-cache
-        uses: actions/cache@v6.1.0
-        with:
-          path: ~/.pub-cache/hosted/pub.dev/otzaria_search_engine-*/rust/target/release/libsearch_engine.so
-          # בלי restore-keys: .so מגרסה קודמת נכשל בבדיקת ה-content hash של FRB,
-          # והטסטים היו מדולגים בשקט במקום להיכשל.
-          key: ${{ runner.os }}-search-engine-lib-${{ hashFiles('pubspec.lock') }}
-
-      - name: Build search engine native library
-        if: steps.engine-cache.outputs.cache-hit != 'true'
+      # flutter test רץ ב-VM בלי נכסי plugin, והטסטים טוענים את ספריות ה-Rust
+      # מ-rust/target/release שבחבילה. cargokit מוריד את הבינארי החתום מה-release
+      # של החבילה (כמו בבניית האפליקציה), ובונה מקומית רק אם אין כזה.
+      - name: Fetch native libraries (search engine, OpenType shaper)
         run: |
-          pkg_root=$(jq -r '.packages[] | select(.name == "otzaria_search_engine") | .rootUri' .dart_tool/package_config.json)
-          pkg_root=${pkg_root#file://}
-          case "$pkg_root" in
-            /*) ;;
-            *) pkg_root=".dart_tool/$pkg_root" ;;
-          esac
-          echo "Building search engine at: $pkg_root"
-          cargo build --release --manifest-path "$pkg_root/rust/Cargo.toml"
-
-      # הדפסת לוח השנה משתמשת במעצב OpenType דרך Rust. בניית יישום מצרפת
-      # אותו אוטומטית, אבל flutter test מריץ VM ללא נכסי plugin ולכן יש לבנותו
-      # מפורשות גם בבדיקות.
-      # Keyed like the search engine cache; warm_search_engine_cache.yml saves
-      # it on the base branch so pull requests can restore it.
-      - name: Cache OpenType shaper library
-        id: shaper-cache
-        uses: actions/cache@v6.1.0
-        with:
-          path: ~/.pub-cache/hosted/pub.dev/opentype_shaper-*/rust/target/release/libopentype_shaper.so
-          key: ${{ runner.os }}-opentype-shaper-lib-${{ hashFiles('pubspec.lock') }}
-
-      - name: Build OpenType shaper native library
-        if: steps.shaper-cache.outputs.cache-hit != 'true'
-        run: |
-          pkg_root=$(jq -r '.packages[] | select(.name == "opentype_shaper") | .rootUri' .dart_tool/package_config.json)
-          pkg_root=${pkg_root#file://}
-          case "$pkg_root" in
-            /*) ;;
-            *) pkg_root=".dart_tool/$pkg_root" ;;
-          esac
-          echo "Building OpenType shaper at: $pkg_root"
-          cargo build --release --manifest-path "$pkg_root/rust/Cargo.toml"
+          for pkg in otzaria_search_engine opentype_shaper; do
+            pkg_root=$(jq -r --arg pkg "$pkg" '.packages[] | select(.name == $pkg) | .rootUri' .dart_tool/package_config.json)
+            pkg_root=${pkg_root#file://}
+            case "$pkg_root" in
+              /*) ;;
+              *) pkg_root=".dart_tool/$pkg_root" ;;
+            esac
+            pkg_root=$(realpath "$pkg_root")
+            echo "Fetching $pkg at: $pkg_root"
+            mkdir -p "$pkg_root/rust/target/release"
+            CARGOKIT_CONFIGURATION=Release \
+            CARGOKIT_TARGET_PLATFORM=linux-x64 \
+            CARGOKIT_MANIFEST_DIR="$pkg_root/rust" \
+            CARGOKIT_OUTPUT_DIR="$pkg_root/rust/target/release" \
+            CARGOKIT_TARGET_TEMP_DIR="$RUNNER_TEMP/cargokit/$pkg/target" \
+            CARGOKIT_TOOL_TEMP_DIR="$RUNNER_TEMP/cargokit/$pkg/tool" \
+            CARGOKIT_ROOT_PROJECT_DIR="$GITHUB_WORKSPACE" \
+              bash "$pkg_root/cargokit/run_build_tool.sh" build-cmake
+            ls -la "$pkg_root/rust/target/release"
+          done
 
       # הטסטים תלויים בקבצים המחוללים, לכן החילול רץ גם בכל shard (~20 שניות).
       - name: Generate settings search index

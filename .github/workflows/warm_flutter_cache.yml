@@ -1,0 +1,30 @@
+name: Warm Flutter Cache
+
+# שומר את ה-Flutter SDK וה-pub cache ב-cache של ענף הבסיס. cache שנשמר
+# בריצת PR משויך ל-ref של אותו PR ואינו נגיש ל-PRים אחרים — רק כאן הוא נוצר.
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+jobs:
+  warm:
+    name: Cache Flutter SDK and pub packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.1
+
+      # הגרסה חייבת להיות זהה ל-flutter_tests.yml, אחרת המפתח לא יתאים.
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.2
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
