@@ -191,7 +191,7 @@ void main() {
     expect(await readBookContentBytes(db, key(1)), legacy.bytes);
   });
 
-  test('שורות שחוצות גבול חוצץ, שורה גדולה מחוצץ ו-BOM — זהה', () async {
+  test('גבולות חוצץ וחצי חוצץ, שורות ארוכות ו-BOM — זהה', () async {
     final dbPath = path.join(tempDir.path, 'chunks.db');
     final db = sqlite3.sqlite3.open(dbPath);
     addTearDown(db.close);
@@ -205,6 +205,7 @@ void main() {
           2 => '',
           _ => 'שורה $i ${'x' * (i % 97)}',
         },
+      for (var i = 0; i < 96; i++) '$bom${'x' * (32764 + i % 7)}',
       'ג' * 70000,
       '$bom${'ד' * 40000}',
       bom,

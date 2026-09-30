@@ -10,9 +10,8 @@ import 'package:otzaria/migration/models/book.dart' as db_models;
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
 
-// הזהות נבדקת באותה שאילתה (אותו snapshot): patch שהוחל בין הפתרון על ה-UI
-// לקריאה ב-worker עלול להצמיד את המזהה לספר אחר. רק title: במסד מצורף אין
-// בהכרח categoryId.
+// הזהות נבדקת באותה שאילתה: patch בין הפתרון לקריאה עלול להחליף את הספר.
+// בודקים רק title, כי במסד מצורף אין בהכרח categoryId.
 const _bookMatches = 'EXISTS (SELECT 1 FROM book WHERE id = ?1 AND title = ?2)';
 // סכמה 6 (DbCapabilities.hasSplitLineContent): התוכן ב-line_content לפי אותו id.
 String _contentSql(sqlite3.Database db, {required bool blob}) {
@@ -140,8 +139,8 @@ Future<List<Uint8List>?> _readJoinedChunks(
     while (raw.step()) {
       final size = (rows > 0 ? 1 : 0) + raw.columnBytes(0);
       if (used + size > chunk.length) {
-        if (used > 0) chunks.add(Uint8List.sublistView(chunk, 0, used));
-        chunk = Uint8List(size > _chunkBytes ? size : _chunkBytes);
+        if (used > 0) chunks.add(_usedChunk(chunk, used));
+        chunk = Uint8List(size > _chunkBytes ~/ 2 ? size : _chunkBytes);
         used = 0;
       }
       if (rows > 0) chunk[used++] = 0x0A;
@@ -158,11 +157,17 @@ Future<List<Uint8List>?> _readJoinedChunks(
       }
     }
     if (rows == 0) return null;
-    if (used > 0) chunks.add(Uint8List.sublistView(chunk, 0, used));
+    if (used > 0) chunks.add(_usedChunk(chunk, used));
     return chunks;
   } finally {
     statement.close();
   }
+}
+
+Uint8List _usedChunk(Uint8List chunk, int used) {
+  // view משאיר את כל החוצץ בחיים; חוצץ דליל נשמר בהקצאה מדויקת.
+  if (used * 4 < chunk.length * 3) return chunk.sublist(0, used);
+  return Uint8List.sublistView(chunk, 0, used);
 }
 
 bool _startsWithBom(Uint8List bytes, int start, int end) =>
