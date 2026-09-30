@@ -736,6 +736,7 @@ class TextBookSearchViewState extends State<TextBookSearchView>
       return;
     }
     final lineText = _lineTextAt(result.index, loadedState);
+    final activeParameters = _activeSearchParameters;
     final intraLineFraction = lineText == null
         ? matchFractionFromLineLength(
             matchOffset: result.matchOffset,
@@ -746,6 +747,12 @@ class TextBookSearchViewState extends State<TextBookSearchView>
             result.query,
             matchOffset: result.matchOffset,
             wholeWord: _effectiveWholeWord,
+            searchOptions: activeParameters.searchOptions,
+            alternativeWords: activeParameters.alternativeWords,
+            spacingValues: activeParameters.customSpacing,
+            isFuzzy: _searchMode == SearchMode.fuzzy,
+            searchDistance: _searchDistance,
+            matchPolicy: _matchPolicy,
           );
     final navigation = scrollToSourceLine(
       scrollController: widget.scrollControler,

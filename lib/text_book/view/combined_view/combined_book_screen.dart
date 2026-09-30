@@ -833,6 +833,12 @@ class _CombinedViewState extends State<CombinedView> {
                 state.content[initialIndex],
                 state.searchText,
                 wholeWord: state.searchWholeWord,
+                searchOptions: state.searchOptions,
+                alternativeWords: state.alternativeWords,
+                spacingValues: state.spacingValues,
+                isFuzzy: state.searchMode == SearchMode.fuzzy,
+                searchDistance: state.searchDistance,
+                matchPolicy: state.matchPolicy,
               )
             : 0.0;
         WidgetsBinding.instance.addPostFrameCallback((_) {

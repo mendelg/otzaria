@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/search/models/search_match_policy.dart';
 import 'package:otzaria/search/utils/literal_search_pattern.dart';
 import 'package:otzaria/text_book/models/search_results.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart' as notes;
@@ -111,12 +112,19 @@ void _updateAddress(List<String> address, String line) {
 /// זהה לחיפוש. משמש לדיוק גלילה אל המילה בתוך פסקה ארוכה. 0 אם אין התאמה.
 /// [matchOffset] — היסט הופעה ספציפית בשורה הנקייה (ראה
 /// TextSearchResult.matchOffset); בלעדיו נלקחת ההופעה הראשונה.
+/// שאר הפרמטרים הם פרמטרי ההדגשה של הספר, כך שההופעה נמצאת באותה תבנית שמודגשת.
 /// [pattern] מוזרק בבדיקות בלבד — בייצור נבנה מהמנוע.
 double matchFractionInLine(
   String rawLine,
   String query, {
   int? matchOffset,
   bool wholeWord = true,
+  Map<String, Map<String, bool>> searchOptions = const {},
+  Map<int, List<String>> alternativeWords = const {},
+  Map<String, String> spacingValues = const {},
+  bool isFuzzy = false,
+  int searchDistance = 0,
+  SearchMatchPolicy matchPolicy = SearchMatchPolicy.standard,
   @visibleForTesting RegExp? pattern,
 }) {
   final clean = cleanLineForSearch(rawLine);
@@ -124,11 +132,22 @@ double matchFractionInLine(
   int offset;
   if (matchOffset != null) {
     offset = matchOffset;
+  } else if (pattern != null) {
+    offset = pattern.firstMatch(clean)?.start ?? -1;
   } else {
-    final regExp =
-        pattern ?? buildLiteralPattern(query, wholeWord: wholeWord)?.regExp;
-    if (regExp == null) return 0;
-    offset = regExp.firstMatch(clean)?.start ?? -1;
+    final ranges = utils.computeHighlightRanges(
+      clean,
+      query,
+      searchOptions: searchOptions,
+      alternativeWords: alternativeWords,
+      spacingValues: spacingValues,
+      isFuzzy: isFuzzy,
+      searchDistance: searchDistance,
+      matchPolicy: matchPolicy,
+      isSearchResultLine: true,
+      partialWordMatch: !wholeWord,
+    );
+    offset = ranges.isEmpty ? -1 : ranges.first.first;
   }
   if (offset <= 0) return 0;
   return (offset / clean.length).clamp(0.0, 1.0);
