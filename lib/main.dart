@@ -134,6 +134,7 @@ import 'package:otzaria/plugins/services/plugin_packager_cli.dart';
 import 'package:otzaria/plugins/services/plugin_store_link_parser.dart';
 import 'package:otzaria/plugins/services/plugin_protocol_registration_service.dart';
 import 'package:otzaria/plugins/utils/plugin_dev_tools_mode.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 import 'package:otzaria/core/sentry_event_filter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -345,6 +346,7 @@ void main(List<String> args) async {
       .timeout(const Duration(seconds: 20), onTimeout: () {});
 
   PluginDevToolsMode.initFromArgs(args);
+  PluginSafeMode.initFromArgs(args);
   // שכבות טקסט של ספרים סרוקים שומרות עברית בסדר ויזואלי; בלי זה חיפוש,
   // העתקה ואינדוקס מקבלים את המילים הפוכות.
   Pdfrx.normalizeHebrewText = true;
@@ -904,6 +906,12 @@ Future<void> _initializeRestartableRuntime() async {
       );
     }),
   );
+  // Must be known before the plugin system loads in this window.
+  if (WindowRole.isSecondary) {
+    await PluginSafeMode.initForSecondaryWindow();
+  } else {
+    unawaited(PluginSafeMode.publishForSecondaryWindows());
+  }
 
   // אינם נחוצים להצגת ה-UI הראשי. unawaited לבדו אינו דוחה: הקוד שעד ה-await
   // הראשון בכל אחד מהם רץ כאן, ולכן עבודה סינכרונית חייבת לחכות לחשיפה בעצמה.

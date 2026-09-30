@@ -3,6 +3,7 @@ import 'package:otzaria/plugins/models/installed_plugin.dart';
 import 'package:otzaria/plugins/models/plugin_manifest.dart';
 import 'package:otzaria/plugins/repository/plugin_registry_repository.dart';
 import 'package:otzaria/plugins/storage/plugin_system_database.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 
 PluginManifest _manifest({String id = 'p', int? toolTabOrder}) {
   return PluginManifest.fromJson({
@@ -55,6 +56,17 @@ class _FakeDb implements PluginSystemDatabase {
       List.of(plugins);
 
   @override
+  Future<InstalledPlugin?> getInstalledPlugin(String pluginId) async =>
+      plugins.where((p) => p.pluginId == pluginId).firstOrNull;
+
+  @override
+  Future<void> insertOrUpdatePlugin(InstalledPlugin plugin) async {
+    plugins
+      ..removeWhere((p) => p.pluginId == plugin.pluginId)
+      ..add(plugin);
+  }
+
+  @override
   Future<void> updatePluginsUserOrder(Map<String, int> ordering) async {
     userOrderCalls.add(Map.of(ordering));
   }
@@ -72,6 +84,45 @@ class _FakeDb implements PluginSystemDatabase {
 }
 
 void main() {
+  group('PluginRegistryRepository in safe mode', () {
+    setUp(() => PluginSafeMode.active.value = true);
+    tearDown(PluginSafeMode.resetForTesting);
+
+    test('every plugin reads as disabled', () async {
+      final repo = PluginRegistryRepository(
+        database: _FakeDb([_plugin(id: 'a'), _plugin(id: 'b')]),
+      );
+
+      expect((await repo.getAllPlugins()).map((p) => p.enabled), [
+        false,
+        false,
+      ]);
+      expect((await repo.getPlugin('a'))!.enabled, isFalse);
+      expect(await repo.getIsEnabled('a'), isFalse);
+    });
+
+    test('saving keeps the stored enabled flag', () async {
+      final fake = _FakeDb([_plugin(id: 'a')]);
+      final repo = PluginRegistryRepository(database: fake);
+
+      final plugin = await repo.getPlugin('a');
+      await repo.savePlugin(plugin!.copyWith(userOrder: 3));
+
+      final stored = fake.plugins.single;
+      expect(stored.enabled, isTrue);
+      expect(stored.userOrder, 3);
+    });
+
+    test('turning safe mode off restores the stored state', () async {
+      final repo = PluginRegistryRepository(
+        database: _FakeDb([_plugin(id: 'a')]),
+      );
+      PluginSafeMode.active.value = false;
+
+      expect(await repo.getIsEnabled('a'), isTrue);
+    });
+  });
+
   group('PluginRegistryRepository.reorderPlugins', () {
     test('maps an ordered list of ids to {id: 0, id: 1, ...}', () async {
       final fake = _FakeDb([]);

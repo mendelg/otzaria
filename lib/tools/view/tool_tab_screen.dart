@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_event.dart';
@@ -280,6 +281,10 @@ class ToolTabScreenState extends State<ToolTabScreen>
       ToolUnavailableReason.builtInHidden => (
         'הכלי "$name" מוסתר',
         'ניתן להציג אותו דרך הגדרות ← ניהול כלים',
+      ),
+      ToolUnavailableReason.pluginDisabled when PluginSafeMode.isActive => (
+        'התוסף "$name" מושבת במצב בטוח',
+        'התוספים ייטענו שוב בהפעלה מחדש רגילה',
       ),
       ToolUnavailableReason.pluginDisabled => (
         'התוסף "$name" מושבת',

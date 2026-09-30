@@ -1,5 +1,6 @@
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_event.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_state.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
@@ -154,6 +155,16 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     if (state is! PluginSystemLoaded) emit(PluginSystemLoading());
     try {
       final plugins = await repository.getAllPlugins();
+      if (PluginSafeMode.isActive) {
+        // Listing only. Contribution sync treats a disabled plugin as removed
+        // and unpublishes its data, so nothing else runs in safe mode.
+        for (final plugin in plugins) {
+          _clearPluginRegistrations(plugin.pluginId);
+          PluginRuntimeDispatcher.instance.invalidatePlugin(plugin.pluginId);
+        }
+        emit(PluginSystemLoaded(plugins));
+        return;
+      }
       devWatchService.syncWatchers(await repository.getDevelopmentPlugins());
       _registerPluginShortcuts(plugins);
       await PluginStartupContributionsService.instance.sync(
@@ -181,6 +192,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     SeedBundledPlugins event,
     Emitter<PluginSystemState> emit,
   ) async {
+    if (PluginSafeMode.isActive) return;
     try {
       if (await _bundledSeedService.seedPending()) add(LoadPlugins());
     } catch (e) {
@@ -652,6 +664,10 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     EnablePluginRequested event,
     Emitter<PluginSystemState> emit,
   ) async {
+    if (PluginSafeMode.isActive) {
+      UiSnack.show(PluginMessages.safeModeBlocksChanges);
+      return;
+    }
     try {
       final plugin = await repository.getPlugin(event.pluginId);
       if (plugin != null) {
@@ -668,16 +684,12 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     DisablePluginRequested event,
     Emitter<PluginSystemState> emit,
   ) async {
+    if (PluginSafeMode.isActive) {
+      UiSnack.show(PluginMessages.safeModeBlocksChanges);
+      return;
+    }
     try {
-      _removeDeclarative(event.pluginId);
-      ContextMenuRegistry.instance.removeAll(event.pluginId);
-      PluginToolbarRegistry.instance.removeAll(event.pluginId);
-      PluginShortcutRegistry.instance.removeAll(event.pluginId);
-      PluginHighlightRegistry.instance.removePlugin(event.pluginId);
-      PluginFileServer.instance.revokeAllForPlugin(event.pluginId);
-      _removeSearchProviders(event.pluginId);
-      PluginLibraryBooksRegistry.instance.removePlugin(event.pluginId);
-      PluginNewTabPageRegistry.instance.remove(event.pluginId);
+      _clearPluginRegistrations(event.pluginId);
       final plugin = await repository.getPlugin(event.pluginId);
       if (plugin != null) {
         await repository.savePlugin(plugin.copyWith(enabled: false));
@@ -687,6 +699,18 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     } catch (e) {
       UiSnack.showError(PluginMessages.disablePluginError(e));
     }
+  }
+
+  void _clearPluginRegistrations(String pluginId) {
+    _removeDeclarative(pluginId);
+    ContextMenuRegistry.instance.removeAll(pluginId);
+    PluginToolbarRegistry.instance.removeAll(pluginId);
+    PluginShortcutRegistry.instance.removeAll(pluginId);
+    PluginHighlightRegistry.instance.removePlugin(pluginId);
+    PluginFileServer.instance.revokeAllForPlugin(pluginId);
+    _removeSearchProviders(pluginId);
+    PluginLibraryBooksRegistry.instance.removePlugin(pluginId);
+    PluginNewTabPageRegistry.instance.remove(pluginId);
   }
 
   Future<void> _onSetPluginPermissionRequested(
