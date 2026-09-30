@@ -129,6 +129,20 @@ void main() {
     expect(resolved?.lineIndex, 11);
   });
 
+  test('backfill scans the books only once per index version', () async {
+    final raw = await db.database;
+    await repo.backfillMissingLineRefIndexes();
+
+    raw.execute('DELETE FROM line_ref');
+    await repo.backfillMissingLineRefIndexes();
+    expect(raw.select('SELECT 1 FROM line_ref'), isEmpty);
+
+    raw.execute('DELETE FROM db_meta');
+    await repo.backfillMissingLineRefIndexes();
+    final resolved = await repo.resolveRefKeyInBook(1, buildRefKey('לב יא')!);
+    expect(resolved?.lineIndex, 11);
+  });
+
   // issue #1346 — "טור שט ג": הפניה שהושמט ממנה שם החלק.
   group('מפתח חלקי', () {
     Future<void> seedTur() async {
