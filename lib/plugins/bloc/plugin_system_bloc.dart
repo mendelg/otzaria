@@ -21,6 +21,7 @@ import 'package:otzaria/plugins/services/plugin_download_service.dart';
 import 'package:otzaria/plugins/services/plugin_external_search_service.dart';
 import 'package:otzaria/plugins/services/plugin_file_server.dart';
 import 'package:otzaria/plugins/services/plugin_in_book_search_service.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/plugins/services/plugin_install_report_service.dart';
 import 'package:otzaria/plugins/declarative/services/declarative_plugin_host_service.dart';
 import 'package:otzaria/shortcuts/shortcut_validator.dart';
@@ -592,6 +593,8 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
       PluginHighlightRegistry.instance.removePlugin(event.pluginId);
       PluginFileServer.instance.revokeAllForPlugin(event.pluginId);
       _removeSearchProviders(event.pluginId);
+      // מיד, ולא בסנכרון שאחרי: רשימה שבאמצע שמירה הייתה נכתבת שוב ל-DB.
+      PluginLibraryBooksRegistry.instance.removePlugin(event.pluginId);
       await _installerService.uninstallPlugin(event.pluginId);
       add(LoadPlugins());
     } catch (e) {
@@ -613,6 +616,8 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
       PluginHighlightRegistry.instance.removePlugin(event.pluginId);
       PluginFileServer.instance.revokeAllForPlugin(event.pluginId);
       _removeSearchProviders(event.pluginId);
+      // הרשימה נמחקת מה-DB באיפוס; בלי זה היא נשארת בזיכרון עד הפעלה מחדש.
+      PluginLibraryBooksRegistry.instance.clearBooks(event.pluginId);
       await _cancelPluginNotifications(event.pluginId);
       await _installerService.resetPluginData(event.pluginId);
       PluginRuntimeDispatcher.instance.invalidatePlugin(event.pluginId);
@@ -669,6 +674,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
       PluginHighlightRegistry.instance.removePlugin(event.pluginId);
       PluginFileServer.instance.revokeAllForPlugin(event.pluginId);
       _removeSearchProviders(event.pluginId);
+      PluginLibraryBooksRegistry.instance.removePlugin(event.pluginId);
       final plugin = await repository.getPlugin(event.pluginId);
       if (plugin != null) {
         await repository.savePlugin(plugin.copyWith(enabled: false));

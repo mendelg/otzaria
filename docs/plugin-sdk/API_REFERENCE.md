@@ -160,6 +160,7 @@ if (response.success) {
 | `library.getLinkTargetsSummary` | 0.9.97 |
 | `library.getLinkContent` | 0.9.97 |
 | `library.refreshUserBooks` | 0.9.97 |
+| `library.setProviderBooks` | 0.9.98 |
 | `network.fetchStream` | 0.9.97 |
 | `network.download` | 0.9.93 |
 | `search.fullText` | 0.9.89 |
@@ -940,6 +941,48 @@ const { data } = await Otzaria.call('library.refreshUserBooks');
 
 **שגיאות:** `error.unavailable` — רענון אינו זמין בהקשר הנוכחי;
 `error.timeout` — הסריקה לא הסתיימה בזמן; `error.internal` — הסריקה נכשלה.
+
+### `library.setProviderBooks`
+**הרשאה:** `library.books.provide` · **מ-0.9.98**
+
+מחליף את רשימת הספרים של ספק שהתוסף הצהיר עליו ב-
+[`contributes.startup.libraryBooks`](#ספרים-בחיפוש-הספרייה-librarybooks).
+הספרים מופיעים באיתור הספרים של מסך הספרייה, ולחיצה על ספר כזה נמסרת לתוסף
+באירוע [`library.providerBook.openRequested`](#event-libraryproviderbookopenrequested).
+
+```javascript
+const { data } = await Otzaria.call('library.setProviderBooks', {
+  provider: 'mylib',
+  books: [
+    { id: 17, title: 'שו"ת אבני נזר', author: 'רבי אברהם בורנשטיין', categoryPath: '/שו"ת/אחרונים' },
+    { id: 18, title: 'חידושי הרשב"א' },
+  ],
+});
+// { count: 2 }
+```
+
+| שדה | חובה | תיאור |
+|-----|:----:|-------|
+| `provider` | ✓ | שם הספק כפי שהוצהר במניפסט. ספק שלא הוצהר מחזיר `error.not_found`. |
+| `books` | ✓ | הרשימה המלאה — מחליפה את הקודמת. מערך ריק מסיר את כל ספרי הספק. עד 50,000 ספרים. |
+| `books[].id` | ✓ | מספר שלם חיובי, ייחודי בספק. זה המזהה שיחזור באירוע הפתיחה. |
+| `books[].title` | ✓ | שם הספר (עד 300 תווים). |
+| `books[].author` | | המחבר (עד 200 תווים) — מוצג בכרטיס ומשתתף בחיפוש. |
+| `books[].categoryPath` | | נתיב קטגוריות מופרד ב-`/`, בצורה של [`library.getTree`](#librarygettree) (עד 300 תווים). מוצג בכרטיס בתצוגת רשת (`שו"ת, אחרונים`) ומשתתף בחיפוש. |
+
+שורות חדשות, טאבים ותווי כיוון (RLM/LRM וכו') בטקסט מוחלפים ברווח אחד.
+
+- **נשמר אצל אוצריא.** הרשימה נשמרת במסד התוספים ונטענת בעליית התוכנה, כך
+  שהספרים מופיעים גם כשמנוע התוסף אינו פעיל. אין צורך לשלוח אותה בכל עלייה —
+  רק כשהיא משתנה; שליחה חוזרת של אותה רשימה אינה כותבת דבר. היא נמחקת בהסרת
+  התוסף ובאיפוס נתוניו.
+- **הכול או כלום.** רשומה לא תקינה (מזהה כפול, שם חסר, שדה ארוך מדי) מחזירה
+  `error.invalid_params` עם מיקום הרשומה, והרשימה הקודמת נשארת בתוקף.
+- **קריאה אחת לכל הרשימה**, לא קריאה לכל ספר: היא נספרת כקריאה אחת במגביל
+  הקצב.
+- **חלון אחד.** כל חלון של אוצריא מחזיק עותק משלו של הרשימה. החלון שבו התוסף
+  רץ מתעדכן מיד; חלון אחר שכבר פתוח ממשיך להציג את הרשימה הקודמת עד הפעלה
+  מחדש של אוצריא.
 
 ---
 
@@ -4397,6 +4440,7 @@ async function scheduleReminder(title, body, dateTime) {
 | `programs` | תכניות חישוב Host מוולדות | הרשאות הפקודות שבתכנית |
 | `searchDialogItems` | שורות checkbox סטטיות בדיאלוג החיפוש | `search.dialog` |
 | `externalEditions` | קונפיגורציית מהדורות מקבילות חיצוניות (טבלת מיפוי במקור DB מוכרז) | `database.read` וגם `library.books.read` |
+| `libraryBooks` | ספקי ספרים שמתווספים לאיתור הספרים במסך הספרייה | `library.books.provide` |
 | `activationEvents` | שמות אירועים או `app.startup`; אפשר גם `{topic, when}` | הרשאת ה-subscribe של כל נושא |
 | `keepAlive` | `boolean` (ברירת מחדל: `false`) | `app.background_keep_alive` וגם `app.run_on_startup` |
 
@@ -4777,6 +4821,46 @@ Host — יצרפו את מהדורות הספק לספר הפתוח, אחרי �
 הממופים אליו ומהם את שאר מהדורות הספק (שני צעדים); כשהספר הפתוח הוא ספר
 ספרייה, המיפוי ישיר. הספר הפתוח עצמו לעולם אינו מוחזר כמהדורה.
 
+### ספרים בחיפוש הספרייה (libraryBooks)
+
+מגרסה 0.9.98, `startup.libraryBooks` מצהיר על ספק ספרים משל התוסף. ספרי הספק
+מצטרפים לתוצאות איתור הספר או המחבר במסך הספרייה — לצד הספרים של אוצריא ושל
+הקטלוגים החיצוניים — ולחיצה על ספר כזה נמסרת לתוסף, שפותח אותו. הרשימה עצמה
+נשלחת בזמן ריצה ב-[`library.setProviderBooks`](#librarysetproviderbooks) ונשמרת
+אצל אוצריא, כך שהספרים מופיעים מעליית התוכנה בלי להעיר את מנוע התוסף. עד 2
+ספקים לתוסף.
+
+```json
+{
+  "permissions": ["app.startup_contributions", "library.books.provide"],
+  "minAppVersion": "0.9.98",
+  "contributes": {
+    "startup": {
+      "libraryBooks": [
+        {
+          "id": "books",
+          "provider": "mylib",
+          "title": "הספרייה שלי",
+          "icon": "library_24_regular",
+          "when": { "storage": { "key": "showInLibrary", "notEquals": false } }
+        }
+      ]
+    }
+  }
+}
+```
+
+| שדה | חובה | תיאור |
+|---|---:|---|
+| `id` | כן | מזהה ייחודי בתוסף, עד 64 תווים: אותיות ASCII, מספרים, `.`, `_`, `-`. |
+| `provider` | כן | שם הספק: מתחיל באות, ואחריה אותיות לטיניות קטנות, ספרות ומקף (2–64 תווים). שייך לתוסף הראשון שרשם אותו. `hebrewbooks`, `otzar` ושמות שנקראים כהם (למשל `myoh`, שהמזהה שלו `myoh:1` מכיל `oh:`) נדחים. |
+| `title` | כן | שם הספק לתצוגה (עד 40 תווים) — בכפתור "פתח ב-..." של התצוגה המקדימה. |
+| `icon` | לא | אייקון 24px לכרטיסי הספרים (ראו [ICONS.md](ICONS.md)). ברירת מחדל: `contributes.toolTab.iconName` של התוסף, ובלעדיו אייקון ספר. |
+| `when` | לא | תנאי [`when`](#when--תרומה-תלוית-הגדרה). כשאינו מתקיים הספרים אינם מוצגים, ומוצגים שוב מיד כשהוא מתקיים — כך הגדרה בתוסף מדליקה ומכבה את ההצגה בלי לשלוח את הרשימה מחדש. |
+
+**רק מחיפוש הספרייה.** ספרי ספק אינם נפתרים דרך `library.resolveBooks` או
+`reader.openBook`: כך תוסף אחד אינו יכול להעיר תוסף אחר בשם "פתיחת ספר".
+
 ### הפעלה עצלה
 
 **עיקרון:** כל הדלקת מנוע שלא דרך כניסה גלויה לדף התוסף — דורשת **גם** את ההרשאה `app.run_on_startup` (כבויה כברירת מחדל, עם הבאנר הבולט בהתקנה). המשתמש לא אמור להריץ קוד תוסף בלי לדעת.
@@ -4995,6 +5079,7 @@ Otzaria.on('plugin.boot', async (payload) => {
     "library.content.read",
     "library.links.read",
     "library.refresh",
+    "library.books.provide",
     "search.fulltext.read",
     "reader.open",
     "navigation.write",
@@ -5244,6 +5329,30 @@ await Otzaria.call('reader.updateContextMenuItem', {
 ```
 
 ---
+
+### Event: `library.providerBook.openRequested`
+**מ-0.9.98** — אירוע ממוקד; אינו דורש הרשאת `events.subscribe`.
+
+המשתמש בחר ספר של הספק במסך הספרייה (בכרטיס, בשורת הרשימה או בכפתור
+הפתיחה של התצוגה המקדימה). אוצריא אינה פותחת את הספר בעצמה — התוסף הוא שפותח
+אותו, למשל בתוכנה חיצונית דרך שירות מקומי.
+
+```javascript
+Otzaria.on('library.providerBook.openRequested', async ({ provider, id, title, author }) => {
+  await openInMyProgram(id);
+});
+```
+
+| שדה | תיאור |
+|-----|-------|
+| `provider` | שם הספק. |
+| `id` | המזהה מ-`books[].id`. |
+| `title` | שם הספר. |
+| `author` | המחבר, כשנשלח. |
+
+האירוע נמסר עם `preferBackground`: לתוסף שאושרה לו `app.run_on_startup` — למנוע
+הרקע, בלי שהמשתמש יעזוב את מסך הספרייה; בלי ההרשאה — נפתח דף התוסף והאירוע
+נמסר אליו, כך שהלחיצה תמיד עובדת.
 
 ### Event: `reader.context_menu_item_clicked`
 **הרשאה:** אין צורך בהרשאה נוספת — נשלח רק לפלאגין שרשם את הפריט

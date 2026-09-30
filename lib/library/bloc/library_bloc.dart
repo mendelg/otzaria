@@ -691,6 +691,7 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         includeOtzar: includeOtzar,
         includeHebrewBooks: includeHebrewBooks,
         includeLocalHebrewBooks: includeLocalHebrewBooks,
+        extraBooks: event.extraBooks,
       );
       final results = found.books;
 
@@ -721,11 +722,17 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         );
       }
 
+      final previous = state.previewBook;
+      final keptPreview =
+          event.keepPreview && previous != null && results.contains(previous)
+          ? previous
+          : null;
+
       emit(
         state.copyWith(
           searchResults: results,
           searchCategoryResults: found.categories,
-          previewBook: firstBook,
+          previewBook: keptPreview ?? firstBook,
           isSearching: false,
         ),
       );

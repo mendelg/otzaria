@@ -5,7 +5,7 @@ import 'package:otzaria/plugins/models/plugin_when_condition.dart';
 /// נקראות ומופעלות ע"י Flutter בלי להרים מנוע JS. דורשות את ההרשאה
 /// `app.startup_contributions`, וכל קטגוריה כפופה גם להרשאת התחום שלה
 /// (`reader.toolbar` / `reader.context_menu` / `search.dialog` /
-/// `published_data.write`).
+/// `published_data.write` / `library.books.provide`).
 class PluginStartupContributions {
   /// נושא הפעלה מדומה ב-[activationEvents]: מרים את מופע הרקע של התוסף
   /// זמן קצר אחרי שעליית התוכנה הסתיימה (ולא כחלק ממנה).
@@ -37,6 +37,10 @@ class PluginStartupContributions {
   /// PluginExternalEditionsRegistry).
   final List<Map<String, dynamic>> externalEditions;
 
+  /// ספקי ספרים שמתווספים לאיתור הספרים במסך הספרייה (ראו
+  /// PluginLibraryBooksRegistry).
+  final List<Map<String, dynamic>> libraryBooks;
+
   /// נושאי אירועים שמעירים את מופע הרקע של התוסף בעצלנות (בלי מנוע חי
   /// עד שאירוע כזה קורה בפועל), או [startupActivationTopic].
   final List<String> activationEvents;
@@ -56,6 +60,7 @@ class PluginStartupContributions {
     this.programs = const [],
     this.searchDialogItems = const [],
     this.externalEditions = const [],
+    this.libraryBooks = const [],
     this.activationEvents = const [],
     this.activationConditions = const {},
     this.keepAlive = false,
@@ -69,10 +74,17 @@ class PluginStartupContributions {
       programs.isEmpty &&
       searchDialogItems.isEmpty &&
       externalEditions.isEmpty &&
+      libraryBooks.isEmpty &&
       activationEvents.isEmpty;
 
-  /// האם קיימת פעולה שבאמת עשויה להרים את מנוע הרקע.
+  /// האם קיימת פעולה שבאמת עשויה להרים את מנוע הרקע. לחיצה על ספר של ספק
+  /// נמסרת לתוסף, ולכן גם היא כזו.
   bool get hasBackgroundActivationTrigger =>
+      hasInitialActivationTrigger || libraryBooks.isNotEmpty;
+
+  /// כמו [hasBackgroundActivationTrigger], בלי ספרי ספק: הם מופיעים רק
+  /// אחרי שהתוסף כבר רץ ושלח אותם, ולכן אינם יכולים להפעיל אותו לראשונה.
+  bool get hasInitialActivationTrigger =>
       activationEvents.isNotEmpty ||
       toolbarItems.any(_toolbarItemActivatesBackground) ||
       contextMenuItems.any(_contextMenuItemActivatesBackground);
@@ -164,6 +176,7 @@ class PluginStartupContributions {
       programs: mapList('programs'),
       searchDialogItems: mapList('searchDialogItems'),
       externalEditions: mapList('externalEditions'),
+      libraryBooks: mapList('libraryBooks'),
       activationEvents: topics,
       activationConditions: Map.unmodifiable(conditions),
       keepAlive: json['keepAlive'] == true,
@@ -178,6 +191,7 @@ class PluginStartupContributions {
     if (programs.isNotEmpty) 'programs': programs,
     if (searchDialogItems.isNotEmpty) 'searchDialogItems': searchDialogItems,
     if (externalEditions.isNotEmpty) 'externalEditions': externalEditions,
+    if (libraryBooks.isNotEmpty) 'libraryBooks': libraryBooks,
     if (activationEvents.isNotEmpty)
       'activationEvents': [
         for (final topic in activationEvents)

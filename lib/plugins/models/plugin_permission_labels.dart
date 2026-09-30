@@ -89,6 +89,9 @@ List<String> pluginBackgroundActivationReasons(PluginManifest manifest) {
   if (startup.contextMenuItems.any(_contextMenuItemActivatesBackground)) {
     reasons.add('לחיצה על פריט בתפריט הטקסט');
   }
+  if (startup.libraryBooks.isNotEmpty) {
+    reasons.add('בחירת ספר של התוסף במסך הספרייה');
+  }
   for (final topic in startup.activationEvents) {
     if (topic == PluginStartupContributions.startupActivationTopic) {
       reasons.add('עליית אוצריא');
@@ -219,6 +222,13 @@ const Map<String, PluginPermissionInfo> _permissionLabels = {
     icon: OtzariaIcons.link_24_regular,
     description:
         'צפייה ברשימת המפרשים של ספר ובקישורים בין הספרים, בלי תוכן הספרים',
+  ),
+  'library.books.provide': PluginPermissionInfo(
+    label: 'ספרים בחיפוש הספרייה',
+    icon: FluentIcons.library_24_regular,
+    description:
+        'הוספת ספרים מהתוסף לתוצאות איתור הספרים במסך הספרייה. לחיצה על '
+        'ספר כזה מעבירה אותו לתוסף, והוא שפותח אותו',
   ),
   'library.refresh': PluginPermissionInfo(
     label: 'רענון הספרים האישיים',

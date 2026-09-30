@@ -275,6 +275,23 @@ export interface BookIdentity {
   external?: { provider: 'hebrewbooks' | 'otzar'; id: number | string };
 }
 
+/** One book in `library.setProviderBooks`. */
+export interface ProviderBook {
+  /** Positive integer, unique within the provider. */
+  id: number;
+  title: string;
+  author?: string;
+  /** `/`-separated, in the form `library.getTree` uses: `/שו"ת/אחרונים`. */
+  categoryPath?: string;
+}
+
+/** Arguments to `library.setProviderBooks`: replaces the provider's whole list. */
+export interface SetProviderBooksArgs {
+  provider: string;
+  /** Up to 50,000 books; `[]` removes them all. */
+  books: ProviderBook[];
+}
+
 export type SearchMode = 'exact' | 'advanced' | 'fuzzy';
 export type SearchOrder = 'relevance' | 'catalogue' | 'generation';
 export type SearchProximityScope =
@@ -1390,6 +1407,13 @@ export interface OtzariaEventMap {
     /** The host consumes `[id, hits, categoryPath, title]` index entries. */
     indexTitles?: boolean;
   };
+  /** The user chose a book of a `libraryBooks` provider this plugin owns. */
+  'library.providerBook.openRequested': {
+    provider: string;
+    id: number;
+    title: string;
+    author?: string;
+  };
   /** In-book search request sent only to the plugin owning `provider`. */
   'reader.inBookSearch.requested': {
     requestId: string;
@@ -1892,6 +1916,7 @@ export type OtzariaMethod =
   | 'library.getLinkTargetsSummary'
   | 'library.getLinkContent'
   | 'library.refreshUserBooks'
+  | 'library.setProviderBooks'
   | 'library.openBookFile'
   | 'library.getTree'
   | 'library.resolveCategoryPaths'
@@ -2051,6 +2076,12 @@ export interface OtzariaGlobal {
     method: 'library.getTree',
     payload?: LibraryTreeArgs
   ): Promise<OtzariaResponse<LibraryTreeNode | null>>;
+
+  /** מחליף את כל ספרי הספק באיתור הספרים של מסך הספרייה. */
+  call(
+    method: 'library.setProviderBooks',
+    payload: SetProviderBooksArgs
+  ): Promise<OtzariaResponse<{ count: number }>>;
 
   /** הקובץ שמאחורי ספר בספרייה, כ-token של קובץ משתמש. */
   call(

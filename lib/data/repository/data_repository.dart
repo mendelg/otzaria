@@ -238,6 +238,7 @@ class DataRepository {
     bool includeOtzar = false,
     bool includeHebrewBooks = false,
     bool includeLocalHebrewBooks = true,
+    List<Book> extraBooks = const [],
     bool sortByRatio = true,
   }) async {
     const empty = (books: <Book>[], categories: <Category>[]);
@@ -264,6 +265,10 @@ class DataRepository {
       // מוצגים גם כשהצגת הקטלוג החיצוני כבויה — עד שהמשתמש מכבה זאת.
       allBooks.addAll(await localHebrewBooks);
     }
+    // ספרים מבחוץ (של תוספים) אחרונים ברשימה: המזהים שלהם אינם של אוצריא,
+    // ולכן אין להם כינויים ודור.
+    final extraBooksStart = allBooks.length;
+    allBooks.addAll(extraBooks);
 
     // no-op אם הקאשים כבר חוממו בעליית האפליקציה
     await AcronymsCache.instance.warmUp();
@@ -279,8 +284,13 @@ class DataRepository {
         buildBookSearchEntry(
           i,
           allBooks[i],
-          acronymsFor: AcronymsCache.instance.acronymsFor,
-          eraOrderForId: GenerationCache.instance.getOrderForBook,
+          acronymsFor: i < extraBooksStart
+              ? AcronymsCache.instance.acronymsFor
+              : (_, _) => null,
+          eraOrderForId: i < extraBooksStart
+              ? GenerationCache.instance.getOrderForBook
+              : (_, source) =>
+                    GenerationCache.instance.getOrderForBook(null, source),
         ),
     ];
 

@@ -27,6 +27,7 @@ import 'package:otzaria/settings/services/custom_folders/bloc/custom_folders_blo
 import 'package:otzaria/widgets/feedback/edge_scrollbar_behavior.dart';
 import 'package:otzaria/widgets/lists/filter_chips_widget.dart';
 import 'package:otzaria/navigation/view/main_window_screen.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/library/view/grid_items.dart';
 import 'package:otzaria/library/view/otzar_book_dialog.dart';
 import 'package:otzaria/library/view/book_preview_panel.dart';
@@ -347,6 +348,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
   /// דיבאונס timer לגלילה — מונע setState חוזר בכל scroll event
   Timer? _scrollDebounce;
   Timer? _searchDebounce;
+  bool _pendingKeepPreview = false;
   bool _lastScrollVisible = true;
 
   static const List<String> _orderedTopCategories = [
@@ -421,6 +423,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     _topBarTotalHeight = ValueNotifier<double>(0);
     context.read<LibraryBloc>().add(LoadLibrary());
     _syncLibraryPanelController();
+    PluginLibraryBooksRegistry.instance.addListener(_onPluginBooksChanged);
   }
 
   @override
@@ -431,6 +434,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
 
   @override
   void dispose() {
+    PluginLibraryBooksRegistry.instance.removeListener(_onPluginBooksChanged);
     _firstGridItemFocusNode.dispose();
     _scrollDebounce?.cancel();
     _searchDebounce?.cancel();
@@ -1606,7 +1610,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     if (book is ExternalLibraryBook) {
       return BookGridItem(
         book: book,
-        onBookClickCallback: () => _openOtzarBook(book),
+        onBookClickCallback: () => _openExternalBook(book),
         showTopics: showTopics,
         focusNode: focusNode,
       );
@@ -2307,14 +2311,19 @@ class _LibraryBrowserState extends State<LibraryBrowser>
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset(
-              book.link.toString().contains('tablet.otzar.org')
-                  ? 'assets/logos/otzar.ico'
-                  : 'assets/logos/hebrew_books.png',
-              width: iconSize,
-              height: iconSize,
-              fit: BoxFit.contain,
-            ),
+            pluginBookIcon(
+                  book,
+                  color: cs.onSecondaryContainer,
+                  size: iconSize,
+                ) ??
+                Image.asset(
+                  book.link.toString().contains('tablet.otzar.org')
+                      ? 'assets/logos/otzar.ico'
+                      : 'assets/logos/hebrew_books.png',
+                  width: iconSize,
+                  height: iconSize,
+                  fit: BoxFit.contain,
+                ),
             const SizedBox(width: 4),
             Icon(
               FluentIcons.open_24_regular,
@@ -2410,7 +2419,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
       level: level,
       itemStyle: itemStyle,
       focusNode: focusNode,
-      onTap: () => _openOtzarBook(book),
+      onTap: () => _openExternalBook(book),
     );
   }
 
@@ -2442,6 +2451,11 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     int index, {
     bool? forcePdf,
   }) async {
+    // אין לספר חיצוני טאב קריאה; "פתח" בתצוגה המקדימה מגיע גם לכאן.
+    if (book is ExternalLibraryBook) {
+      _openExternalBook(book);
+      return;
+    }
     final handled = await openLibraryBookPerTalmudBavliFormat(
       context,
       book,
@@ -2615,6 +2629,13 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     _refocusSearchBar();
   }
 
+  void _openExternalBook(ExternalLibraryBook book) {
+    if (PluginLibraryBooksRegistry.instance.open(book)) return;
+    // ספר של תוסף שהוסר בינתיים: אין לו קישור, ודיאלוג אוצר החכמה ריק.
+    if (book.link.isEmpty) return;
+    _openOtzarBook(book);
+  }
+
   void _openOtzarBook(ExternalLibraryBook book) {
     showDialog(
       context: context,
@@ -2692,11 +2713,32 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     }
   }
 
-  void _scheduleSearchWithSettings(BuildContext context, SettingsState s) {
+  /// תוסף ששלח רשימה חדשה, או שהמשתמש כיבה אצלו את ההצגה, משנה את התוצאות
+  /// שכבר מוצגות.
+  void _onPluginBooksChanged() {
+    if (!mounted) return;
+    final query = context.read<LibraryBloc>().state.searchQuery;
+    if (query == null || query.trim().length < 3) return;
+    _scheduleSearchWithSettings(
+      context,
+      context.read<SettingsBloc>().state,
+      keepPreview: true,
+    );
+  }
+
+  void _scheduleSearchWithSettings(
+    BuildContext context,
+    SettingsState s, {
+    bool keepPreview = false,
+  }) {
+    // הקלדה שממתינה גוברת: החיפוש שלה בוחר תצוגה מקדימה חדשה.
+    final keep =
+        keepPreview && (_searchDebounce == null || _pendingKeepPreview);
     _searchDebounce?.cancel();
+    _pendingKeepPreview = keep;
     _searchDebounce = Timer(_kLibrarySearchDebounceDuration, () {
       if (!mounted) return;
-      _searchWithSettings(context, s);
+      _searchWithSettings(context, s, keepPreview: keep);
     });
   }
 
@@ -2710,7 +2752,11 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     _refocusSearchBar();
   }
 
-  void _searchWithSettings(BuildContext context, SettingsState s) {
+  void _searchWithSettings(
+    BuildContext context,
+    SettingsState s, {
+    bool keepPreview = false,
+  }) {
     _searchDebounce?.cancel();
     _searchDebounce = null;
     context.read<LibraryBloc>().add(
@@ -2718,6 +2764,8 @@ class _LibraryBrowserState extends State<LibraryBrowser>
         showHebrewBooks: s.showExternalBooks && s.showHebrewBooks,
         showOtzarHachochma: s.showExternalBooks && s.showOtzarHachochma,
         showLocalHebrewBooks: s.showLocalHebrewBooks,
+        extraBooks: PluginLibraryBooksRegistry.instance.visibleBooks,
+        keepPreview: keepPreview,
       ),
     );
   }

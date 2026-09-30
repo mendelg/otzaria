@@ -121,6 +121,27 @@ void main() {
       );
     });
 
+    // ספרי ספק מופיעים רק אחרי שהתוסף רץ ושלח אותם.
+    test('רק ספרי ספק בספרייה — נחסם', () {
+      expect(
+        extendedErrors(
+          _manifest(
+            permissions: const [
+              'app.startup_contributions',
+              'app.run_on_startup',
+              'library.books.provide',
+            ],
+            startup: const {
+              'libraryBooks': [
+                {'id': 'books', 'provider': 'mylib', 'title': 'הספרייה שלי'},
+              ],
+            },
+          ),
+        ),
+        contains(contains('אין שום דרך לפעול')),
+      );
+    });
+
     test('בלי הרשאת run_on_startup — נחסם', () {
       expect(
         extendedErrors(

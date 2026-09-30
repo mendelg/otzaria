@@ -12,6 +12,7 @@ import 'package:collection/collection.dart';
 import 'package:otzaria/core/messages/messages_exports.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/text_book/view/combined_view/combined_book_screen.dart';
@@ -450,6 +451,9 @@ class _BookPreviewPanelState extends State<BookPreviewPanel> {
 
     // אם זה ספר חיצוני
     if (widget.book is ExternalLibraryBook) {
+      final provider = PluginLibraryBooksRegistry.instance.providerOf(
+        widget.book!,
+      );
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -472,7 +476,9 @@ class _BookPreviewPanelState extends State<BookPreviewPanel> {
             ),
             const SizedBox(height: 8),
             Text(
-              'ספר חיצוני - לחץ פעמיים לפתיחה',
+              provider == null
+                  ? 'ספר חיצוני - לחץ פעמיים לפתיחה'
+                  : 'ספר מ-${provider.title} - ייפתח ב-${provider.title}',
               style: TextStyle(
                 fontSize: 14,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -481,7 +487,7 @@ class _BookPreviewPanelState extends State<BookPreviewPanel> {
             ),
             const SizedBox(height: 16),
             ActionButton.recommended(
-              text: 'פתח בעיון',
+              text: provider == null ? 'פתח בעיון' : 'פתח ב-${provider.title}',
               icon: FluentIcons.open_24_regular,
               onPressed: () => widget.onOpenInReader?.call(0),
             ),

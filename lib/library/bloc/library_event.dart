@@ -105,10 +105,19 @@ class SearchBooks extends LibraryEvent {
   final bool? showHebrewBooks;
   final bool? showLocalHebrewBooks;
 
+  /// ספרים מחוץ לספרייה שמצטרפים לחיפוש (ספרים שתוספים הוסיפו).
+  final List<Book> extraBooks;
+
+  /// חיפוש חוזר כשהספרים שמבחוץ השתנו: הספר שבתצוגה המקדימה נשאר, אם הוא
+  /// עדיין בתוצאות.
+  final bool keepPreview;
+
   const SearchBooks({
     this.showOtzarHachochma,
     this.showHebrewBooks,
     this.showLocalHebrewBooks,
+    this.extraBooks = const [],
+    this.keepPreview = false,
   });
 
   @override
@@ -116,6 +125,8 @@ class SearchBooks extends LibraryEvent {
     showOtzarHachochma,
     showHebrewBooks,
     showLocalHebrewBooks,
+    extraBooks,
+    keepPreview,
   ];
 }
 

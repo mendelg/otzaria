@@ -177,6 +177,10 @@ const pluginLinksReadPermission = 'library.links.read';
 /// שמוריד ספרים צריך כדי שהספרים שהוריד יופיעו בספרייה.
 const pluginLibraryRefreshPermission = 'library.refresh';
 
+/// הוספת ספרים מהתוסף לאיתור הספרים במסך הספרייה
+/// (`contributes.startup.libraryBooks`). לחיצה על ספר כזה נמסרת לתוסף.
+const pluginLibraryBooksProvidePermission = 'library.books.provide';
+
 /// הרשאה לפתיחת דף של תוסף **אחר** (`plugin.openOther`). נפרדת מ-navigation.write
 /// כי היא מפעילה את ה-WebView של תוסף שלישי, ולא רק מזיזה את המשתמש בין מסכים.
 const pluginOpenOtherPermission = 'plugin.open_other';
@@ -292,6 +296,9 @@ const pluginValidPermissions = <String>[
 
   /// רענון הספרים האישיים — סריקת התיקיות האישיות ורענון הקטלוג
   pluginLibraryRefreshPermission,
+
+  /// הוספת ספרים מהתוסף לאיתור הספרים במסך הספרייה
+  pluginLibraryBooksProvidePermission,
 
   // ===== חיפוש =====
   /// ביצוע חיפוש טקסט מלא

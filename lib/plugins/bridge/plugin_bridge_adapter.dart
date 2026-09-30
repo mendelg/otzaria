@@ -54,6 +54,8 @@ import 'package:otzaria/tabs/models/combined_tab.dart';
 import 'package:otzaria/tabs/utils/confirm_close_tabs.dart';
 import 'package:otzaria/plugins/services/plugin_external_search_service.dart';
 import 'package:otzaria/plugins/services/plugin_in_book_search_service.dart';
+import 'package:otzaria/plugins/models/plugin_library_book_provider.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/plugins/services/plugin_reader_actions.dart';
 import 'package:otzaria/bookmarks/bloc/bookmark_bloc.dart';
 import 'package:otzaria/services/book_details_service.dart';
@@ -1045,6 +1047,27 @@ class PluginBridgeAdapter {
     };
   }
 
+  /// spec: setProviderBooks({ provider, books }) -> { count }
+  Future<Map<String, dynamic>> _setProviderBooks(
+    Map<String, dynamic> args,
+  ) async {
+    final provider = args['provider'];
+    if (provider is! String) {
+      throw Exception('error.invalid_params: provider must be a string');
+    }
+    try {
+      final count = await PluginLibraryBooksRegistry.instance.setBooks(
+        plugin.pluginId,
+        provider,
+        args['books'],
+      );
+      return {'count': count};
+    } on PluginLibraryBooksException catch (error) {
+      final code = error.notFound ? 'error.not_found' : 'error.invalid_params';
+      throw Exception('$code: $error');
+    }
+  }
+
   Future<dynamic> _handleLibrary(
     String action,
     Map<String, dynamic> args,
@@ -1053,6 +1076,8 @@ class PluginBridgeAdapter {
     switch (action) {
       case 'refreshUserBooks':
         return await _refreshUserBooks();
+      case 'setProviderBooks':
+        return await _setProviderBooks(args);
       case 'findBooks':
         final query = args['query']?.toString() ?? '';
         final limit = args['limit'] as int? ?? 20;
