@@ -13,7 +13,8 @@ import 'package:otzaria_search_engine/otzaria_search_engine.dart'
         HighlightPattern,
         HighlightMatcher,
         HighlightMatch,
-        generateHighlightPattern;
+        generateHighlightPattern,
+        splitQueryWords;
 
 /// רגקס להסרת תגי HTML.
 final RegExp _htmlStripper = RegExp(r'<[^>]*>');
@@ -607,6 +608,7 @@ _CompiledHighlightPattern? _resolveHighlightPattern(
   int searchDistance,
   bool isFuzzy,
 ) {
+  alternativeWords = withHolyNameAlternatives(searchQuery, alternativeWords);
   final key = _highlightRequestKey(
     searchQuery,
     searchOptions,
@@ -1397,6 +1399,35 @@ int _htmlTagEnd(String text, int start) {
     }
   }
   return -1;
+}
+
+/// מילת שאילתה "יקוק" — הצורה שבה התצוגה מחליפה את שם הוי"ה — עם עד שתי
+/// אותיות שימוש לפניה, כמו ש-[replaceHolyNames] משאיר.
+final RegExp _holyNamePlaceholderWord = RegExp(
+  '^([\u05D5\u05D1\u05DB\u05DC\u05DE\u05E9\u05D4]{0,2})\u05D9\u05E7\u05D5\u05E7\$',
+);
+const String _holyNamePlaceholder = '\u05D9\u05E7\u05D5\u05E7';
+const String _holyNameLetters = '\u05D9\u05D4\u05D5\u05D4';
+
+/// מוסיף לכל מילת "יקוק" ב-[query] את שם הוי"ה כמילה חלופית: החיפוש וההדגשה
+/// רצים על הטקסט המקורי, לא על התצוגה. קריאה חוזרת אינה משנה דבר.
+Map<int, List<String>> withHolyNameAlternatives(
+  String query,
+  Map<int, List<String>> alternativeWords,
+) {
+  if (!query.contains(_holyNamePlaceholder)) return alternativeWords;
+  Map<int, List<String>>? result;
+  final words = splitQueryWords(query: query);
+  for (var i = 0; i < words.length; i++) {
+    final match = _holyNamePlaceholderWord.firstMatch(words[i]);
+    if (match == null) continue;
+    final name = '${match[1]}$_holyNameLetters';
+    final existing = alternativeWords[i] ?? const <String>[];
+    if (existing.contains(name)) continue;
+    result ??= Map<int, List<String>>.of(alternativeWords);
+    result[i] = [...existing, name];
+  }
+  return result ?? alternativeWords;
 }
 
 /// סגנון החלפת שם הקודש בתצוגה.

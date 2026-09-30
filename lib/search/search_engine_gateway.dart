@@ -323,6 +323,10 @@ class RustSearchEngineOperations
     if (request.distance <= 0 && !hasOptions) {
       return null;
     }
+    return exactAsAdvanced(request);
+  }
+
+  static SearchEngineRequest exactAsAdvanced(SearchEngineRequest request) {
     return request.copyWith(
       searchMode: SearchMode.advanced,
       negativeQuery: '',
@@ -845,6 +849,21 @@ class RustSearchEngineOperations
 class SearchEngineGateway {
   const SearchEngineGateway();
 
+  /// "יקוק" מחפש גם את שם הוי"ה ([text_utils.withHolyNameAlternatives]).
+  /// מילים חלופיות קיימות רק במסלול המתקדם, ולכן חיפוש רגיל כזה מנותב אליו.
+  static SearchEngineRequest _withHolyNames(SearchEngineRequest request) {
+    if (request.searchMode == SearchMode.fuzzy) return request;
+    final alternatives = text_utils.withHolyNameAlternatives(
+      request.query,
+      request.alternativeWords,
+    );
+    if (identical(alternatives, request.alternativeWords)) return request;
+    final advanced = request.searchMode == SearchMode.exact
+        ? RustSearchEngineOperations.exactAsAdvanced(request)
+        : request;
+    return advanced.copyWith(alternativeWords: alternatives);
+  }
+
   Future<SemanticSearchResponse> searchSemantic(
     SemanticSearchEngineOperations engine,
     SemanticSearchRequest request,
@@ -897,6 +916,7 @@ class SearchEngineGateway {
     SearchEngineOperations engine,
     SearchEngineRequest request,
   ) async {
+    request = _withHolyNames(request);
     // בזמן שהחיפוש רץ, תבנית ההדגשה לספר-פתוח נבנית ברקע מאותם פרמטרים —
     // עד שהמשתמש יפתח תוצאה היא כבר במטמון.
     engine.primeHighlightPattern(request);
@@ -914,6 +934,7 @@ class SearchEngineGateway {
     SearchEngineOperations engine,
     SearchEngineRequest request,
   ) async {
+    request = _withHolyNames(request);
     engine.primeHighlightPattern(request);
     switch (request.searchMode) {
       case SearchMode.exact:
@@ -930,6 +951,7 @@ class SearchEngineGateway {
     SearchEngineRequest request, {
     required int chunkSize,
   }) {
+    request = _withHolyNames(request);
     engine.primeHighlightPattern(request);
     switch (request.searchMode) {
       case SearchMode.exact:
@@ -948,6 +970,7 @@ class SearchEngineGateway {
     SearchEngineRequest request, {
     required int chunkSize,
   }) {
+    request = _withHolyNames(request);
     engine.primeHighlightPattern(request);
     return engine.searchStreamWithCounts(request, chunkSize: chunkSize);
   }
@@ -956,6 +979,7 @@ class SearchEngineGateway {
     SearchEngineOperations engine,
     SearchEngineRequest request,
   ) async {
+    request = _withHolyNames(request);
     switch (request.searchMode) {
       case SearchMode.exact:
         return engine.countExact(request);
@@ -970,6 +994,7 @@ class SearchEngineGateway {
     SearchEngineOperations engine,
     SearchEngineRequest request,
   ) async {
+    request = _withHolyNames(request);
     switch (request.searchMode) {
       case SearchMode.exact:
         return engine.countByBookExact(request);
@@ -985,6 +1010,7 @@ class SearchEngineGateway {
     SearchEngineRequest request, {
     required String facetPrefix,
   }) async {
+    request = _withHolyNames(request);
     switch (request.searchMode) {
       case SearchMode.exact:
         return engine.getFacetCountsExact(
