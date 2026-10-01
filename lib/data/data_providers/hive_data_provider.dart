@@ -41,15 +41,46 @@ Future<String> hiveRootPath() async =>
 ///
 /// כשל מדולג בשקט: אי אפשר למחוק תיקייה שקובץ בה נעול, וזה לא מצדיק לעצור
 /// את העלייה.
+///
+/// The folder is renamed aside, which is instant whatever its size, and
+/// deleted in the background; a window opened meanwhile gets a fresh folder.
 Future<void> deleteStaleWindowRoots() async {
   try {
-    final root = Directory(
-      p.join(await AppPaths.getDataRootPath(), windowRootsDirName),
-    );
-    if (!await root.exists()) return;
-    await root.delete(recursive: true);
+    final dataRoot = await AppPaths.getDataRootPath();
+    final root = Directory(p.join(dataRoot, windowRootsDirName));
+    if (await root.exists()) {
+      await root.rename('${root.path}$_staleSuffix$pid');
+    }
+    pendingStaleRootsDeletion = _deleteRenamedRoots(dataRoot);
   } catch (e) {
     debugPrint('⚠️ deleteStaleWindowRoots failed: $e');
+  }
+}
+
+const String _staleSuffix = '.stale-';
+
+/// The background deletion started by [deleteStaleWindowRoots].
+@visibleForTesting
+Future<void>? pendingStaleRootsDeletion;
+
+/// Also removes folders an earlier deletion could not finish.
+Future<void> _deleteRenamedRoots(String dataRoot) async {
+  try {
+    await for (final entity in Directory(dataRoot).list()) {
+      if (entity is! Directory ||
+          !p
+              .basename(entity.path)
+              .startsWith('$windowRootsDirName$_staleSuffix')) {
+        continue;
+      }
+      try {
+        await entity.delete(recursive: true);
+      } catch (e) {
+        debugPrint('⚠️ stale window root not deleted: $e');
+      }
+    }
+  } catch (e) {
+    debugPrint('⚠️ stale window roots scan failed: $e');
   }
 }
 
