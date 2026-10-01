@@ -1131,7 +1131,7 @@ jobs:
         shell: bash
         env:
           LIBRARY_DB_RELEASE_TAG: ${{ needs.bump_version.outputs.library_tag }}
-      SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
+          SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
@@ -1972,7 +1972,7 @@ jobs:
         shell: bash
         env:
           LIBRARY_DB_RELEASE_TAG: ${{ needs.bump_version.outputs.library_tag }}
-      SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
+          SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
@@ -2168,7 +2168,7 @@ jobs:
         shell: bash
         env:
           LIBRARY_DB_RELEASE_TAG: ${{ needs.bump_version.outputs.library_tag }}
-      SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
+          SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
@@ -3189,8 +3189,8 @@ jobs:
             universal "$RELEASE_TAG" release-files/otzaria-app-files-macos-universal.json \
             release-files/otzaria-macos.zip tree-update-packages 2 || true
           for arch in x64 arm64; do
-            archive="release-files/otzaria-linux-full.tar.zst"
-            [ "$arch" = "x64" ] || archive="release-files/otzaria-linux-full-$arch.tar.zst"
+            archive="artifacts/otzaria-linux-full/otzaria-linux-full.tar.zst"
+            [ "$arch" = "x64" ] || archive="artifacts/otzaria-linux-full-$arch/otzaria-linux-full-$arch.tar.zst"
             UPDATE_PACKAGES_PLATFORM=linux bash tool/release/build_update_packages.sh \
               "$arch" "$RELEASE_TAG" "release-files/otzaria-app-files-linux-$arch.json" \
               "$archive" tree-update-packages 2 || true

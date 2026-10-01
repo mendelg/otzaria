@@ -238,7 +238,7 @@
     {
       "id": "otzaria-android-full",
       "name": "אוצריא ל-Android עם ספרייה מלאה",
-      "description": "ארכיון ZIP ובו קובץ ה-APK והספרייה המלאה, להעתקה אל המכשיר.",
+      "description": "ארכיון ZIP (או כמה כרכי ZIP שמחלצים לאותה תיקייה) ובו קובץ ה-APK והספרייה המלאה, להעתקה אל המכשיר.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",

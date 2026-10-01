@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart';
 
 /// כל ה-jobs של build-and-announce נארזים עם המסד של אותו release בדיוק.
 void main() {
@@ -78,6 +79,23 @@ void main() {
         'https://github.com/Otzaria/SeforimLibrary/releases/download/$tagOutput',
       ),
     );
+  });
+
+  test('תג הספרייה נמצא ב-env של שלושת שלבי ההורדה ב-YAML תקין', () {
+    final jobs = (loadYaml(workflow) as YamlMap)['jobs'] as YamlMap;
+    for (final name in ['build_linux', 'build_android', 'build_macos']) {
+      final steps = (jobs[name] as YamlMap)['steps'] as YamlList;
+      final download = steps.cast<YamlMap>().singleWhere(
+        (step) => (step['run'] as String? ?? '').contains(
+          'bash tool/release/download_library_db.sh',
+        ),
+      );
+      expect(
+        (download['env'] as YamlMap)['SEFORIM_LIBRARY_TAG'],
+        tagOutput,
+        reason: name,
+      );
+    }
   });
 
   test('מתקין ה-FULL של Windows מוריד מהתג המוצמד ומוודא אותו', () {
