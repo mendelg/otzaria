@@ -19,6 +19,7 @@ import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/utils/download_eta_estimator.dart';
 import 'package:otzaria/utils/download_sidecar.dart';
 import 'package:otzaria/utils/file/archive_extractor.dart';
+import 'package:otzaria/utils/file/download_space.dart';
 import 'package:otzaria/utils/file/tar_zst_extractor.dart';
 import 'package:otzaria/utils/move_directory.dart';
 import 'package:otzaria/utils/file/split_archive_joiner.dart';
@@ -50,6 +51,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     extractZipArchive,
     this._defaultLibraryPathOverride,
     this.downloadConnectTimeout = _defaultDownloadConnectTimeout,
+    this.downloadSpaceChecker,
   }) : _httpClient = httpClient ?? http.Client(),
        _extractCompressedDatabase = extractCompressedDatabase ?? _extractZst,
        _extractTarArchive = extractTarArchive ?? _extractTarZst,
@@ -73,6 +75,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
   final http.Client _httpClient;
   final Duration downloadConnectTimeout;
+  final Future<String?> Function(int? downloadSize)? downloadSpaceChecker;
   final Future<void> Function(
     String archivePath,
     String outputPath,
@@ -293,13 +296,17 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
     // seforim.db — דחוס או רגיל. נדרש אלא אם כבר קיים ביעד (ייבוא נלווים בלבד
     // אל ספרייה קיימת).
-    var dbZst = File(
-      path.join(source, DatabaseConstants.databaseArchiveFileName),
-    );
+    File? dbZst;
+    File? dbSplitManifest;
     for (final name in DatabaseConstants.supportedDatabaseArchiveFileNames) {
-      final candidate = File(path.join(source, name));
-      if (await candidate.exists()) {
-        dbZst = candidate;
+      final archive = File(path.join(source, name));
+      if (await archive.exists()) {
+        dbZst = archive;
+        break;
+      }
+      final manifest = File(path.join(source, '$name$kSplitManifestSuffix'));
+      if (await manifest.exists()) {
+        dbSplitManifest = manifest;
         break;
       }
     }
@@ -307,20 +314,12 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     final targetDb = File(
       path.join(target, DatabaseConstants.databaseFileName),
     );
-    // DB מעל מגבלת GitHub מגיע כחלקים ומניפסט (חבילת Android FULL, הורדה ידנית).
-    File? dbSplitManifest;
-    for (final name in DatabaseConstants.supportedDatabaseArchiveFileNames) {
-      final candidate = File(path.join(source, '$name$kSplitManifestSuffix'));
-      if (await candidate.exists()) {
-        dbSplitManifest = candidate;
-        break;
-      }
-    }
-    if (await dbZst.exists()) {
+    final selectedArchive = dbZst;
+    if (selectedArchive != null) {
       await _writeDbAtomically(
         path.join(target, DatabaseConstants.databaseFileName),
         (tempPath) => _extractCompressedDatabase(
-          dbZst.path,
+          selectedArchive.path,
           tempPath,
           _extractProgress(emit, source, 'מחלץ את ספריית הספרים...'),
         ),
@@ -1020,13 +1019,14 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
   /// בודק אם יש מספיק מקום פנוי להורדה ולחילוץ הספרייה.
   ///
-  /// [downloadSize] - גודל הקבצים הדחוסים בבייטים. כשידוע (אחרי קריאת
-  /// ה-Content-Length של שלושת הקבצים) מועבר הסכום **האמיתי**; אחרת משמש
-  /// אומדן (1.5GB) לבדיקת הסף הראשונית שמשביתה את כפתור ההורדה.
+  /// [downloadSize] הוא השטח הנוסף להורדה ולחיבור, בניכוי קבצים למחזור.
+  /// כשאינו ידוע, אומדן 1.5GB משמש לבדיקת הסף הראשונית.
   ///
   /// מחזיר הודעת שגיאה אם אין מספיק מקום, או null אם הכל תקין.
   /// מטפל גם בתרחיש שבו temp ותיקיית הספרייה חולקים אותו volume.
   Future<String?> _checkSpaceForDownload({int? downloadSize}) async {
+    final checker = downloadSpaceChecker;
+    if (checker != null) return checker(downloadSize);
     if (!Platform.isAndroid) return null;
 
     // הספרייה שמורה על כרטיס SD שאינו זמין כרגע — הורדה חדשה תיצור ספרייה
@@ -1041,12 +1041,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
           'יש להכניס את הכרטיס ולהפעיל מחדש את האפליקציה.';
     }
 
-    // אומדן fallback לסכום הדחוס של שלושת הקבצים, בשימוש רק כש-downloadSize
-    // לא ידוע (בדיקת הסף הראשונית, או כש-HEAD לא החזיר Content-Length).
-    // נכון להיום הסכום האמיתי ~1.45GB (seforim ~1.01GB + תלמוד ~0.44GB +
-    // קטלוג ~0.005GB). אם ה-DB יגדל בעתיד מעבר ל-1.5GB, יש להגדיל את
-    // הקבוע בהתאם — אחרת בדיקת הסף הראשונית עלולה לעבור בטעות במכשירים עם
-    // מעט מקום (הבדיקה האמיתית מול grandTotal עדיין תתפוס זאת בהמשך).
+    // האומדן הראשוני מוחלף בשטח ההורדה והחיבור אחרי פתרון הנכסים.
     final int kDownloadSize = downloadSize ?? 1610612736; // אומדן 1.5 GB
     const int kExtractSize = 6979321856; // 6.5 GB
 
@@ -1392,10 +1387,18 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
         (sum, a) => sum + a.compressedSize,
       );
 
-      // בדיקת מקום פנוי מול הסכום הדחוס האמיתי של שלושת הקבצים (במקום
-      // אומדן קבוע). גם safety net למצב שהדיסק התמלא אחרי טעינת המסך.
+      // כולל שטח חיבור לחלקים, בניכוי ההורדות שניתן להמשיך מהן.
+      var downloadNeeded = 0;
+      for (final asset in assets.where((asset) => !asset.skipped)) {
+        downloadNeeded += await additionalDownloadBytes(
+          destPath: path.join(Directory.systemTemp.path, asset.tempFileName),
+          identity: asset.identity!,
+          size: asset.compressedSize,
+          split: asset.split,
+        );
+      }
       final spaceError = await _checkSpaceForDownload(
-        downloadSize: grandTotal > 0 ? grandTotal : null,
+        downloadSize: grandTotal > 0 ? downloadNeeded : null,
       );
       if (spaceError != null) {
         _downloadDisabledReason = spaceError;
@@ -1564,19 +1567,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     String identity,
     int expectedSize,
   ) async {
-    try {
-      if (!await file.exists()) return 0;
-      final sidecar = File(PatchDownloader.resumeSidecarPath(file.path));
-      if (!await sidecar.exists()) return 0;
-      final lines = (await sidecar.readAsString()).split('\n');
-      if (lines.first != identity) return 0;
-      final length = await file.length();
-      if (expectedSize > 0 && length >= expectedSize) return length;
-      final etag = lines.length > 1 ? lines[1].trim() : '';
-      return etag.isNotEmpty && !etag.startsWith('W/') ? length : 0;
-    } catch (_) {
-      return 0;
-    }
+    return reusableDownloadBytes(file.path, identity, expectedSize);
   }
 
   Future<void> _deleteDownloadState(String tempPath) async {
@@ -1794,13 +1785,14 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     if (!asset.isSplitManifest) return asset;
 
     final release = LibraryRelease.fromJson(decoded);
-    final resolved = await GithubLibraryReleaseClient(
-      httpClient: _httpClient,
-      timeout: downloadConnectTimeout,
-    ).resolveSplitAsset(
-      release,
-      release.assetByName('${asset.assetName}$kSplitManifestSuffix')!,
-    );
+    final resolved =
+        await GithubLibraryReleaseClient(
+          httpClient: _httpClient,
+          timeout: downloadConnectTimeout,
+        ).resolveSplitAsset(
+          release,
+          release.assetByName('${asset.assetName}$kSplitManifestSuffix')!,
+        );
     return DatabaseReleaseAsset(
       assetName: asset.assetName,
       downloadUrl: asset.downloadUrl,

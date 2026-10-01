@@ -10,6 +10,7 @@ import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/utils/file/disk_free_space.dart';
+import 'package:otzaria/utils/file/download_space.dart';
 import 'package:otzaria/utils/file/zstd_stream_extractor.dart';
 import 'package:path/path.dart' as p;
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
@@ -703,15 +704,16 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     final sidecarPath = PatchDownloader.resumeSidecarPath(archivePath);
     // מחולץ ליד ה-DB (אותו filesystem) כדי שה-rename יהיה אטומי.
     final newDbPath = '$dbPath.new';
-    // חיבור DB מפוצל מחזיק לרגע את הארכיון ועוד חלק אחד.
-    final largestPart = asset.split?.parts.fold<int>(
-      0,
-      (largest, part) => part.size > largest ? part.size : largest,
-    );
-
+    final resumeToken =
+        '${asset.downloadUrl}|${asset.size}|${asset.id ?? ''}|${asset.updatedAt ?? ''}';
     await _ensureDiskSpaceForFullDownload(
       archivePath: archivePath,
-      archiveSize: asset.size + (largestPart ?? 0),
+      archiveNeeded: await additionalDownloadBytes(
+        destPath: archivePath,
+        identity: resumeToken,
+        size: asset.size,
+        split: asset.split,
+      ),
       dbDir: p.dirname(dbPath),
     );
 
@@ -723,8 +725,7 @@ class LibraryUpdateRepository implements LibraryUpdateService {
         asset: asset,
         destPath: archivePath,
         // קושר את הקובץ החלקי ל-release — מונע resume על ארכיון מגרסה אחרת.
-        resumeToken:
-            '${asset.downloadUrl}|${asset.size}|${asset.id ?? ''}|${asset.updatedAt ?? ''}',
+        resumeToken: resumeToken,
         isCancelled: isCancelled,
         onProgress: (downloaded, total) => onProgress?.call(
           LibraryUpdateProgress(
@@ -796,14 +797,9 @@ class LibraryUpdateRepository implements LibraryUpdateService {
   /// מקום פנוי לא-ידוע (freeBytes==-1) אינו חוסם — עדיף לנסות מלחסום בטעות.
   Future<void> _ensureDiskSpaceForFullDownload({
     required String archivePath,
-    required int archiveSize,
+    required int archiveNeeded,
     required String dbDir,
   }) async {
-    // ארכיון חלקי מהורדה קודמת מתחדש (resume) ואינו דורש מקום נוסף.
-    final partial = File(archivePath);
-    final resumed = partial.existsSync() ? partial.lengthSync() : 0;
-    final archiveNeeded = (archiveSize - resumed).clamp(0, archiveSize);
-
     final archiveInfo = await diskSpaceProvider(p.dirname(archivePath));
     final extractInfo = await diskSpaceProvider(dbDir);
     String gb(int bytes) => (bytes / (1 << 30)).toStringAsFixed(1);
