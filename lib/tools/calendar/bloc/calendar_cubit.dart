@@ -14,6 +14,7 @@ import 'package:otzaria/tools/calendar/services/google_calendar_service.dart';
 import 'package:otzaria/tools/calendar/services/ics_calendar_service.dart';
 import 'package:otzaria/tools/calendar/helpers/zmanim_helpers.dart'
     as zmanim_helpers;
+import 'package:otzaria/tools/calendar/models/calendar_event.dart';
 import 'package:otzaria/tools/calendar/models/calendar_location.dart'
     as calendar_location;
 import 'package:otzaria/core/messages/tools_messages.dart';
@@ -22,7 +23,8 @@ import 'package:otzaria/plugins/adapters/plugin_calendar_adapter.dart';
 import 'package:otzaria/theme/calendar_event_colors.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-part 'calendar_event.dart';
+export 'package:otzaria/tools/calendar/models/calendar_event.dart';
+
 part 'calendar_state.dart';
 
 /// Interface לטעינת אירועי plugin — מאפשר החלפה ב-mock בטסטים.

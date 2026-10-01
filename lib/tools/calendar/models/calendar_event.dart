@@ -1,4 +1,6 @@
-part of 'calendar_cubit.dart';
+import 'package:equatable/equatable.dart';
+import 'package:flutter/material.dart';
+import 'package:kosher_dart/kosher_dart.dart';
 
 enum RecurrenceType {
   none,
