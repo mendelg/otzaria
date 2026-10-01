@@ -2927,6 +2927,7 @@ extension FileSyncRepository on SeforimRepository {
   /// Used when updating book content.
   Future<void> deleteBookLines(int bookId) async {
     final db = await database.database;
+    db.execute('DELETE FROM line_ref WHERE bookId = ?', [bookId]);
     db.execute('DELETE FROM line WHERE bookId = ?', [bookId]);
   }
 
@@ -2954,6 +2955,7 @@ extension FileSyncRepository on SeforimRepository {
 
     await deleteBookLines(bookId);
     await deleteBookTocEntries(bookId);
+    await updateBookTotalLines(bookId, 0);
   }
 }
 

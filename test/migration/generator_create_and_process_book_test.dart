@@ -65,6 +65,21 @@ void main() {
     onProgress: (_, msg) => log.add(msg),
   );
 
+  Future<void> failLineRefInsertForBook(int bookId) async {
+    final db = await database.database;
+    db.execute('''
+      CREATE TRIGGER fail_line_ref_insert
+      BEFORE INSERT ON line_ref
+      WHEN NEW.bookId = $bookId
+      BEGIN SELECT RAISE(FAIL, 'injected line_ref failure'); END
+    ''');
+  }
+
+  Future<void> removeLineRefInsertFailure() async {
+    final db = await database.database;
+    db.execute('DROP TRIGGER fail_line_ref_insert');
+  }
+
   // ── tests ─────────────────────────────────────────────────────────────────
 
   test(
@@ -84,6 +99,141 @@ void main() {
       );
     },
   );
+
+  test(
+    'כשל בבניית line_ref מסיר ייבוא חדש כדי שהסריקה הבאה תנסה שוב',
+    () async {
+      final catId = await createCategory();
+      final file = File(p.join(tempDir.path, 'ספר חדש.txt'));
+      await file.writeAsString(
+        '<h1>ספר חדש</h1>\n<h2>בראשית א, א</h2>\nתוכן',
+        flush: true,
+      );
+      final db = await database.database;
+      db.execute(
+        'INSERT INTO db_meta (key, value) VALUES (?, ?)',
+        [
+          'line_ref_index_version',
+          SeforimRepository.lineRefIndexVersion.toString(),
+        ],
+      );
+      await failLineRefInsertForBook(1);
+
+      await expectLater(
+        buildGenerator(<String>[]).createAndProcessBook(
+          file.path,
+          catId,
+          insertContent: true,
+        ),
+        throwsA(anything),
+      );
+
+      expect(
+        db.select("SELECT 1 FROM book WHERE title = 'ספר חדש'"),
+        isEmpty,
+      );
+      expect(db.select('SELECT 1 FROM line'), isEmpty);
+
+      await removeLineRefInsertFailure();
+      await buildGenerator(<String>[]).createAndProcessBook(
+        file.path,
+        catId,
+        insertContent: true,
+      );
+      expect(db.select('SELECT 1 FROM line_ref'), isNotEmpty);
+    },
+  );
+
+  test('כשל בעדכון תוכן אינו שומר מקור חדש לפני ניסיון הסריקה הבא', () async {
+    final catId = await createCategory();
+    final file = File(p.join(tempDir.path, 'ספר קיים.txt'));
+    await file.writeAsString(
+      '<h1>ספר קיים</h1>\n<h2>בראשית א, א</h2>\nתוכן',
+      flush: true,
+    );
+    await buildGenerator(<String>[]).createAndProcessBook(
+      file.path,
+      catId,
+      insertContent: true,
+      sourceName: 'מקור ישן',
+    );
+    final book = (await repository.checkBookExistsInCategoryWithFileType(
+      'ספר קיים',
+      catId,
+      'txt',
+    ))!;
+    final oldSourceId = book.sourceId;
+    await failLineRefInsertForBook(book.id);
+
+    await expectLater(
+      buildGenerator(<String>[]).createAndProcessBook(
+        file.path,
+        catId,
+        insertContent: true,
+        sourceName: 'מקור חדש',
+      ),
+      throwsA(anything),
+    );
+
+    final afterFailure = await repository.checkBookExistsInCategoryWithFileType(
+      'ספר קיים',
+      catId,
+      'txt',
+    );
+    expect(afterFailure!.sourceId, oldSourceId);
+    expect(afterFailure.totalLines, 0);
+    expect((await repository.getSourceById(oldSourceId))!.name, 'מקור ישן');
+    final db = await database.database;
+    expect(
+      db.select('SELECT 1 FROM line WHERE bookId = ?', [book.id]),
+      isEmpty,
+    );
+    expect(
+      db.select('SELECT 1 FROM line_ref WHERE bookId = ?', [book.id]),
+      isEmpty,
+    );
+
+    await expectLater(
+      buildGenerator(<String>[]).createAndProcessBook(
+        file.path,
+        catId,
+        insertContent: true,
+        sourceName: 'מקור חדש',
+      ),
+      throwsA(anything),
+    );
+    expect(
+      db.select('SELECT 1 FROM line WHERE bookId = ?', [book.id]),
+      isEmpty,
+      reason: 'כשל חוזר אינו משאיר שורות חלקיות בספר',
+    );
+    expect(
+      db.select('SELECT 1 FROM line_ref WHERE bookId = ?', [book.id]),
+      isEmpty,
+      reason: 'כשל חוזר אינו משאיר מפתחות line_ref ישנים',
+    );
+
+    await removeLineRefInsertFailure();
+    await buildGenerator(<String>[]).createAndProcessBook(
+      file.path,
+      catId,
+      insertContent: true,
+      sourceName: 'מקור חדש',
+    );
+    final afterRetry = await repository.checkBookExistsInCategoryWithFileType(
+      'ספר קיים',
+      catId,
+      'txt',
+    );
+    expect(
+      (await repository.getSourceById(afterRetry!.sourceId))!.name,
+      'מקור חדש',
+    );
+    expect(
+      db.select('SELECT 1 FROM line_ref WHERE bookId = ?', [book.id]),
+      isNotEmpty,
+    );
+  });
 
   test(
     '2. קריאה שנייה מפיקה רק "עודכן ספר" — ללא "מדלג על כפילות"',
