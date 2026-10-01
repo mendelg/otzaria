@@ -1126,11 +1126,12 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
   required ReadOnlyDbTarget target,
   required String bookTitle,
   int? categoryId,
+  ReadOnlyConnection? connection,
 }) {
   sqlite3.Database? db;
   try {
-    db = openReadOnlyTarget(target);
-    final capabilities = DbCapabilities.probe(db);
+    db = connection?.db ?? openReadOnlyTarget(target);
+    final capabilities = connection?.capabilities ?? DbCapabilities.probe(db);
     if (!capabilities.hasAltToc) return (markers: const {}, headings: const {});
 
     final bookId = _selectBookId(
@@ -1226,7 +1227,7 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
     final headings = buildSectionHeadings(rows, (i) => linesByIndex[i]);
     return (markers: markers, headings: headings);
   } finally {
-    db?.close();
+    if (connection == null) db?.close();
   }
 }
 
@@ -1506,6 +1507,12 @@ Object? runRangeRequestOnConnection(
       startLineIndex: args['startLineIndex'] as int,
       endLineIndex: args['endLineIndex'] as int,
       targetBookTitles: (args['targetBookTitles'] as List?)?.cast<String>(),
+      connection: connection,
+    ),
+    'inlineSectionMarks' => _loadInlineSectionMarksInIsolate(
+      target: target,
+      bookTitle: args['bookTitle'] as String,
+      categoryId: args['categoryId'] as int?,
       connection: connection,
     ),
     _ => throw StateError('Unknown DbReadWorker method: $method'),
@@ -4768,11 +4775,17 @@ class DatabaseLibraryProvider implements LibraryProvider {
     final target = _isolateTargetFor(source);
     if (target == null) return empty;
 
+    // ב-worker הקבוע: מפענח השורות נטען פעם אחת לחיבור, לא בכל פתיחת ספר.
     try {
-      return await _runInlineSectionMarksInIsolate(
-        target: target,
-        bookTitle: bookTitle,
-        categoryId: categoryId,
+      return await _loadOnReadWorker(
+        target,
+        'inlineSectionMarks',
+        {'bookTitle': bookTitle, 'categoryId': categoryId},
+        () => _runInlineSectionMarksInIsolate(
+          target: target,
+          bookTitle: bookTitle,
+          categoryId: categoryId,
+        ),
       );
     } catch (e) {
       debugPrint(
