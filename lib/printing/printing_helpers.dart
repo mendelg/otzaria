@@ -107,14 +107,46 @@ int findLastHeaderIndexAtOrBefore(List<TocEntry> headers, int lineIndex) {
   return result;
 }
 
-/// Alt-TOC rows as print headers; the level lets [headerSectionEndLine] keep
-/// nested sub-headers inside their parent's range.
-List<TocEntry> altHeadersForPrint(
-  Iterable<({int lineIndex, int level, String text})> rows,
-) => [
-  for (final r in rows)
-    TocEntry(text: r.text, index: r.lineIndex, level: r.level),
-];
+/// כותרות המשנה כרשימה שטוחה בסדר השורות, והתווית כוללת את נתיב האבות:
+/// "דף א." חוזר בכל כרך של הזוהר, ובלי "כרך א, הקדמה" אי אפשר להבחין ביניהם.
+List<TocEntry> buildAltHeaderEntries(
+  List<({int id, int? parentId, int level, int? lineIndex, String text})> rows,
+) {
+  final byId = {for (final r in rows) r.id: r};
+  String pathOf(
+    ({int id, int? parentId, int level, int? lineIndex, String text}) r,
+  ) {
+    final parts = <String>[r.text];
+    final seen = <int>{r.id};
+    var parentId = r.parentId;
+    while (parentId != null && seen.add(parentId)) {
+      final parent = byId[parentId];
+      if (parent == null) break;
+      if (parent.text.isNotEmpty) parts.add(parent.text);
+      parentId = parent.parentId;
+    }
+    return parts.reversed.join(', ');
+  }
+
+  final positioned = [
+    for (var i = 0; i < rows.length; i++)
+      if (rows[i].lineIndex != null) (order: i, row: rows[i]),
+  ];
+  positioned.sort((a, b) {
+    final byLine = a.row.lineIndex!.compareTo(b.row.lineIndex!);
+    if (byLine != 0) return byLine;
+    final byLevel = a.row.level.compareTo(b.row.level);
+    return byLevel != 0 ? byLevel : a.order.compareTo(b.order);
+  });
+  return [
+    for (final p in positioned)
+      TocEntry(
+        text: pathOf(p.row),
+        index: p.row.lineIndex!,
+        level: p.row.level,
+      ),
+  ];
+}
 
 /// שורת הסיום (בלעדית) של סעיף הכותרת [index] ברשימה שטוחה בסדר המסמך:
 /// תחילת הכותרת הבאה שרמתה אינה עמוקה יותר (כך שתתי-הכותרות נכללות), או [totalLines].

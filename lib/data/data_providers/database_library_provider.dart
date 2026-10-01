@@ -4844,56 +4844,8 @@ class DatabaseLibraryProvider implements LibraryProvider {
     );
   }
 
-  /// מחזיר רשימת (lineIndex, level, text) לכל ערכי כותרות משנה בעלי שורה מוגדרת;
-  /// בשורה משותפת ההורה קודם לילדיו.
-  Future<List<({int lineIndex, int level, String text})>> getAltTocLineIndices(
-    int structureId, {
-    BookSource source = BookSource.official,
-  }) async {
-    if (source.isUser) {
-      return _userAltTocOperation(
-        (repo) => repo.lineIndices(structureId),
-        const [],
-        'getAltTocLineIndices (user) $structureId',
-      );
-    }
-    return _dbOperation<List<({int lineIndex, int level, String text})>>(
-      (db) async {
-        final results = db
-            .select(
-              '''
-          SELECT l.lineIndex, e.level, t.text
-          FROM alt_toc_entry e
-          JOIN tocText t ON e.textId = t.id
-          JOIN line l ON e.lineId = l.id
-          WHERE e.structureId = ?
-          ORDER BY l.lineIndex, e.level, e.id
-        ''',
-              [structureId],
-            )
-            .toMapList();
-
-        return results
-            .map(
-              (r) => (
-                lineIndex: r['lineIndex'] as int,
-                level: r['level'] as int,
-                text: r['text'] as String,
-              ),
-            )
-            .toList();
-      },
-      [],
-      'getAltTocLineIndices $structureId',
-      requires: (c) => c.hasAltToc,
-      source: source,
-    );
-  }
-
-  /// מחזיר את ערכי מבנה ה-AltToc עם ה-lineIndex של כל ערך (או null לכותרות-אב
-  /// ללא שורה), לצד id/parentId/level/text — כדי לבנות את העץ ולחשב index
-  /// לכותרות. LEFT JOIN על line שומר גם ערכים חסרי שורה; הסדר לפי e.id
-  /// כדי לשמר את סדר המסמך של ה-DB.
+  /// מחזיר ערכי AltToc בסדר המזהים, עם נתוני ההיררכיה ושורת הכותרת.
+  /// LEFT JOIN משמר כותרות-אב שאין להן שורה.
   Future<
     List<({int id, int? parentId, int level, int? lineIndex, String text})>
   >

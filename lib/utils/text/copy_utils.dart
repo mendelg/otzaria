@@ -118,8 +118,8 @@ class CopyUtils {
       for (final entry in entries) {
         if (entry.index <= currentIndex) {
           lastByLevel.removeWhere((level, _) => level > entry.level);
-          if (entry.level <= 1) {
-            continue; // רמה 1 = שם הספר, כבר מכוסה ע"י bookName
+          if (isBookTitleRoot(entry)) {
+            continue; // שם הספר, כבר מכוסה ע"י bookName
           }
           final clean = _cleanHtml(entry.text);
           if (clean.isNotEmpty) {

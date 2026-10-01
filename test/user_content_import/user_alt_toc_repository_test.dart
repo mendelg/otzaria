@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
+import 'package:otzaria/printing/printing_helpers.dart';
 import 'package:otzaria/text_book/utils/inline_section_markers.dart';
 import 'package:otzaria/user_content_import/repository/user_alt_toc_repository.dart';
 import 'package:otzaria/user_content_import/repository/user_content_repository.dart';
@@ -115,9 +116,10 @@ void main() {
   test('שורות הכותרות להדפסה נושאות את רמת הערך', () async {
     final structure = (await reader.structures(bookId)).first;
 
-    final rows = await reader.lineIndices(structure.id);
+    final rows = await reader.entriesWithLineIndex(structure.id);
+    final headers = buildAltHeaderEntries(rows);
 
-    expect([for (final r in rows) (r.lineIndex, r.level)], [(2, 2), (5, 2)]);
+    expect([for (final h in headers) (h.index, h.level)], [(2, 2), (5, 2)]);
   });
 
   test('בשורה משותפת ההורה קודם לילד גם כשהילד נכתב קודם', () async {
@@ -132,10 +134,11 @@ void main() {
       );
     }
 
-    final rows = await reader.lineIndices(structure.id);
+    final rows = await reader.entriesWithLineIndex(structure.id);
+    final headers = buildAltHeaderEntries(rows);
 
     expect(
-      [for (final r in rows) (r.lineIndex, r.level)],
+      [for (final h in headers) (h.index, h.level)],
       [
         (2, 2),
         (5, 2),

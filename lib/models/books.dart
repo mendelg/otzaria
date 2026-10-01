@@ -790,7 +790,8 @@ class TocEntry {
   String get fullText => () {
     TocEntry? parent = this.parent;
     String text = this.text;
-    while (parent != null && parent.level > 1) {
+    // השורש ברמה 0/1 הוא שם הספר (רמה 0 במסד, 1 בקובץ); שאר האבות הם הנתיב.
+    while (parent != null && !isBookTitleRoot(parent)) {
       if (parent.text != '') {
         text = '${parent.text}, $text';
       }
@@ -807,6 +808,10 @@ class TocEntry {
     this.parent,
   });
 }
+
+/// שורש העץ שמייצג את שם הספר ולא כותרת תוכן.
+bool isBookTitleRoot(TocEntry entry) =>
+    entry.parent == null && entry.level <= 1;
 
 /// משטח עץ [TocEntry] לרשימה אחת (pre-order), כולל כל הצאצאים.
 /// נחוץ למי שמחפש כותרת בכל העץ — `tableOfContents` מחזיר רק את שורשי העץ.

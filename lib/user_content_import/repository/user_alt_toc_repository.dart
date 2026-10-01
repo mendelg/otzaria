@@ -94,25 +94,6 @@ class UserAltTocRepository {
     ];
   }
 
-  Future<List<({int lineIndex, int level, String text})>> lineIndices(
-    int structureId,
-  ) async {
-    final db = await _db.database;
-    return [
-      for (final row in db.select(
-        'SELECT lineIndex, level, text FROM user_alt_toc_entry '
-        'WHERE structureId = ? AND lineIndex IS NOT NULL '
-        'ORDER BY lineIndex, level, id',
-        [structureId],
-      ))
-        (
-          lineIndex: row['lineIndex'] as int,
-          level: row['level'] as int,
-          text: row['text'] as String,
-        ),
-    ];
-  }
-
   /// הקישור לשורת הכותרת. לכותרת-אב בלי שורה — שורת הצאצא הראשון שיש לו.
   Future<List<Link>> linksForEntry(int structureId, int entryId) async {
     final all = await entriesWithLineIndex(structureId);
