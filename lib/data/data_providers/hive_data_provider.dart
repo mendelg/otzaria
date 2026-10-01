@@ -49,7 +49,9 @@ Future<void> deleteStaleWindowRoots() async {
     final dataRoot = await AppPaths.getDataRootPath();
     final root = Directory(p.join(dataRoot, windowRootsDirName));
     if (await root.exists()) {
-      await root.rename('${root.path}$_staleSuffix$pid');
+      final stalePath =
+          '${root.path}$_staleSuffix$pid-${DateTime.now().microsecondsSinceEpoch}';
+      await root.rename(stalePath);
     }
     pendingStaleRootsDeletion = _deleteRenamedRoots(dataRoot);
   } catch (e) {

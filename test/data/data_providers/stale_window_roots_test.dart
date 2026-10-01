@@ -11,6 +11,7 @@ void main() {
   setUp(() {
     dataRoot = Directory.systemTemp.createTempSync('window-roots');
     AppPaths.debugOverrideDataRootPath(dataRoot.path);
+    pendingStaleRootsDeletion = null;
   });
 
   tearDown(() {
@@ -49,4 +50,34 @@ void main() {
 
     expect(dataRoot.listSync(), isEmpty);
   });
+
+  test(
+    'a reused PID stale folder does not prevent cleanup of the window root',
+    () async {
+      final staleWithReusedPid = Directory(
+        p.join(dataRoot.path, '$windowRootsDirName.stale-$pid'),
+      )..createSync(recursive: true);
+      File(
+        p.join(staleWithReusedPid.path, 'leftover'),
+      ).writeAsStringSync('stale');
+      final oldHiveFile =
+          File(p.join(windows().path, 'slot-1', 'app_preferences.hive'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('old');
+
+      await deleteStaleWindowRoots();
+      expect(windows().existsSync(), isFalse);
+
+      final fresh = Directory(p.join(windows().path, 'slot-2'))
+        ..createSync(recursive: true);
+      await pendingStaleRootsDeletion;
+
+      expect(staleWithReusedPid.existsSync(), isFalse);
+      expect(oldHiveFile.existsSync(), isFalse);
+      expect(fresh.existsSync(), isTrue);
+      expect(dataRoot.listSync().map((e) => p.basename(e.path)), [
+        windowRootsDirName,
+      ]);
+    },
+  );
 }
