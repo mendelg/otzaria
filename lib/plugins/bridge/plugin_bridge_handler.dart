@@ -360,6 +360,7 @@ class PluginBridgeHandler {
     'library.getRawLinks': pluginLinksReadPermission,
     'library.getLinkTargetsSummary': pluginLinksReadPermission,
     'library.refreshUserBooks': pluginLibraryRefreshPermission,
+    'library.setProviderBooks': pluginLibraryBooksProvidePermission,
     'search.fullText': 'search.fulltext.read',
     'search.query': 'search.fulltext.read',
     'search.getOptions': 'search.fulltext.read',

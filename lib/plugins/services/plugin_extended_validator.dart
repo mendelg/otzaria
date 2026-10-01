@@ -6,6 +6,7 @@ import 'package:otzaria/plugins/declarative/compiler/declarative_program_compile
 import 'package:otzaria/plugins/declarative/compiler/declarative_selection_action.dart';
 import 'package:otzaria/plugins/declarative/compiler/declarative_toolbar_template_compiler.dart';
 import 'package:otzaria/plugins/declarative/models/declarative_program.dart';
+import 'package:otzaria/plugins/models/plugin_library_book_provider.dart';
 import 'package:otzaria/plugins/models/plugin_manifest.dart';
 import 'package:otzaria/plugins/models/plugin_network_allowlist.dart';
 import 'package:otzaria/plugins/models/plugin_search_dialog_item.dart';
@@ -83,6 +84,7 @@ const Set<String> _knownApiMethods = {
   'library.getLinkTargetsSummary',
   'library.getLinkContent',
   'library.refreshUserBooks',
+  'library.setProviderBooks',
   'search.fullText',
   'search.query',
   'search.getOptions',
@@ -240,6 +242,9 @@ const Set<String> _knownEvents = {
   // החיפוש המובנה. תוסף-ספק מצהיר עליו ב-activationEvents כדי שהבקשה
   // תעיר מנוע רקע במקום לפתוח את דף התוסף.
   'search.external.requested',
+  // אירוע ממוקד מ-PluginLibraryBooksRegistry: המשתמש בחר ספר של הספק
+  // במסך הספרייה, והתוסף הוא שפותח אותו.
+  'library.providerBook.openRequested',
 };
 
 /// מיפוי `method -> permission` נדרשת (תואם METHOD_REQUIRED_PERMISSION ב-JS).
@@ -275,6 +280,7 @@ const Map<String, String> _methodRequiredPermission = {
   'library.getRawLinks': pluginLinksReadPermission,
   'library.getLinkTargetsSummary': pluginLinksReadPermission,
   'library.refreshUserBooks': pluginLibraryRefreshPermission,
+  'library.setProviderBooks': pluginLibraryBooksProvidePermission,
   'search.fullText': 'search.fulltext.read',
   'search.query': 'search.fulltext.read',
   'search.getOptions': 'search.fulltext.read',
@@ -548,6 +554,7 @@ const Map<String, String> _methodMinVersion = {
   'workspace.create': '0.9.97',
   'workspace.switch': '0.9.97',
   // 0.9.98
+  'library.setProviderBooks': '0.9.98',
   'fs.deleteFolder': '0.9.98',
   'fs.moveEntry': '0.9.98',
   'fs.pickUserFolder': '0.9.98',
@@ -782,6 +789,7 @@ class PluginExtendedValidator {
   static const String _contextMenuActionMinVersion = '0.9.97';
   static const String _searchSubmitRoutingMinVersion = '0.9.97';
   static const String _externalEditionsMinVersion = '0.9.97';
+  static const String _libraryBooksMinVersion = '0.9.98';
   static const String _whenConditionMinVersion = '0.9.97';
   static const String _headlessMinVersion = '0.9.98';
 
@@ -816,7 +824,7 @@ class PluginExtendedValidator {
       // minAppVersion לא חוקי — נתפס ב-PluginManifestValidator.
     }
 
-    if (manifest.startup?.hasBackgroundActivationTrigger != true) {
+    if (manifest.startup?.hasInitialActivationTrigger != true) {
       errors.add(
         'לתוסף ללא ממשק (headless) אין שום דרך לפעול: יש להצהיר ב-'
         'contributes.startup על activationEvents, או על פקד או פריט תפריט '
@@ -893,6 +901,7 @@ class PluginExtendedValidator {
       'toolbarItems': startup.toolbarItems,
       'contextMenuItems': startup.contextMenuItems,
       'searchDialogItems': startup.searchDialogItems,
+      'libraryBooks': startup.libraryBooks,
     };
     for (final entry in categories.entries) {
       for (final item in entry.value) {
@@ -919,6 +928,57 @@ class PluginExtendedValidator {
       }
     } on PluginVersionFormatException {
       // minAppVersion נבדק ב-PluginManifestValidator.
+    }
+  }
+
+  static void _validateLibraryBooks(
+    PluginManifest manifest,
+    PluginStartupContributions startup,
+    Set<String> declaredPermissions,
+    List<String> errors,
+  ) {
+    if (!declaredPermissions.contains(pluginLibraryBooksProvidePermission)) {
+      errors.add(
+        'contributes.startup.libraryBooks דורש את ההרשאה '
+        '"$pluginLibraryBooksProvidePermission" ב-manifest',
+      );
+    }
+    if (startup.libraryBooks.length >
+        PluginLibraryBookProvider.maxItemsPerPlugin) {
+      errors.add(
+        'contributes.startup.libraryBooks מוגבל ל-'
+        '${PluginLibraryBookProvider.maxItemsPerPlugin} ספקים',
+      );
+    }
+    try {
+      if (PluginVersionUtils.compareCoreVersions(
+            _libraryBooksMinVersion,
+            manifest.minAppVersion,
+          ) >
+          0) {
+        errors.add(
+          'contributes.startup.libraryBooks נתמך החל מגרסה '
+          '$_libraryBooksMinVersion, אך minAppVersion שהוצהר הוא '
+          '${manifest.minAppVersion}',
+        );
+      }
+    } on PluginVersionFormatException {
+      // minAppVersion נבדק ב-PluginManifestValidator.
+    }
+    final ids = <String>{};
+    final providers = <String>{};
+    for (final item in startup.libraryBooks) {
+      try {
+        final parsed = PluginLibraryBookProvider.parse(manifest.id, item);
+        if (!ids.add(parsed.id)) {
+          errors.add('contributes.startup.libraryBooks מכיל מזהה כפול');
+        }
+        if (!providers.add(parsed.provider)) {
+          errors.add('contributes.startup.libraryBooks מכיל ספק כפול');
+        }
+      } on PluginLibraryBooksException catch (error) {
+        errors.add('contributes.startup.libraryBooks לא תקין: $error');
+      }
     }
   }
 
@@ -1022,6 +1082,7 @@ class PluginExtendedValidator {
     checkListField('programs', (e) => e is Map, 'אובייקט');
     checkListField('searchDialogItems', (e) => e is Map, 'אובייקט');
     checkListField('externalEditions', (e) => e is Map, 'אובייקט');
+    checkListField('libraryBooks', (e) => e is Map, 'אובייקט');
     checkListField(
       'activationEvents',
       (e) => e is String || (e is Map && e['topic'] is String),
@@ -1050,7 +1111,7 @@ class PluginExtendedValidator {
 
     final startup = manifest.startup;
     if (startup == null) return;
-    if (startup.keepAlive && !startup.hasBackgroundActivationTrigger) {
+    if (startup.keepAlive && !startup.hasInitialActivationTrigger) {
       errors.add(
         'contributes.startup.keepAlive דורש פקד או אירוע שמפעיל מנוע רקע',
       );
@@ -1268,6 +1329,10 @@ class PluginExtendedValidator {
           errors.add('contributes.startup.externalEditions לא תקין: $error');
         }
       }
+    }
+
+    if (startup.libraryBooks.isNotEmpty) {
+      _validateLibraryBooks(manifest, startup, declaredPermissions, errors);
     }
 
     final compiledPrograms = <String, CompiledDeclarativeProgram>{};

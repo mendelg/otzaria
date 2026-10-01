@@ -180,6 +180,99 @@ void main() {
     });
   });
 
+  group('libraryBooks', () {
+    Map<String, dynamic> booksManifest({
+      List<String> permissions = const [
+        'app.startup_contributions',
+        'library.books.provide',
+      ],
+      String minAppVersion = '0.9.98',
+      List<Map<String, dynamic>>? items,
+    }) => _manifest(
+      permissions: permissions,
+      minAppVersion: minAppVersion,
+      startup: {
+        'libraryBooks':
+            items ??
+            [
+              {
+                'id': 'books',
+                'provider': 'mylib',
+                'title': 'הספרייה שלי',
+                'icon': 'library_24_regular',
+                'when': {
+                  'storage': {'key': 'show', 'notEquals': false},
+                },
+              },
+            ],
+      },
+    );
+
+    test('תרומה תקינה עוברת ללא שגיאות', () {
+      expect(_run(tempDir, booksManifest()).errors, isEmpty);
+    });
+
+    test('חסרה הרשאת library.books.provide — שגיאה חוסמת', () {
+      final report = _run(
+        tempDir,
+        booksManifest(permissions: const ['app.startup_contributions']),
+      );
+      expect(report.errors, contains(contains('library.books.provide')));
+    });
+
+    test('minAppVersion ישן מדי — שגיאה חוסמת', () {
+      final report = _run(tempDir, booksManifest(minAppVersion: '0.9.97'));
+      expect(report.errors, contains(contains('libraryBooks נתמך החל מגרסה')));
+    });
+
+    test('שם ספק מובנה, ספק כפול ושלושה ספקים — שגיאות חוסמות', () {
+      Map<String, dynamic> item(String id, String provider) => {
+        'id': id,
+        'provider': provider,
+        'title': 'ספק',
+      };
+      expect(
+        _run(tempDir, booksManifest(items: [item('a', 'otzar')])).errors,
+        contains(contains('libraryBooks לא תקין')),
+      );
+      expect(
+        _run(
+          tempDir,
+          booksManifest(items: [item('a', 'books'), item('b', 'books')]),
+        ).errors,
+        contains(contains('ספק כפול')),
+      );
+      expect(
+        _run(
+          tempDir,
+          booksManifest(
+            items: [item('a', 'one'), item('b', 'two'), item('c', 'three')],
+          ),
+        ).errors,
+        contains(contains('מוגבל ל-2')),
+      );
+    });
+
+    test('תנאי when שקורא הגדרה חסומה — שגיאה חוסמת', () {
+      final report = _run(
+        tempDir,
+        booksManifest(
+          items: [
+            {
+              'id': 'books',
+              'provider': 'mylib',
+              'title': 'הספרייה שלי',
+              'when': {
+                'setting': {'key': 'key-bookmarks', 'exists': true},
+              },
+            },
+          ],
+        ),
+      );
+      expect(report.errors, contains(contains('libraryBooks: when')));
+    });
+  });
+
   test('missing app.startup_contributions permission is a blocking error', () {
     final report = _run(
       tempDir,

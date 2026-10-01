@@ -170,6 +170,7 @@ my-plugin/
 | `contributes.startup.programs` | `[]` | תכניות חישוב Host מוולדות, ללא JavaScript; ראו `API_REFERENCE.md` §תכניות Host ללא WebView. |
 | `contributes.startup.searchDialogItems` | `[]` | שורות checkbox סטטיות; `openPluginOnSubmit` יכול לנתב את אישור החיפוש לתוסף. |
 | `contributes.startup.externalEditions` | `[]` | קונפיגורציית מהדורות מקבילות של ספק חיצוני (טבלת מיפוי במקור DB מוכרז); ראו `API_REFERENCE.md` §מהדורות מקבילות חיצוניות. |
+| `contributes.startup.libraryBooks` | `[]` | ספק ספרים שמצטרף לאיתור הספרים במסך הספרייה, ולחיצה על ספריו נמסרת לתוסף. מגרסה 0.9.98; ראו `API_REFERENCE.md` §ספרים בחיפוש הספרייה. |
 | `contributes.startup.activationEvents` | `[]` | אירועים שמעירים את מנוע הרקע בעצלנות; כל נושא דורש גם הרשאת subscribe מתאימה. |
 | `contributes.startup.keepAlive` | `false` | בקשה למנוע כיבוי אוטומטי; דורשת אישור נפרד של `app.background_keep_alive`. |
 
@@ -327,6 +328,7 @@ Otzaria.on('plugin.suspended', stop);   // עצירת timers / polling / WebSock
 | `library.getLinkTargetsSummary` | `library.links.read` | `{ bookId, categoryId? }` | `{ targets, maxSourceLine }` |
 | `library.getLinkContent` | `library.content.read` | `{ links }` (עד 25) | `{ items }` |
 | `library.refreshUserBooks` | `library.refresh` | — | `{ addedBooks, updatedBooks, errors }` |
+| `library.setProviderBooks` | `library.books.provide` | `{ provider, books }` | `{ count }` |
 
 ### network.*
 
@@ -583,6 +585,7 @@ const { data: keys } = await Otzaria.call('storage.list');
 | `library.content.read` | קריאת תוכן ספרים (TOC + טקסט) |
 | `library.links.read` | קריאת מפרשים וקישורים של ספר (מבנה בלבד, ללא תוכן) |
 | `library.refresh` | סריקה מחדש של התיקיות האישיות ורענון הקטלוג (`library.refreshUserBooks`) |
+| `library.books.provide` | הוספת ספרים מהתוסף לאיתור הספרים במסך הספרייה (`contributes.startup.libraryBooks`); לחיצה על ספר כזה נמסרת לתוסף |
 | `search.fulltext.read` | חיפוש טקסט מלא |
 | `reader.open` | פתיחת ספרים + קריאת מצב הקורא |
 | `navigation.write` | ניווט בין מסכים |

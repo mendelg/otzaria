@@ -11,6 +11,7 @@ import 'package:otzaria/plugins/repository/plugin_registry_repository.dart';
 import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_external_editions_registry.dart';
 import 'package:otzaria/plugins/services/plugin_lazy_activation_service.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/plugins/services/plugin_search_dialog_registry.dart';
 import 'package:otzaria/plugins/services/plugin_shortcut_registry.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
@@ -32,6 +33,7 @@ class PluginStartupContributionsService {
       _shortcuts = PluginShortcutRegistry.instance,
       _searchDialog = PluginSearchDialogRegistry.instance,
       _externalEditions = PluginExternalEditionsRegistry.instance,
+      _libraryBooks = PluginLibraryBooksRegistry.instance,
       _lazyActivation = PluginLazyActivationService.instance,
       _conditions = PluginConditionEvaluator.instance;
 
@@ -43,6 +45,7 @@ class PluginStartupContributionsService {
     PluginShortcutRegistry? shortcutRegistry,
     PluginSearchDialogRegistry? searchDialogRegistry,
     PluginExternalEditionsRegistry? externalEditionsRegistry,
+    PluginLibraryBooksRegistry? libraryBooksRegistry,
     PluginConditionEvaluator? conditionEvaluator,
   }) : _conditions = conditionEvaluator ?? PluginConditionEvaluator.instance,
        _toolbar = toolbarRegistry,
@@ -52,6 +55,8 @@ class PluginStartupContributionsService {
            searchDialogRegistry ?? PluginSearchDialogRegistry.instance,
        _externalEditions =
            externalEditionsRegistry ?? PluginExternalEditionsRegistry.instance,
+       _libraryBooks =
+           libraryBooksRegistry ?? PluginLibraryBooksRegistry.instance,
        _lazyActivation = activationService;
 
   final PluginToolbarRegistry _toolbar;
@@ -59,6 +64,7 @@ class PluginStartupContributionsService {
   final PluginShortcutRegistry _shortcuts;
   final PluginSearchDialogRegistry _searchDialog;
   final PluginExternalEditionsRegistry _externalEditions;
+  final PluginLibraryBooksRegistry _libraryBooks;
   final PluginLazyActivationService _lazyActivation;
   final PluginConditionEvaluator _conditions;
   Future<void> _syncTail = Future<void>.value();
@@ -76,6 +82,7 @@ class PluginStartupContributionsService {
   final Map<String, List<Map<String, dynamic>>> _appliedShortcuts = {};
   final Map<String, List<Map<String, dynamic>>> _appliedSearchDialog = {};
   final Map<String, List<Map<String, dynamic>>> _appliedExternalEditions = {};
+  final Map<String, List<Map<String, dynamic>>> _appliedLibraryBooks = {};
 
   /// תוספים שסונכרנו עם תרומות פעילות בסשן הנוכחי — מאפשר לדלג על ניקוי DB
   /// עבור שאר התוספים (הרוב), שלא נזרע להם דבר.
@@ -222,6 +229,27 @@ class PluginStartupContributionsService {
         );
       }
 
+      if (startup.libraryBooks.isNotEmpty &&
+          granted.contains(pluginLibraryBooksProvidePermission)) {
+        _applyItems(
+          plugin.pluginId,
+          startup.libraryBooks,
+          applied: _appliedLibraryBooks,
+          register: (id, item) => _libraryBooks.registerPayload(
+            id,
+            item,
+            fallbackIconName: plugin.manifest.toolTabIconName,
+          ),
+          removeItem: _libraryBooks.remove,
+        );
+      } else {
+        _removeApplied(
+          plugin.pluginId,
+          _appliedLibraryBooks,
+          _libraryBooks.remove,
+        );
+      }
+
       if (startup.publishedData.isNotEmpty &&
           granted.contains('published_data.write')) {
         await _seedPublishedData(
@@ -318,6 +346,7 @@ class PluginStartupContributionsService {
       ...startup.toolbarItems,
       ...startup.contextMenuItems,
       ...startup.searchDialogItems,
+      ...startup.libraryBooks,
     ]) {
       final raw = item['when'];
       if (raw == null) continue;
@@ -555,6 +584,7 @@ class PluginStartupContributionsService {
       _appliedExternalEditions,
       _externalEditions.remove,
     );
+    _removeApplied(pluginId, _appliedLibraryBooks, _libraryBooks.remove);
     _lazyActivation.removePlugin(pluginId);
     _conditions.removePlugin(pluginId);
     await _removeSeededData(pluginId, repository);

@@ -12,6 +12,7 @@ import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_condition_evaluator.dart';
 import 'package:otzaria/plugins/services/plugin_external_editions_registry.dart';
 import 'package:otzaria/plugins/services/plugin_lazy_activation_service.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/plugins/services/plugin_search_dialog_registry.dart';
 import 'package:otzaria/plugins/services/plugin_shortcut_registry.dart';
 import 'package:otzaria/plugins/services/plugin_startup_contributions_service.dart';
@@ -193,6 +194,13 @@ const _allPermissions = {
   'events.subscribe:reader.sectionContentChanged',
 };
 
+/// הטעינה מה-DB מפוענחת ב-isolate, ולכן לוקחת זמן אמיתי.
+Future<void> _eventually(bool Function() condition) async {
+  for (var i = 0; i < 200 && !condition(); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
 void main() {
   late PluginToolbarRegistry toolbar;
   late ContextMenuRegistry contextMenu;
@@ -200,10 +208,19 @@ void main() {
   late PluginLazyActivationService activation;
   late PluginSearchDialogRegistry searchDialog;
   late PluginExternalEditionsRegistry externalEditions;
+  late PluginLibraryBooksRegistry libraryBooks;
   late PluginStartupContributionsService service;
   late _FakeRepo repo;
 
   setUp(() {
+    repo = _FakeRepo();
+    libraryBooks = PluginLibraryBooksRegistry.forTesting(
+      dispatch: (_, _, _) async {},
+      conditions: PluginConditionEvaluator.forTesting(
+        settingReader: (_) => null,
+      ),
+      repository: repo,
+    );
     toolbar = PluginToolbarRegistry.forTesting();
     contextMenu = ContextMenuRegistry.forTesting();
     shortcuts = PluginShortcutRegistry.forTesting();
@@ -217,8 +234,8 @@ void main() {
       shortcutRegistry: shortcuts,
       searchDialogRegistry: searchDialog,
       externalEditionsRegistry: externalEditions,
+      libraryBooksRegistry: libraryBooks,
     );
-    repo = _FakeRepo();
   });
 
   test('registers all contributions when permissions are granted', () async {
@@ -326,6 +343,75 @@ void main() {
 
       await service.sync(const [], repo);
       expect(externalEditions.configs, isEmpty);
+    });
+  });
+
+  group('libraryBooks', () {
+    Map<String, dynamic> startup() => {
+      'libraryBooks': [
+        {'id': 'books', 'provider': 'mylib', 'title': 'הספרייה שלי'},
+      ],
+    };
+    const permissions = {
+      'app.startup_contributions',
+      'library.books.provide',
+    };
+
+    test('נרשם עם ההרשאה, ורשימה שמורה נטענת מה-DB', () async {
+      repo.kv['p1|otzaria.library-books|mylib'] = jsonEncode({
+        'version': 1,
+        'books': [
+          [1, 'אבני נזר', null, null],
+        ],
+      });
+      repo.grantedByPlugin['p1'] = {...permissions};
+
+      await service.sync([_plugin(startup: startup())], repo);
+      await _eventually(() => libraryBooks.visibleBooks.isNotEmpty);
+
+      expect(libraryBooks.isOwner('p1', 'mylib'), isTrue);
+      expect(libraryBooks.visibleBooks.single.title, 'אבני נזר');
+    });
+
+    test('שלילת ההרשאה מסירה, והחזרתה משחזרת מה-DB', () async {
+      repo.grantedByPlugin['p1'] = {...permissions};
+      await service.sync([_plugin(startup: startup())], repo);
+      await libraryBooks.setBooks('p1', 'mylib', [
+        {'id': 1, 'title': 'אבני נזר'},
+      ]);
+
+      repo.grantedByPlugin['p1'] = {'app.startup_contributions'};
+      await service.sync([_plugin(startup: startup())], repo);
+      expect(libraryBooks.isOwner('p1', 'mylib'), isFalse);
+
+      repo.grantedByPlugin['p1'] = {...permissions};
+      await service.sync([_plugin(startup: startup())], repo);
+      await _eventually(() => libraryBooks.visibleBooks.isNotEmpty);
+      expect(libraryBooks.visibleBooks.single.title, 'אבני נזר');
+    });
+
+    test('הסרת התוסף מסירה את הספק', () async {
+      repo.grantedByPlugin['p1'] = {...permissions};
+      await service.sync([_plugin(startup: startup())], repo);
+
+      await service.sync(const [], repo);
+
+      expect(libraryBooks.isOwner('p1', 'mylib'), isFalse);
+    });
+
+    test('לחיצה על ספר מעירה מנוע רקע כשהריצה ברקע הותרה', () async {
+      repo.grantedByPlugin['p1'] = {...permissions, 'app.run_on_startup'};
+
+      await service.sync([_plugin(startup: startup())], repo);
+
+      expect(
+        activation.queueTargetedEvent(
+          'p1',
+          PluginLibraryBooksRegistry.openRequestedTopic,
+          {},
+        ),
+        isTrue,
+      );
     });
   });
 

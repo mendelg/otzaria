@@ -165,6 +165,20 @@ void main() {
     },
   );
 
+  test('ספק ספרים לחיפוש הספרייה מוסבר כסיבה להפעלה ברקע', () {
+    final manifest = _manifest(
+      startup: {
+        'libraryBooks': [
+          {'id': 'books', 'provider': 'mylib', 'title': 'ספרייה'},
+        ],
+      },
+    );
+
+    expect(pluginBackgroundActivationReasons(manifest), [
+      'בחירת ספר של התוסף במסך הספרייה',
+    ]);
+  });
+
   test('static-only contribution says the background grant is unused', () {
     final manifest = _manifest(
       startup: {

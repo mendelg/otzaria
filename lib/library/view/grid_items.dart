@@ -6,6 +6,8 @@ import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/data_providers/external_catalog_mapper.dart';
+import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
+import 'package:otzaria/plugins/utils/plugin_icon_resolver.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'dart:math';
 import 'package:otzaria/core/ui_snack.dart';
@@ -77,8 +79,29 @@ String? externalCatalogLogoAsset(Book book) {
   }
 }
 
+/// אייקון הספק לספר שתוסף הוסיף; `null` לכל ספר אחר.
+Widget? pluginBookIcon(
+  Book book, {
+  required Color color,
+  required double size,
+}) {
+  final provider = PluginLibraryBooksRegistry.instance.providerOf(book);
+  if (provider == null) return null;
+  return Icon(
+    pluginIconFromName(provider.iconName) ?? FluentIcons.book_24_regular,
+    color: color,
+    size: size,
+  );
+}
+
 /// בונה את תוכן אייקון הספר: לוגו הקטלוג החיצוני אם קיים, אחרת אייקון לפי סוג הקובץ.
 Widget _buildBookIconChild(Book book, ColorScheme cs, double iconSize) {
+  final pluginIcon = pluginBookIcon(
+    book,
+    color: cs.onSecondaryContainer,
+    size: iconSize,
+  );
+  if (pluginIcon != null) return pluginIcon;
   final logoAsset = externalCatalogLogoAsset(book);
   if (logoAsset != null) {
     return Image.asset(
@@ -415,10 +438,14 @@ class BookGridItem extends StatelessWidget {
                       book: book,
                       showTopics: showTopics,
                     ),
-                    _BookGridActionColumn(
-                      book: book,
-                      onBookDeleted: onBookDeleted,
-                    ),
+                    // "אודות הספר" מחפש לפי כותרת, ולספר של תוסף היה מציג
+                    // את פרטי ספר אוצריא בעל אותו שם.
+                    if (PluginLibraryBooksRegistry.instance.providerOf(book) ==
+                        null)
+                      _BookGridActionColumn(
+                        book: book,
+                        onBookDeleted: onBookDeleted,
+                      ),
                   ],
                 ),
               ),
