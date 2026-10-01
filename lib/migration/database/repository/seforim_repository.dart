@@ -140,12 +140,12 @@ class SeforimRepository {
     // WAL חוזר היה עוקף את החזרה ל-journal רגיל כש-WAL אינו שמיש.
     // cache_size שלילי = קילובייטים (חיובי = עמודים!). חיבור הקריאה נשאר פתוח
     // לכל אורך הריצה, ולכן מטמון ה-heap שלו תורם ישירות לצריכת ה-RAM במצב סרק.
-    // 50MB מספיק; ה-OS file cache וה-mmap מכסים את רוב הקריאות ממילא.
+    // 32MB מספיק; ה-OS file cache וה-mmap מכסים את רוב הקריאות ממילא.
     // מסד מצורף: כמה כאלה פתוחים במקביל, ומטמון גדול לכל אחד מצטבר ל-RAM.
     await _executeRawQuery(
       _database.isUntrusted
           ? 'PRAGMA cache_size=-8000' // 8MB
-          : 'PRAGMA cache_size=-50000', // 50MB
+          : 'PRAGMA cache_size=-32000', // 32MB
     );
     await _executeRawQuery('PRAGMA temp_store=MEMORY');
     // מסד מצורף: mmap כבוי בכוונה — ראה openUntrustedReadOnlyDatabase.
@@ -315,7 +315,7 @@ class SeforimRepository {
       await _executeRawQuery('PRAGMA cache_size=-8000'); // 8MB
       return;
     }
-    await _executeRawQuery('PRAGMA cache_size=-50000'); // 50MB (שלילי=ק"ב)
+    await _executeRawQuery('PRAGMA cache_size=-32000'); // 32MB (שלילי=ק"ב)
     await _executeRawQuery('PRAGMA mmap_size=67108864'); // 64MB
   }
 
@@ -325,7 +325,7 @@ class SeforimRepository {
     await executeRawQuery('PRAGMA synchronous=NORMAL');
     await _trySetWal();
     await executeRawQuery('PRAGMA locking_mode=NORMAL');
-    await executeRawQuery('PRAGMA cache_size=-50000'); // 50MB (שלילי=ק"ב)
+    await executeRawQuery('PRAGMA cache_size=-32000'); // 32MB (שלילי=ק"ב)
     _logger.info('Normal performance mode restored');
   }
 
