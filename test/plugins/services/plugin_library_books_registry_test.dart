@@ -238,6 +238,24 @@ void main() {
       expect(notifications, 1);
     });
 
+    test('רשימת הספרים הגלויה נשמרת עד לשינוי ואינה ניתנת לשינוי', () async {
+      registry.registerPayload('p1', _provider());
+      await registry.setBooks('p1', 'mylib', [
+        {'id': 1, 'title': 'א'},
+      ]);
+
+      final snapshot = registry.visibleBooks;
+      expect(identical(registry.visibleBooks, snapshot), isTrue);
+      expect(() => snapshot.clear(), throwsUnsupportedError);
+
+      await registry.setBooks('p1', 'mylib', [
+        {'id': 1, 'title': 'ב'},
+      ]);
+
+      expect(identical(registry.visibleBooks, snapshot), isFalse);
+      expect(registry.visibleBooks.single.title, 'ב');
+    });
+
     test('שינוי שם הספק באותו פריט מסיר את הישן', () async {
       registry.registerPayload('p1', _provider(id: 'main', provider: 'foo'));
       await registry.setBooks('p1', 'foo', [

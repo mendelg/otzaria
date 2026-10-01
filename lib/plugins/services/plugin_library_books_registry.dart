@@ -85,6 +85,7 @@ class PluginLibraryBooksRegistry extends ChangeNotifier {
   /// הספקים שהוצגו בהודעה האחרונה. המעריך מודיע על כל מפתח של כל תוסף,
   /// וכל הודעה כאן מריצה מחדש את החיפוש המוצג בספרייה.
   Set<String> _visibleProviders = const {};
+  List<ExternalLibraryBook> _visibleBooks = const [];
 
   @visibleForTesting
   Iterable<PluginLibraryBookProvider> get providers => _providers.values;
@@ -97,11 +98,7 @@ class PluginLibraryBooksRegistry extends ChangeNotifier {
       List.unmodifiable(_books[provider] ?? const []);
 
   /// ספרי הספקים שתנאי ה-`when` שלהם מתקיים כרגע.
-  List<ExternalLibraryBook> get visibleBooks => [
-    for (final provider in _providers.values)
-      if (_conditions.isVisible(provider.pluginId, provider.when))
-        ...?_books[provider.provider],
-  ];
+  List<ExternalLibraryBook> get visibleBooks => _visibleBooks;
 
   /// הספק שהספר שייך לו, רק כשהספק רשום כרגע לתוסף שיצר את הספר.
   PluginLibraryBookProvider? providerOf(Book book) {
@@ -371,7 +368,13 @@ class PluginLibraryBooksRegistry extends ChangeNotifier {
 
   @override
   void notifyListeners() {
-    _visibleProviders = _computeVisibleProviders();
+    final visibleProviders = _computeVisibleProviders();
+    _visibleProviders = visibleProviders;
+    _visibleBooks = List.unmodifiable([
+      for (final provider in _providers.values)
+        if (visibleProviders.contains(provider.provider))
+          ...?_books[provider.provider],
+    ]);
     super.notifyListeners();
   }
 
@@ -383,5 +386,6 @@ class PluginLibraryBooksRegistry extends ChangeNotifier {
     _pending.clear();
     _revisions.clear();
     _visibleProviders = const {};
+    _visibleBooks = const [];
   }
 }
