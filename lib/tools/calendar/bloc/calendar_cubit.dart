@@ -1,15 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
-import 'package:googleapis/calendar/v3.dart' as cal;
 import 'package:kosher_dart/kosher_dart.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/tools/calendar/services/notification_service.dart';
+import 'package:otzaria/tools/calendar/repository/google_calendar_repository.dart';
 import 'package:otzaria/tools/calendar/services/google_calendar_service.dart';
 import 'package:otzaria/tools/calendar/services/ics_calendar_service.dart';
 import 'package:otzaria/tools/calendar/helpers/zmanim_helpers.dart'
@@ -57,14 +56,13 @@ class _DefaultPluginSource implements CalendarPluginSource {
 
 // Calendar Cubit
 class CalendarCubit extends Cubit<CalendarState> {
-  static const String _primaryGoogleCalendarId = 'primary';
   static const int _zmanScheduleDaysAhead = 45;
   // גם לאחר חודש בלי היום המבוקש, המרווח הבא בין מופעים יכול להגיע ל־61 יום.
   static const int _eventScheduleDaysAhead = 62;
 
   final SettingsRepository _settingsRepository;
   final NotificationService _notificationService;
-  final GoogleCalendarService _googleCalendarService;
+  final GoogleCalendarRepository _googleCalendar;
   final IcsCalendarService _icsCalendarService;
   final CalendarPluginSource _pluginCalendarAdapter;
   final DateTime Function() _now;
@@ -101,8 +99,9 @@ class CalendarCubit extends Cubit<CalendarState> {
     DateTime Function()? now,
   }) : _settingsRepository = settingsRepository ?? SettingsRepository(),
        _notificationService = notificationService ?? NotificationService(),
-       _googleCalendarService =
-           googleCalendarService ?? GoogleCalendarService(),
+       _googleCalendar = GoogleCalendarRepository(
+         googleCalendarService ?? GoogleCalendarService(),
+       ),
        _icsCalendarService = icsCalendarService ?? IcsCalendarService(),
        _pluginCalendarAdapter =
            pluginCalendarAdapter ?? const _DefaultPluginSource(),
@@ -965,7 +964,7 @@ class CalendarCubit extends Cubit<CalendarState> {
     await _settingsRepository.updateGoogleCalendarEnabled(enabled);
 
     if (!enabled) {
-      await _googleCalendarService.signOut();
+      await _googleCalendar.signOut();
       emit(
         state.copyWith(
           googleCalendarConnected: false,
@@ -986,36 +985,8 @@ class CalendarCubit extends Cubit<CalendarState> {
     await _settingsRepository.updateGoogleCalendarSelectedIds(calendarIds);
   }
 
-  Future<List<GoogleCalendarInfo>> getAvailableCalendars() async {
-    final apiClient = await _googleCalendarService.getApiClient(
-      interactive: true,
-    );
-    if (apiClient == null) return [];
-
-    try {
-      final calendarList = await apiClient.api.calendarList.list();
-      final calendars = <GoogleCalendarInfo>[];
-
-      for (final item in calendarList.items ?? []) {
-        if (item.id != null && item.summary != null) {
-          calendars.add(
-            GoogleCalendarInfo(
-              id: item.id!,
-              name: item.summary!,
-              isPrimary: item.primary ?? false,
-            ),
-          );
-        }
-      }
-
-      return calendars;
-    } catch (e) {
-      // Failed to fetch calendars
-      return [];
-    } finally {
-      apiClient.close();
-    }
-  }
+  Future<List<GoogleCalendarInfo>> getAvailableCalendars() =>
+      _googleCalendar.listCalendars();
 
   Future<void> updateGoogleCalendarSyncPastDays(int days) async {
     emit(state.copyWith(googleCalendarSyncPastDays: days));
@@ -1031,10 +1002,7 @@ class CalendarCubit extends Cubit<CalendarState> {
     emit(state.copyWith(googleCalendarSyncInProgress: true));
 
     try {
-      final apiClient = await _googleCalendarService.getApiClient(
-        interactive: true,
-      );
-      if (apiClient == null) {
+      if (!await _googleCalendar.canConnect(interactive: true)) {
         emit(
           state.copyWith(
             googleCalendarSyncInProgress: false,
@@ -1045,7 +1013,6 @@ class CalendarCubit extends Cubit<CalendarState> {
         return false;
       }
 
-      apiClient.close();
       emit(
         state.copyWith(
           googleCalendarConnected: true,
@@ -1081,7 +1048,7 @@ class CalendarCubit extends Cubit<CalendarState> {
   }
 
   Future<void> disconnectGoogleCalendar() async {
-    await _googleCalendarService.signOut();
+    await _googleCalendar.signOut();
     // אירוע שיובא מגוגל נושא את מזהה גוגל גם כ-id; אירוע שנוצר באוצריא
     // ונדחף לגוגל שומר id מקומי, ולכן נשאר — הוא נתון של המשתמש.
     final remaining = state.events
@@ -1108,10 +1075,16 @@ class CalendarCubit extends Cubit<CalendarState> {
     );
 
     try {
-      final apiClient = await _googleCalendarService.getApiClient(
+      // Calculate date range for sync
+      final now = DateTime.now();
+      final events = await _googleCalendar.fetchEvents(
+        existingEvents: () => state.events,
+        calendarIds: state.googleCalendarSelectedIds,
+        timeMin: now.subtract(Duration(days: state.googleCalendarSyncPastDays)),
+        timeMax: now.add(Duration(days: state.googleCalendarSyncFutureDays)),
         interactive: interactive,
       );
-      if (apiClient == null) {
+      if (events == null) {
         emit(
           state.copyWith(
             googleCalendarSyncInProgress: false,
@@ -1123,53 +1096,10 @@ class CalendarCubit extends Cubit<CalendarState> {
       }
 
       try {
-        // Calculate date range for sync
-        final now = DateTime.now();
-        final timeMin = now.subtract(
-          Duration(days: state.googleCalendarSyncPastDays),
-        );
-        final timeMax = now.add(
-          Duration(days: state.googleCalendarSyncFutureDays),
-        );
-
-        final calendarColorIndices = await _loadGoogleCalendarColorIndices(
-          apiClient.api,
-        );
-        final merger = _GoogleEventsMerger(
-          existing: state.events,
-          mapper: fromGoogleEvent,
-        );
-
-        // Fetch events from all selected calendars with pagination.
-        for (final calendarId in state.googleCalendarSelectedIds) {
-          try {
-            String? pageToken;
-            do {
-              final result = await apiClient.api.events.list(
-                calendarId,
-                singleEvents: true,
-                orderBy: 'startTime',
-                timeMin: timeMin.toUtc(),
-                timeMax: timeMax.toUtc(),
-                maxResults: 2500, // Google's max per request
-                pageToken: pageToken,
-              );
-              merger.mergePage(
-                result.items ?? const [],
-                inheritedColorIndex: calendarColorIndices[calendarId],
-              );
-              pageToken = result.nextPageToken;
-            } while (pageToken != null);
-          } catch (e) {
-            // Continue with other calendars if one fails
-            debugPrint('Failed to sync calendar $calendarId: $e');
-          }
-        }
-
         final syncTime = DateTime.now();
         emit(
           state.copyWith(
-            events: merger.events,
+            events: events,
             googleCalendarConnected: true,
             googleCalendarSyncInProgress: false,
             googleCalendarLastSync: syncTime,
@@ -1179,17 +1109,12 @@ class CalendarCubit extends Cubit<CalendarState> {
         await _settingsRepository.updateGoogleCalendarLastSync(
           syncTime.millisecondsSinceEpoch,
         );
-        await _saveEventsToStorage(merger.events);
+        await _saveEventsToStorage(events);
       } catch (e) {
-        emit(
-          state.copyWith(
-            googleCalendarSyncInProgress: false,
-            googleCalendarSyncError: 'שגיאה בסנכרון עם Google Calendar: $e',
-          ),
-        );
-      } finally {
-        apiClient.close();
+        _emitGoogleSyncError(e);
       }
+    } on GoogleCalendarSyncException catch (e) {
+      _emitGoogleSyncError(e.cause);
     } catch (e) {
       final errorMessage = _formatGoogleCalendarError(e);
 
@@ -1201,6 +1126,15 @@ class CalendarCubit extends Cubit<CalendarState> {
         ),
       );
     }
+  }
+
+  void _emitGoogleSyncError(Object error) {
+    emit(
+      state.copyWith(
+        googleCalendarSyncInProgress: false,
+        googleCalendarSyncError: 'שגיאה בסנכרון עם Google Calendar: $error',
+      ),
+    );
   }
 
   // --- ייבוא יומנים בפורמט ICS ---
@@ -1339,94 +1273,23 @@ class CalendarCubit extends Cubit<CalendarState> {
     );
   }
 
-  Future<Map<String, int>> _loadGoogleCalendarColorIndices(
-    cal.CalendarApi api,
-  ) async {
-    final colors = <String, int>{};
-    try {
-      String? pageToken;
-      do {
-        final page = await api.calendarList.list(pageToken: pageToken);
-        for (final calendar in page.items ?? []) {
-          final id = calendar.id;
-          final color = CalendarEventColors.indexForGoogleColorHex(
-            calendar.backgroundColor,
-          );
-          if (id != null && color != null) colors[id] = color;
-        }
-        pageToken = page.nextPageToken;
-      } while (pageToken != null);
-    } catch (error) {
-      debugPrint('Failed to load Google calendar colors: $error');
-    }
-    return colors;
-  }
-
   Future<void> _refreshGoogleConnectionStatus() async {
     if (!state.googleCalendarEnabled) {
       emit(state.copyWith(googleCalendarConnected: false));
       return;
     }
 
-    final signedIn = await _googleCalendarService.isSignedIn();
+    final signedIn = await _googleCalendar.isSignedIn();
     emit(state.copyWith(googleCalendarConnected: signedIn));
   }
 
   Future<String?> _upsertGoogleEvent(CustomEvent event) async {
     if (!state.googleCalendarEnabled) return null;
-
-    final apiClient = await _googleCalendarService.getApiClient(
-      interactive: false,
-    );
-    if (apiClient == null) return null;
-
-    try {
-      final timeZoneId = _resolveTimeZone();
-      final googleEvent = toGoogleEvent(event, timeZoneId);
-
-      if (event.googleEventId == null || event.googleEventId!.isEmpty) {
-        final created = await apiClient.api.events.insert(
-          googleEvent,
-          _primaryGoogleCalendarId,
-        );
-        return created.id;
-      } else {
-        final updated = await apiClient.api.events.update(
-          googleEvent,
-          _primaryGoogleCalendarId,
-          event.googleEventId!,
-        );
-        return updated.id ?? event.googleEventId;
-      }
-    } catch (e) {
-      debugPrint('Failed to upsert Google event: $e');
-      // Return null to indicate failure, but don't crash the app
-      return null;
-    } finally {
-      apiClient.close();
-    }
+    return _googleCalendar.upsertEvent(event, _resolveTimeZone());
   }
 
-  Future<void> _deleteGoogleEvent(CustomEvent event) async {
-    if (event.googleEventId == null || event.googleEventId!.isEmpty) return;
-
-    final apiClient = await _googleCalendarService.getApiClient(
-      interactive: false,
-    );
-    if (apiClient == null) return;
-
-    try {
-      await apiClient.api.events.delete(
-        _primaryGoogleCalendarId,
-        event.googleEventId!,
-      );
-    } catch (e) {
-      debugPrint('Failed to delete Google event: $e');
-      // Ignore delete failures to avoid blocking local delete
-    } finally {
-      apiClient.close();
-    }
-  }
+  Future<void> _deleteGoogleEvent(CustomEvent event) =>
+      _googleCalendar.deleteEvent(event);
 
   String _resolveTimeZone() {
     final cityData = _getCityData(state.selectedCity);
@@ -1441,294 +1304,6 @@ class CalendarCubit extends Cubit<CalendarState> {
     events[index] = events[index].copyWith(googleEventId: googleEventId);
     emit(state.copyWith(events: events));
     _saveEventsToStorage(events);
-  }
-
-  @visibleForTesting
-  List<CustomEvent> mergeGoogleEvents(
-    List<CustomEvent> existing,
-    List<cal.Event> googleEvents, {
-    int? inheritedColorIndex,
-  }) {
-    return mergeGoogleEventPages(
-      existing,
-      [googleEvents],
-      inheritedColorIndex: inheritedColorIndex,
-    );
-  }
-
-  @visibleForTesting
-  List<CustomEvent> mergeGoogleEventPages(
-    List<CustomEvent> existing,
-    Iterable<List<cal.Event>> pages, {
-    int? inheritedColorIndex,
-  }) {
-    final merger = _GoogleEventsMerger(
-      existing: existing,
-      mapper: fromGoogleEvent,
-    );
-    for (final page in pages) {
-      merger.mergePage(page, inheritedColorIndex: inheritedColorIndex);
-    }
-    return merger.events;
-  }
-
-  @visibleForTesting
-  CustomEvent? fromGoogleEvent(
-    cal.Event gEvent, {
-    int? inheritedColorIndex,
-  }) {
-    final start = gEvent.start?.dateTime ?? gEvent.start?.date;
-    if (start == null) return null;
-
-    final date = DateTime(start.year, start.month, start.day);
-    final jewishDate = JewishDate.fromDateTime(date);
-    final otzariaId = gEvent.extendedProperties?.private?['otzaria_event_id'];
-
-    final isAllDay =
-        gEvent.start?.date != null && gEvent.start?.dateTime == null;
-    DateTime? endDate;
-    final rawEnd = gEvent.end?.dateTime ?? gEvent.end?.date;
-    if (rawEnd != null) {
-      // באירוע יום-שלם ה-end של גוגל בלעדי (day after).
-      final inclusiveEnd = isAllDay
-          ? DateTime(rawEnd.year, rawEnd.month, rawEnd.day - 1)
-          : DateTime(rawEnd.year, rawEnd.month, rawEnd.day);
-      if (inclusiveEnd.isAfter(date)) {
-        endDate = inclusiveEnd;
-      }
-    }
-
-    RecurrenceType recurrenceType = RecurrenceType.none;
-    final recurrenceRule = gEvent.recurrence?.isNotEmpty == true
-        ? gEvent.recurrence!.first
-        : null;
-
-    if (recurrenceRule != null) {
-      if (recurrenceRule.contains('FREQ=WEEKLY')) {
-        recurrenceType = RecurrenceType.weekly;
-      } else if (recurrenceRule.contains('FREQ=MONTHLY')) {
-        // Check for Hebrew monthly marker
-        if (recurrenceRule.contains('X-OTZARIA-TYPE=otzaria_hebrew_monthly')) {
-          recurrenceType = RecurrenceType.monthlyHebrew;
-        } else {
-          recurrenceType = RecurrenceType.monthlyGregorian;
-        }
-      } else if (recurrenceRule.contains('FREQ=YEARLY')) {
-        // Check for Hebrew yearly marker
-        if (recurrenceRule.contains('X-OTZARIA-TYPE=otzaria_hebrew_yearly')) {
-          recurrenceType = RecurrenceType.annualHebrew;
-        } else {
-          recurrenceType = RecurrenceType.annualGregorian;
-        }
-      }
-    }
-
-    return CustomEvent(
-      id: otzariaId ?? gEvent.id ?? _generateUniqueId(),
-      title: gEvent.summary ?? 'אירוע ללא כותרת',
-      description: gEvent.description ?? '',
-      createdAt: gEvent.created ?? DateTime.now(),
-      baseGregorianDate: DateTime(date.year, date.month, date.day),
-      baseJewishYear: jewishDate.getJewishYear(),
-      baseJewishMonth: jewishDate.getJewishMonth(),
-      baseJewishDay: jewishDate.getJewishDayOfMonth(),
-      recurrenceType: recurrenceType,
-      recurringYears: null, // Not used in current implementation
-      googleEventId: gEvent.id,
-      eventTime: isAllDay
-          ? null
-          : TimeOfDay(hour: start.hour, minute: start.minute),
-      endGregorianDate: endDate,
-      recurrenceEndDate: recurrenceType == RecurrenceType.none
-          ? null
-          : _parseGoogleRecurrenceEnd(recurrenceRule),
-      endTime: isAllDay || rawEnd == null
-          ? null
-          : TimeOfDay(hour: rawEnd.hour, minute: rawEnd.minute),
-      colorIndex: CalendarEventColors.indexForGoogleColorId(gEvent.colorId),
-      inheritedColorIndex: gEvent.colorId == null ? inheritedColorIndex : null,
-      googleColorId: gEvent.colorId,
-    );
-  }
-
-  DateTime? _parseGoogleRecurrenceEnd(String? recurrenceRule) {
-    final match = RegExp(
-      r'(?:^|;)UNTIL=(\d{8})',
-    ).firstMatch(recurrenceRule ?? '');
-    if (match == null) return null;
-    final date = match.group(1)!;
-    return DateTime(
-      int.parse(date.substring(0, 4)),
-      int.parse(date.substring(4, 6)),
-      int.parse(date.substring(6, 8)),
-    );
-  }
-
-  String _generateUniqueId() {
-    // Generate a more reliable unique ID
-    final timestamp = DateTime.now().microsecondsSinceEpoch;
-    final random = Random().nextInt(0x7FFFFFFF);
-    return 'otzaria_${timestamp}_$random';
-  }
-
-  @visibleForTesting
-  cal.Event toGoogleEvent(CustomEvent event, String timeZoneId) {
-    final baseDate = event.baseGregorianDate;
-    final startDate = DateTime(baseDate.year, baseDate.month, baseDate.day);
-    final isTimed = event.eventTime != null;
-    final lastDay = event.endGregorianDate != null
-        ? DateTime(
-            event.endGregorianDate!.year,
-            event.endGregorianDate!.month,
-            event.endGregorianDate!.day,
-          )
-        : startDate;
-
-    final extendedProps = {
-      'otzaria_event_id': event.id,
-      'otzaria_recurrence_type': event.recurrenceType.index.toString(),
-    };
-
-    // Store recurring years if set
-    if (event.recurringYears != null) {
-      extendedProps['recurring_years'] = event.recurringYears.toString();
-    }
-
-    final googleEvent = cal.Event()
-      ..summary = event.title
-      ..description = event.description
-      ..start = _googleEventDateTime(
-        date: startDate,
-        time: event.eventTime,
-        timeZoneId: timeZoneId,
-      )
-      ..end = _googleEventDateTime(
-        date: isTimed
-            ? lastDay
-            : DateTime(lastDay.year, lastDay.month, lastDay.day + 1),
-        time: event.endTime,
-        timeZoneId: timeZoneId,
-        fallbackStartTime: event.eventTime,
-        moveToNextDayWhenEarlier:
-            isTimed && _isSameDateOnly(lastDay, startDate),
-      )
-      ..extendedProperties = (cal.EventExtendedProperties()
-        ..private = extendedProps);
-
-    googleEvent.colorId =
-        event.googleColorId ??
-        CalendarEventColors.googleColorIdForIndex(event.colorIndex);
-
-    final recurrence = _googleRecurrenceRule(event);
-    if (recurrence != null) {
-      googleEvent.recurrence = [recurrence];
-    }
-
-    return googleEvent;
-  }
-
-  cal.EventDateTime _googleEventDateTime({
-    required DateTime date,
-    required String timeZoneId,
-    TimeOfDay? time,
-    TimeOfDay? fallbackStartTime,
-    bool moveToNextDayWhenEarlier = false,
-  }) {
-    final value = cal.EventDateTime()..timeZone = timeZoneId;
-    if (time == null && fallbackStartTime == null) {
-      value.date = date;
-      return value;
-    }
-
-    final resolvedTime =
-        time ??
-        TimeOfDay(
-          hour: (fallbackStartTime!.hour + 1) % 24,
-          minute: fallbackStartTime.minute,
-        );
-    final location = tz.getLocation(timeZoneId);
-    final movesToNextDay =
-        moveToNextDayWhenEarlier &&
-        (resolvedTime.hour * 60 + resolvedTime.minute) <=
-            (fallbackStartTime!.hour * 60 + fallbackStartTime.minute);
-    value.dateTime = tz.TZDateTime(
-      location,
-      date.year,
-      date.month,
-      date.day + (movesToNextDay ? 1 : 0),
-      resolvedTime.hour,
-      resolvedTime.minute,
-    );
-    return value;
-  }
-
-  String? _googleRecurrenceRule(CustomEvent event) {
-    String? freq;
-    String? marker; // Marker to identify Hebrew recurrences
-
-    switch (event.recurrenceType) {
-      case RecurrenceType.weekly:
-        freq = 'WEEKLY';
-        break;
-      case RecurrenceType.monthlyGregorian:
-        freq = 'MONTHLY';
-        break;
-      case RecurrenceType.monthlyHebrew:
-        // Store as monthly with a marker in extended properties
-        freq = 'MONTHLY';
-        marker = 'otzaria_hebrew_monthly';
-        break;
-      case RecurrenceType.annualGregorian:
-        freq = 'YEARLY';
-        break;
-      case RecurrenceType.annualHebrew:
-        // Store as yearly with a marker in extended properties
-        freq = 'YEARLY';
-        marker = 'otzaria_hebrew_yearly';
-        break;
-      case RecurrenceType.none:
-        return null;
-    }
-
-    final buffer = StringBuffer('RRULE:FREQ=$freq');
-
-    // Add marker for Hebrew recurrences as a comment
-    if (marker != null) {
-      buffer.write(';X-OTZARIA-TYPE=$marker');
-    }
-
-    final recurrenceEnd =
-        event.recurrenceEndDate ??
-        (event.recurringYears != null && event.recurringYears! > 0
-            ? DateTime(
-                event.baseGregorianDate.year + event.recurringYears!,
-                event.baseGregorianDate.month,
-                event.baseGregorianDate.day,
-              )
-            : null);
-    if (recurrenceEnd != null) {
-      final until = DateTime(
-        recurrenceEnd.year,
-        recurrenceEnd.month,
-        recurrenceEnd.day,
-        23,
-        59,
-        59,
-      ).toUtc();
-      buffer.write(';UNTIL=${_formatRRuleUntil(until)}');
-    }
-
-    return buffer.toString();
-  }
-
-  String _formatRRuleUntil(DateTime dateUtc) {
-    final y = dateUtc.year.toString().padLeft(4, '0');
-    final m = dateUtc.month.toString().padLeft(2, '0');
-    final d = dateUtc.day.toString().padLeft(2, '0');
-    final h = dateUtc.hour.toString().padLeft(2, '0');
-    final min = dateUtc.minute.toString().padLeft(2, '0');
-    final s = dateUtc.second.toString().padLeft(2, '0');
-    return '$y$m${d}T$h$min${s}Z';
   }
 
   // --- ניהול אירועים ---
@@ -1748,7 +1323,7 @@ class CalendarCubit extends Cubit<CalendarState> {
   }) async {
     final baseJewish = JewishDate.fromDateTime(baseGregorianDate);
     final newEvent = CustomEvent(
-      id: _generateUniqueId(), // יצירת ID ייחודי
+      id: generateCalendarEventId(), // יצירת ID ייחודי
       title: title,
       description: description ?? '',
       createdAt: DateTime.now(),
@@ -2357,90 +1932,4 @@ bool _isSameDateOnly(DateTime first, DateTime second) {
   return first.year == second.year &&
       first.month == second.month &&
       first.day == second.day;
-}
-
-typedef _GoogleEventMapper =
-    CustomEvent? Function(cal.Event event, {int? inheritedColorIndex});
-
-class _GoogleEventsMerger {
-  _GoogleEventsMerger({
-    required List<CustomEvent> existing,
-    required this.mapper,
-  }) : events = List<CustomEvent>.from(existing) {
-    for (var index = 0; index < events.length; index++) {
-      final event = events[index];
-      _byLocalId[event.id] = index;
-      final googleId = event.googleEventId;
-      if (googleId != null && googleId.isNotEmpty) {
-        _byGoogleId[googleId] = index;
-      }
-    }
-  }
-
-  final _GoogleEventMapper mapper;
-  final List<CustomEvent> events;
-  final Map<String, int> _byGoogleId = {};
-  final Map<String, int> _byLocalId = {};
-
-  void mergePage(
-    List<cal.Event> googleEvents, {
-    int? inheritedColorIndex,
-  }) {
-    for (final googleEvent in googleEvents) {
-      if (googleEvent.status == 'cancelled') continue;
-
-      final mapped = mapper(
-        googleEvent,
-        inheritedColorIndex: inheritedColorIndex,
-      );
-      if (mapped == null) continue;
-
-      final googleId = googleEvent.id ?? '';
-      final localId =
-          googleEvent.extendedProperties?.private?['otzaria_event_id'];
-      final matchedIndex =
-          (googleId.isNotEmpty ? _byGoogleId[googleId] : null) ??
-          _byLocalId[localId];
-
-      if (matchedIndex != null) {
-        final existing = events[matchedIndex];
-        events[matchedIndex] = existing.copyWith(
-          title: mapped.title,
-          description: mapped.description,
-          baseGregorianDate: mapped.baseGregorianDate,
-          baseJewishYear: mapped.baseJewishYear,
-          baseJewishMonth: mapped.baseJewishMonth,
-          baseJewishDay: mapped.baseJewishDay,
-          googleEventId: googleId.isEmpty ? null : googleId,
-          endGregorianDate: () => mapped.endGregorianDate,
-          recurrenceEndDate: () => mapped.recurrenceEndDate,
-          eventTime: () => mapped.eventTime,
-          endTime: () => mapped.endTime,
-          colorIndex: () => mapped.colorIndex,
-          inheritedColorIndex: () => mapped.inheritedColorIndex,
-          googleColorId: () => mapped.googleColorId,
-        );
-        if (googleId.isNotEmpty) _byGoogleId[googleId] = matchedIndex;
-        continue;
-      }
-
-      events.add(mapped);
-      final index = events.length - 1;
-      _byLocalId[mapped.id] = index;
-      if (googleId.isNotEmpty) _byGoogleId[googleId] = index;
-    }
-  }
-}
-
-// Google Calendar Info
-class GoogleCalendarInfo {
-  final String id;
-  final String name;
-  final bool isPrimary;
-
-  GoogleCalendarInfo({
-    required this.id,
-    required this.name,
-    required this.isPrimary,
-  });
 }

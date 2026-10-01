@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:kosher_dart/kosher_dart.dart';
@@ -380,4 +382,11 @@ class CustomEvent extends Equatable {
     notificationMinutes,
     icsSourceId,
   ];
+}
+
+/// A new unique id for a calendar event.
+String generateCalendarEventId() {
+  final timestamp = DateTime.now().microsecondsSinceEpoch;
+  final random = Random().nextInt(0x7FFFFFFF);
+  return 'otzaria_${timestamp}_$random';
 }
