@@ -5,7 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:kosher_dart/kosher_dart.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 /// מנוי ליומן חיצוני בפורמט ICS (קישור שמתרענן).

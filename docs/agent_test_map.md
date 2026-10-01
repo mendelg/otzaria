@@ -284,10 +284,10 @@
 **Calendar (`lib/tools/calendar/`)**
 | Area | Test File |
 |------|-----------|
-| Cubit (אירועים, פלאגינים, התראות) | `test/tools/calendar/utils/calendar_cubit_test.dart` |
-| סדר אירועים (לפי שעה) — cubit + משווים | `test/tools/calendar/utils/calendar_event_sorting_test.dart` |
+| Cubit (אירועים, פלאגינים, התראות) | `test/tools/calendar/bloc/calendar_cubit_test.dart` |
+| סדר אירועים (לפי שעה) — cubit + משווים | `test/tools/calendar/bloc/calendar_event_sorting_test.dart` |
 | סדר אירועים בתצוגה (פאנל + תא היום) | `test/tools/calendar/widgets/calendar_events_order_test.dart` |
-| זמני היום / אזורי זמן | `test/tools/calendar/utils/calendar_daily_times_test.dart`, `…calendar_timezone_test.dart` |
+| זמני היום / אזורי זמן | `test/tools/calendar/bloc/calendar_daily_times_test.dart`, `…calendar_timezone_test.dart` |
 | כרטיסי זמנים (composite) ורישום הזמנים | `test/tools/calendar/widgets/calendar_composite_entries_test.dart` |
 | עזרי זמנים / מולד | `test/tools/calendar/helpers/zmanim_helpers_test.dart`, `…molad_helpers_test.dart` |
 | דיאלוגים | `test/tools/calendar/dialogs/calendar_dialogs_test.dart` |

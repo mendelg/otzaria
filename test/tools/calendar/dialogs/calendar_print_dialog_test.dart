@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/tools/calendar/dialogs/calendar_print_dialog.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 
 void main() {
   Future<void> pumpDialog(WidgetTester tester, CalendarView view) async {
