@@ -112,6 +112,39 @@ void main() {
     expect(links.single.targetIsUserBook, isTrue);
   });
 
+  test('שורות הכותרות להדפסה נושאות את רמת הערך', () async {
+    final structure = (await reader.structures(bookId)).first;
+
+    final rows = await reader.lineIndices(structure.id);
+
+    expect([for (final r in rows) (r.lineIndex, r.level)], [(2, 2), (5, 2)]);
+  });
+
+  test('בשורה משותפת ההורה קודם לילד גם כשהילד נכתב קודם', () async {
+    final structure = (await reader.structures(bookId)).first;
+    final raw = await db.database;
+    for (final (level, text) in [(2, 'סימן ג'), (1, 'חלק ב')]) {
+      raw.execute(
+        'INSERT INTO user_alt_toc_entry '
+        '(structureId, level, text, lineIndex, isLastChild, hasChildren) '
+        'VALUES (?, ?, ?, 8, 0, 0)',
+        [structure.id, level, text],
+      );
+    }
+
+    final rows = await reader.lineIndices(structure.id);
+
+    expect(
+      [for (final r in rows) (r.lineIndex, r.level)],
+      [
+        (2, 2),
+        (5, 2),
+        (8, 1),
+        (8, 2),
+      ],
+    );
+  });
+
   test('הכותרת הפעילה היא האחרונה שנפתחת בשורה או לפניה', () async {
     final structure = (await reader.structures(bookId)).first;
     final entries = await reader.entries(structure.id);

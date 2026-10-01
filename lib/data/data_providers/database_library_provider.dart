@@ -4844,8 +4844,9 @@ class DatabaseLibraryProvider implements LibraryProvider {
     );
   }
 
-  /// מחזיר רשימת (lineIndex, text) לכל ערכי כותרות משנה בעלי שורה מוגדרת
-  Future<List<({int lineIndex, String text})>> getAltTocLineIndices(
+  /// מחזיר רשימת (lineIndex, level, text) לכל ערכי כותרות משנה בעלי שורה מוגדרת;
+  /// בשורה משותפת ההורה קודם לילדיו.
+  Future<List<({int lineIndex, int level, String text})>> getAltTocLineIndices(
     int structureId, {
     BookSource source = BookSource.official,
   }) async {
@@ -4856,17 +4857,17 @@ class DatabaseLibraryProvider implements LibraryProvider {
         'getAltTocLineIndices (user) $structureId',
       );
     }
-    return _dbOperation<List<({int lineIndex, String text})>>(
+    return _dbOperation<List<({int lineIndex, int level, String text})>>(
       (db) async {
         final results = db
             .select(
               '''
-          SELECT l.lineIndex, t.text
+          SELECT l.lineIndex, e.level, t.text
           FROM alt_toc_entry e
           JOIN tocText t ON e.textId = t.id
           JOIN line l ON e.lineId = l.id
           WHERE e.structureId = ?
-          ORDER BY l.lineIndex
+          ORDER BY l.lineIndex, e.level, e.id
         ''',
               [structureId],
             )
@@ -4876,6 +4877,7 @@ class DatabaseLibraryProvider implements LibraryProvider {
             .map(
               (r) => (
                 lineIndex: r['lineIndex'] as int,
+                level: r['level'] as int,
                 text: r['text'] as String,
               ),
             )

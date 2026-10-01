@@ -94,17 +94,22 @@ class UserAltTocRepository {
     ];
   }
 
-  Future<List<({int lineIndex, String text})>> lineIndices(
+  Future<List<({int lineIndex, int level, String text})>> lineIndices(
     int structureId,
   ) async {
     final db = await _db.database;
     return [
       for (final row in db.select(
-        'SELECT lineIndex, text FROM user_alt_toc_entry '
-        'WHERE structureId = ? AND lineIndex IS NOT NULL ORDER BY lineIndex, id',
+        'SELECT lineIndex, level, text FROM user_alt_toc_entry '
+        'WHERE structureId = ? AND lineIndex IS NOT NULL '
+        'ORDER BY lineIndex, level, id',
         [structureId],
       ))
-        (lineIndex: row['lineIndex'] as int, text: row['text'] as String),
+        (
+          lineIndex: row['lineIndex'] as int,
+          level: row['level'] as int,
+          text: row['text'] as String,
+        ),
     ];
   }
 

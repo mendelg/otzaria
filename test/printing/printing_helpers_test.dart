@@ -251,6 +251,55 @@ void main() {
     });
   });
 
+  group('headerSectionEndLine — כותרות משנה מקוננות', () {
+    // "הלכות" ברמה 1 וסימניהן ברמה 2; ההורה והסימן הראשון פותחים באותה שורה.
+    final alt = [
+      TocEntry(text: 'הלכות א', index: 5, level: 1),
+      TocEntry(text: 'סימן א', index: 5, level: 2),
+      TocEntry(text: 'סימן ב', index: 8, level: 2),
+      TocEntry(text: 'הלכות ב', index: 12, level: 1),
+      TocEntry(text: 'סימן ג', index: 12, level: 2),
+    ];
+
+    test('טווח ה"הלכות" מכסה את כל הסימנים עד ה"הלכות" הבאות', () {
+      expect(headerSectionEndLine(alt, 0, 20), 12);
+      expect(headerSectionEndLine(alt, 3, 20), 20);
+    });
+
+    test('טווח סימן מסתיים בסימן הבא או ב"הלכות" הבאות', () {
+      expect(headerSectionEndLine(alt, 1, 20), 8);
+      expect(headerSectionEndLine(alt, 2, 20), 12);
+    });
+
+    test('altHeadersForPrint נושא את הרמה מהמסד לכותרות ההדפסה', () {
+      final headers = altHeadersForPrint([
+        (lineIndex: 5, level: 1, text: 'הלכות א'),
+        (lineIndex: 5, level: 2, text: 'סימן א'),
+        (lineIndex: 8, level: 2, text: 'סימן ב'),
+      ]);
+
+      expect(
+        [for (final h in headers) (h.index, h.level)],
+        [
+          (5, 1),
+          (5, 2),
+          (8, 2),
+        ],
+      );
+      expect(headerSectionEndLine(headers, 0, 20), 20);
+    });
+
+    test('מבנה שטוח — כל ערך מסתיים בערך הבא', () {
+      final flatAlt = [
+        TocEntry(text: 'a', index: 0),
+        TocEntry(text: 'b', index: 4),
+        TocEntry(text: 'c', index: 9),
+      ];
+      expect(headerSectionEndLine(flatAlt, 0, 20), 4);
+      expect(headerSectionEndLine(flatAlt, 2, 20), 20);
+    });
+  });
+
   group('hasPdfPageRange', () {
     test('startPage=1 ו-endPage=null → אין טווח', () {
       expect(hasPdfPageRange(startPage: 1, endPage: null), isFalse);
