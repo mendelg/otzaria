@@ -1208,9 +1208,9 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
     ).toMapList();
 
     // השאילתה מביאה לכל כותרת את שורתה ושתיים שלפניה — חלון הבדיקה כולו.
-    final linesByIndex = <int, String?>{};
+    // שורה מפוענחת רק כשבדיקת הנראוּת מגיעה אליה, ופעם אחת.
+    final rawByIndex = <int, Object?>{};
     final rows = <({int lineIndex, String label})>[];
-    final codec = LineContentCodec.of(db);
     for (final row in headingRows) {
       final lineIndex = row['lineIndex'];
       final rawLabel = row['label'];
@@ -1219,12 +1219,19 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
           ? parashaHeadingLabel(rawLabel)
           : rawLabel;
       if (label == null) continue;
-      linesByIndex[lineIndex] = codec.text(row['line0']);
-      linesByIndex[lineIndex - 1] ??= codec.text(row['line1']);
-      linesByIndex[lineIndex - 2] ??= codec.text(row['line2']);
+      rawByIndex[lineIndex] = row['line0'];
+      rawByIndex[lineIndex - 1] ??= row['line1'];
+      rawByIndex[lineIndex - 2] ??= row['line2'];
       rows.add((lineIndex: lineIndex, label: label));
     }
-    final headings = buildSectionHeadings(rows, (i) => linesByIndex[i]);
+    final codec = LineContentCodec.of(db);
+    final linesByIndex = <int, String?>{};
+    final headings = buildSectionHeadings(
+      rows,
+      (i) => linesByIndex.containsKey(i)
+          ? linesByIndex[i]
+          : linesByIndex[i] = codec.text(rawByIndex[i]),
+    );
     return (markers: markers, headings: headings);
   } finally {
     if (connection == null) db?.close();

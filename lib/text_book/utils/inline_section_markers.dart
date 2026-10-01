@@ -67,7 +67,7 @@ final RegExp _regularHeadingLine = RegExp(r'^\s*<h[2-6]\b');
 
 /// כמה שורות כותרת רגילות (h2–h6) צמודות מעל שורת היעד ([linesAbove],
 /// מהקרובה לרחוקה). הן תת-חלוקה של הנושא, ולכן כותרת הנושא מוצגת לפניהן.
-int sectionHeadingLinesAbove(List<String?> linesAbove) {
+int sectionHeadingLinesAbove(Iterable<String?> linesAbove) {
   var count = 0;
   for (final line in linesAbove) {
     if (line == null || !_regularHeadingLine.hasMatch(line)) break;
@@ -89,8 +89,22 @@ String _normalizeForMatch(String text) => text
     .replaceAll(_spaces, ' ')
     .trim();
 
+/// תחילית של [_normalizeForMatch] באורך [length] לפחות, או השורה כולה.
+/// חותכים לפני תגית פתוחה: אחרת תוכן התגית היה נשאר בנרמול.
+String _normalizedPrefix(String line, int length) {
+  for (var end = length * 2; end < line.length; end *= 2) {
+    final open = line.indexOf('<', line.lastIndexOf('>', end - 1) + 1);
+    final prefix = _normalizeForMatch(
+      line.substring(0, open >= 0 && open < end ? open : end),
+    );
+    if (prefix.length >= length) return prefix;
+  }
+  return _normalizeForMatch(line);
+}
+
 /// כותרות הנושא להזרקה, לפי שורת העוגן שלהן. [rows] ממוינות לפי שורה ורמה;
-/// [lineAt] מחזיר את תוכן השורה, או null מחוץ לספר.
+/// [lineAt] מחזיר את תוכן השורה, או null מחוץ לספר; נקרא רק לשורות שהבדיקה
+/// מגיעה אליהן, כדי שקורא עצל יפענח מעט שורות.
 Map<int, List<String>> buildSectionHeadings(
   Iterable<({int lineIndex, String label})> rows,
   String? Function(int lineIndex) lineAt,
@@ -99,14 +113,9 @@ Map<int, List<String>> buildSectionHeadings(
   for (final row in rows) {
     final label = cleanSectionHeadingLabel(row.label);
     if (label.isEmpty) continue;
-    final linesAbove = [lineAt(row.lineIndex - 1), lineAt(row.lineIndex - 2)];
-    if (isSectionHeadingVisible(label, [
-      lineAt(row.lineIndex),
-      ...linesAbove,
-    ])) {
-      continue;
-    }
-    final anchor = row.lineIndex - sectionHeadingLinesAbove(linesAbove);
+    String? above(int offset) => lineAt(row.lineIndex - offset);
+    if (isSectionHeadingVisible(label, [0, 1, 2].map(above))) continue;
+    final anchor = row.lineIndex - sectionHeadingLinesAbove([1, 2].map(above));
     headings.putIfAbsent(anchor, () => []).add(label);
   }
   return headings;
@@ -114,12 +123,12 @@ Map<int, List<String>> buildSectionHeadings(
 
 /// האם הכותרת כבר גלויה בפתיחת שורת היעד או באחת השורות שלפניה
 /// ([windowLines]) — שלוש מילותיה הראשונות בראש אחת מהן.
-bool isSectionHeadingVisible(String label, List<String?> windowLines) {
+bool isSectionHeadingVisible(String label, Iterable<String?> windowLines) {
   final key = _normalizeForMatch(label).split(' ').take(3).join(' ');
   if (key.isEmpty) return true;
   for (final line in windowLines) {
     if (line == null) continue;
-    final index = _normalizeForMatch(line).indexOf(key);
+    final index = _normalizedPrefix(line, key.length + 9).indexOf(key);
     // מעט תווים לפני — מספור כמו "(א)" בראש השורה.
     if (index >= 0 && index <= 8) return true;
   }

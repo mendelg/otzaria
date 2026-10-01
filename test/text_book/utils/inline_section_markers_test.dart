@@ -139,6 +139,34 @@ void main() {
         isFalse,
       );
     });
+
+    test('שורה ארוכה: ההתאמה בראשה נמצאת גם בלי לנרמל את כולה', () {
+      final line =
+          '(א) <b>הלכות ציצית</b> ${'טקסט ארוך <i>עם תגיות</i> ' * 500}';
+      expect(isSectionHeadingVisible('הלכות ציצית', [line]), isTrue);
+    });
+
+    test('טקסט בתוך תגית שנחתכה אינו נחשב גלוי', () {
+      final line =
+          '<a t="הלכות ציצית שבת שבת שבת שבת שבת שבת שבת שבת">'
+          '${'טקסט רגיל ' * 50}';
+      expect(isSectionHeadingVisible('הלכות ציצית', [line]), isFalse);
+    });
+  });
+
+  group('buildSectionHeadings', () {
+    test('לא קורא שורות שמעל כותרת שכבר גלויה בשורתה', () {
+      final read = <int>[];
+      final headings = buildSectionHeadings(
+        [(lineIndex: 10, label: 'הלכות ציצית')],
+        (i) {
+          read.add(i);
+          return i == 10 ? '<b>הלכות ציצית</b>' : 'טקסט';
+        },
+      );
+      expect(headings, isEmpty);
+      expect(read, [10]);
+    });
   });
 
   group('parashaHeadingLabel', () {
