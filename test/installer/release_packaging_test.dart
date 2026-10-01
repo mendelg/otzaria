@@ -413,32 +413,66 @@ packages:
       expect('otzaria-release-manifest.json'.endsWith(suffix), isTrue);
     });
 
-    test('פיצול מתקין ה-FULL מותנה במגבלת ה-2 GiB ואינו נדרש היום', () {
-      expect(workflow, contains('GITHUB_ASSET_LIMIT=2147483648'));
+    test('חבילות FULL מפוצלות רק מעל 1.9 GiB, דרך סקריפט אחד', () {
       expect(
         workflow,
         contains(
-          r'for installer in release-files/otzaria-*-windows-full.exe '
-          r'release-files/otzaria-*-windows_arm64-full.exe; do',
+          '- name: Split FULL packages that exceed GitHub\'s asset limit',
         ),
       );
+      final step = workflow.substring(
+        workflow.indexOf('bash tool/release/split_oversized_assets.sh'),
+      );
+      for (final pattern in const [
+        "'otzaria-*-windows-full.exe'",
+        "'otzaria-*-windows_arm64-full.exe'",
+        "'otzaria-linux-full.tar.zst'",
+        "'otzaria-linux-full-arm64.tar.zst'",
+        "'otzaria-macos-full.tar.zst'",
+      ]) {
+        expect(step.substring(0, 400), contains(pattern));
+      }
+      // אריזות ה-FULL כבר אינן נכשלות על הגודל; הפיצול בשלב השחרור מטפל בו.
       expect(
         workflow,
-        contains(r'if [ "$size" -lt "$GITHUB_ASSET_LIMIT" ]; then'),
+        isNot(contains("exceeds GitHub's 2 GiB release-asset limit")),
       );
-      expect(
-        workflow,
-        contains(
-          r'tool/release/split_release_asset.sh "$installer" '
-          r'windows-full-parts "$PART_SIZE"',
-        ),
-      );
+      final script = File(
+        'tool/release/split_oversized_assets.sh',
+      ).readAsStringSync();
+      expect(script, contains('threshold=\${SPLIT_THRESHOLD:-2040109465}'));
+      expect(script, contains('part_size=\${SPLIT_PART_SIZE:-1992294400}'));
 
-      // הגודל בפועל של otzaria-0.9.97-windows-full.exe — התנאי יוצא שקר,
-      // ולכן הנכס של היום נשאר קובץ אחד, בית-בבית.
+      // הגודל של otzaria-0.9.97-windows-full.exe נשאר קובץ אחד.
       const fullInstallerSizeToday = 2012390081;
-      const githubAssetLimit = 2147483648;
-      expect(fullInstallerSizeToday, lessThan(githubAssetLimit));
+      expect(fullInstallerSizeToday, lessThanOrEqualTo(2040109465));
+    });
+
+    test('ה-DB של הספרייה יורד דרך סקריפט שמחבר חלקים בכל אריזות ה-FULL', () {
+      expect(
+        'bash tool/release/download_library_db.sh '
+                'full_installer/library_db/seforim.db.zst'
+            .allMatches(workflow)
+            .length,
+        3,
+      );
+      expect(
+        workflow,
+        isNot(contains('SeforimLibrary/releases/latest/download/seforim')),
+      );
+      final ps1 = File(
+        'installer/download_full_installer_assets.ps1',
+      ).readAsStringSync();
+      expect(ps1, contains(r'"$name.manifest.json"'));
+      expect(ps1, contains(r'tool\release\assemble_split_asset.ps1'));
+      expect(
+        workflow,
+        contains(
+          'bash tool/release/pack_android_full.sh full_installer '
+          'otzaria-android-full .',
+        ),
+      );
+      expect(workflow, contains('path: otzaria-android-full*.zip'));
     });
 
     test('הערות השחרור מציגות את האשף ככלי עזר ואת החלקים אם יופיעו', () {
@@ -587,6 +621,280 @@ packages:
         ),
         'https://example.com/otzaria-0.9.97-windows_arm64.exe',
       );
+    });
+  });
+
+  group('פיצול דינמי לפי גודל', () {
+    late Directory temp;
+    setUp(() => temp = Directory.systemTemp.createTempSync('otzaria_split_'));
+    tearDown(() => temp.deleteSync(recursive: true));
+
+    Future<ProcessResult> run(
+      String script,
+      List<String> args, {
+      Map<String, String> env = const {},
+    }) => Process.run('bash', [script, ...args], environment: env);
+
+    List<int> bytes(int length, int seed) =>
+        List<int>.generate(length, (i) => (i * 7 + seed) % 256);
+
+    List<String> namesIn(Directory dir) =>
+        dir.listSync().map((e) => p.basename(e.path)).toList()..sort();
+
+    test('רק נכס מעל הסף מוחלף בחלקים, ומצורפים סקריפטי ההרכבה', () async {
+      final dir = Directory(p.join(temp.path, 'release'))..createSync();
+      final big = bytes(250, 1);
+      File(
+        p.join(dir.path, 'otzaria-linux-full.tar.zst'),
+      ).writeAsBytesSync(big);
+      File(
+        p.join(dir.path, 'otzaria-macos-full.tar.zst'),
+      ).writeAsBytesSync(bytes(100, 2));
+      File(p.join(dir.path, 'other.bin')).writeAsBytesSync(bytes(500, 3));
+
+      final result = await run(
+        'tool/release/split_oversized_assets.sh',
+        [dir.path, 'otzaria-linux-full.tar.zst', 'otzaria-macos-full.tar.zst'],
+        env: {'SPLIT_THRESHOLD': '100', 'SPLIT_PART_SIZE': '96'},
+      );
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(namesIn(dir), [
+        'assemble_split_asset.ps1',
+        'assemble_split_asset.sh',
+        'other.bin',
+        'otzaria-linux-full.tar.zst.manifest.json',
+        'otzaria-linux-full.tar.zst.part-000',
+        'otzaria-linux-full.tar.zst.part-001',
+        'otzaria-linux-full.tar.zst.part-002',
+        'otzaria-macos-full.tar.zst',
+      ]);
+
+      final joined = p.join(temp.path, 'joined.tar.zst');
+      final assemble = await run('tool/release/assemble_split_asset.sh', [
+        p.join(dir.path, 'otzaria-linux-full.tar.zst.manifest.json'),
+        joined,
+      ]);
+      expect(assemble.exitCode, 0, reason: '${assemble.stderr}');
+      expect(File(joined).readAsBytesSync(), big);
+    });
+
+    test('כשאין נכס גדול לא מצורף דבר', () async {
+      final dir = Directory(p.join(temp.path, 'release'))..createSync();
+      File(
+        p.join(dir.path, 'otzaria-linux-full.tar.zst'),
+      ).writeAsBytesSync([1]);
+      final result = await run('tool/release/split_oversized_assets.sh', [
+        dir.path,
+        'otzaria-linux-full.tar.zst',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(namesIn(dir), ['otzaria-linux-full.tar.zst']);
+    });
+
+    Directory androidBundle(Map<String, int> files) {
+      final root = Directory(
+        p.join(temp.path, 'bundle', 'otzaria-android-full'),
+      )..createSync(recursive: true);
+      var seed = 0;
+      files.forEach((name, size) {
+        File(p.join(root.path, name))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(bytes(size, seed++));
+      });
+      return root;
+    }
+
+    Future<Map<String, List<int>>> extractAll(List<File> zips) async {
+      final out = Directory(p.join(temp.path, 'extracted'))..createSync();
+      for (final zip in zips) {
+        final r = await Process.run('unzip', [
+          '-q',
+          '-o',
+          zip.path,
+          '-d',
+          out.path,
+        ]);
+        expect(r.exitCode, 0, reason: '${r.stderr}');
+      }
+      final root = Directory(p.join(out.path, 'otzaria-android-full'));
+      return {
+        for (final f in root.listSync(recursive: true).whereType<File>())
+          p.relative(f.path, from: root.path).replaceAll(r'\', '/'): f
+              .readAsBytesSync(),
+      };
+    }
+
+    Map<String, String> volumeEnv(int threshold) => {
+      'SPLIT_THRESHOLD': '$threshold',
+      'SPLIT_PART_SIZE': '64',
+      'ZIP_OVERHEAD_MARGIN': '0',
+    };
+
+    test('Android מתחת לסף: ZIP אחד כמו היום', () async {
+      androidBundle({'otzaria-android.apk': 50, 'README.txt': 10});
+      final out = Directory(p.join(temp.path, 'out'))..createSync();
+      final result = await run('tool/release/pack_android_full.sh', [
+        p.join(temp.path, 'bundle'),
+        'otzaria-android-full',
+        out.path,
+      ], env: volumeEnv(1000));
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(namesIn(out), ['otzaria-android-full.zip']);
+    });
+
+    test('Android מעל הסף: כרכי ZIP עצמאיים שמשחזרים את החבילה', () async {
+      final root = androidBundle({
+        'otzaria-android.apk': 30,
+        'README.txt': 10,
+        'library_db/seforim.db.zst': 120,
+        'library_db/talmud_bavli_latest.tar.zst': 90,
+        'library_db/lexical.db': 40,
+      });
+      final original = {
+        for (final f in root.listSync(recursive: true).whereType<File>())
+          p.relative(f.path, from: root.path).replaceAll(r'\', '/'): f
+              .readAsBytesSync(),
+      };
+      final out = Directory(p.join(temp.path, 'out'))..createSync();
+      final result = await run('tool/release/pack_android_full.sh', [
+        p.join(temp.path, 'bundle'),
+        'otzaria-android-full',
+        out.path,
+      ], env: volumeEnv(150));
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      final volumes = namesIn(out);
+      expect(volumes, [
+        'otzaria-android-full-part1.zip',
+        'otzaria-android-full-part2.zip',
+      ]);
+
+      // כל כרך נפתח לבדו, ה-APK והוראות השימוש בכרך הראשון.
+      final first = await Process.run('unzip', [
+        '-Z1',
+        p.join(out.path, volumes.first),
+      ]);
+      expect(
+        first.stdout,
+        contains('otzaria-android-full/otzaria-android.apk'),
+      );
+      for (final volume in volumes) {
+        final listing = await Process.run('unzip', [
+          '-Z1',
+          p.join(out.path, volume),
+        ]);
+        expect(listing.stdout, contains('otzaria-android-full/README.txt'));
+      }
+      final extracted = await extractAll(
+        volumes.map((v) => File(p.join(out.path, v))).toList(),
+      );
+      expect(extracted, original);
+    });
+
+    test('Android: קובץ שגדול מכרך נשמר כחלקים גולמיים עם מניפסט', () async {
+      androidBundle({
+        'otzaria-android.apk': 20,
+        'library_db/seforim.db.zst': 200,
+      });
+      final out = Directory(p.join(temp.path, 'out'))..createSync();
+      final result = await run('tool/release/pack_android_full.sh', [
+        p.join(temp.path, 'bundle'),
+        'otzaria-android-full',
+        out.path,
+      ], env: volumeEnv(150));
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      final extracted = await extractAll(
+        namesIn(out).map((v) => File(p.join(out.path, v))).toList(),
+      );
+      expect(
+        extracted.keys,
+        containsAll([
+          'library_db/seforim.db.zst.manifest.json',
+          'library_db/seforim.db.zst.part-000',
+          'library_db/seforim.db.zst.part-003',
+        ]),
+      );
+      expect(extracted.keys, isNot(contains('library_db/seforim.db.zst')));
+    });
+
+    group('download_library_db.sh', () {
+      late Directory releases;
+      late Directory tagDir;
+      final db = bytes(300, 9);
+
+      setUp(() {
+        releases = Directory(p.join(temp.path, 'releases'))..createSync();
+        tagDir = Directory(p.join(releases.path, 'download', 'v31'))
+          ..createSync(recursive: true);
+      });
+
+      Future<ProcessResult> download(String out) => run(
+        'tool/release/download_library_db.sh',
+        [out],
+        env: {
+          'SEFORIM_LIBRARY_DOWNLOAD_BASE': Uri.directory(
+            releases.path,
+          ).toString().replaceAll(RegExp(r'/$'), ''),
+          'SEFORIM_LIBRARY_TAG': 'v31',
+        },
+      );
+
+      Future<void> publishSplit() async {
+        final source = File(p.join(temp.path, 'seforim-schema6.db.zst'))
+          ..writeAsBytesSync(db);
+        final split = await run('tool/release/split_release_asset.sh', [
+          source.path,
+          tagDir.path,
+          '128',
+        ]);
+        expect(split.exitCode, 0, reason: '${split.stderr}');
+      }
+
+      test('נכס יחיד יורד כמות שהוא', () async {
+        File(
+          p.join(tagDir.path, 'seforim-schema6.db.zst'),
+        ).writeAsBytesSync(db);
+        final out = p.join(temp.path, 'seforim.db.zst');
+        final result = await download(out);
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+        expect(File(out).readAsBytesSync(), db);
+      });
+
+      test('DB מפוצל מחובר ומאומת', () async {
+        await publishSplit();
+        final out = p.join(temp.path, 'seforim.db.zst');
+        final result = await download(out);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+        expect(File(out).readAsBytesSync(), db);
+        expect(result.stdout, contains('in 3 parts'));
+      });
+
+      test('חלק פגום או חסר מכשיל את ההורדה בלי להשאיר DB', () async {
+        await publishSplit();
+        final part = File(
+          p.join(tagDir.path, 'seforim-schema6.db.zst.part-001'),
+        );
+        part.writeAsBytesSync(List<int>.filled(part.lengthSync(), 0));
+        final out = p.join(temp.path, 'seforim.db.zst');
+        var result = await download(out);
+        expect(result.exitCode, isNot(0));
+        expect(result.stderr, contains('checksum mismatch'));
+        expect(File(out).existsSync(), isFalse);
+
+        part.deleteSync();
+        result = await download(out);
+        expect(result.exitCode, isNot(0));
+        expect(File(out).existsSync(), isFalse);
+      });
+
+      test('release בלי DB נכשל בהודעה ברורה', () async {
+        final result = await download(p.join(temp.path, 'seforim.db.zst'));
+        expect(result.exitCode, isNot(0));
+        expect(result.stderr, contains('whole or split'));
+      });
     });
   });
 }

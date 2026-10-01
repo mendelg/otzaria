@@ -20,20 +20,23 @@ try {
     exit 1
   }
   # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
-  $dbAsset = $libraryRelease.assets | Where-Object { $_.name -eq "seforim-schema6.db.zst" }
-  if (-not $dbAsset) {
-    $dbAsset = $libraryRelease.assets | Where-Object { $_.name -eq "seforim.db.zst" }
+  # DB מעל מגבלת הנכס של GitHub מתפרסם כ-<name>.part-NNN ולצדם <name>.manifest.json.
+  $dbAsset = $null
+  $dbManifest = $null
+  foreach ($name in @("seforim-schema6.db.zst", "seforim.db.zst")) {
+    $dbAsset = $libraryRelease.assets | Where-Object { $_.name -eq $name }
+    if ($dbAsset) { break }
+    $dbManifest = $libraryRelease.assets | Where-Object { $_.name -eq "$name.manifest.json" }
+    if ($dbManifest) { break }
   }
-  
-  if (-not $dbAsset) {
-    Write-Host "::error::Could not find seforim-schema6.db.zst or seforim.db.zst in release $($libraryRelease.tag_name)"
+
+  if (-not $dbAsset -and -not $dbManifest) {
+    Write-Host "::error::Could not find seforim-schema6.db.zst or seforim.db.zst, whole or split, in release $($libraryRelease.tag_name)"
     exit 1
   }
-  
+
   Write-Host "Library version: $($libraryRelease.tag_name)"
-  Write-Host "Downloading from: $($dbAsset.browser_download_url)"
-  Write-Host "Size: $([math]::Round($dbAsset.size / 1MB, 2)) MB"
-  
+
   if (Test-Path "installer\library_db") {
     Remove-Item -Path "installer\library_db" -Recurse -Force
   }
@@ -41,7 +44,29 @@ try {
 
   # הורדת ה-DB הדחוס שה-installer יחלץ בזמן ההתקנה
   $ProgressPreference = 'SilentlyContinue'
-  Invoke-WebRequest -Uri $dbAsset.browser_download_url -OutFile "installer\library_db\seforim.db.zst" -UseBasicParsing
+  if ($dbAsset) {
+    Write-Host "Downloading from: $($dbAsset.browser_download_url)"
+    Write-Host "Size: $([math]::Round($dbAsset.size / 1MB, 2)) MB"
+    Invoke-WebRequest -Uri $dbAsset.browser_download_url -OutFile "installer\library_db\seforim.db.zst" -UseBasicParsing
+  } else {
+    $partsDir = "installer\library_db_parts"
+    if (Test-Path $partsDir) { Remove-Item -Path $partsDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $partsDir -Force | Out-Null
+    $manifestPath = Join-Path $partsDir $dbManifest.name
+    Invoke-WebRequest -Uri $dbManifest.browser_download_url -OutFile $manifestPath -UseBasicParsing
+    foreach ($part in (Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json).parts) {
+      $partAsset = $libraryRelease.assets | Where-Object { $_.name -eq $part.name }
+      if (-not $partAsset) {
+        Write-Host "::error::$($dbManifest.name) lists $($part.name), which the release does not carry"
+        exit 1
+      }
+      Write-Host "Downloading part: $($part.name) ($([math]::Round($part.size / 1MB, 2)) MB)"
+      Invoke-WebRequest -Uri $partAsset.browser_download_url -OutFile (Join-Path $partsDir $part.name) -UseBasicParsing
+    }
+    # מאמת כל חלק ואת השלם לפי ה-sha256 שבמניפסט.
+    & "$PSScriptRoot\..\tool\release\assemble_split_asset.ps1" $manifestPath "installer\library_db\seforim.db.zst"
+    Remove-Item -Path $partsDir -Recurse -Force
+  }
   Write-Host "Compressed library DB downloaded successfully"
 
   # הורדת מסד הקטלוגים החיצוני

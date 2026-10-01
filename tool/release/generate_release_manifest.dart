@@ -32,6 +32,7 @@ class AssetSpec {
     required this.pattern,
     this.repository = kOtzariaRepository,
     this.split = false,
+    this.volumes = false,
   });
 
   /// תבנית (ביטוי רגולרי) לשם הקובץ בתיקיית ה-release. עבור נכס מפוצל
@@ -39,6 +40,10 @@ class AssetSpec {
   final String pattern;
   final String repository;
   final bool split;
+
+  /// התבנית מתארת כרכים עצמאיים (`…-part1.zip`, `…-part2.zip`): כל קובץ תואם
+  /// הוא נכס יחיד, לפי סדר מספר הכרך.
+  final bool volumes;
 }
 
 /// רכיב ידוע — השורה הדקלרטיבית היחידה שצריך להוסיף כדי שרכיב חדש
@@ -343,17 +348,17 @@ const List<ComponentSpec> kKnownComponents = [
   ComponentSpec(
     id: 'otzaria-android-full',
     name: 'אוצריא ל-Android עם ספרייה מלאה',
-    description: 'ארכיון ZIP ובו קובץ ה-APK והספרייה המלאה, להעתקה אל המכשיר.',
+    description:
+        'ארכיון ZIP (או כמה כרכי ZIP שמחלצים לאותה תיקייה) ובו קובץ ה-APK '
+        'והספרייה המלאה, להעתקה אל המכשיר.',
     type: 'application-bundle',
     required: false,
     platform: 'android',
     installOrder: 20,
     assets: [
+      // מעל המגבלה — כרכי ZIP עצמאיים ולא חלקים גולמיים: בטלפון אין מי שיחבר.
       AssetSpec(pattern: r'^otzaria-android-full\.zip$'),
-      AssetSpec(
-        pattern: r'^otzaria-android-full\.zip\.manifest\.json$',
-        split: true,
-      ),
+      AssetSpec(pattern: r'^otzaria-android-full-part\d+\.zip$', volumes: true),
     ],
   ),
   ComponentSpec(
@@ -415,6 +420,19 @@ Map<String, Object?> buildReleaseManifest({
       final pattern = RegExp(assetSpec.pattern);
       final matches = files.keys.where(pattern.hasMatch).toList()..sort();
       if (matches.isEmpty) continue;
+      if (assetSpec.volumes) {
+        matches.sort(_compareVolumeNames);
+        for (final name in matches) {
+          assets.add(
+            _singleAsset(
+              file: files[name]!,
+              repository: assetSpec.repository,
+              releaseTag: releaseTag,
+            ),
+          );
+        }
+        continue;
+      }
       if (matches.length > 1) {
         throw ReleaseManifestException(
           'component ${spec.id}: ${matches.length} files match '
@@ -502,6 +520,14 @@ Map<String, Object?> buildReleaseManifest({
     );
   }
   return manifest;
+}
+
+/// סדר כרכים לפי המספר האחרון בשם, כך ש-part10 בא אחרי part9.
+int _compareVolumeNames(String a, String b) {
+  int number(String name) =>
+      int.parse(RegExp(r'(\d+)(?!.*\d)').firstMatch(name)?.group(1) ?? '0');
+  final order = number(a).compareTo(number(b));
+  return order != 0 ? order : a.compareTo(b);
 }
 
 int _downloadSizeOf(Map<String, Object?> asset) {

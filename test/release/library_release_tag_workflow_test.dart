@@ -53,20 +53,21 @@ void main() {
     expect(latest.allMatches(workflow).map((m) => m.group(0)).toList(), [
       'SeforimLibrary/releases/latest',
     ], reason: 'רק שלב הפתרון ב-bump_version קורא את latest');
-    expect(
-      RegExp(r'"\$library_release/seforim(-schema6)?\.db\.zst"')
-          .allMatches(workflow)
-          .length,
-      6,
-      reason: 'Linux, Android ו-macOS: seforim-schema6.db.zst ונסיגה ל-seforim.db.zst',
-    );
-    expect(
-      'releases/download/'
-              r'${LIBRARY_DB_RELEASE_TAG:?library release tag was not resolved}'
-          .allMatches(workflow)
-          .length,
-      3,
-    );
+    for (final (name, next) in const [
+      ('build_linux', 'build_android'),
+      ('build_android', 'build_macos'),
+      ('build_macos', 'build_windows_indexed_full'),
+    ]) {
+      expect(job(name, next), contains('SEFORIM_LIBRARY_TAG: $tagOutput'));
+      expect(
+        job(name, next),
+        contains('bash tool/release/download_library_db.sh'),
+      );
+    }
+    expect('SEFORIM_LIBRARY_TAG: $tagOutput'.allMatches(workflow).length, 3);
+    final downloader = read('tool/release/download_library_db.sh');
+    expect(downloader, contains(r'tag=${SEFORIM_LIBRARY_TAG:-}'));
+    expect(downloader, contains(r'download="$base/download/$tag"'));
   });
 
   test('האינדקס המאוחסן נלקח מאותו release כמו המסד', () {
@@ -89,5 +90,8 @@ void main() {
       reason: 'release אחר מהתג המוצמד מכשיל את ההורדה',
     );
     expect(script, isNot(contains('SeforimLibrary/releases/latest')));
+    expect(script, isNot(contains(r'$latestRelease')));
+    expect(script, contains(r'$partAsset = $libraryRelease.assets'));
+    expect(script, contains(r'$dbManifest = $libraryRelease.assets'));
   });
 }

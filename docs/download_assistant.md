@@ -229,7 +229,7 @@ macOS ו-Linux מריצים בבדיקות שלהם את שני המניפסטי
 | Windows | מתקין x64 / ARM64 | ZIP x64 / ARM64 | מתקין FULL x64 / ARM64, מתקין FULL מאונדקס (x64) |
 | Linux | DEB x64/ARM64, RPM x64/ARM64 | ZIP raw (רק כשה-DEB נכשל) | `otzaria-linux-full[-arm64].tar.zst` |
 | macOS | `otzaria-macos.dmg` | — | `otzaria-macos-full.tar.zst` |
-| Android | ה-APK | — | `otzaria-android-full.zip` |
+| Android | ה-APK | — | `otzaria-android-full.zip`, ומעל הסף `otzaria-android-full-partN.zip` |
 
 `library-full-indexed` הוא `any` בשדות הסינון, אבל `installedBy` שלו הוא
 `otzaria-windows-full-indexed` — המתקין היחיד שקורא את החלקים לצדו
@@ -237,7 +237,7 @@ macOS ו-Linux מריצים בבדיקות שלהם את שני המניפסטי
 אינו נוגע בחלקים, ומסך הייבוא של התוכנה אינו קורא את הארכיון הזה (`.zst` נקרא
 שם כ-`seforim.db` דחוס, והאינדקס אינו מיובא כלל) — כך שבשום יעד אחר אין מי
 שיתקין אותו. `otzaria-macos.zip` אינו רכיב — הוא ערוץ העדכון הפנימי. לכל חבילה מלאה יש גם תבנית `split`, כמו ל-Windows FULL, כדי שלא תיעלם
-מהמניפסט ביום שתחצה 2 GiB.
+מהמניפסט ביום שתחצה את הסף; ל-Android — תבנית כרכים (`volumes`).
 
 ### בחירת היעד
 
@@ -748,23 +748,38 @@ Linux ARM64 — הטבלה ב"נכסי המסייעים") כל אחד בנפרד
 `…-macos.zip`, `…-linux-*.tar.gz` ו-`…-windows.exe` היו נבלעים בתבניות של
 מק, לינוקס וחלונות.
 
-### פיצול מתקין ה-FULL — מותנה בגודל
+### פיצול דינמי של נכסים גדולים — לפי גודל בלבד
 
-`otzaria-<ver>-windows-full.exe` שוקל היום 2,012,390,081 בתים מול מגבלת
-2,147,483,648. השלב
-"Split the Windows FULL installer if it reaches GitHub's asset limit" מודד את
-הקובץ ומפצל **רק** כש-`size >= GITHUB_ASSET_LIMIT`. היום התנאי שקר, המתקין אינו
-נוגע בו, והנכס של היום זהה בית-בבית.
+הכלל אחד בכל הארגון: נכס **מעל 1.9 GiB** (2,040,109,465 בתים) מתפרסם כ-
+`<שם>.part-NNN` בחלקים של 1900 MiB ולצדם `<שם>.manifest.json` (גודל ו-sha256
+לכל חלק ולשלם) — הצורה של `split_release_asset.sh`. נכס קטן ממנו נשאר קובץ אחד,
+בית-בבית. מספר החלקים נגזר מהגודל ואינו קבוע. המרווח מתחת ל-2 GiB הוא בכוונה:
+נכס שקרוב לגבול נכשל בהעלאה, והספרייה גדלה בכמה אחוזים בין גרסאות.
 
-כשהתנאי יתקיים, `split_release_asset.sh` יחליף את ה-exe ב-`.part-NNN` ו-
-`.manifest.json` — אותו מנגנון מוכח של הספרייה המאונדקסת. שתי נגזרות:
+* **Windows / Linux / macOS FULL** — השלב "Split FULL packages that exceed
+  GitHub's asset limit" מריץ `tool/release/split_oversized_assets.sh` על
+  `release-files` עם תבניות החבילות המלאות. כשמשהו פוצל, הוא מצרף את
+  `assemble_split_asset.sh`/`.ps1` להרכבה ידנית. אריזת Linux/macOS אינה נכשלת
+  עוד על הגודל — הפיצול בשלב השחרור הוא שמטפל בו.
+* **Android FULL** — `tool/release/pack_android_full.sh` אורז ZIP אחד, או מעל
+  הסף כרכי ZIP **עצמאיים** `otzaria-android-full-partN.zip` (first-fit לפי גודל,
+  ה-APK בכרך הראשון, ה-README בכל כרך). כל כרך נפתח לבדו באפליקציית ZIP של
+  הטלפון, וחילוץ כולם לאותה תיקייה משחזר את החבילה. חלקים גולמיים אינם
+  אפשרות שם: בטלפון אין מי שיחבר אותם. קובץ בודד שגדול מכרך (ה-DB, ביום שיחצה
+  את הסף) נשמר בתוך החבילה כחלקים ומניפסט, וייבוא תיקיית `library_db` באוצריא
+  מחבר אותם.
+* **מסד הספרייה מ-SeforimLibrary** — אותו כלל בצד SL. כל אריזות ה-FULL מורידות
+  אותו דרך `tool/release/download_library_db.sh` (וב-Windows
+  `download_full_installer_assets.ps1`): קובץ יחיד, או מניפסט וחלקים מאותו תג,
+  שמחוברים ומאומתים לפני השימוש.
 
-* `ComponentSpec` של `otzaria-windows-full` נושא **שתי** תבניות נכס, ה-exe
-  ותבנית ה-`split`. הן זרות זו לזו — הפיצול מוחק את ה-exe — ולכן בדיוק אחת
-  מתקיימת. בלעדי זה הרכיב היה נעלם מהמניפסט בשקט ביום שהפיצול נדרש.
-* הסיווג בהערות השחרור רגיש לסדר: `*windows-full.exe.part-*` ו-
-  `*windows-full.exe.manifest.json` נתפסים **לפני** `*windows-full*.exe`
-  (שדורש סיומת `.exe` ולכן לא היה תופס אותם ממילא, אבל הסדר מתועד ונבדק).
+נגזרות לחוזה:
+
+* לכל חבילה מלאה שתי תבניות נכס זרות זו לזו — הקובץ ותבנית ה-`split`; ל-Android
+  הקובץ ותבנית `volumes: true`, שבה כל כרך הוא נכס `single` לפי סדר המספר.
+  בדיוק אחת מתקיימת, ובלעדי זה הרכיב היה נעלם מהמניפסט ביום שהפיצול נדרש.
+* הסיווג בהערות השחרור רגיש לסדר: החלקים ומניפסטי הפיצול נתפסים **לפני**
+  `*windows-full*.exe`, `*linux-full*.tar.*` ו-`*macos-full*.tar.*`.
 
 ### מתקין FULL ל-ARM64
 
