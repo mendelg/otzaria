@@ -97,11 +97,18 @@ String? _literalSource(String query) {
   if (source == null || !query.contains(utils.holyNamePlaceholder)) {
     return source;
   }
-  // המופע ה-k של "יקוק" בתבנית הוא המופע ה-k בשאילתה.
+  // מיקומי המקור משמרים את המיפוי גם כשהטוקנייזר משמיט כתיב שבסוגריים.
+  final expandableOffsets = {
+    for (final span in engine.queryWordSpans(query: query))
+      if (utils.holyNameForPlaceholderWord(span.word) != null)
+        for (final match in utils.holyNamePlaceholder.allMatches(
+          query.substring(span.start, span.end),
+        ))
+          span.start + match.start,
+  };
   final isPlaceholderWord = [
-    for (final word in engine.splitQueryWords(query: query))
-      for (final _ in utils.holyNamePlaceholder.allMatches(word))
-        utils.holyNameForPlaceholderWord(word) != null,
+    for (final match in utils.holyNamePlaceholder.allMatches(query))
+      expandableOffsets.contains(match.start),
   ];
   final placeholder = _wordPhrase(utils.holyNamePlaceholder);
   final name = _wordPhrase(

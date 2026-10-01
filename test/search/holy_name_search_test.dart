@@ -215,6 +215,58 @@ Future<void> main() async {
       }
     });
 
+    test('קרי וכתיב אינם מבטלים הרחבת מופעים בהמשך החיפוש המקומי', () {
+      for (final wholeWord in [true, false]) {
+        for (final reading in ['אדני', _placeholder, 'אבג$_placeholder']) {
+          final query =
+              '($_placeholder) [$reading] ל$_placeholder ${_placeholder}2';
+          final pattern = buildLiteralPattern(query, wholeWord: wholeWord)!;
+          final expandedReading = reading == _placeholder ? _name : reading;
+          expect(pattern.regExp.hasMatch(query), isTrue);
+          expect(
+            pattern.regExp.hasMatch(
+              '($_placeholder) [$expandedReading] ל$_name ${_placeholder}2',
+            ),
+            isTrue,
+            reason: '$query / wholeWord=$wholeWord',
+          );
+          expect(
+            pattern.regExp.hasMatch(
+              '($_name) [$expandedReading] ל$_name ${_placeholder}2',
+            ),
+            isFalse,
+          );
+          expect(
+            pattern.regExp.hasMatch(
+              '($_placeholder) [$expandedReading] ל$_name ${_name}2',
+            ),
+            isFalse,
+          );
+        }
+      }
+    });
+
+    test('פיסוק שקוף במילה קודמת אינו מבטל הרחבת מופע תקין', () {
+      for (final wholeWord in [true, false]) {
+        final query = 'יקו[ק] $_placeholder';
+        final pattern = buildLiteralPattern(query, wholeWord: wholeWord)!;
+        expect(pattern.regExp.hasMatch(query), isTrue);
+        expect(pattern.regExp.hasMatch('יקו[ק] $_name'), isTrue);
+      }
+    });
+
+    test('מיקומי המקור נשארים נכונים אחרי תו Unicode שאורכו שתי יחידות', () {
+      final query = '😀 ($_placeholder) [אדני] $_placeholder';
+      for (final wholeWord in [true, false]) {
+        final pattern = buildLiteralPattern(query, wholeWord: wholeWord)!;
+        expect(
+          pattern.regExp.hasMatch('😀 ($_placeholder) [אדני] $_name'),
+          isTrue,
+        );
+        expect(pattern.regExp.hasMatch('😀 ($_name) [אדני] $_name'), isFalse);
+      }
+    });
+
     test('שני המסלולים מזהים את מילת "יקוק" לפי אותו כלל', () {
       const query = '${_placeholder}2';
       expect(withHolyNameAlternatives(query, const {}), isEmpty);
