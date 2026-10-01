@@ -112,6 +112,10 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3, 4, 5]
 
+    # בדיקות ה-zstd של line_content נכשלות כאן במקום לדלג כשחסרים libzstd או המילון.
+    env:
+      OTZARIA_REQUIRE_CODEC_TESTS: '1'
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
@@ -225,6 +229,23 @@ jobs:
 
       - name: Generate settings translation catalog
         run: dart run tool/generate_settings_l10n.dart
+
+      # המילון האמיתי (2MB) לא נכנס לרפו: הוא מגיע מ-SeforimLibrary בקומיט נעוץ ונבדק
+      # לפי SHA-256, ועותק וקטור ה-golden שב-test/fixtures חייב להיות זהה למקור שם.
+      - name: Fetch the SeforimLibrary line dictionary (pinned)
+        env:
+          SL_COMMIT: 428f71af1f58235b2fb8d34643cdd5c71262f450
+          DICT_SHA256: 1e5c9d66ab76f72640e2f18f2c81a0c5869a03c7218dc57e37384897a82c3f6c
+        run: |
+          set -euo pipefail
+          base="https://raw.githubusercontent.com/Otzaria/SeforimLibrary/$SL_COMMIT/generator/common/src"
+          mkdir -p build/test_fixtures
+          curl -fsSL --retry 3 --retry-delay 5 -o build/test_fixtures/line_content.zdict \
+            "$base/jvmMain/resources/zstd/line_content.zdict"
+          printf '%s  %s\n' "$DICT_SHA256" build/test_fixtures/line_content.zdict | sha256sum -c -
+          curl -fsSL --retry 3 --retry-delay 5 "$base/jvmTest/resources/zstd/line_content_golden_frames.json" \
+            | cmp - test/fixtures/line_content_codec/sl_golden_frames.json
+          ldconfig -p | grep -F 'libzstd.so.1'
 
       # Fail immediately if a missing or incompatible binary would make the
       # engine-dependent test groups skip themselves.
@@ -368,6 +389,28 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           exit $second_exit
+
+      # הוכחה בלוג שבדיקות ה-codec רצו ב-shard הזה, וכשל אם אחת מהן דולגה.
+      - name: Report zstd codec tests
+        run: |
+          set -euo pipefail
+          read -r ran skipped < <(jq -rs '
+            (map(select(.type == "suite"))
+              | map({(.suite.id | tostring): .suite.path})
+              | add) as $suites
+            | (map(select(.type == "testStart"))
+              | map({(.test.id | tostring): .test})
+              | add // {}) as $tests
+            | map(select(.type == "testDone" and (.hidden | not)))
+            | map(select(($suites[($tests[.testID | tostring].suiteID) | tostring] // "")
+                | test("line_content_(codec|split)|db_read_worker_compressed")))
+            | "\(map(select(.skipped | not)) | length) \(map(select(.skipped)) | length)"
+          ' test-results.json)
+          echo "zstd codec tests (shard ${{ matrix.shard }}): $ran ran, $skipped skipped"
+          if [ "$skipped" -ne 0 ]; then
+            echo "::error::$skipped zstd codec tests were skipped"
+            exit 1
+          fi
 
   # שער הבנייה היחיד ל-Windows על PR. עד עכשיו לא היה כזה: `analyze` ו-`test`
   # רצים שניהם על ubuntu, ו-`webview2_smoke` מסונן ב-`paths`. המשמעות הייתה
