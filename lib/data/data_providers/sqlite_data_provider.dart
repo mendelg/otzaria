@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:otzaria/core/windowing/library_suspension_marker.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
 import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
@@ -57,26 +58,17 @@ class SqliteDataProvider {
       return;
     }
 
-    // אם יש כתיבה חיצונית פעילה (עדכון ספרייה/סנכרון), החיבור ה-RO סגור
-    // בכוונה. אסור לפתוח אותו מחדש כאן במקביל לחיבור ה-RW (היה גורם
-    // ל"database locked"). ממתינים ל-gate שהכתיבה החיצונית פותחת מחדש בעצמה,
-    // כך שקוראים בחלון הזה (למשל טעינת מפרשים ברקע בעלייה) ממתינים לפתיחה-מחדש
-    // ומצליחים במקום לקבל null ולהציג ריק.
+    // מחוץ ל-future של האתחול, כדי ש-suspend לא ימתין לשחרור של עצמו.
+    await LibrarySuspensionMarker.waitUntilReleased();
+    if (_isInitialized) return;
+
+    // קוראים ממתינים לחיבור ה-RO, בלי לפתוח אותו במהלך כתיבה חיצונית.
     if (_activeWriteSessions > 0) {
-      // ממתינים לפתיחה-מחדש של ה-RO ע"י ה-session — אך בפעימות עם תקרת זמן,
-      // לא בהמתנה אינסופית. ההמתנה הישנה (await gate.future ללא תקרה) קפאה
-      // לנצח אם reopen התעכב/התפספס (כתיבות חופפות בעלייה, איזולייט שקרס),
-      // והקורא נתקע על מסך עיון/תצוגה מקדימה ריקים עד restart. עכשיו: אם
-      // הפתיחה-מחדש קורית — gate.future מסתיים והלולאה יוצאת מיד (גם אחרי
-      // כמה שניות); אם היא משתהה מעבר לתקרה — מפסיקים את ההמתנה ומחזירים
-      // null פעם אחת (הקורא הבא יצליח) במקום להיתקע.
+      // תקרה לקורא בלבד: session פעיל ממשיך לחסום פתיחה.
       var polls = 0;
       for (; _activeWriteSessions > 0 && !_isInitialized; polls++) {
         if (polls >= _maxExternalWriteWaitPolls) {
-          // אנומליה: חרגנו מתקרת ההמתנה וה-session עדיין פעיל — חשד לדליפת
-          // write-session (close בלי reopen תואם). הקורא לא נתקע (חוזר למטה),
-          // אבל קריאות ימשיכו לקבל ריק עד restart. אם השורה הזו מופיעה בלוג —
-          // יש לאתר את ה-close שלא קיבל reopen.
+          // יש לאתר close שלא קיבל reopen תואם.
           debugPrint(
             '⚠️ [SqliteDataProvider] initialize() חרג מתקרת ההמתנה '
             'ל-gate ($_activeWriteSessions write-sessions פעילים, '
@@ -160,6 +152,9 @@ class SqliteDataProvider {
     }
   }
 
+  @visibleForTesting
+  bool get debugIsInitializing => _initializationFuture != null;
+
   /// Checks if the database is initialized and ready
   bool get isInitialized => _isInitialized;
 
@@ -223,21 +218,26 @@ class SqliteDataProvider {
     // תמיד יראה גם gate להמתין עליו.
     _externalWriteGate ??= Completer<void>();
     _activeWriteSessions++;
-    // ה-suspend שאחריו סוגר גם הוא את חיבור ה-worker וממתין לו - המתנה אחת מספיקה.
-    await _dispose(waitForWorker: false);
-    // ל-worker של ה-isolate יש handle RO משלו על אותו קובץ; בלי סגירה
-    // *ממתינה* המחיקה/החלפה של ה-DB נכשלת (ב-Windows) או נתקעת על busy.
-    final findRefReleased = await FindRefDbIsolate.suspendForExternalWrite();
-    final readWorkerReleased = await DbReadWorker.suspendForExternalWrite();
-    if (!findRefReleased || !readWorkerReleased) {
-      // בלי handle סגור אסור להזיז את הקובץ, בייחוד ב-Windows.
+    try {
+      try {
+        await _initializationFuture;
+      } finally {
+        // גם אתחול שכבר התחיל חייב לשחרר את החיבור לפני האישור.
+        await _dispose(waitForWorker: false);
+      }
+      final findRefReleased = await FindRefDbIsolate.suspendForExternalWrite();
+      final readWorkerReleased = await DbReadWorker.suspendForExternalWrite();
+      if (!findRefReleased || !readWorkerReleased) {
+        final message = 'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה';
+        throw findRefReleased
+            ? DbReadWorkerNotReleased(message)
+            : StateError(message);
+      }
+    } catch (_) {
       if (releaseOnFailure) {
         await reopenAfterExternalWrite(reopenDatabase: false);
       }
-      final message = 'לא ניתן לשחרר את seforim.db לפני החלפת הספרייה';
-      throw findRefReleased
-          ? DbReadWorkerNotReleased(message)
-          : StateError(message);
+      rethrow;
     }
   }
 

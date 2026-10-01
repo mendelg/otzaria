@@ -20,6 +20,7 @@ import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/library/bloc/library_bloc.dart';
 import 'package:otzaria/library/bloc/library_event.dart';
+import 'package:otzaria/library_update/services/library_access_gate.dart';
 import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
@@ -65,8 +66,13 @@ class _WindowBusHostState extends State<WindowBusHost> {
     // ⚠️ החלון הראשון רושם גם את כינוי הבעלים. בלעדיו איתור מחזיק המאגרים
     // המשותפים היה סריקת `describe` עם timeout — והבעלים דווקא עסוק בזמן
     // שנפתח חלון שני, כלומר הסריקה פקעה בדיוק כשהיא נחוצה.
-    final slot = WindowBus.instance.register(asOwner: !WindowRole.isSecondary);
+    final slot = LibraryAccessGate.instance.registerWindow(
+      asOwner: !WindowRole.isSecondary,
+    );
     WindowBus.instance.onRequest = _handleRequest;
+    LibraryAccessGate.instance.onLibraryReplaced = () {
+      if (mounted) context.read<LibraryBloc>().add(const RefreshLibrary());
+    };
     // ה-runner צריך את המיפוי כדי לתרגם "החלון שתחת הסמן" למשבצת בגרירה.
     if (slot != null) {
       unawaited(const MultiWindowService().setBusSlot(slot));
@@ -198,6 +204,9 @@ class _WindowBusHostState extends State<WindowBusHost> {
         return true;
       case UserStateListStore.requestChanged:
         return UserStateListStore.instance.handleRequest(request);
+      case LibraryAccessGate.requestSuspend:
+      case LibraryAccessGate.requestResume:
+        return LibraryAccessGate.instance.handlePeerRequest(request);
       case SettingsSync.requestChanged:
         // הגדרה שונתה בחלון אחר — מוחלת על ה-box המקומי ומרעננת את ה-state.
         return SettingsSync.instance.handleRequest(request);

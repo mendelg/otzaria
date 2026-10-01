@@ -13,6 +13,7 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_event.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_state.dart';
 import 'package:otzaria/empty_library/services/android_storage_service.dart';
+import 'package:otzaria/library_update/services/library_access_gate.dart';
 import 'package:otzaria/library_update/services/companion_assets_service.dart';
 import 'package:otzaria/search/magic_dictionary_downloader.dart';
 import 'package:otzaria/settings/settings_exports.dart';
@@ -52,7 +53,9 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     this._defaultLibraryPathOverride,
     this.downloadConnectTimeout = _defaultDownloadConnectTimeout,
     this.downloadSpaceChecker,
+    LibraryAccessGate? accessGate,
   }) : _httpClient = httpClient ?? http.Client(),
+       _accessGate = accessGate ?? LibraryAccessGate.instance,
        _extractCompressedDatabase = extractCompressedDatabase ?? _extractZst,
        _extractTarArchive = extractTarArchive ?? _extractTarZst,
        _extractZipArchive = extractZipArchive ?? extractArchiveFileToDisk,
@@ -76,6 +79,9 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
   final http.Client _httpClient;
   final Duration downloadConnectTimeout;
   final Future<String?> Function(int? downloadSize)? downloadSpaceChecker;
+
+  /// חלון משני מחזיק את המסד פתוח, והזזתו לגיבוי נכשלת ב-Windows.
+  final LibraryAccessGate _accessGate;
   final Future<void> Function(
     String archivePath,
     String outputPath,
@@ -149,10 +155,13 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     String? backupDir;
     final closesWorker = backupPath != null;
     var writeSessionStarted = false;
+    LibrarySuspension? suspension;
     try {
       if (closesWorker) {
+        suspension = await _accessGate.suspendAll();
         await SqliteDataProvider.instance.closeForExternalWrite();
         writeSessionStarted = true;
+        await _accessGate.verifyReleased(_dbPathIn(backupPath));
       }
       if (backupPath != null) {
         backupDir = await _backupDatabaseFiles(backupPath);
@@ -183,6 +192,12 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
           reopenDatabase: false,
         );
       }
+      if (suspension != null) {
+        await _accessGate.resumeAll(
+          suspension,
+          dbReplaced: state is EmptyLibraryDirectorySelected,
+        );
+      }
     }
   }
 
@@ -196,10 +211,13 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     String? backupDir;
     final closesWorker = backupPath != null;
     var writeSessionStarted = false;
+    LibrarySuspension? suspension;
     try {
       if (closesWorker) {
+        suspension = await _accessGate.suspendAll();
         await SqliteDataProvider.instance.closeForExternalWrite();
         writeSessionStarted = true;
+        await _accessGate.verifyReleased(_dbPathIn(backupPath));
       }
       if (backupPath != null) {
         backupDir = await _backupDatabaseFiles(backupPath);
@@ -227,6 +245,12 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       if (writeSessionStarted) {
         await SqliteDataProvider.instance.reopenAfterExternalWrite(
           reopenDatabase: false,
+        );
+      }
+      if (suspension != null) {
+        await _accessGate.resumeAll(
+          suspension,
+          dbReplaced: state is EmptyLibraryDirectorySelected,
         );
       }
     }
@@ -442,9 +466,12 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     final target = event.targetPath;
     String? backupDir;
     var writeSessionStarted = false;
+    LibrarySuspension? suspension;
     try {
+      suspension = await _accessGate.suspendAll();
       await SqliteDataProvider.instance.closeForExternalWrite();
       writeSessionStarted = true;
+      await _accessGate.verifyReleased(_dbPathIn(event.existingLibraryPath));
       backupDir = await _backupDatabaseFiles(event.existingLibraryPath);
       if (event.isDownload) {
         await _downloadLibrary(target, emit);
@@ -477,8 +504,17 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
           reopenDatabase: false,
         );
       }
+      if (suspension != null) {
+        await _accessGate.resumeAll(
+          suspension,
+          dbReplaced: state is EmptyLibraryDirectorySelected,
+        );
+      }
     }
   }
+
+  static String _dbPathIn(String dir) =>
+      path.join(dir, DatabaseConstants.databaseFileName);
 
   /// שם הקובץ הזמני שאליו נכתב ה-DB לפני ההעברה לשם הסופי.
   static String _dbTempPathFor(String finalPath) => '$finalPath.new';
