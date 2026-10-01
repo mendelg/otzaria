@@ -54,9 +54,14 @@ class SeforimRepository {
   /// מספיק לכמה מהספרים הגדולים ביותר יחד; ספר שגדול מהתקרה לבדו עדיין נשמר.
   static const int defaultTocCacheMaxEntries = 200000;
 
-  /// קאש בזיכרון לערכי AltToc (כותרות-משנה) לכל ספר, ממוינים לפי segment.
+  /// קאש LRU לערכי AltToc (כותרות-משנה) לכל ספר, ממוינים לפי segment, חסום
+  /// לפי מספר הערכים — כמו [_tocCache].
   final Map<int, List<AltTocIndexEntry>> _altTocCache =
       <int, List<AltTocIndexEntry>>{};
+  int _altTocCacheEntryCount = 0;
+
+  /// הספר הגדול ביותר כ-28 אלף ערכים; כ-5MB של אובייקטים.
+  static const int _altTocCacheMaxEntries = 50000;
 
   /// הקאש הגלובלי (ראו [attachAltTocIndex]); כשהוא קיים ערכי הספר נבנים
   /// ממנו ולא מהמסד.
@@ -74,11 +79,12 @@ class SeforimRepository {
   void _invalidateTocCache({int? bookId}) {
     if (bookId != null) {
       _tocCacheEntryCount -= _tocCache.remove(bookId)?.all.length ?? 0;
-      _altTocCache.remove(bookId);
+      _altTocCacheEntryCount -= _altTocCache.remove(bookId)?.length ?? 0;
     } else {
       _tocCache.clear();
       _tocCacheEntryCount = 0;
       _altTocCache.clear();
+      _altTocCacheEntryCount = 0;
     }
     _altTocIndex = null;
   }
@@ -87,6 +93,22 @@ class SeforimRepository {
   void attachAltTocIndex(AltTocFlatIndex index) {
     _altTocIndex = index;
     _altTocCache.clear();
+    _altTocCacheEntryCount = 0;
+  }
+
+  List<AltTocIndexEntry> _putAltTocCache(
+    int bookId,
+    List<AltTocIndexEntry> entries,
+  ) {
+    _altTocCacheEntryCount -= _altTocCache.remove(bookId)?.length ?? 0;
+    _altTocCache[bookId] = entries;
+    _altTocCacheEntryCount += entries.length;
+    while (_altTocCacheEntryCount > _altTocCacheMaxEntries &&
+        _altTocCache.length > 1) {
+      final oldest = _altTocCache.keys.first;
+      _altTocCacheEntryCount -= _altTocCache.remove(oldest)!.length;
+    }
+    return entries;
   }
 
   /// מפנה את הספרים שלא נקראו זמן רב ביותר עד שהקאש בתוך התקרה. הספר החדש
@@ -3648,18 +3670,18 @@ extension BookAcronymRepository on SeforimRepository {
   }
 
   /// ערכי ה-AltToc של [bookId] (כל המבנים החלופיים יחד), ממוינים לפי segment.
-  /// מהקאש הגלובלי כשהוא מחובר; אחרת נבנים פעם אחת לספר.
+  /// מהקאש הגלובלי כשהוא מחובר, אחרת מהמסד.
   Future<List<AltTocIndexEntry>> _buildAltTocCacheForBook(
     int bookId,
     String bookTitle,
   ) async {
-    final cached = _altTocCache[bookId];
-    if (cached != null) return cached;
+    final cached = _altTocCache.remove(bookId);
+    if (cached != null) return _altTocCache[bookId] = cached;
     final index = _altTocIndex;
     if (index != null) {
       final entries = index._entriesOfBook(bookId);
       _sortAltTocForBook(entries);
-      return _altTocCache[bookId] = entries;
+      return _putAltTocCache(bookId, entries);
     }
     if (!(await _capabilities).hasAltToc) return const [];
 
@@ -3714,7 +3736,7 @@ extension BookAcronymRepository on SeforimRepository {
 
     final entries = [for (final id in rowsById.keys) entryFor(id)!];
     _sortAltTocForBook(entries);
-    return _altTocCache[bookId] = entries;
+    return _putAltTocCache(bookId, entries);
   }
 
   /// מחזיר את כל הספרים שיש להם לפחות מבנה AltToc אחד.

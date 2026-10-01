@@ -101,7 +101,7 @@ void main() {
       return build.index;
     }
 
-    /// שני ספרים: טקסט ריק באמצע שרשרת, "דף" שהמספר שלו אצל הילד, טקסט
+    /// שלושה ספרים: טקסט ריק באמצע שרשרת, "דף" שהמספר שלו אצל הילד, טקסט
     /// שמתחיל בשם הספר, הורה חסר, הורה שמזהה גדול משל הילד ושורה חסרה.
     Future<List<int>> seed() async {
       final categoryId = await repository.insertCategory(
@@ -118,6 +118,7 @@ void main() {
       );
       final a = await book('ספר א');
       final b = await book('שבת');
+      final c = await book('ספר חמש');
       final lines = [
         for (var i = 0; i < 10; i++)
           await repository.insertLine(
@@ -132,6 +133,10 @@ void main() {
       db.execute(
         "INSERT INTO alt_toc_structure (id, bookId, key) VALUES (2, ?, 'b')",
         [b],
+      );
+      db.execute(
+        "INSERT INTO alt_toc_structure (id, bookId, key) VALUES (3, ?, 'c')",
+        [c],
       );
       var textId = 100;
       void entry(
@@ -171,13 +176,19 @@ void main() {
       entry(13, 2, 'דף ג', 0);
       entry(14, 2, 'א', 1, parent: 13);
       entry(15, 2, 'סעיף א', 1, parent: 13);
+      // נתיב הורה קצר משם הספר: צירוף השם תלוי בטקסט של כל ילד.
+      entry(20, 3, 'ספר', 0);
+      entry(21, 3, 'חמש', 1, parent: 20);
+      entry(22, 3, 'סימן', 1, parent: 20);
+      entry(23, 3, 'חמשה', 1, parent: 20);
+      entry(24, 3, 'חמש סימן', 1, parent: 20);
       return lines;
     }
 
     test('הנגזרות מהשרשרת זהות לנגזרות מהנתיב, וההתאמה זהה', () async {
       await seed();
       final index = await build();
-      expect(index.length, 14);
+      expect(index.length, 19);
       expectConsistent(index);
 
       final byId = {
