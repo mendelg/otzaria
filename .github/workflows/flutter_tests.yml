@@ -234,7 +234,7 @@ jobs:
       # לפי SHA-256, ועותק וקטור ה-golden שב-test/fixtures חייב להיות זהה למקור שם.
       - name: Fetch the SeforimLibrary line dictionary (pinned)
         env:
-          SL_COMMIT: 428f71af1f58235b2fb8d34643cdd5c71262f450
+          SL_COMMIT: 4de4305ab5d9317fb71d81a7c741489b63063fab
           DICT_SHA256: 1e5c9d66ab76f72640e2f18f2c81a0c5869a03c7218dc57e37384897a82c3f6c
         run: |
           set -euo pipefail
