@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import 'package:kosher_dart/kosher_dart.dart';
 import 'package:otzaria/settings/settings_exports.dart';
+import 'package:otzaria/tools/calendar/services/calendar_alert_scheduler.dart';
 import 'package:otzaria/tools/calendar/services/notification_service.dart';
 import 'package:otzaria/tools/calendar/repository/google_calendar_repository.dart';
 import 'package:otzaria/tools/calendar/services/google_calendar_service.dart';
@@ -14,6 +15,7 @@ import 'package:otzaria/tools/calendar/services/ics_calendar_service.dart';
 import 'package:otzaria/tools/calendar/helpers/zmanim_helpers.dart'
     as zmanim_helpers;
 import 'package:otzaria/tools/calendar/models/calendar_event.dart';
+import 'package:otzaria/tools/calendar/models/zman_alert_preference.dart';
 import 'package:otzaria/tools/calendar/models/calendar_location.dart'
     as calendar_location;
 import 'package:otzaria/core/messages/tools_messages.dart';
@@ -23,6 +25,7 @@ import 'package:otzaria/theme/calendar_event_colors.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 export 'package:otzaria/tools/calendar/models/calendar_event.dart';
+export 'package:otzaria/tools/calendar/models/zman_alert_preference.dart';
 
 part 'calendar_state.dart';
 
@@ -56,12 +59,13 @@ class _DefaultPluginSource implements CalendarPluginSource {
 
 // Calendar Cubit
 class CalendarCubit extends Cubit<CalendarState> {
-  static const int _zmanScheduleDaysAhead = 45;
-  // גם לאחר חודש בלי היום המבוקש, המרווח הבא בין מופעים יכול להגיע ל־61 יום.
-  static const int _eventScheduleDaysAhead = 62;
-
   final SettingsRepository _settingsRepository;
   final NotificationService _notificationService;
+  late final _alerts = CalendarAlertScheduler(
+    notifications: _notificationService,
+    settings: _settingsRepository,
+    now: _now,
+  );
   final GoogleCalendarRepository _googleCalendar;
   final IcsCalendarService _icsCalendarService;
   final CalendarPluginSource _pluginCalendarAdapter;
@@ -320,64 +324,15 @@ class CalendarCubit extends Cubit<CalendarState> {
     }
   }
 
-  static int _zmanNotificationId(String timeId, DateTime date) {
-    final y = date.year.toString();
-    final m = date.month.toString().padLeft(2, '0');
-    final d = date.day.toString().padLeft(2, '0');
-    final key = '$timeId|$y$m$d';
-    return key.hashCode & 0x7fffffff;
-  }
-
-  static String _formatMinutesBefore(int minutes) {
-    if (minutes <= 0) return 'עכשיו';
-    final h = minutes ~/ 60;
-    final m = minutes % 60;
-    if (h > 0 && m > 0) return '$h שעות ו-$m דקות';
-    if (h > 0) return '$h שעות';
-    return '$m דקות';
-  }
-
   /// שולח התראת בדיקה למערכת ההפעלה. מחזיר האם השליחה הצליחה.
-  Future<bool> sendTestNotification() async {
-    final notificationService = _notificationService;
-    if (!notificationService.isInitialized) {
-      await notificationService.init();
-    }
-
-    bool hasPermission = await notificationService.checkPermissions();
-    if (!hasPermission) {
-      if (Platform.isMacOS) {
-        hasPermission = await notificationService.forceRequestPermissions();
-      } else {
-        hasPermission = await notificationService.requestPermissions();
-      }
-    }
-    if (!hasPermission) return false;
-
-    return notificationService.sendTestNotification();
-  }
+  Future<bool> sendTestNotification() => _alerts.sendTestNotification();
 
   Future<void> setZmanAlertPreference({
     required String timeId,
     required String displayName,
     required int minutesBefore,
   }) async {
-    final notificationService = _notificationService;
-
-    if (!notificationService.isInitialized) {
-      await notificationService.init();
-    }
-
-    bool hasPermission = await notificationService.checkPermissions();
-    if (!hasPermission) {
-      if (Platform.isMacOS) {
-        hasPermission = await notificationService.forceRequestPermissions();
-      } else {
-        hasPermission = await notificationService.requestPermissions();
-      }
-    }
-
-    if (!hasPermission) {
+    if (!await _alerts.ensurePermission()) {
       String message;
 
       if (Platform.isMacOS) {
@@ -419,97 +374,17 @@ class CalendarCubit extends Cubit<CalendarState> {
       jsonEncode(updated.map((k, v) => MapEntry(k, v.toJson()))),
     );
 
-    // Cancel scheduled notifications for this timeId in our rolling window.
-    final notificationService = _notificationService;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    for (int i = 0; i <= _zmanScheduleDaysAhead; i++) {
-      final d = today.add(Duration(days: i));
-      final id = _zmanNotificationId(timeId, d);
-      // cancelNotification עצמו async (platform channel) — מספיק כדי לא לחסום UI
-      await notificationService.cancelNotification(id);
-    }
+    await _alerts.cancelZmanAlert(timeId);
 
     UiSnack.show(ToolsMessages.zmanAlertCancelled(existing.displayName));
   }
 
   Future<void> _rescheduleZmanAlerts() async {
-    if (state.zmanAlerts.isEmpty) return;
-
-    final notificationService = _notificationService;
-    if (!notificationService.isInitialized) {
-      return;
-    }
-
-    // Don't prompt here; only schedule if we already have permissions.
-    final hasPermission = await notificationService.checkPermissions();
-    if (!hasPermission) return;
-
-    final cityData = _getCityData(state.selectedCity);
-    final String timeZoneId;
-    if (cityData == null) {
-      debugPrint(
-        'CalendarCubit: city data not found for "${state.selectedCity}", defaulting to Asia/Jerusalem timezone.',
-      );
-      UiSnack.showError(ToolsMessages.cityDataNotFound);
-      timeZoneId = 'Asia/Jerusalem';
-    } else {
-      timeZoneId = cityData['timezone'] as String? ?? 'Asia/Jerusalem';
-    }
-    final location = tz.getLocation(timeZoneId);
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    for (final entry in state.zmanAlerts.entries) {
-      final timeId = entry.key;
-      final pref = entry.value;
-
-      for (int i = 0; i <= _zmanScheduleDaysAhead; i++) {
-        // yield לאירוע loop — מאפשר ל-UI לרנדר פריים בין כל חישוב
-        await Future.delayed(Duration.zero);
-        final d = today.add(Duration(days: i));
-        final times = _calculateDailyTimes(d, state.selectedCity);
-        final timeStr = times[timeId];
-
-        final cancellationId = _zmanNotificationId(timeId, d);
-
-        if (timeStr == null) {
-          // Ensure no stale notification for days the zman doesn't exist.
-          await notificationService.cancelNotification(cancellationId);
-          continue;
-        }
-
-        // מחלצים שעה:דקה תוך התעלמות מעטיפת ה-LTR isolate (\u2066) ומסימן
-        // השניות (`.`/`:`) שבסוף.
-        final match = RegExp(
-          '^\u2066?'
-          r'(\d{1,2}):(\d{2})',
-        ).firstMatch(timeStr);
-        if (match == null) {
-          await notificationService.cancelNotification(cancellationId);
-          continue;
-        }
-
-        final h = int.parse(match.group(1)!);
-        final m = int.parse(match.group(2)!);
-
-        // Construct TZDateTime in the correct timezone
-        final eventDt = tz.TZDateTime(location, d.year, d.month, d.day, h, m);
-
-        await notificationService.cancelNotification(cancellationId);
-
-        await notificationService.scheduleNotification(
-          id: cancellationId,
-          title: 'תזכורת: ${pref.displayName}',
-          body:
-              'בעוד ${_formatMinutesBefore(pref.minutesBefore)} ${pref.displayName} (${timeStr.replaceAll(RegExp('[\u2066\u2069]'), '').replaceFirst(RegExp(r'[.:]$'), '')})',
-          eventDate: eventDt,
-          reminderMinutes: pref.minutesBefore,
-          soundEnabled: true,
-        );
-      }
-    }
+    await _alerts.rescheduleZmanAlerts(
+      state.zmanAlerts,
+      state.selectedCity,
+      onCityNotFound: () => UiSnack.showError(ToolsMessages.cityDataNotFound),
+    );
   }
 
   void _updateTimesForDate(DateTime date, String city) {
@@ -1506,159 +1381,13 @@ class CalendarCubit extends Cubit<CalendarState> {
     }
   }
 
-  Future<void> _rescheduleNotifications() async {
-    final notificationService = _notificationService;
-
-    // Cancel previously scheduled calendar EVENT notifications only.
-    final prevIdsJson = _settingsRepository
-        .getCalendarEventNotificationIdsJson();
-    final prevIds = <int>[];
-    try {
-      final decoded = jsonDecode(prevIdsJson);
-      if (decoded is List) {
-        for (final v in decoded) {
-          if (v is int) prevIds.add(v);
-        }
-      }
-    } catch (_) {}
-
-    for (final id in prevIds) {
-      await notificationService.cancelNotification(id);
-    }
-
-    if (!state.calendarNotificationsEnabled) {
-      await _settingsRepository.updateCalendarEventNotificationIdsJson('[]');
-      return;
-    }
-
-    final scheduledIds = <int>{};
-
-    final now = _now();
-
-    for (final event in state.events) {
-      if (event.recurring) {
-        // שנתי: השנה והבאה; שבועי/חודשי: כל יום בחלון הקרוב שבו מתחיל מופע.
-        final annual =
-            event.recurrenceType == RecurrenceType.annualGregorian ||
-            event.recurrenceType == RecurrenceType.annualHebrew;
-        final candidates = annual ? 2 : _eventScheduleDaysAhead + 1;
-        for (int i = 0; i < candidates; i++) {
-          final DateTime occurrenceDate;
-          if (!annual) {
-            occurrenceDate = DateTime(now.year, now.month, now.day + i);
-          } else if (event.recurOnHebrew) {
-            final currentHebrewYear = JewishDate.fromDateTime(
-              now,
-            ).getJewishYear();
-            final targetHebrewYear = currentHebrewYear + i;
-
-            // Handle leap years and Adar
-            final tempJd = JewishDate();
-            tempJd.setJewishDate(targetHebrewYear, 1, 1);
-            if (event.baseJewishMonth == 13 && !tempJd.isJewishLeapYear()) {
-              continue; // Skip Adar II in non-leap year
-            }
-            try {
-              final jd = JewishDate();
-              jd.setJewishDate(
-                targetHebrewYear,
-                event.baseJewishMonth,
-                event.baseJewishDay,
-              );
-              occurrenceDate = jd.getGregorianCalendar();
-            } catch (e) {
-              // could be an invalid date like 30th of Cheshvan
-              continue;
-            }
-          } else {
-            occurrenceDate = DateTime(
-              now.year + i,
-              event.baseGregorianDate.month,
-              event.baseGregorianDate.day,
-            );
-          }
-          if (!event.startsOccurrenceOn(occurrenceDate)) continue;
-
-          // שילוב השעה אם קיימת
-          final DateTime eventDateTime;
-          if (event.eventTime != null) {
-            eventDateTime = DateTime(
-              occurrenceDate.year,
-              occurrenceDate.month,
-              occurrenceDate.day,
-              event.eventTime!.hour,
-              event.eventTime!.minute,
-            );
-          } else {
-            // אם אין שעה, השתמש בחצות
-            eventDateTime = DateTime(
-              occurrenceDate.year,
-              occurrenceDate.month,
-              occurrenceDate.day,
-              0,
-              0,
-            );
-          }
-
-          if (eventDateTime.isAfter(now)) {
-            final id =
-                '${event.id}${occurrenceDate.year}${occurrenceDate.month}${occurrenceDate.day}'
-                    .hashCode;
-            scheduledIds.add(id);
-            await notificationService.scheduleNotification(
-              id: id,
-              title: event.title,
-              body: event.description,
-              eventDate: eventDateTime,
-              reminderMinutes:
-                  event.notificationMinutes ?? state.calendarNotificationTime,
-              soundEnabled: state.calendarNotificationSound,
-            );
-          }
-        }
-      } else {
-        // Non-recurring event
-        // שילוב השעה אם קיימת
-        final DateTime eventDateTime;
-        if (event.eventTime != null) {
-          eventDateTime = DateTime(
-            event.baseGregorianDate.year,
-            event.baseGregorianDate.month,
-            event.baseGregorianDate.day,
-            event.eventTime!.hour,
-            event.eventTime!.minute,
-          );
-        } else {
-          // אם אין שעה, השתמש בחצות
-          eventDateTime = DateTime(
-            event.baseGregorianDate.year,
-            event.baseGregorianDate.month,
-            event.baseGregorianDate.day,
-            12,
-            0,
-          );
-        }
-
-        if (eventDateTime.isAfter(now)) {
-          final id = event.id.hashCode;
-          scheduledIds.add(id);
-          await notificationService.scheduleNotification(
-            id: id,
-            title: event.title,
-            body: event.description,
-            eventDate: eventDateTime,
-            reminderMinutes:
-                event.notificationMinutes ?? state.calendarNotificationTime,
-            soundEnabled: state.calendarNotificationSound,
-          );
-        }
-      }
-    }
-
-    await _settingsRepository.updateCalendarEventNotificationIdsJson(
-      jsonEncode(scheduledIds.toList()),
-    );
-  }
+  Future<void> _rescheduleNotifications() =>
+      _alerts.rescheduleEventNotifications(
+        events: state.events,
+        enabled: state.calendarNotificationsEnabled,
+        defaultMinutes: state.calendarNotificationTime,
+        soundEnabled: state.calendarNotificationSound,
+      );
 }
 
 // --- Helper logic for robust Jewish month navigation ---
