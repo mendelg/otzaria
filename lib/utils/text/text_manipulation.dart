@@ -13,7 +13,8 @@ import 'package:otzaria_search_engine/otzaria_search_engine.dart'
         HighlightPattern,
         HighlightMatcher,
         HighlightMatch,
-        generateHighlightPattern;
+        generateHighlightPattern,
+        splitQueryWords;
 
 /// רגקס להסרת תגי HTML.
 final RegExp _htmlStripper = RegExp(r'<[^>]*>');
@@ -607,6 +608,9 @@ _CompiledHighlightPattern? _resolveHighlightPattern(
   int searchDistance,
   bool isFuzzy,
 ) {
+  if (!isFuzzy) {
+    alternativeWords = withHolyNameAlternatives(searchQuery, alternativeWords);
+  }
   final key = _highlightRequestKey(
     searchQuery,
     searchOptions,
@@ -1397,6 +1401,50 @@ int _htmlTagEnd(String text, int start) {
     }
   }
   return -1;
+}
+
+/// מילת "יקוק" (כך מוצג שם הוי"ה) עם עד שתי אותיות שימוש, כל אות עם הניקוד
+/// שלה. הכלל היחיד לזיהוי — בחיפוש הכללי ובחיפוש בתוך ספר.
+final RegExp _holyNamePlaceholderWord = RegExp(
+  r'^((?:[\u05D5\u05D1\u05DB\u05DC\u05DE\u05E9\u05D4]\p{Mn}*){0,2})'
+  r'\u05D9(\p{Mn}*)\u05E7(\p{Mn}*)\u05D5(\p{Mn}*)\u05E7(\p{Mn}*)$',
+  unicode: true,
+);
+const String holyNamePlaceholder = '\u05D9\u05E7\u05D5\u05E7';
+
+/// [token] — מילה אחת של [splitQueryWords] — עם שם הוי"ה במקום "יקוק" ועם
+/// הניקוד שהוקלד, או `null` כשאינה מילת "יקוק".
+String? holyNameForPlaceholderWord(String token) {
+  final m = _holyNamePlaceholderWord.firstMatch(token);
+  if (m == null) return null;
+  return '${m[1]}\u05D9${m[2]}\u05D4${m[3]}\u05D5${m[4]}\u05D4${m[5]}';
+}
+
+/// מוסיף לכל מילת "יקוק" ב-[query] את שם הוי"ה כמילה חלופית: החיפוש וההדגשה
+/// רצים על הטקסט המקורי, לא על התצוגה. קריאה חוזרת אינה משנה דבר.
+Map<int, List<String>> withHolyNameAlternatives(
+  String query,
+  Map<int, List<String>> alternativeWords,
+) {
+  final mentioned = [query, ...alternativeWords.values.expand((w) => w)].any(
+    (text) => removeVolwels(text).contains(holyNamePlaceholder),
+  );
+  if (!mentioned) return alternativeWords;
+  Map<int, List<String>>? result;
+  final words = splitQueryWords(query: query);
+  for (var i = 0; i < words.length; i++) {
+    final existing = alternativeWords[i] ?? const <String>[];
+    final added = <String>{
+      for (final word in [words[i], ...existing])
+        if (holyNameForPlaceholderWord(word) case final name?
+            when !existing.contains(name))
+          name,
+    };
+    if (added.isEmpty) continue;
+    result ??= Map<int, List<String>>.of(alternativeWords);
+    result[i] = [...existing, ...added];
+  }
+  return result ?? alternativeWords;
 }
 
 /// סגנון החלפת שם הקודש בתצוגה.

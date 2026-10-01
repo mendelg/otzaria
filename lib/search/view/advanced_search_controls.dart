@@ -743,7 +743,9 @@ class _AdvancedSearchControlsState extends State<AdvancedSearchControls> {
               }
             : null,
       );
-      final tooltip = _optionTooltips[option];
+      final tooltip =
+          SearchQueryBuilder.wordOptionDescriptions[option] ??
+          _optionTooltips[option];
       return tooltip == null ? chip : Tooltip(message: tooltip, child: chip);
     }
 

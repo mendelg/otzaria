@@ -381,23 +381,28 @@ class _SearchDialogState extends State<SearchDialog> {
         runSpacing: 4,
         children: [
           for (final key in keys)
-            FilterChip(
-              label: Text(context.settingsText(key)),
-              visualDensity: VisualDensity.compact,
-              selected: _searchTab.globalSearchOptions[key] ?? false,
-              onSelected:
-                  disabledOptionIds.contains(
-                    SearchQueryBuilder.pluginOptionIdByWordOptionKey[key],
-                  )
-                  ? null
-                  : (selected) {
-                      setState(() {
-                        _searchTab.globalSearchOptions[key] = selected;
-                        // במצב הרגיל אין עורך פר-מילה — הסימון תמיד גלובלי.
-                        _searchTab.useGlobalSearchOptions.value = true;
-                      });
-                      _searchTab.searchOptionsChanged.value++;
-                    },
+            Tooltip(
+              message: context.settingsText(
+                SearchQueryBuilder.wordOptionDescriptions[key] ?? key,
+              ),
+              child: FilterChip(
+                label: Text(context.settingsText(key)),
+                visualDensity: VisualDensity.compact,
+                selected: _searchTab.globalSearchOptions[key] ?? false,
+                onSelected:
+                    disabledOptionIds.contains(
+                      SearchQueryBuilder.pluginOptionIdByWordOptionKey[key],
+                    )
+                    ? null
+                    : (selected) {
+                        setState(() {
+                          _searchTab.globalSearchOptions[key] = selected;
+                          // במצב הרגיל אין עורך פר-מילה — הסימון תמיד גלובלי.
+                          _searchTab.useGlobalSearchOptions.value = true;
+                        });
+                        _searchTab.searchOptionsChanged.value++;
+                      },
+              ),
             ),
         ],
       ),
