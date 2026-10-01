@@ -108,6 +108,12 @@ final class AltTocFlatIndex {
     return slot < 0 ? null : _dafTokens[slot];
   }
 
+  /// [dafNumberOf] כאינדקס ב-[dafTokens], או שלילי — השוואת מספרים בסריקה.
+  int dafNumberSlotOf(int i) => _dafNumbers[i];
+
+  /// כל הטוקנים ש-[dafNumberSlotOf] מצביע עליהם.
+  List<String> get dafTokens => _dafTokens;
+
   int get textCount => _texts.length;
 
   /// הטקסט של הערך, כאינדקס ב-[textTokensAt] (טקסט חוזר — אינדקס אחד).

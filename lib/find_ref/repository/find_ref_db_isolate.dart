@@ -721,9 +721,19 @@ List<int> matchAltTocFlatIndex(
       ? queryTokens.toSet().toList()
       : {...queryTokens.takeWhile((t) => t != 'דף'), 'דף'}.toList();
   final queryMask = altTocTokenMask(required);
-  final dafNumbers = dafCitation == null
+  final dafNumber = dafCitation == null
       ? null
       : hebrewTokenAlternatives(dafCitation.number);
+  final dafSlots = dafNumber == null
+      ? null
+      : Uint8List.fromList([
+          for (final token in index.dafTokens)
+            dafNumber.contains(token) ? 1 : 0,
+        ]);
+  bool dafMatches(int i) {
+    final slot = index.dafNumberSlotOf(i);
+    return slot >= 0 && dafSlots![slot] == 1;
+  }
 
   // לכל טקסט (בעצלתיים): אילו מהטוקנים הנדרשים מופיעים בו. ערך מתאים רק
   // כשהשרשרת שלו מכסה את כולם.
@@ -755,7 +765,7 @@ List<int> matchAltTocFlatIndex(
     for (var i = 0; i < masks.length; i++)
       if (masks[i] & queryMask == queryMask &&
           (maxRefTokens == null || index.refTokenCountOf(i) <= maxRefTokens) &&
-          (dafNumbers == null || dafNumbers.contains(index.dafNumberOf(i))) &&
+          (dafSlots == null || dafMatches(i)) &&
           (textBits == null || coversRequired(i)) &&
           // בלי ציון דף הכיסוי הוא בדיוק בדיקת הטוקנים של altTocFlatMatches.
           (textBits != null && dafCitation == null ||
