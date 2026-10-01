@@ -18,7 +18,10 @@ const _bookMatches = 'EXISTS (SELECT 1 FROM book WHERE id = ?1 AND title = ?2)';
 String _contentSql(sqlite3.Database db, {required bool blob}) {
   final split = DbCapabilities.probe(db).hasSplitLineContent;
   final column = split ? 'lc.content' : 'l.content';
-  return 'SELECT ${blob ? 'CAST($column AS BLOB)' : column} FROM line l '
+  final select = blob
+      ? "CAST($column AS BLOB), typeof($column) = 'blob'"
+      : column;
+  return 'SELECT $select FROM line l '
       '${split ? 'LEFT JOIN line_content lc ON lc.id = l.id ' : ''}'
       'WHERE l.bookId = ?1 AND $_bookMatches ORDER BY l.lineIndex';
 }
@@ -139,10 +142,9 @@ Future<List<Uint8List>?> _readJoinedChunks(
     var used = 0;
     var rows = 0;
     while (raw.step()) {
-      // CAST AS BLOB לא משנה מסגרת דחוסה; טקסט רגיל לא מתחיל בתחילית zstd.
-      final frame = codec.isCompressed ? raw.columnBlob(0) : null;
-      final text = frame != null && isZstdFrame(frame)
-          ? codec.bytes(frame)
+      // לפי סוג האחסון, כמו LineDao: BLOB שאינו מתפענח נדחה ולא עובר כטקסט.
+      final text = raw.columnInt64(1) != 0
+          ? codec.bytes(raw.columnBlob(0))
           : null;
       final size = (rows > 0 ? 1 : 0) + (text?.length ?? raw.columnBytes(0));
       if (used + size > chunk.length) {

@@ -328,4 +328,90 @@ void main() {
       }
     }, skip: skip);
   }
+
+  group('BLOB שאינו מתפענח נדחה בכל הקוראים', () {
+    const book = (id: _bookId, title: _title);
+    // מסגרת תקינה (טקסט "ascii") מ-line_content_codec_test.
+    final validFrame = base64.decode('KLUv/SPzm8ALBSkAAGFzY2lp');
+
+    /// מחליף את תוכן שורה 12 ב-[value]; ספר שלם ו-LineDao חייבים להיכשל.
+    Future<void> expectAllReadersReject(_Shape shape, Object value) async {
+      final dbPath = dbPaths[shape]!;
+      final writable = sqlite3.sqlite3.open(dbPath);
+      try {
+        writable.execute('UPDATE line_content SET content = ? WHERE id = 12', [
+          value,
+        ]);
+      } finally {
+        writable.close();
+      }
+      final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      try {
+        await expectLater(readBookContentText(db, book), throwsFormatException);
+        await expectLater(
+          readBookContentBytes(db, book),
+          throwsFormatException,
+        );
+      } finally {
+        db.close();
+      }
+      final database = MyDatabase.withPath(dbPath, readOnly: true);
+      try {
+        await expectLater(
+          SeforimRepository(database).getLineContents(_bookId),
+          throwsFormatException,
+        );
+      } finally {
+        database.close();
+      }
+    }
+
+    test('מסד בלי zstd_dict: מסגרת דחוסה אינה עוברת כטקסט', () async {
+      await expectAllReadersReject(_Shape.schema6, validFrame);
+    });
+
+    test('מסד בלי zstd_dict: BLOB של ASCII נדחה', () async {
+      await expectAllReadersReject(
+        _Shape.schema6,
+        Uint8List.fromList(utf8.encode('ascii')),
+      );
+    });
+
+    test('מסד דחוס: מסגרת שתחיליתה פגומה נדחית', () async {
+      await expectAllReadersReject(
+        _Shape.compressed,
+        Uint8List.fromList(validFrame)..[0] ^= 0x01,
+      );
+    }, skip: zstd == null ? 'libzstd אינו זמין' : null);
+
+    test('מסד דחוס: BLOB של ASCII נדחה', () async {
+      await expectAllReadersReject(
+        _Shape.compressed,
+        Uint8List.fromList(utf8.encode('ascii')),
+      );
+    }, skip: zstd == null ? 'libzstd אינו זמין' : null);
+
+    test('מסד דחוס: שורת TEXT בין שורות BLOB נקראת כמו שהיא', () async {
+      final dbPath = dbPaths[_Shape.compressed]!;
+      final writable = sqlite3.sqlite3.open(dbPath);
+      try {
+        writable.execute(
+          "UPDATE line_content SET content = 'שורה לא דחוסה' WHERE id = 12",
+        );
+      } finally {
+        writable.close();
+      }
+      final expected = [
+        for (final (id, _, content, _) in _lines)
+          id == 12 ? 'שורה לא דחוסה' : content,
+      ].join('\n');
+      final db = sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+      try {
+        expect(await readBookContentText(db, book), expected);
+        expect(utf8.decode((await readBookContentBytes(db, book))!), expected);
+      } finally {
+        db.close();
+      }
+    }, skip: zstd == null ? 'libzstd אינו זמין' : null);
+  });
 }
