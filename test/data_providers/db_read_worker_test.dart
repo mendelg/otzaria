@@ -11,6 +11,7 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
+import 'package:otzaria/migration/database/journal_mode.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
 import 'package:otzaria/models/links.dart';
@@ -104,6 +105,9 @@ void main() {
       'targetBookId, connectionTypeId) VALUES (1, 102, 200, 2, 5)',
     );
     database.close();
+    // כמו ב-SqliteDataProvider: מסד WAL בלי -shm גורם לשני קוראי RO מקבילים
+    // להתנגש ב-recovery (SQLITE_BUSY_RECOVERY).
+    await normalizeJournalModeForReadOnly(dbPath);
     return dbPath;
   }
 
