@@ -94,26 +94,38 @@ void main() {
 
     PdfViewer viewer() => tester.widget<PdfViewer>(find.byType(PdfViewer));
     final controller = viewer().controller!;
-    var hasLayout = false;
-    for (var i = 0; i < 40 && !hasLayout; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
-      );
-      if (controller.isReady) {
-        try {
-          controller.viewSize;
-          hasLayout = true;
-        } catch (_) {
-          // ה-controller נעשה מוכן לפני ה-layout הראשון.
-        }
+    // pdfium עונה מ-isolate אמיתי: בלי runAsync ההמשך נתקע בתור ה-microtasks
+    // של ה-FakeAsync, ו-await ישיר עליו לא חוזר לעולם.
+    Future<bool> pumpUntil(bool Function() condition) async {
+      for (var i = 0; i < 40 && !condition(); i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      return condition();
+    }
+
+    bool hasLayout() {
+      if (!controller.isReady) return false;
+      try {
+        controller.viewSize;
+        return true;
+      } catch (_) {
+        // ה-controller נעשה מוכן לפני ה-layout הראשון.
+        return false;
       }
     }
-    expect(hasLayout, isTrue);
 
-    await controller.textSelectionDelegate.selectAllText();
+    expect(await pumpUntil(hasLayout), isTrue);
+
+    final selecting = controller.textSelectionDelegate.selectAllText();
+    expect(
+      await pumpUntil(() => controller.textSelectionDelegate.hasSelectedText),
+      isTrue,
+    );
+    await selecting;
     await tester.pumpAndSettle();
-    expect(controller.textSelectionDelegate.hasSelectedText, isTrue);
 
     String? clipboardText;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
