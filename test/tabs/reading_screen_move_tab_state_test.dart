@@ -364,6 +364,57 @@ void main() {
     });
   });
 
+  group('ReadingScreen - unchanged tabs are not rebuilt', () {
+    Widget tabScreenWidget(WidgetTester tester, String title) => tester.widget(
+      find.byWidgetPredicate(
+        (w) => w is PdfCommentatorsTabScreen && w.tab.title.contains(title),
+        skipOffstage: false,
+      ),
+    );
+
+    testWidgets('switching tabs reuses the content of the other tabs', (
+      tester,
+    ) async {
+      final tabs = [_tab('א'), _tab('ב'), _tab('ג')];
+      addTearDown(() {
+        for (final t in tabs) {
+          t.dispose();
+        }
+      });
+      final bloc = await pumpReadingScreen(tester, tabs);
+      await visitAllTabs(tester, bloc, 0);
+
+      final before = tabScreenWidget(tester, 'ג');
+      bloc.add(const SetCurrentTab(1));
+      await tester.pumpAndSettle();
+
+      expect(
+        identical(tabScreenWidget(tester, 'ג'), before),
+        isTrue,
+        reason: 'a background tab that did not change must not be rebuilt',
+      );
+    });
+
+    testWidgets('an in-place tab update still rebuilds the tab content', (
+      tester,
+    ) async {
+      final tabs = [_tab('א'), _tab('ב')];
+      addTearDown(() {
+        for (final t in tabs) {
+          t.dispose();
+        }
+      });
+      final bloc = await pumpReadingScreen(tester, tabs);
+      await visitAllTabs(tester, bloc, 0);
+
+      final before = tabScreenWidget(tester, 'ב');
+      bloc.add(TogglePinTab(tabs[1]));
+      await tester.pumpAndSettle();
+
+      expect(identical(tabScreenWidget(tester, 'ב'), before), isFalse);
+    });
+  });
+
   group('ReadingScreen — ה-PageView עוקב אחרי הטאב הפעיל', () {
     double displayedPage(WidgetTester tester) {
       final pageView = tester.widget<PageView>(find.byType(PageView));
