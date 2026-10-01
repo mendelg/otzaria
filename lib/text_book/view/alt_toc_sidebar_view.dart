@@ -26,6 +26,14 @@ import 'package:otzaria/text_book/utils/reading_segment_navigation.dart';
 import 'package:otzaria/widgets/navigation/nav_panel_search.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
+/// "הלכות וסימנים" (`SimanNames`) ראשון — המבנה הראשון המתאים למיקום הוא
+/// שנפתח מעצמו; שאר המבנים בסדר המסד.
+List<AltTocStructure> sidebarStructureOrder(List<AltTocStructure> structures) =>
+    [
+      ...structures.where((s) => s.key == 'SimanNames'),
+      ...structures.where((s) => s.key != 'SimanNames'),
+    ];
+
 class AltTocSidebarView extends StatefulWidget {
   final TextBook book;
   final void Function() closeLeftPaneCallback;
@@ -259,7 +267,7 @@ class _AltTocSidebarViewState extends State<AltTocSidebarView>
       if (mounted) {
         setState(() {
           _structures = [
-            ...structures,
+            ...sidebarStructureOrder(structures),
             if (_hasDibburimEntries) dibburimStructure,
           ];
           _isLoading = false;
