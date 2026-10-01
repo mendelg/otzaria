@@ -3286,23 +3286,6 @@ extension BookAcronymRepository on SeforimRepository {
     return result;
   }
 
-  /// מסדר שורות TOC כפי ש-`ORDER BY lineIndex, level` היה מסדר אותן
-  /// (NULL ראשון, כמנהג SQLite), עם `id` כשובר-שוויון דטרמיניסטי.
-  void _sortByLineIndexThenLevel(List<Map<String, dynamic>> rows) {
-    rows.sort((a, b) {
-      final ai = a['lineIndex'] as int?;
-      final bi = b['lineIndex'] as int?;
-      if (ai != bi) {
-        if (ai == null) return -1;
-        if (bi == null) return 1;
-        return ai.compareTo(bi);
-      }
-      final levelCompare = (a['level'] as int).compareTo(b['level'] as int);
-      if (levelCompare != 0) return levelCompare;
-      return (a['id'] as int).compareTo(b['id'] as int);
-    });
-  }
-
   /// בונה (פעם אחת לכל [bookId]) את רשימת ערכי ה-TOC המעובדים.
   /// כל ערך כולל את ה-reference המלא (כולל נתיב אבות שלם) ואת הטוקנים המנורמלים
   /// שלו מראש. מבנה היררכי (childrenByParentId) מאפשר חיפוש רמה-אחר-רמה.
@@ -3316,7 +3299,7 @@ extension BookAcronymRepository on SeforimRepository {
 
     final db = await _database.database;
 
-    final rawEntries = db
+    final rawRows = db
         .select(
           '''
         SELECT t.id, tt.text, t.level, t.textId, t.lineId, t.parentId
@@ -3326,49 +3309,64 @@ extension BookAcronymRepository on SeforimRepository {
       ''',
           [bookId],
         )
-        .toMapList();
+        .rows;
 
-    final lineIndexes = rawEntries.isEmpty
-        ? const <int, int>{}
-        : _lineIndexesForBook(db, bookId, [
-            for (final e in rawEntries)
-              if (e['lineId'] case final int lineId) lineId,
-          ]);
-    final tocEntries = <Map<String, dynamic>>[];
-    for (final e in rawEntries) {
-      final lineId = e['lineId'] as int?;
-      tocEntries.add({
-        ...e,
-        // שורה חסרה (lineId שאינו קיים) נופלת ל-lineId עצמו, כפי שעשה
-        // ה-COALESCE על ה-LEFT JOIN.
-        'lineIndex': lineId == null ? null : (lineIndexes[lineId] ?? lineId),
-        'dbLineId': lineId ?? 0,
-      });
-    }
-    _sortByLineIndexThenLevel(tocEntries);
-
-    if (tocEntries.isEmpty) {
+    if (rawRows.isEmpty) {
       _putTocCache(bookId, _TocBookCache.empty);
       return _TocBookCache.empty;
     }
+
+    final lineIndexes = _lineIndexesForBook(db, bookId, [
+      for (final r in rawRows)
+        if (r[4] case final int lineId) lineId,
+    ]);
+    final tocEntries = [
+      for (final r in rawRows)
+        (
+          id: r[0] as int,
+          text: r[1] as String,
+          level: r[2] as int,
+          textId: r[3] as int,
+          lineId: r[4] as int?,
+          parentId: r[5] as int?,
+          // שורה חסרה (lineId שאינו קיים) נופלת ל-lineId עצמו, כפי שעשה
+          // ה-COALESCE על ה-LEFT JOIN.
+          lineIndex: r[4] == null
+              ? null
+              : (lineIndexes[r[4] as int] ?? r[4] as int),
+        ),
+    ];
+    // כמו `ORDER BY lineIndex, level` (NULL ראשון), ו-`id` שובר שוויון.
+    tocEntries.sort((a, b) {
+      final ai = a.lineIndex;
+      final bi = b.lineIndex;
+      if (ai != bi) {
+        if (ai == null) return -1;
+        if (bi == null) return 1;
+        return ai.compareTo(bi);
+      }
+      final levelCompare = a.level.compareTo(b.level);
+      if (levelCompare != 0) return levelCompare;
+      return a.id.compareTo(b.id);
+    });
 
     // מפות עזר לבניית נתיב אבות ומבנה היררכי.
     final entryTexts = <int, String>{};
     final entryLevels = <int, int>{};
     final entryParentIds = <int, int?>{};
     for (final e in tocEntries) {
-      final id = e['id'] as int;
-      entryTexts[id] = e['text'] as String;
-      entryLevels[id] = e['level'] as int;
-      entryParentIds[id] = e['parentId'] as int?;
+      entryTexts[e.id] = e.text;
+      entryLevels[e.id] = e.level;
+      entryParentIds[e.id] = e.parentId;
     }
 
-    // בונה נתיב reference מלא ע"י מעבר רקורסיבי על שרשרת האבות.
+    final pathById = <int, String>{};
     String buildPath(int? id) {
       if (id == null) return bookTitle;
       final lvl = entryLevels[id];
       if (lvl == null || lvl == 0) return bookTitle;
-      return '${buildPath(entryParentIds[id])} ${entryTexts[id]!}';
+      return pathById[id] ??=
+          '${buildPath(entryParentIds[id])} ${entryTexts[id]!}';
     }
 
     final built = <_CachedTocEntry>[];
@@ -3377,14 +3375,14 @@ extension BookAcronymRepository on SeforimRepository {
     final tokensByTextId = <int, List<String>>{};
 
     for (final e in tocEntries) {
-      final id = e['id'] as int;
-      final level = e['level'] as int;
+      final id = e.id;
+      final level = e.level;
       if (level == 0) continue;
 
-      final text = e['text'] as String;
-      final lineIndex = e['lineIndex'] as int? ?? 0;
-      final dbLineId = e['dbLineId'] as int? ?? 0;
-      final parentId = e['parentId'] as int?;
+      final text = e.text;
+      final lineIndex = e.lineIndex ?? 0;
+      final dbLineId = e.lineId ?? 0;
+      final parentId = e.parentId;
 
       final ancestorPath = buildPath(parentId);
       final fullRef = text.isNotEmpty ? '$ancestorPath $text' : ancestorPath;
@@ -3393,7 +3391,7 @@ extension BookAcronymRepository on SeforimRepository {
       // ספר — 30 אלף ערכים חולקים כ-1,000 טקסטים. בלי המטמון אותה מחרוזת
       // מנורמלת מחדש בכל ערך.
       final ownTokens = tokensByTextId.putIfAbsent(
-        e['textId'] as int,
+        e.textId,
         () => normalizeForFindRefMatch(
           text,
         ).split(' ').where((t) => t.isNotEmpty).toList(growable: false),
