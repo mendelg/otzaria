@@ -111,6 +111,12 @@ class LibraryAccessGate {
 
   static LibraryAccessGate instance = LibraryAccessGate();
 
+  /// רושם חלון באפיק לפני אתחול הספרייה.
+  int? registerWindow({bool asOwner = false}) {
+    _bus.onRequest ??= handlePeerRequest;
+    return _bus.register(asOwner: asOwner);
+  }
+
   static const String requestSuspend = 'library.suspend';
   static const String requestResume = 'library.resume';
 

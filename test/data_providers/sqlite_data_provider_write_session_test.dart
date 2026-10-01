@@ -68,6 +68,24 @@ void main() {
     }
   });
 
+  test('השעיה במהלך initialize אינה מאשרת לפני שהפתיחה נסגרה', () async {
+    final provider = SqliteDataProvider.instance;
+    await provider.dispose();
+    final initializing = provider.initialize();
+    while (!provider.debugIsInitializing) {
+      await Future<void>.value();
+    }
+    expect(provider.isInitialized, isFalse);
+    await provider.closeForExternalWrite();
+    try {
+      await initializing;
+      expect(provider.isInitialized, isFalse);
+    } finally {
+      await provider.reopenAfterExternalWrite();
+    }
+    expect(provider.isInitialized, isTrue);
+  });
+
   test('החיבור הרגיל פתוח read-only — כתיבה ישירה נכשלת', () async {
     final repo = SqliteDataProvider.instance.repository;
     expect(repo, isNotNull);

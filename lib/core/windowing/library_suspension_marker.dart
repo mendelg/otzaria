@@ -59,30 +59,25 @@ class LibrarySuspensionMarker {
 
   /// ממתין עד שהסימון יוסר. חוזר מיד כשאין סימון או כשהוא שלנו.
   ///
-  /// [cap] מונע המתנה נצחית אם הסימון נשאר רשום בלי מאזין.
+  /// [cap] מגביל המתנה לתגובה בודדת; סימון רשום לעולם אינו מתיר פתיחה.
   static Future<void> waitUntilReleased({
     Duration poll = const Duration(seconds: 5),
     Duration cap = const Duration(minutes: 20),
   }) async {
     if (_port != null) return;
-    final stopwatch = Stopwatch()..start();
-    while (stopwatch.elapsed < cap) {
+    while (true) {
       final target = IsolateNameServer.lookupPortByName(_name);
       if (target == null) return;
       final reply = ReceivePort();
       try {
         target.send(reply.sendPort);
-        await reply.first.timeout(poll);
+        await reply.first.timeout(poll < cap ? poll : cap);
       } on TimeoutException {
         // הסימון עדיין רשום; בודקים שוב.
       } finally {
         reply.close();
       }
     }
-    debugPrint(
-      '[LibrarySuspensionMarker] gave up waiting after '
-      '${cap.inSeconds}s; opening the library anyway',
-    );
   }
 
   @visibleForTesting

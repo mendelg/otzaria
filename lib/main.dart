@@ -65,6 +65,7 @@ import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_bloc.dart';
 import 'package:otzaria/library_update/bloc/library_update_bloc.dart';
+import 'package:otzaria/library_update/services/library_access_gate.dart';
 import 'package:otzaria/library_update/repository/library_update_repository.dart';
 import 'package:otzaria/library_update/services/streaming_patch_downloader.dart';
 import 'package:otzaria/library_update/services/companion_assets_service.dart';
@@ -2138,7 +2139,9 @@ void _claimWindowBusSlot() {
   // ⚠️ מגודר בפלטפורמה: בלי זה גם מובייל פתח `ReceivePort` ורשם כינוי
   // בעלים בשביל אפיק שאף אחד לא ידבר בו.
   if (!MultiWindowService.canOpenWindows) return;
-  final slot = WindowBus.instance.register(asOwner: !WindowRole.isSecondary);
+  final slot = LibraryAccessGate.instance.registerWindow(
+    asOwner: !WindowRole.isSecondary,
+  );
   if (slot == null) {
     debugPrint('⚠️ כל משבצות האפיק תפוסות — החלון הזה לא יוכל לשתף מצב');
   }

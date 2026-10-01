@@ -4,6 +4,10 @@ import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
+import 'package:otzaria/migration/database/query_loader.dart';
+import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/core/windowing/library_suspension_marker.dart';
 import 'package:otzaria/core/windowing/window_bus.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
@@ -62,10 +66,39 @@ Future<void> _peerMain(List<Object> args) async {
   ready.send(true);
 }
 
+Future<void> _bootstrapPeerMain(List<Object> args) async {
+  WindowBus.namespace = _namespace;
+  final ready = args[0] as SendPort;
+  final initialized = args[1] as SendPort;
+  QueryLoader.seedCache(args[3] as Map<String, Map<String, String>>);
+  final provider = SqliteDataProvider.instance;
+  await Settings.init(cacheProvider: _MemoryCacheProvider());
+  await Settings.setValue<String>(
+    SettingsRepository.keyDbEffectivePath,
+    args[2] as String,
+  );
+  final gate = LibraryAccessGate(
+    logError: (_, _, _) {},
+    peerAccess: LibraryAccessRoutine(
+      suspend: provider.closeForExternalWrite,
+      resume: (_) => provider.reopenAfterExternalWrite(),
+    ),
+  );
+  ready.send(gate.registerWindow());
+  await Future<void>.delayed(const Duration(milliseconds: 200));
+  await provider.initialize();
+  WindowBus.instance.onRequest = (request) async {
+    if (request['type'] == 'status') return {'open': provider.isInitialized};
+    return gate.handlePeerRequest(request);
+  };
+  initialized.send(true);
+}
+
 Future<void> _waiterMain(SendPort done) async {
   WindowBus.namespace = _namespace;
   await LibrarySuspensionMarker.waitUntilReleased(
-    poll: const Duration(milliseconds: 100),
+    poll: const Duration(milliseconds: 20),
+    cap: const Duration(milliseconds: 80),
   );
   done.send(true);
 }
@@ -82,6 +115,7 @@ void _writeDb(String path, String value) {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory temp;
   late String dbPath;
   final isolates = <Isolate>[];
@@ -108,7 +142,8 @@ void main() {
     logError: (_, _, _) {},
   );
 
-  setUp(() {
+  setUp(() async {
+    await QueryLoader.initialize();
     WindowBus.namespace = _namespace;
     expect(WindowBus.instance.register(), 1);
     temp = Directory.systemTemp.createTempSync('gate_isolates_');
@@ -179,6 +214,32 @@ void main() {
     skip: !Platform.isWindows,
   );
 
+  test('חלון רשום בזמן bootstrap מאשר השעיה לפני התקנת מטפל ה-UI', () async {
+    final ready = ReceivePort();
+    final initialized = ReceivePort();
+    final finished = Completer<void>();
+    initialized.listen((_) => finished.complete());
+    isolates.add(
+      await Isolate.spawn(_bootstrapPeerMain, [
+        ready.sendPort,
+        initialized.sendPort,
+        dbPath,
+        QueryLoader.cacheSnapshot,
+      ]),
+    );
+    expect(await ready.first, 2);
+    ready.close();
+    final gate = coordinator();
+    final suspension = await gate.suspendAll();
+    expect(suspension.releasedSlots, {2});
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(finished.isCompleted, isFalse);
+    await gate.resumeAll(suspension, dbReplaced: true);
+    await finished.future.timeout(const Duration(seconds: 3));
+    expect(await status(2), {'open': true});
+    initialized.close();
+  });
+
   test('חלון שנפתח בזמן ההשעיה ממתין עד resume', () async {
     final gate = coordinator();
     final suspension = await gate.suspendAll();
@@ -195,4 +256,63 @@ void main() {
     await finished.future.timeout(const Duration(seconds: 3));
     done.close();
   });
+}
+
+class _MemoryCacheProvider extends CacheProvider {
+  final Map<String, Object?> _values = {};
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  bool containsKey(String key) => _values.containsKey(key);
+
+  @override
+  Set getKeys() => _values.keys.toSet();
+
+  @override
+  bool? getBool(String key, {bool? defaultValue}) =>
+      _values[key] as bool? ?? defaultValue;
+
+  @override
+  double? getDouble(String key, {double? defaultValue}) =>
+      _values[key] as double? ?? defaultValue;
+
+  @override
+  int? getInt(String key, {int? defaultValue}) =>
+      _values[key] as int? ?? defaultValue;
+
+  @override
+  String? getString(String key, {String? defaultValue}) =>
+      _values[key] as String? ?? defaultValue;
+
+  @override
+  T? getValue<T>(String key, {T? defaultValue}) {
+    final value = _values[key];
+    if (value is T) return value;
+    return defaultValue;
+  }
+
+  @override
+  Future<void> remove(String key) async => _values.remove(key);
+
+  @override
+  Future<void> removeAll() async => _values.clear();
+
+  @override
+  Future<void> setBool(String key, bool? value) async => _values[key] = value;
+
+  @override
+  Future<void> setDouble(String key, double? value) async =>
+      _values[key] = value;
+
+  @override
+  Future<void> setInt(String key, int? value) async => _values[key] = value;
+
+  @override
+  Future<void> setObject<T>(String key, T? value) async => _values[key] = value;
+
+  @override
+  Future<void> setString(String key, String? value) async =>
+      _values[key] = value;
 }

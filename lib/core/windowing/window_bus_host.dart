@@ -66,7 +66,9 @@ class _WindowBusHostState extends State<WindowBusHost> {
     // ⚠️ החלון הראשון רושם גם את כינוי הבעלים. בלעדיו איתור מחזיק המאגרים
     // המשותפים היה סריקת `describe` עם timeout — והבעלים דווקא עסוק בזמן
     // שנפתח חלון שני, כלומר הסריקה פקעה בדיוק כשהיא נחוצה.
-    final slot = WindowBus.instance.register(asOwner: !WindowRole.isSecondary);
+    final slot = LibraryAccessGate.instance.registerWindow(
+      asOwner: !WindowRole.isSecondary,
+    );
     WindowBus.instance.onRequest = _handleRequest;
     LibraryAccessGate.instance.onLibraryReplaced = () {
       if (mounted) context.read<LibraryBloc>().add(const RefreshLibrary());
