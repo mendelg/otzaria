@@ -1376,8 +1376,21 @@ class SeforimRepository {
 
   /// בונה את האינדקס לספרים שיש להם שורות עם heRef אך אין להם שורות
   /// באינדקס, או שחסרים להם המפתחות החלקיים — ספרים אישיים שנוצרו קודם.
+  /// Bump when the line_ref key format changes, so existing books are
+  /// re-indexed once by [backfillMissingLineRefIndexes].
+  static const int lineRefIndexVersion = 2;
+  static const String _lineRefIndexVersionKey = 'line_ref_index_version';
+
   Future<void> backfillMissingLineRefIndexes() async {
     final db = await _database.database;
+    // Every import builds its own index (generator.dart), so the full scan
+    // below is needed only once per index format.
+    final done = db.select('SELECT value FROM db_meta WHERE key = ?', [
+      _lineRefIndexVersionKey,
+    ]);
+    if (done.isNotEmpty && done.first['value'] == '$lineRefIndexVersion') {
+      return;
+    }
     final missing = db
         .select(
           "SELECT DISTINCT l.bookId FROM line l "
@@ -1410,6 +1423,10 @@ class SeforimRepository {
     for (final bookId in missing) {
       await rebuildLineRefIndex(bookId);
     }
+    db.execute('INSERT OR REPLACE INTO db_meta (key, value) VALUES (?, ?)', [
+      _lineRefIndexVersionKey,
+      '$lineRefIndexVersion',
+    ]);
   }
 
   /// מועמדי מפתח חלקי ([buildPartialRefKey]) בכל ספר — אחד לכל חלק שהושמט
@@ -2910,6 +2927,7 @@ extension FileSyncRepository on SeforimRepository {
   /// Used when updating book content.
   Future<void> deleteBookLines(int bookId) async {
     final db = await database.database;
+    db.execute('DELETE FROM line_ref WHERE bookId = ?', [bookId]);
     db.execute('DELETE FROM line WHERE bookId = ?', [bookId]);
   }
 
@@ -2937,6 +2955,7 @@ extension FileSyncRepository on SeforimRepository {
 
     await deleteBookLines(bookId);
     await deleteBookTocEntries(bookId);
+    await updateBookTotalLines(bookId, 0);
   }
 }
 

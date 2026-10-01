@@ -316,16 +316,17 @@ class DatabaseGenerator {
       final existingBook = await repository
           .checkBookExistsInCategoryWithFileType(title, categoryId, fileType);
       if (existingBook != null) {
-        if (existingBook.sourceId != sourceId) {
-          await repository.updateBookSourceId(existingBook.id, sourceId);
-        }
-
         if ((format?.isProductionSupported ?? false) && insertContent) {
           await repository.clearBookContent(existingBook.id);
           // כשל כאן משאיר את הספר בלי תוכן, אך גם בלי לעדכן את חותמת הקובץ
           // (`updateBookStorage` שלמטה) — ולכן הסריקה הבאה תנסה שוב במקום
           // לדלג עליו כ"לא השתנה".
-          await processBookContent(bookPath, existingBook.id);
+          try {
+            await processBookContent(bookPath, existingBook.id);
+          } catch (_) {
+            await repository.clearBookContent(existingBook.id);
+            rethrow;
+          }
           // Keep file stats and storage location in sync. If insertContent is true and it's a txt file, filePath becomes null.
           try {
             final file = File(bookPath);
@@ -363,6 +364,10 @@ class DatabaseGenerator {
               e,
             );
           }
+        }
+
+        if (existingBook.sourceId != sourceId) {
+          await repository.updateBookSourceId(existingBook.id, sourceId);
         }
 
         _processedBooksCount++;
@@ -416,9 +421,8 @@ class DatabaseGenerator {
       if (insertContent) {
         try {
           await processBookContent(bookPath, insertedBookId);
-        } on DocumentConversionException {
-          // ההמרה נכשלה — שורת ספר בלי תוכן הייתה מופיעה בספרייה כספר ריק
-          // שלא ניתן לפתוח. מסירים אותה ומעבירים את הכשל לרישום.
+        } catch (_) {
+          // כל כשל משאיר את הספר ניתן לניסיון חוזר בסריקה הבאה.
           await repository.deleteBookCompletely(insertedBookId);
           rethrow;
         }
