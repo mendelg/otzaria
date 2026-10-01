@@ -147,16 +147,17 @@ class WindowBus {
     if (message is! Map) return;
     final reply = message['reply'];
     final body = message['body'];
-    if (reply is! SendPort || body is! Map) return;
+    // בלי reply: הודעת סיום של isolate, שה-VM שולח ואין למי לענות.
+    if (body is! Map || (reply != null && reply is! SendPort)) return;
     final request = Map<String, dynamic>.from(body);
 
     Future<void>(() async {
       try {
         final handler = onRequest;
         final result = handler == null ? null : await handler(request);
-        reply.send({'ok': true, 'result': result});
+        (reply as SendPort?)?.send({'ok': true, 'result': result});
       } catch (e) {
-        reply.send({'ok': false, 'error': '$e'});
+        (reply as SendPort?)?.send({'ok': false, 'error': '$e'});
       }
     });
   }

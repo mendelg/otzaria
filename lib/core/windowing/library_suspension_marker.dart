@@ -14,9 +14,13 @@ class LibrarySuspensionMarker {
   LibrarySuspensionMarker._();
 
   static String get _name => WindowBus.sharedName('librarySuspended');
+  static String get _reaperName => '$_name.reaper';
+  static String _tokenName(String token) => '$_name.$token';
 
   static ReceivePort? _port;
+  static String? _token;
   static final List<SendPort> _waiters = [];
+  static final Set<SendPort> _exitObservers = {};
 
   /// האם ה-isolate הזה מחזיק את הסימון.
   static bool get isHeldHere => _port != null;
@@ -29,18 +33,63 @@ class LibrarySuspensionMarker {
   static bool get isSuspendedElsewhere =>
       _port == null && IsolateNameServer.lookupPortByName(_name) != null;
 
-  /// רושם את הסימון. false כשהוא כבר רשום, כאן או ב-isolate אחר.
-  static bool acquire() {
+  /// מבקש מה-VM לשלוח [notice] ל-[observers] כשה-isolate הזה מסתיים.
+  ///
+  /// חוזר רק כשהבקשות כבר עובדו: ping אחריהן מאותו isolate מעובד אחריהן.
+  static Future<void> notifyOnExit(
+    Iterable<SendPort> observers,
+    Object notice,
+  ) async {
+    final self = Isolate.current;
+    for (final observer in observers) {
+      self.addOnExitListener(observer, response: notice);
+      _exitObservers.add(observer);
+    }
+    final armed = ReceivePort();
+    try {
+      self.ping(armed.sendPort, priority: Isolate.immediate);
+      await armed.first;
+    } finally {
+      armed.close();
+    }
+  }
+
+  /// רושם את הסימון בשם [token]. false כשהוא כבר רשום, כאן או ב-isolate אחר.
+  ///
+  /// [observers] מקבלים [notice] אם ה-isolate הזה מת, ונדרכים לפני הרישום
+  /// כדי שלא תהיה נעילה בלי מי שיראה את מות בעליה.
+  static Future<bool> acquire(
+    String token, {
+    Iterable<SendPort> observers = const [],
+    Object? notice,
+  }) async {
+    if (_port != null || isRegistered) return false;
+    await notifyOnExit(observers, notice ?? token);
     if (_port != null) return false;
     final port = ReceivePort();
-    if (!IsolateNameServer.registerPortWithName(port.sendPort, _name)) {
+    // קודם שם הזיהוי: מי שקיבל הודעת סיום מסיר רק נעילה שהשם הזה מצביע עליה.
+    if (!IsolateNameServer.registerPortWithName(
+      port.sendPort,
+      _tokenName(token),
+    )) {
       port.close();
+      _cancelExitNotices();
+      return false;
+    }
+    if (!IsolateNameServer.registerPortWithName(port.sendPort, _name)) {
+      IsolateNameServer.removePortNameMapping(_tokenName(token));
+      port.close();
+      _cancelExitNotices();
       return false;
     }
     port.listen((message) {
-      if (message is SendPort) _waiters.add(message);
+      if (message is! SendPort || _waiters.contains(message)) return;
+      _waiters.add(message);
+      Isolate.current.addOnExitListener(message, response: token);
+      _exitObservers.add(message);
     });
     _port = port;
+    _token = token;
     return true;
   }
 
@@ -49,12 +98,45 @@ class LibrarySuspensionMarker {
     final port = _port;
     if (port == null) return;
     IsolateNameServer.removePortNameMapping(_name);
+    IsolateNameServer.removePortNameMapping(_tokenName(_token!));
+    _cancelExitNotices();
     for (final waiter in _waiters) {
       waiter.send(true);
     }
     _waiters.clear();
     port.close();
     _port = null;
+    _token = null;
+  }
+
+  static void _cancelExitNotices() {
+    for (final observer in _exitObservers) {
+      Isolate.current.removeOnExitListener(observer);
+    }
+    _exitObservers.clear();
+  }
+
+  /// מסיר נעילה שבעליה, בעל [token], כבר הסתיים לפי הודעת הסיום של ה-VM.
+  ///
+  /// לעולם לא נקרא מתוך timeout: בעלים חי, גם חסום בקריאה נייטיב, אינו
+  /// שולח הודעת סיום. השם [_reaperName] מונע ששני מנקים יסירו נעילה חדשה.
+  static void reapExitedOwner(String token) {
+    final guard = RawReceivePort();
+    if (!IsolateNameServer.registerPortWithName(guard.sendPort, _reaperName)) {
+      guard.close();
+      return;
+    }
+    try {
+      final owned = IsolateNameServer.lookupPortByName(_tokenName(token));
+      if (owned == null) return;
+      if (IsolateNameServer.lookupPortByName(_name) == owned) {
+        IsolateNameServer.removePortNameMapping(_name);
+      }
+      IsolateNameServer.removePortNameMapping(_tokenName(token));
+    } finally {
+      IsolateNameServer.removePortNameMapping(_reaperName);
+      guard.close();
+    }
   }
 
   /// ממתין עד שהסימון יוסר. חוזר מיד כשאין סימון או כשהוא שלנו.
@@ -65,18 +147,25 @@ class LibrarySuspensionMarker {
     Duration cap = const Duration(minutes: 20),
   }) async {
     if (_port != null) return;
-    while (true) {
-      final target = IsolateNameServer.lookupPortByName(_name);
-      if (target == null) return;
-      final reply = ReceivePort();
-      try {
+    // port אחד לכל ההמתנה, כדי שהודעת הסיום של הבעלים לא תיפול בין סבבים.
+    final reply = ReceivePort();
+    final messages = reply.asBroadcastStream();
+    try {
+      while (true) {
+        final target = IsolateNameServer.lookupPortByName(_name);
+        if (target == null) return;
         target.send(reply.sendPort);
-        await reply.first.timeout(poll < cap ? poll : cap);
-      } on TimeoutException {
-        // הסימון עדיין רשום; בודקים שוב.
-      } finally {
-        reply.close();
+        try {
+          final message = await messages.first.timeout(
+            poll < cap ? poll : cap,
+          );
+          if (message is String) reapExitedOwner(message);
+        } on TimeoutException {
+          // הסימון עדיין רשום; בודקים שוב.
+        }
       }
+    } finally {
+      reply.close();
     }
   }
 
@@ -84,5 +173,6 @@ class LibrarySuspensionMarker {
   static void resetForTesting() {
     release();
     IsolateNameServer.removePortNameMapping(_name);
+    IsolateNameServer.removePortNameMapping(_reaperName);
   }
 }
