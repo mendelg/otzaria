@@ -1,15 +1,20 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/data/data_providers/book_text_reader.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
+import 'package:otzaria/migration/database/line_content_codec.dart';
 import 'package:otzaria/migration/database/query_loader.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
+
+import '../support/zstd_test_lib.dart';
 
 const _title = 'טור';
 const _categoryId = 7;
@@ -32,9 +37,21 @@ const _versionLines = [
   (14, 'נוסח ממוזג ד'),
 ];
 
-/// מסד בצורת סכמה 5 ([split] false) או סכמה 6 עם אותו תוכן לוגי.
-String _createDb(Directory dir, {required bool split}) {
-  final dbPath = path.join(dir.path, split ? 'schema6.db' : 'schema5.db');
+/// צורות המסד שהקוראים מקבלים, עם אותו תוכן לוגי.
+enum _Shape {
+  schema5('סכמה 5'),
+  schema6('סכמה 6'),
+  compressed('סכמה 6 דחוסה');
+
+  const _Shape(this.label);
+  final String label;
+  bool get split => this != schema5;
+}
+
+/// [zstd] נדרש לצורה [_Shape.compressed]: הטקסט נדחס כמו בשלב של SeforimLibrary.
+String _createDb(Directory dir, _Shape shape, {DynamicLibrary? zstd}) {
+  final split = shape.split;
+  final dbPath = path.join(dir.path, '${shape.name}.db');
   final db = sqlite3.sqlite3.open(dbPath);
   try {
     db.execute(
@@ -139,27 +156,58 @@ String _createDb(Directory dir, {required bool split}) {
     db.execute(
       'INSERT INTO alt_toc_entry VALUES (3, 2, 3, 13, 0, 1), (4, 2, 4, 14, 1, 0)',
     );
+    if (shape == _Shape.compressed) _compressText(db, zstd!);
   } finally {
     db.close();
   }
   return dbPath;
 }
 
+void _compressText(sqlite3.Database db, DynamicLibrary zstd) {
+  final dictionary = File(
+    'test/fixtures/line_content_codec/dict.zdict',
+  ).readAsBytesSync();
+  db.execute('CREATE TABLE zstd_dict (id INTEGER PRIMARY KEY, dict BLOB)');
+  db.execute('INSERT INTO zstd_dict VALUES (1, ?)', [dictionary]);
+  Uint8List frame(String text) => compressWithDictionary(
+    zstd,
+    Uint8List.fromList(utf8.encode(text)),
+    dictionary,
+  );
+  for (final row in db.select('SELECT id, content FROM line_content')) {
+    db.execute('UPDATE line_content SET content = ? WHERE id = ?', [
+      frame(row['content'] as String),
+      row['id'],
+    ]);
+  }
+  for (final row in db.select(
+    'SELECT rowid, content FROM version_line WHERE content IS NOT NULL',
+  )) {
+    db.execute('UPDATE version_line SET content = ? WHERE rowid = ?', [
+      frame(row['content'] as String),
+      row['rowid'],
+    ]);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  final zstd = openZstdForTests();
   late Directory tempDir;
-  late Map<bool, String> dbPaths;
+  late Map<_Shape, String> dbPaths;
 
   setUpAll(() async {
     await QueryLoader.initialize();
+    if (zstd != null) LineContentCodec.openLibrary = () => zstd;
   });
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('otzaria_line_split');
     dbPaths = {
-      for (final split in [false, true])
-        split: _createDb(tempDir, split: split),
+      for (final shape in _Shape.values)
+        if (shape != _Shape.compressed || zstd != null)
+          shape: _createDb(tempDir, shape, zstd: zstd),
     };
   });
 
@@ -170,11 +218,15 @@ void main() {
   test(
     'DbCapabilities מזהה את צורת סכמה 6 רק כשהתוכן הועבר ל-line_content',
     () {
-      for (final split in [false, true]) {
-        final db = sqlite3.sqlite3.open(dbPaths[split]!);
+      for (final MapEntry(key: shape, value: dbPath) in dbPaths.entries) {
+        final db = sqlite3.sqlite3.open(dbPath);
         try {
           final capabilities = DbCapabilities.probe(db);
-          expect(capabilities.hasSplitLineContent, split);
+          expect(capabilities.hasSplitLineContent, shape.split);
+          expect(
+            LineContentCodec.of(db).isCompressed,
+            shape == _Shape.compressed,
+          );
           expect(capabilities.hasLines, isTrue);
         } finally {
           db.close();
@@ -183,12 +235,14 @@ void main() {
     },
   );
 
-  for (final split in [false, true]) {
-    final shape = split ? 'סכמה 6' : 'סכמה 5';
+  for (final shape in _Shape.values) {
+    final skip = shape == _Shape.compressed && zstd == null
+        ? 'libzstd אינו זמין'
+        : null;
 
-    test('$shape: טווח טקסט ממוזג ונוסח מהדורה', () {
+    test('${shape.label}: טווח טקסט ממוזג ונוסח מהדורה', () {
       final merged = DatabaseLibraryProvider.loadBookTextRangeRowsForTesting(
-        dbPath: dbPaths[split]!,
+        dbPath: dbPaths[shape]!,
         title: _title,
         categoryId: _categoryId,
         fileType: 'txt',
@@ -198,7 +252,7 @@ void main() {
       expect(merged!.lines, [for (final (_, _, content, _) in _lines) content]);
 
       final version = DatabaseLibraryProvider.loadBookTextRangeRowsForTesting(
-        dbPath: dbPaths[split]!,
+        dbPath: dbPaths[shape]!,
         title: _title,
         categoryId: _categoryId,
         fileType: 'txt',
@@ -215,7 +269,7 @@ void main() {
       ]);
 
       final partial = DatabaseLibraryProvider.loadBookTextRangeRowsForTesting(
-        dbPath: dbPaths[split]!,
+        dbPath: dbPaths[shape]!,
         title: _title,
         categoryId: _categoryId,
         fileType: 'txt',
@@ -223,11 +277,11 @@ void main() {
         endLine: 3,
       );
       expect(partial!.lines, ['הלכות שבת פתיחה', 'נוסח ממוזג ג']);
-    });
+    }, skip: skip);
 
-    test('$shape: כותרות נושא ופרשה נבדקות מול תוכן השורות', () {
+    test('${shape.label}: כותרות נושא ופרשה נבדקות מול תוכן השורות', () {
       final marks = DatabaseLibraryProvider.loadInlineSectionMarksForTesting(
-        dbPath: dbPaths[split]!,
+        dbPath: dbPaths[shape]!,
         bookTitle: _title,
         categoryId: _categoryId,
       );
@@ -235,10 +289,10 @@ void main() {
         3: ['פרשת נח'],
         4: ['הלכות עירובין'],
       });
-    });
+    }, skip: skip);
 
-    test('$shape: LineDao מחזיר את אותן שורות ואותו תוכן', () async {
-      final database = MyDatabase.withPath(dbPaths[split]!, readOnly: true);
+    test('${shape.label}: LineDao מחזיר את אותן שורות ואותו תוכן', () async {
+      final database = MyDatabase.withPath(dbPaths[shape]!, readOnly: true);
       final repository = SeforimRepository(database);
       try {
         final lines = await repository.getLines(_bookId, 1, 3);
@@ -256,11 +310,11 @@ void main() {
       } finally {
         database.close();
       }
-    });
+    }, skip: skip);
 
-    test('$shape: טקסט הספר המלא נקרא כמו תוכן השורות', () async {
+    test('${shape.label}: טקסט הספר המלא נקרא כמו תוכן השורות', () async {
       final db = sqlite3.sqlite3.open(
-        dbPaths[split]!,
+        dbPaths[shape]!,
         mode: sqlite3.OpenMode.readOnly,
       );
       try {
@@ -272,6 +326,6 @@ void main() {
       } finally {
         db.close();
       }
-    });
+    }, skip: skip);
   }
 }

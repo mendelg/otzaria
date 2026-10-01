@@ -1,5 +1,6 @@
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import '../../models/line.dart';
+import '../line_content_codec.dart';
 import '../sqlite3_utils.dart';
 import '../query_loader.dart';
 import 'database.dart';
@@ -24,7 +25,7 @@ class LineDao {
     final db = await database;
     final result = db.select(await _forShape('selectById'), [id]).toMapList();
     if (result.isEmpty) return null;
-    return _mapToLine(result.first);
+    return _mapToLine(result.first, LineContentCodec.of(db));
   }
 
   Future<List<Line>> selectByBookId(int bookId) async {
@@ -32,7 +33,7 @@ class LineDao {
     return db
         .select(await _forShape('selectByBookId'), [bookId])
         .toMapList()
-        .map((row) => _mapToLine(row))
+        .map((row) => _mapToLine(row, LineContentCodec.of(db)))
         .toList();
   }
 
@@ -40,9 +41,10 @@ class LineDao {
   /// שורה — מסלול הקריאה של האינדוקס, שרק מאחה את התוכן לטקסט אחד.
   Future<List<String>> selectContentByBookId(int bookId) async {
     final db = await database;
+    final codec = LineContentCodec.of(db);
     return db
         .select(await _forShape('selectContentByBookId'), [bookId])
-        .map((row) => (row.values.first as String?) ?? '')
+        .map((row) => codec.text(row.values.first) ?? '')
         .toList();
   }
 
@@ -59,7 +61,7 @@ class LineDao {
           endIndex,
         ])
         .toMapList()
-        .map((row) => _mapToLine(row))
+        .map((row) => _mapToLine(row, LineContentCodec.of(db)))
         .toList();
   }
 
@@ -70,7 +72,7 @@ class LineDao {
       lineIndex,
     ]).toMapList();
     if (result.isEmpty) return null;
-    return _mapToLine(result.first);
+    return _mapToLine(result.first, LineContentCodec.of(db));
   }
 
   Future<Line?> selectByHeRef(String heRef) async {
@@ -79,7 +81,7 @@ class LineDao {
       heRef,
     ]).toMapList();
     if (result.isEmpty) return null;
-    return _mapToLine(result.first);
+    return _mapToLine(result.first, LineContentCodec.of(db));
   }
 
   /// זוגות (lineIndex, heRef) של כל השורות בעלות heRef בספר, בסדר השורות.
@@ -145,12 +147,12 @@ class LineDao {
     return db.lastInsertRowId;
   }
 
-  Line _mapToLine(Map<String, dynamic> map) {
+  Line _mapToLine(Map<String, dynamic> map, LineContentCodec codec) {
     return Line(
       id: map['id'] as int,
       bookId: map['bookId'] as int,
       lineIndex: map['lineIndex'] as int,
-      content: map['content'] as String,
+      content: codec.text(map['content'])!,
       heRef: map['heRef'] as String?,
     );
   }

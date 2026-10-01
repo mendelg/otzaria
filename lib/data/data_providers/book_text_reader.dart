@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart' as sqlite3;
 import 'package:otzaria/migration/database/db_capabilities.dart';
+import 'package:otzaria/migration/database/line_content_codec.dart';
 import 'package:otzaria/migration/models/book.dart' as db_models;
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
@@ -127,6 +128,7 @@ Future<List<Uint8List>?> _readJoinedChunks(
   bool stripRowBom = false,
   ReadCheckpoint? checkpoint,
 }) async {
+  final codec = LineContentCodec.of(db);
   final statement = db.prepare(_contentSql(db, blob: true));
   try {
     final raw = statement.raw
@@ -137,7 +139,12 @@ Future<List<Uint8List>?> _readJoinedChunks(
     var used = 0;
     var rows = 0;
     while (raw.step()) {
-      final size = (rows > 0 ? 1 : 0) + raw.columnBytes(0);
+      // CAST AS BLOB לא משנה מסגרת דחוסה; טקסט רגיל לא מתחיל בתחילית zstd.
+      final frame = codec.isCompressed ? raw.columnBlob(0) : null;
+      final text = frame != null && isZstdFrame(frame)
+          ? codec.bytes(frame)
+          : null;
+      final size = (rows > 0 ? 1 : 0) + (text?.length ?? raw.columnBytes(0));
       if (used + size > chunk.length) {
         if (used > 0) chunks.add(_usedChunk(chunk, used));
         chunk = Uint8List(size > _chunkBytes ~/ 2 ? size : _chunkBytes);
@@ -145,7 +152,12 @@ Future<List<Uint8List>?> _readJoinedChunks(
       }
       if (rows > 0) chunk[used++] = 0x0A;
       final start = used;
-      used += raw.columnBlobInto(0, chunk, used);
+      if (text != null) {
+        chunk.setAll(used, text);
+        used += text.length;
+      } else {
+        used += raw.columnBlobInto(0, chunk, used);
+      }
       // utf8.decode משמיט BOM בתחילת כל שורה; בחוצץ אחד — רק בשורה הראשונה.
       if (stripRowBom && rows > 0 && _startsWithBom(chunk, start, used)) {
         chunk.setRange(start, used - 3, chunk, start + 3);
@@ -221,7 +233,8 @@ Future<String?> readBookContentText(
   if (encoding != 'UTF-8') {
     final rows = db.select(_contentSql(db, blob: false), [book.id, book.title]);
     if (rows.isEmpty) return null;
-    return rows.map((row) => (row.values.first as String?) ?? '').join('\n');
+    final codec = LineContentCodec.of(db);
+    return rows.map((row) => codec.text(row.values.first) ?? '').join('\n');
   }
   final chunks = await _readJoinedChunks(
     db,

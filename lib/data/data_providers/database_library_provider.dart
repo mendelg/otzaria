@@ -22,6 +22,7 @@ import 'package:otzaria/migration/database/daos/book_dao.dart';
 import 'package:otzaria/migration/database/daos/category_dao.dart';
 import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/db_capabilities.dart';
+import 'package:otzaria/migration/database/line_content_codec.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/migration/database/untrusted_database.dart';
 import 'package:otzaria/models/book_source.dart';
@@ -1208,6 +1209,7 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
     // השאילתה מביאה לכל כותרת את שורתה ושתיים שלפניה — חלון הבדיקה כולו.
     final linesByIndex = <int, String?>{};
     final rows = <({int lineIndex, String label})>[];
+    final codec = LineContentCodec.of(db);
     for (final row in headingRows) {
       final lineIndex = row['lineIndex'];
       final rawLabel = row['label'];
@@ -1216,9 +1218,9 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
           ? parashaHeadingLabel(rawLabel)
           : rawLabel;
       if (label == null) continue;
-      linesByIndex[lineIndex] = row['line0'] as String?;
-      linesByIndex[lineIndex - 1] ??= row['line1'] as String?;
-      linesByIndex[lineIndex - 2] ??= row['line2'] as String?;
+      linesByIndex[lineIndex] = codec.text(row['line0']);
+      linesByIndex[lineIndex - 1] ??= codec.text(row['line1']);
+      linesByIndex[lineIndex - 2] ??= codec.text(row['line2']);
       rows.add((lineIndex: lineIndex, label: label));
     }
     final headings = buildSectionHeadings(rows, (i) => linesByIndex[i]);
@@ -1438,7 +1440,8 @@ _loadBookTextRangeRowsInIsolate({
       return null;
     }
 
-    final text = rows.map((row) => row['content'] as String? ?? '').join('\n');
+    final codec = LineContentCodec.of(db);
+    final text = rows.map((row) => codec.text(row['content']) ?? '').join('\n');
     return (
       startLine: normalizedStart,
       endLine: normalizedEnd,
