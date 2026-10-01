@@ -3243,8 +3243,8 @@ extension BookAcronymRepository on SeforimRepository {
   bool _hasLineBookIndex(sqlite3.Database db) =>
       DbCapabilities.forDatabase(_database.path, db).hasLineBookIndex;
 
-  /// מיפוי `line.id → line.lineIndex` לספר, מהאינדקס המכסה: `JOIN line`
-  /// קרא עמוד 16KB של טקסט לכל ערך TOC. [neededLineIds] רק לנסיגה.
+  /// מיפוי `line.id → line.lineIndex` ל-[neededLineIds], מהאינדקס המכסה בלבד:
+  /// ה-`+` מונע חיפוש לפי rowid, שקורא את עמודי טבלת `line` עצמה.
   Map<int, int> _lineIndexesForBook(
     sqlite3.Database db,
     int bookId,
@@ -3254,8 +3254,9 @@ extension BookAcronymRepository on SeforimRepository {
       return _lineIndexesByIds(db, neededLineIds);
     }
     final rows = db.select(
-      'SELECT id, lineIndex FROM line WHERE bookId = ?',
-      [bookId],
+      'SELECT id, lineIndex FROM line WHERE bookId = ? '
+      'AND +id IN (SELECT value FROM json_each(?))',
+      [bookId, '[${neededLineIds.join(',')}]'],
     );
     return {
       for (final row in rows) row['id'] as int: row['lineIndex'] as int,
