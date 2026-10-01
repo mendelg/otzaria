@@ -11,6 +11,7 @@ import 'package:otzaria/data/data_providers/cache_database_holder.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
+import 'package:otzaria/find_ref/repository/find_ref_db_isolate.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/library/models/library.dart' as library_models;
@@ -1446,7 +1447,14 @@ void main() {
           await provider.sqliteProvider.dispose();
           provider.clearCache();
           database.close();
-          await tempDir.delete(recursive: true);
+          // findBooks מחמם את AcronymsCache דרך FindRefDbIsolate, שמחזיק חיבור
+          // RO משלו ל-seforim.db; dispose של ה-provider אינו סוגר אותו.
+          await FindRefDbIsolate.suspendForExternalWrite();
+          try {
+            await tempDir.delete(recursive: true);
+          } finally {
+            await FindRefDbIsolate.resumeAfterExternalWrite();
+          }
         }
       },
     );
