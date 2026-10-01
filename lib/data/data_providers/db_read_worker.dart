@@ -84,6 +84,29 @@ Future<Map<String, Object?>> _officialLinkContent(
   };
 }
 
+/// שורה של ספר שכבר נפתר ב-seforim.db, כפי ש-[DbReadWorker.lines] מחזיר.
+typedef BookLineText = ({String content, String? heRef});
+
+/// קריאות שורות לפי `bookId`; רצות ב-worker כדי שהפענוח לא יחסום את ה-UI.
+Future<Object?> _readBookLines(
+  SeforimRepository repository,
+  String method,
+  Map<String, Object?> args,
+) async {
+  final bookId = args['bookId'] as int;
+  if (method == 'lineContents') return repository.getLineContents(bookId);
+  final lines = await repository.getLines(
+    bookId,
+    args['startIndex'] as int,
+    args['endIndex'] as int,
+  );
+  return <BookLineText>[
+    for (final line in lines) (content: line.content, heRef: line.heRef),
+  ];
+}
+
+const _bookLineMethods = {'lineContents', 'lines'};
+
 Future<List<Map<String, Object?>>> _readBatchOnFreshConnection(
   List<Map<String, Object?>> items,
   Map<String, Map<String, String>> queryCache,
@@ -118,6 +141,10 @@ Future<List<Map<String, Object?>>> _readBatchOnFreshConnection(
               args['lineIndex'] as int,
             ),
           });
+          continue;
+        }
+        if (_bookLineMethods.contains(method)) {
+          results.add({'result': await _readBookLines(repo, method, args)});
           continue;
         }
         if (method != 'linkContent') {
@@ -367,6 +394,28 @@ class DbReadWorker {
     if (_batch.length == 1) scheduleMicrotask(_flushBatch);
     return item.completer.future;
   }
+
+  /// תוכן כל שורות [bookId] ב-seforim.db שב-[dbPath], בסדר השורות.
+  static Future<List<String>> lineContents(String dbPath, int bookId) async =>
+      (await batched('lineContents', {'dbPath': dbPath, 'bookId': bookId})
+              as List)
+          .cast<String>();
+
+  /// השורות [startIndex]..[endIndex] (כולל, 0-based) של [bookId].
+  static Future<List<BookLineText>> lines(
+    String dbPath,
+    int bookId,
+    int startIndex,
+    int endIndex,
+  ) async =>
+      (await batched('lines', {
+                'dbPath': dbPath,
+                'bookId': bookId,
+                'startIndex': startIndex,
+                'endIndex': endIndex,
+              })
+              as List)
+          .cast<BookLineText>();
 
   static Future<void> _flushBatch() async {
     final items = List.of(_batch);
@@ -732,6 +781,9 @@ void _workerMain(_Bootstrap bootstrap) {
           args['bookId'] as int,
           args['lineIndex'] as int,
         );
+      case 'lineContents' || 'lines':
+        final repo = await ensureRepo(args['dbPath'] as String);
+        return _readBookLines(repo, method, args);
       case 'bookText':
         final repo = await ensureRepo(args['dbPath'] as String);
         return readBookContentText(

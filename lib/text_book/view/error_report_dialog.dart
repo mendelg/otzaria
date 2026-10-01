@@ -5,6 +5,8 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:otzaria/core/error_log_file.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
+import 'package:otzaria/data/data_providers/db_read_worker.dart';
+import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/text_book/view/text_correction_editor.dart';
 import 'package:otzaria/widgets/controls/segmented_control.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -260,10 +262,12 @@ class ErrorReportHelper {
           resolved.book.isFileBacked) {
         return null;
       }
-      final line = await resolved.repository.getLineByIndex(
+      final line = (await DbReadWorker.lines(
+        SqliteDataProvider.instance.dbPath,
         resolved.book.id,
         lineIndex,
-      );
+        lineIndex,
+      )).firstOrNull;
       if (line == null) return null;
       final snapshot = ReportSourceSnapshot(
         bookId: resolved.book.id,
