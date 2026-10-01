@@ -50,7 +50,15 @@ void main() {
     final header = ByteData.sublistView(dictionary, 0, 8);
     expect(header.getUint32(0, Endian.little), 0xEC30A437);
     expect(header.getUint32(4, Endian.little), dictId);
-    expect(dictId, 0x3626e95b);
+    expect(dictId, 0x8000);
+    // מזהה 32768..65535 תופס שדה Dictionary_ID של 2 בתים בכותרת כל מסגרת.
+    for (final (:frame, text: _) in frames) {
+      expect(frame[4] & 0x03, 2);
+      expect(
+        ByteData.sublistView(frame, 5, 7).getUint16(0, Endian.little),
+        dictId,
+      );
+    }
     final joined = [for (final f in frames) ...f.frame];
     expect(sha256.convert(joined).toString(), vector['framesSha256']);
     expect(frames, hasLength(5));
