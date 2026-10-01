@@ -355,6 +355,78 @@ void main() {
       );
     });
 
+    test('Android FULL volumes are standalone ZIP assets in volume order', () {
+      writeRealisticRelease();
+      writeFile('otzaria-android-full-part10.zip', 'j' * 3);
+      writeFile('otzaria-android-full-part2.zip', 'b' * 5);
+      writeFile('otzaria-android-full-part1.zip', 'a' * 7);
+
+      final manifest = build();
+      expect(validateReleaseManifest(manifest), isEmpty);
+      final full = componentById(manifest, 'otzaria-android-full');
+      final assets = (full['assets'] as List).cast<Map<String, Object?>>();
+      expect(assets.map((a) => a['name']), [
+        'otzaria-android-full-part1.zip',
+        'otzaria-android-full-part2.zip',
+        'otzaria-android-full-part10.zip',
+      ]);
+      expect(assets.map((a) => a['kind']).toSet(), {'single'});
+      expect(full['downloadSize'], 15);
+    });
+
+    test('a split SeforimLibrary DB passes as an external component', () {
+      writeRealisticRelease();
+      final manifest = buildReleaseManifest(
+        releaseTag: '0.9.97+789',
+        releaseVersion: '0.9.97',
+        directory: dir,
+        externalComponents: [
+          {
+            'id': 'library-db',
+            'name': 'ספריית הספרים',
+            'description': 'מסד הספרים המלא.',
+            'type': 'library',
+            'required': false,
+            'origin': 'built',
+            'platform': 'any',
+            'installOrder': 30,
+            'dependsOn': <String>[],
+            'installedBy': ['otzaria-windows-full-indexed'],
+            'downloadSize': 25,
+            'assets': [
+              {
+                'kind': 'split',
+                'repository': 'Otzaria/SeforimLibrary',
+                'releaseTag': 'v31',
+                'name': 'seforim-schema6.db.zst',
+                'size': 25,
+                'sha256': hex(0xcd),
+                'manifestAsset': 'seforim-schema6.db.zst.manifest.json',
+                'parts': [
+                  {
+                    'name': 'seforim-schema6.db.zst.part-000',
+                    'size': 20,
+                    'sha256': hex(0x3c),
+                  },
+                  {
+                    'name': 'seforim-schema6.db.zst.part-001',
+                    'size': 5,
+                    'sha256': hex(0x4d),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      );
+      expect(validateReleaseManifest(manifest), isEmpty);
+      final asset =
+          (componentById(manifest, 'library-db')['assets'] as List).single
+              as Map;
+      expect(asset['repository'], 'Otzaria/SeforimLibrary');
+      expect((asset['parts'] as List), hasLength(2));
+    });
+
     test('an absent component is omitted, never a placeholder', () {
       writeRealisticRelease(withFullInstaller: false);
       final manifest = build();

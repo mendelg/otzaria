@@ -1131,13 +1131,12 @@ jobs:
         shell: bash
         env:
           LIBRARY_DB_RELEASE_TAG: ${{ needs.bump_version.outputs.library_tag }}
+          SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
-          library_release="https://github.com/Otzaria/SeforimLibrary/releases/download/${LIBRARY_DB_RELEASE_TAG:?library release tag was not resolved}"
-          # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
-          curl -L --fail "$library_release/seforim-schema6.db.zst" -o full_installer/library_db/seforim.db.zst \
-            || curl -L --fail "$library_release/seforim.db.zst" -o full_installer/library_db/seforim.db.zst
+          # DB מעל מגבלת הנכס של GitHub מתפרסם בחלקים; הסקריפט מחבר ומאמת אותם.
+          bash tool/release/download_library_db.sh full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
           curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
@@ -1606,12 +1605,10 @@ jobs:
           Start the app using ./run-otzaria.sh so the app can detect the bundled library folder.
           EOF
 
-          # gzip הביא את החבילה ל-2.5GB, מעל מגבלת 2 GiB לקובץ ב-GitHub Releases.
-          # --long=27 הוא חלון שכל zstd מחלץ בלי דגלים נוספים.
+          # --long=27 הוא חלון שכל zstd מחלץ בלי דגלים נוספים. חבילה מעל מגבלת
+          # הנכס של GitHub מפוצלת בשלב השחרור (split_oversized_assets.sh).
           pack_full_bundle() {
             tar -C full_installer -cf - otzaria-linux-full | zstd -19 -T0 --long=27 -o "$1"
-            [ "$(stat -c '%s' "$1")" -lt 2147483648 ] \
-              || { echo "::error::$1 exceeds GitHub's 2 GiB release-asset limit"; exit 1; }
           }
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             pack_full_bundle otzaria-linux-full-arm64.tar.zst
@@ -1975,13 +1972,12 @@ jobs:
         shell: bash
         env:
           LIBRARY_DB_RELEASE_TAG: ${{ needs.bump_version.outputs.library_tag }}
+          SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
-          library_release="https://github.com/Otzaria/SeforimLibrary/releases/download/${LIBRARY_DB_RELEASE_TAG:?library release tag was not resolved}"
-          # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
-          curl -L --fail "$library_release/seforim-schema6.db.zst" -o full_installer/library_db/seforim.db.zst \
-            || curl -L --fail "$library_release/seforim.db.zst" -o full_installer/library_db/seforim.db.zst
+          # DB מעל מגבלת הנכס של GitHub מתפרסם בחלקים; הסקריפט מחבר ומאמת אותם.
+          bash tool/release/download_library_db.sh full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
           curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
@@ -2040,16 +2036,19 @@ jobs:
           This bundle includes the APK and the offline library payload.
           The APK itself cannot preinstall external library files automatically.
           Use this bundle when distributing the APK together with the library payload.
+          A bundle above GitHub's file limit comes as several ZIP files: extract all
+          of them into the same folder. Files named *.part-NNN with a *.manifest.json
+          stay as they are; importing the library_db folder in Otzaria joins them.
           EOF
-          cd full_installer
-          zip -r ../otzaria-android-full.zip otzaria-android-full
+          # מעל מגבלת GitHub — כרכי ZIP עצמאיים, כי בטלפון אי אפשר לחבר חלקים גולמיים.
+          bash tool/release/pack_android_full.sh full_installer otzaria-android-full .
 
       - name: Upload Android FULL bundle
         if: true
         uses: actions/upload-artifact@v7.0.1
         with:
           name: otzaria-android-full
-          path: otzaria-android-full.zip
+          path: otzaria-android-full*.zip
       
       - name: Final cleanup
         if: always()
@@ -2169,13 +2168,12 @@ jobs:
         shell: bash
         env:
           LIBRARY_DB_RELEASE_TAG: ${{ needs.bump_version.outputs.library_tag }}
+          SEFORIM_LIBRARY_TAG: ${{ needs.bump_version.outputs.library_tag }}
         run: |
           set -euo pipefail
           mkdir -p full_installer/library_db
-          library_release="https://github.com/Otzaria/SeforimLibrary/releases/download/${LIBRARY_DB_RELEASE_TAG:?library release tag was not resolved}"
-          # מסכמה 6 ה-DB מתפרסם בשם משלו; seforim.db.zst שמור לסכמה 5 ומטה.
-          curl -L --fail "$library_release/seforim-schema6.db.zst" -o full_installer/library_db/seforim.db.zst \
-            || curl -L --fail "$library_release/seforim.db.zst" -o full_installer/library_db/seforim.db.zst
+          # DB מעל מגבלת הנכס של GitHub מתפרסם בחלקים; הסקריפט מחבר ומאמת אותם.
+          bash tool/release/download_library_db.sh full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
           curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
@@ -2397,10 +2395,8 @@ jobs:
           Start the app using Run Otzaria.command so the app can detect the bundled library folder.
           EOF
 
-          # zip הביא את החבילה ל-2.5GB, מעל מגבלת 2 GiB לקובץ ב-GitHub Releases.
+          # חבילה מעל מגבלת הנכס של GitHub מפוצלת בשלב השחרור (split_oversized_assets.sh).
           tar -C full_installer -cf - otzaria-macos-full | zstd -19 -T0 --long=27 -o otzaria-macos-full.tar.zst
-          [ "$(stat -f '%z' otzaria-macos-full.tar.zst)" -lt 2147483648 ] \
-            || { echo "::error::otzaria-macos-full.tar.zst exceeds GitHub's 2 GiB release-asset limit"; exit 1; }
 
       - name: Upload macOS DMG
         if: always()
@@ -2759,32 +2755,18 @@ jobs:
             fi
           done
 
-      # מתקין ה-FULL מתקרב למגבלת ה-2 GiB לנכס בודד ב-GitHub. כשיחצה אותה
-      # הוא יפוצל לחלקים, ומסייע ההורדה מרכיב אותם חזרה לקובץ הפעלה אחד.
-      - name: Split the Windows FULL installer if it reaches GitHub's asset limit
+      # חבילה מלאה מעל 1.9 GiB מתפרסמת כחלקים ומניפסט; מסייע ההורדה מרכיב אותם.
+      # Android אינו כאן: הוא נארז ככרכי ZIP עצמאיים (pack_android_full.sh).
+      - name: Split FULL packages that exceed GitHub's asset limit
         run: |
           set -euo pipefail
-          shopt -s nullglob
-
-          GITHUB_ASSET_LIMIT=2147483648
-          PART_SIZE=1992294400
-
-          # x64 ו-ARM64; המאונדקס (-windows-full-indexed.exe) קטן ואינו נתפס כאן.
-          for installer in release-files/otzaria-*-windows-full.exe release-files/otzaria-*-windows_arm64-full.exe; do
-            name=$(basename "$installer")
-            size=$(stat -c '%s' "$installer")
-            if [ "$size" -lt "$GITHUB_ASSET_LIMIT" ]; then
-              echo "$name is $size bytes, below the $GITHUB_ASSET_LIMIT limit - uploading as a single asset"
-              continue
-            fi
-            echo "::warning::$name is $size bytes, at or above GitHub's per-asset limit - splitting it"
-            rm -rf windows-full-parts
-            mkdir -p windows-full-parts
-            tool/release/split_release_asset.sh "$installer" windows-full-parts "$PART_SIZE"
-            mv windows-full-parts/* release-files/
-            rm -f -- "$installer"
-            rm -rf windows-full-parts
-          done
+          # המאונדקס (-windows-full-indexed.exe) אינו תואם לתבניות ונשאר כמות שהוא.
+          bash tool/release/split_oversized_assets.sh release-files \
+            'otzaria-*-windows-full.exe' \
+            'otzaria-*-windows_arm64-full.exe' \
+            'otzaria-linux-full.tar.zst' \
+            'otzaria-linux-full-arm64.tar.zst' \
+            'otzaria-macos-full.tar.zst'
 
       # הכנה להרצת גנרטור המניפסט (הריפו הוא פרויקט Flutter; crypto נפתר מ-pub).
       - name: Set up Flutter for the release manifest
@@ -2847,10 +2829,15 @@ jobs:
           linux_rpm=()
           linux_portable=()
           linux_full=()
+          linux_full_parts=()
+          linux_full_support=()
+          assemble_scripts=()
           indexed_library_parts=()
           indexed_library_support=()
           mac_dmg=()
           mac_full=()
+          mac_full_parts=()
+          mac_full_support=()
 
           emit_link_group() {
             local label="$1"
@@ -2899,6 +2886,20 @@ jobs:
                 ;;
               assemble_split_asset.sh|assemble_split_asset.ps1)
                 indexed_library_support+=("$file")
+                assemble_scripts+=("$file")
+                ;;
+              # לפני *linux-full*.tar.* ו-*macos-full*.tar.*, שהיו בולעים את החלקים.
+              *linux-full*.tar.zst.part-*)
+                linux_full_parts+=("$file")
+                ;;
+              *linux-full*.tar.zst.manifest.json)
+                linux_full_support+=("$file")
+                ;;
+              *macos-full*.tar.zst.part-*)
+                mac_full_parts+=("$file")
+                ;;
+              *macos-full*.tar.zst.manifest.json)
+                mac_full_support+=("$file")
                 ;;
               *windows-full*.exe)
                 windows_full+=("$file")
@@ -3030,12 +3031,17 @@ jobs:
 
             if [ ${#android_full[@]} -gt 0 ]; then
               printf "### גרסת ספרייה מלאה\n\n" >> release-body.md
-              emit_link_group "חבילה מלאה לאנדרואיד" "${android_full[@]}"
+              if [ ${#android_full[@]} -gt 1 ]; then
+                emit_link_group "חלק מהחבילה המלאה לאנדרואיד" "${android_full[@]}"
+                printf "\n> **החבילה גדולה ממגבלת הקובץ הבודד של GitHub ולכן חולקה לכמה קובצי ZIP רגילים.** הורידו את כולם וחלצו אותם לאותה תיקייה — כל אחד נפתח בנפרד, גם בטלפון.\n" >> release-body.md
+              else
+                emit_link_group "חבילה מלאה לאנדרואיד" "${android_full[@]}"
+              fi
               printf "\n> **הבהרה:** חבילת ה־FULL לאנדרואיד כוללת את ה־APK יחד עם חומרי הספרייה, ומיועדת להפצה או להתקנה ידנית.\n\n" >> release-body.md
             fi
           fi
 
-          if [ ${#linux_deb[@]} -gt 0 ] || [ ${#linux_rpm[@]} -gt 0 ] || [ ${#linux_portable[@]} -gt 0 ] || [ ${#linux_full[@]} -gt 0 ]; then
+          if [ ${#linux_deb[@]} -gt 0 ] || [ ${#linux_rpm[@]} -gt 0 ] || [ ${#linux_portable[@]} -gt 0 ] || [ ${#linux_full[@]} -gt 0 ] || [ ${#linux_full_parts[@]} -gt 0 ]; then
             printf "## לינוקס\n\n" >> release-body.md
 
             if [ ${#linux_deb[@]} -gt 0 ] || [ ${#linux_rpm[@]} -gt 0 ] || [ ${#linux_portable[@]} -gt 0 ]; then
@@ -3049,15 +3055,21 @@ jobs:
               printf "\n" >> release-body.md
             fi
 
-            if [ ${#linux_full[@]} -gt 0 ]; then
+            if [ ${#linux_full[@]} -gt 0 ] || [ ${#linux_full_parts[@]} -gt 0 ]; then
               printf "### גרסת ספרייה מלאה\n\n" >> release-body.md
               emit_link_group "חבילה מלאה ללינוקס" "${linux_full[@]}"
+              emit_link_group "חלק מהחבילה המלאה ללינוקס" "${linux_full_parts[@]}"
+              emit_link_group "קובץ אימות לחבילה המלאה ללינוקס" "${linux_full_support[@]}"
+              if [ ${#linux_full_parts[@]} -gt 0 ]; then
+                emit_link_group "סקריפט הרכבה" "${assemble_scripts[@]}"
+                printf "\n> **החבילה גדולה ממגבלת הקובץ הבודד של GitHub ולכן חולקה לחלקים.** הורידו את כל החלקים, את קובץ האימות ואת סקריפט ההרכבה לאותה תיקייה והריצו %sbash assemble_split_asset.sh <קובץ האימות>%s — או השתמשו במסייע ההורדה, שעושה זאת לבד.\n" '`' '`' >> release-body.md
+              fi
               printf "\nחילוץ: %star --zstd -xf <הקובץ>%s ואז %s./run-otzaria.sh%s.\n\n" '`' '`' '`' '`' >> release-body.md
             fi
 
           fi
 
-          if [ ${#mac_dmg[@]} -gt 0 ] || [ ${#mac_full[@]} -gt 0 ]; then
+          if [ ${#mac_dmg[@]} -gt 0 ] || [ ${#mac_full[@]} -gt 0 ] || [ ${#mac_full_parts[@]} -gt 0 ]; then
             printf "## מק\n\n" >> release-body.md
 
             if [ ${#mac_dmg[@]} -gt 0 ]; then
@@ -3066,9 +3078,15 @@ jobs:
               printf "\n" >> release-body.md
             fi
 
-            if [ ${#mac_full[@]} -gt 0 ]; then
+            if [ ${#mac_full[@]} -gt 0 ] || [ ${#mac_full_parts[@]} -gt 0 ]; then
               printf "### גרסת ספרייה מלאה\n\n" >> release-body.md
               emit_link_group "חבילה מלאה למק" "${mac_full[@]}"
+              emit_link_group "חלק מהחבילה המלאה למק" "${mac_full_parts[@]}"
+              emit_link_group "קובץ אימות לחבילה המלאה למק" "${mac_full_support[@]}"
+              if [ ${#mac_full_parts[@]} -gt 0 ]; then
+                emit_link_group "סקריפט הרכבה" "${assemble_scripts[@]}"
+                printf "\n> **החבילה גדולה ממגבלת הקובץ הבודד של GitHub ולכן חולקה לחלקים.** הורידו את כל החלקים, את קובץ האימות ואת סקריפט ההרכבה לאותה תיקייה והריצו בטרמינל %sbash assemble_split_asset.sh <קובץ האימות>%s — או השתמשו במסייע ההורדה, שעושה זאת לבד.\n" '`' '`' >> release-body.md
+              fi
               printf "\nחילוץ בטרמינל: %star --zstd -xf <הקובץ>%s (אם חסר zstd: %sbrew install zstd%s) ואז %sRun Otzaria.command%s.\n\n" '`' '`' '`' '`' '`' '`' >> release-body.md
             fi
           fi
@@ -3171,8 +3189,8 @@ jobs:
             universal "$RELEASE_TAG" release-files/otzaria-app-files-macos-universal.json \
             release-files/otzaria-macos.zip tree-update-packages 2 || true
           for arch in x64 arm64; do
-            archive="release-files/otzaria-linux-full.tar.zst"
-            [ "$arch" = "x64" ] || archive="release-files/otzaria-linux-full-$arch.tar.zst"
+            archive="artifacts/otzaria-linux-full/otzaria-linux-full.tar.zst"
+            [ "$arch" = "x64" ] || archive="artifacts/otzaria-linux-full-$arch/otzaria-linux-full-$arch.tar.zst"
             UPDATE_PACKAGES_PLATFORM=linux bash tool/release/build_update_packages.sh \
               "$arch" "$RELEASE_TAG" "release-files/otzaria-app-files-linux-$arch.json" \
               "$archive" tree-update-packages 2 || true

@@ -64,6 +64,19 @@ extract_tree() {
   esac
 }
 
+# חלקי בסיס Linux מוזרמים לאותו מפענח; רק app/ נכתב לדיסק.
+download_linux_base() {
+  local manifest="$base/$base_asset.manifest.json"
+  if gh release download "$tag" --repo "$source_repo" \
+    --pattern "$base_asset.manifest.json" --dir "$base" >/dev/null 2>&1; then
+    python3 "$(dirname "$0")/stream_split_release_asset.py" \
+      "$tag" "$source_repo" "$manifest" "$base_asset"
+  else
+    gh release download "$tag" --repo "$source_repo" \
+      --pattern "$base_asset" --output - 2>/dev/null
+  fi
+}
+
 [ -f "$new_manifest" ] || { echo "::warning::$new_manifest is missing - no update packages for $platform $arch"; exit 0; }
 [ -f "$new_zip" ] || { echo "::warning::$new_zip is missing - no update packages for $platform $arch"; exit 0; }
 
@@ -110,8 +123,7 @@ for entry in "${candidates[@]}"; do
   fi
 
   if [ "$platform" = linux ]; then
-    old_root=$(gh release download "$tag" --repo "$source_repo" \
-      --pattern "$base_asset" --output - 2>/dev/null |
+    old_root=$(download_linux_base |
       extract_tree - "$base/root") || old_root=""
   elif gh release download "$tag" --repo "$source_repo" \
     --pattern "$base_asset" --dir "$base" >/dev/null 2>&1; then
