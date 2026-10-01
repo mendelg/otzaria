@@ -703,14 +703,15 @@ class LibraryUpdateRepository implements LibraryUpdateService {
     final sidecarPath = PatchDownloader.resumeSidecarPath(archivePath);
     // מחולץ ליד ה-DB (אותו filesystem) כדי שה-rename יהיה אטומי.
     final newDbPath = '$dbPath.new';
-    // digest מגיע מה-API בפורמט 'sha256:<hex>' — נחלץ ל-expectedSha256.
-    final digestHex = asset.digest?.startsWith('sha256:') == true
-        ? asset.digest!.substring('sha256:'.length)
-        : null;
+    // חיבור DB מפוצל מחזיק לרגע את הארכיון ועוד חלק אחד.
+    final largestPart = asset.split?.parts.fold<int>(
+      0,
+      (largest, part) => part.size > largest ? part.size : largest,
+    );
 
     await _ensureDiskSpaceForFullDownload(
       archivePath: archivePath,
-      archiveSize: asset.size,
+      archiveSize: asset.size + (largestPart ?? 0),
       dbDir: p.dirname(dbPath),
     );
 
@@ -718,11 +719,9 @@ class LibraryUpdateRepository implements LibraryUpdateService {
       onProgress?.call(
         const LibraryUpdateProgress(phase: LibraryUpdatePhase.downloading),
       );
-      await downloader.downloadToFile(
-        url: asset.downloadUrl,
+      await downloader.downloadReleaseAssetToFile(
+        asset: asset,
         destPath: archivePath,
-        expectedSize: asset.size > 0 ? asset.size : null,
-        expectedSha256: digestHex,
         // קושר את הקובץ החלקי ל-release — מונע resume על ארכיון מגרסה אחרת.
         resumeToken:
             '${asset.downloadUrl}|${asset.size}|${asset.id ?? ''}|${asset.updatedAt ?? ''}',

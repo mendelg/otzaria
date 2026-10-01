@@ -140,6 +140,86 @@ void main() {
   );
 
   test(
+    'applyFullDownload מחבר DB מפוצל ומחליף בו את ה-DB',
+    () async {
+      final lib = _tryOpenSystemLibzstd();
+      if (lib == null) {
+        markTestSkipped('libzstd אינו זמין במערכת');
+        return;
+      }
+
+      final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);
+      _writeDb(dbPath, version: 1, marker: 'old');
+      final archive = _fixtureFullDbArchive();
+      final half = archive.length ~/ 2;
+      final parts = [archive.sublist(0, half), archive.sublist(half)];
+      const name = 'seforim-schema6.db.zst';
+      final split = SplitAsset.fromManifestJson(
+        {
+          'schemaVersion': 1,
+          'archive': name,
+          'size': archive.length,
+          'sha256': sha256.convert(archive).toString(),
+          'parts': [
+            for (var i = 0; i < 2; i++)
+              {
+                'name': '$name.part-00$i',
+                'size': parts[i].length,
+                'sha256': sha256.convert(parts[i]).toString(),
+              },
+          ],
+        },
+        manifestName: '$name.manifest.json',
+        partUrls: {for (var i = 0; i < 2; i++) '$name.part-00$i': 'https://x/$i'},
+      );
+      final downloader = PatchDownloader(
+        httpClient: MockClient.streaming((request, bodyStream) async {
+          final part = parts[int.parse(request.url.pathSegments.last)];
+          return http.StreamedResponse(
+            Stream.value(part),
+            200,
+            contentLength: part.length,
+          );
+        }),
+        decompress: (bytes) async => bytes,
+      );
+      final repository = LibraryUpdateRepository(
+        discovery: _unusedDiscovery(),
+        downloader: downloader,
+        refreshService: _NoopRefreshService(),
+        dbPathProvider: () => dbPath,
+        dataRootProvider: () async => tmp.path,
+        nowTimestamp: () => '2026-06-28T00:00:00Z',
+        diskSpaceProvider: (_) async => DiskSpaceInfo.unknown,
+        fullDbExtractor: (archivePath, outputPath) async {
+          decompressSyncForTest(archivePath, outputPath, lib);
+        },
+      );
+      final manifestAsset = ReleaseAsset(
+        name: '$name.manifest.json',
+        downloadUrl: 'https://x/manifest',
+        size: 300,
+      );
+      await repository.applyFullDownload(
+        LibraryUpdatePlan.fullDownload(
+          localVersion: 1,
+          targetVersion: 2,
+          asset: ReleaseAsset.fromSplit(manifestAsset, split),
+          releaseTag: 'v2',
+        ),
+      );
+
+      expect(const LocalDbVersionReader().read(dbPath).dbVersion, 2);
+      expect(_readMarker(dbPath), 'full-download');
+      expect(
+        Directory(p.join(tmp.path, 'library_update_cache')).listSync(),
+        isEmpty,
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 30)),
+  );
+
+  test(
     'applyFullDownload: ביטול באמצע ההורדה משאיר ארכיון חלקי ו-sidecar ל-resume',
     () async {
       final dbPath = p.join(tmp.path, DatabaseConstants.databaseFileName);

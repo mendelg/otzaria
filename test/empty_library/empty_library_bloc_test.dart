@@ -110,6 +110,43 @@ void main() {
       expect(asset.downloadUrl, 'https://example.com/seforim.db.zst');
     });
 
+    test('parseLatestDatabaseAsset מזהה DB מפוצל; קובץ יחיד גובר באותה סכמה', () {
+      final split = EmptyLibraryBloc.parseLatestDatabaseAsset({
+        'assets': [
+          {
+            'name': 'seforim-schema6.db.zst.manifest.json',
+            'browser_download_url': 'https://example.com/s6.manifest',
+          },
+          {
+            'name': 'seforim-schema6.db.zst.part-000',
+            'browser_download_url': 'https://example.com/s6.part-000',
+          },
+          {
+            'name': 'seforim.db.zst',
+            'browser_download_url': 'https://example.com/legacy',
+          },
+        ],
+      });
+      expect(split!.assetName, 'seforim-schema6.db.zst');
+      expect(split.isSplitManifest, isTrue);
+      expect(split.downloadUrl, 'https://example.com/s6.manifest');
+
+      final single = EmptyLibraryBloc.parseLatestDatabaseAsset({
+        'assets': [
+          {
+            'name': 'seforim-schema6.db.zst.manifest.json',
+            'browser_download_url': 'https://example.com/s6.manifest',
+          },
+          {
+            'name': 'seforim-schema6.db.zst',
+            'browser_download_url': 'https://example.com/s6',
+          },
+        ],
+      });
+      expect(single!.isSplitManifest, isFalse);
+      expect(single.downloadUrl, 'https://example.com/s6');
+    });
+
     test(
       'parseLatestDatabaseAsset מעדיף ארכיון בסכמה נתמכת ומדלג על חדשה ממנה',
       () {
@@ -389,6 +426,110 @@ void main() {
           ),
         ).readAsStringSync(),
         talmudDigest,
+      );
+    });
+
+    test('DownloadLibraryRequested מוריד DB מפוצל, מחבר ומחלץ את השלם', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'otzaria-empty-library-split-',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      });
+      await Settings.init(cacheProvider: _MemoryCacheProvider());
+      await Settings.setValue<String>(SettingsRepository.keyLibraryPath, '');
+      await Settings.setValue<String>(
+        SettingsRepository.keyLibraryFolderName,
+        '',
+      );
+
+      const name = 'seforim-schema6.db.zst';
+      final whole = utf8.encode('compressed-library-in-two-parts');
+      final parts = [whole.sublist(0, 12), whole.sublist(12)];
+      String partName(int i) => '$name.part-00$i';
+      final manifest = jsonEncode({
+        'schemaVersion': 1,
+        'archive': name,
+        'size': whole.length,
+        'sha256': sha256.convert(whole).toString(),
+        'parts': [
+          for (var i = 0; i < parts.length; i++)
+            {
+              'name': partName(i),
+              'size': parts[i].length,
+              'sha256': sha256.convert(parts[i]).toString(),
+            },
+        ],
+      });
+      final requested = <String>[];
+      final client = MockClient((request) async {
+        final url = request.url.toString();
+        requested.add(url);
+        if (request.url.path.endsWith('/SeforimLibrary/releases/latest')) {
+          return http.Response(
+            jsonEncode({
+              'tag_name': 'v31',
+              'assets': [
+                {
+                  'name': '$name.manifest.json',
+                  'browser_download_url': 'https://example.com/v31/manifest',
+                  'size': manifest.length,
+                },
+                for (var i = 0; i < parts.length; i++)
+                  {
+                    'name': partName(i),
+                    'browser_download_url': 'https://example.com/v31/part$i',
+                    'size': parts[i].length,
+                  },
+              ],
+            }),
+            200,
+          );
+        }
+        if (url == 'https://example.com/v31/manifest') {
+          return http.Response(manifest, 200);
+        }
+        for (var i = 0; i < parts.length; i++) {
+          if (url == 'https://example.com/v31/part$i') {
+            return http.Response.bytes(parts[i], 200);
+          }
+        }
+        // התלמוד, הקטלוגים והמילון — תוכן כלשהו, אינם עניין הבדיקה.
+        if (request.url.host == 'github.com') {
+          return http.Response.bytes(utf8.encode('other'), 200);
+        }
+        return http.Response('not found', 404);
+      });
+
+      List<int>? extractedDb;
+      final bloc = EmptyLibraryBloc(
+        httpClient: client,
+        defaultLibraryPathOverride: tempDir.path,
+        extractCompressedDatabase: (archivePath, outputPath, onProgress) async {
+          if (path.basename(archivePath) == 'otzaria_$name') {
+            extractedDb = await File(archivePath).readAsBytes();
+          }
+          await File(outputPath).writeAsBytes(const [1], flush: true);
+        },
+        extractTarArchive: (archivePath, outputDir, onProgress) async {},
+      );
+      addTearDown(bloc.close);
+
+      final selected = bloc.stream
+          .where((state) => state is EmptyLibraryDirectorySelected)
+          .first;
+      bloc.add(DownloadLibraryRequested());
+      await selected.timeout(const Duration(seconds: 5));
+
+      expect(extractedDb, whole);
+      expect(requested, contains('https://example.com/v31/part1'));
+      // שום שריד של החלקים או של הארכיון המחובר אינו נשאר ב-temp.
+      expect(
+        Directory.systemTemp
+            .listSync()
+            .map((e) => path.basename(e.path))
+            .where((n) => n.startsWith('otzaria_$name')),
+        isEmpty,
       );
     });
 
@@ -2394,6 +2535,86 @@ void main() {
             path.join(targetDir.path, DatabaseConstants.databaseFileName),
           ).readAsStringSync(),
           'db',
+        );
+      },
+    );
+
+    test(
+      'ImportLibraryFolderRequested מחבר DB מפוצל, מאמת ומחלץ את השלם',
+      () async {
+        final srcDir = await Directory.systemTemp.createTemp(
+          'otzaria-import-folder-split-src-',
+        );
+        final targetDir = await Directory.systemTemp.createTemp(
+          'otzaria-import-folder-split-dst-',
+        );
+        addTearDown(() async {
+          for (final d in [srcDir, targetDir]) {
+            if (await d.exists()) await d.delete(recursive: true);
+          }
+        });
+
+        final archive = utf8.encode('whole-compressed-library');
+        final parts = [archive.sublist(0, 10), archive.sublist(10)];
+        const name = 'seforim-schema6.db.zst';
+        for (var i = 0; i < parts.length; i++) {
+          await File(
+            path.join(srcDir.path, '$name.part-00$i'),
+          ).writeAsBytes(parts[i]);
+        }
+        await File(path.join(srcDir.path, '$name.manifest.json')).writeAsString(
+          jsonEncode({
+            'schemaVersion': 1,
+            'archive': name,
+            'size': archive.length,
+            'sha256': sha256.convert(archive).toString(),
+            'parts': [
+              for (var i = 0; i < parts.length; i++)
+                {
+                  'name': '$name.part-00$i',
+                  'size': parts[i].length,
+                  'sha256': sha256.convert(parts[i]).toString(),
+                },
+            ],
+          }),
+        );
+
+        await Settings.init(cacheProvider: _MemoryCacheProvider());
+        await Settings.setValue<String>(SettingsRepository.keyLibraryPath, '');
+
+        List<int>? extractedFrom;
+        final bloc = EmptyLibraryBloc(
+          extractCompressedDatabase:
+              (archivePath, outputPath, onProgress) async {
+                extractedFrom = await File(archivePath).readAsBytes();
+                await File(outputPath).writeAsString('db');
+              },
+        );
+        addTearDown(bloc.close);
+
+        final selectedFuture = bloc.stream
+            .where((s) => s is EmptyLibraryDirectorySelected)
+            .cast<EmptyLibraryDirectorySelected>()
+            .first;
+        bloc.add(
+          ImportLibraryFolderRequested(
+            sourceFolder: srcDir.path,
+            targetPath: targetDir.path,
+          ),
+        );
+        await selectedFuture.timeout(const Duration(seconds: 5));
+
+        expect(extractedFrom, archive);
+        expect(
+          File(
+            path.join(targetDir.path, DatabaseConstants.databaseFileName),
+          ).readAsStringSync(),
+          'db',
+        );
+        // הארכיון המחובר זמני ואינו נשאר ביעד.
+        expect(
+          targetDir.listSync().map((e) => path.basename(e.path)),
+          isNot(contains(endsWith('.joining.zst'))),
         );
       },
     );

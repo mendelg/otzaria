@@ -21,6 +21,7 @@ import 'package:otzaria/utils/download_sidecar.dart';
 import 'package:otzaria/utils/file/archive_extractor.dart';
 import 'package:otzaria/utils/file/tar_zst_extractor.dart';
 import 'package:otzaria/utils/move_directory.dart';
+import 'package:otzaria/utils/file/split_archive_joiner.dart';
 import 'package:otzaria/utils/file/zstd_stream_extractor.dart';
 import 'package:path/path.dart' as path;
 import 'package:http/http.dart' as http;
@@ -306,6 +307,15 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     final targetDb = File(
       path.join(target, DatabaseConstants.databaseFileName),
     );
+    // DB מעל מגבלת GitHub מגיע כחלקים ומניפסט (חבילת Android FULL, הורדה ידנית).
+    File? dbSplitManifest;
+    for (final name in DatabaseConstants.supportedDatabaseArchiveFileNames) {
+      final candidate = File(path.join(source, '$name$kSplitManifestSuffix'));
+      if (await candidate.exists()) {
+        dbSplitManifest = candidate;
+        break;
+      }
+    }
     if (await dbZst.exists()) {
       await _writeDbAtomically(
         path.join(target, DatabaseConstants.databaseFileName),
@@ -315,6 +325,25 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
           _extractProgress(emit, source, 'מחלץ את ספריית הספרים...'),
         ),
       );
+    } else if (dbSplitManifest != null) {
+      final joined = '${targetDb.path}.joining.zst';
+      try {
+        await joinSplitArchive(
+          dbSplitManifest.path,
+          joined,
+          onProgress: _extractProgress(emit, source, 'מחבר את חלקי הספרייה...'),
+        );
+        await _writeDbAtomically(
+          targetDb.path,
+          (tempPath) => _extractCompressedDatabase(
+            joined,
+            tempPath,
+            _extractProgress(emit, source, 'מחלץ את ספריית הספרים...'),
+          ),
+        );
+      } finally {
+        await _deleteEntity(joined);
+      }
     } else if (await dbPlain.exists()) {
       // File.copy אינו מדווח התקדמות — על קובץ של כמה GB המסך נשאר על 0% עד
       // הסוף (issue #1334). עותק שהבורר יצר במטמון מועבר, לא מועתק שוב (#1360).
@@ -1295,6 +1324,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
           isTar: false,
           outputFileName: DatabaseConstants.databaseFileName,
           isMainDb: true,
+          split: latestAsset.split,
         ),
         _DownloadAsset(
           url:
@@ -1338,6 +1368,13 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       // קריאת גודל כל קובץ דחוס, לחישוב פס התקדמות וזמן משוער מאוחדים.
       for (final asset in assets) {
         if (asset.skipped) continue;
+        final split = asset.split;
+        if (split != null) {
+          // גודל וזהות של נכס מפוצל באים מהמניפסט; לכל חלק כתובת משלו.
+          asset.compressedSize = split.size;
+          asset.identity = 'split|${split.sha256}';
+          continue;
+        }
         try {
           final resolved = await _resolveRedirectWithSize(asset.url);
           asset.resolvedUrl = resolved.url;
@@ -1502,6 +1539,16 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       connectTimeout: downloadConnectTimeout,
       stallTimeout: _downloadStallTimeout,
     );
+    final split = asset.split;
+    if (split != null) {
+      await downloader.downloadSplitToFile(
+        split: split,
+        destPath: tempPath,
+        resumeToken: identity,
+        onProgress: (downloaded, _) => emitProgress(downloaded),
+      );
+      return;
+    }
     await downloader.downloadToFile(
       url: asset.resolvedUrl!,
       destPath: tempPath,
@@ -1744,8 +1791,21 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     if (asset == null) {
       throw Exception('לא נמצא ברליס האחרון קובץ ספרייה שגרסה זו יודעת לקרוא');
     }
+    if (!asset.isSplitManifest) return asset;
 
-    return asset;
+    final release = LibraryRelease.fromJson(decoded);
+    final resolved = await GithubLibraryReleaseClient(
+      httpClient: _httpClient,
+      timeout: downloadConnectTimeout,
+    ).resolveSplitAsset(
+      release,
+      release.assetByName('${asset.assetName}$kSplitManifestSuffix')!,
+    );
+    return DatabaseReleaseAsset(
+      assetName: asset.assetName,
+      downloadUrl: asset.downloadUrl,
+      split: resolved.split,
+    );
   }
 
   @visibleForTesting
@@ -1770,10 +1830,19 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     }
 
     // הסכמה הגבוהה ביותר שהגרסה הזו קוראת; ארכיון בסכמה חדשה יותר מדולג.
+    // DB מעל מגבלת GitHub מתפרסם כחלקים ומניפסט; קובץ יחיד גובר באותה סכמה.
     for (final name in DatabaseConstants.supportedDatabaseArchiveFileNames) {
       final downloadUrl = urlsByName[name];
       if (downloadUrl != null) {
         return DatabaseReleaseAsset(assetName: name, downloadUrl: downloadUrl);
+      }
+      final manifestUrl = urlsByName['$name$kSplitManifestSuffix'];
+      if (manifestUrl != null) {
+        return DatabaseReleaseAsset(
+          assetName: name,
+          downloadUrl: manifestUrl,
+          isSplitManifest: true,
+        );
       }
     }
 
@@ -1809,6 +1878,7 @@ class _DownloadAsset {
     this.isCompressed = true,
     this.optional = false,
     this.sha256,
+    this.split,
   });
 
   /// כתובת ההורדה (לפני פתרון redirect).
@@ -1842,6 +1912,9 @@ class _DownloadAsset {
   /// sha256 של הנכס מה-API — לאימות ההורדה ולסימון גרסת התלמוד.
   final String? sha256;
 
+  /// החלקים כשהנכס מפוצל; אז הם מורדים ומחוברים אל קובץ ה-temp.
+  final SplitAsset? split;
+
   /// ה-URL הסופי לאחר פתרון redirect (נקבע בזמן ריצה).
   String? resolvedUrl;
 
@@ -1863,8 +1936,18 @@ class DatabaseReleaseAsset {
   const DatabaseReleaseAsset({
     required this.assetName,
     required this.downloadUrl,
+    this.isSplitManifest = false,
+    this.split,
   });
 
   final String assetName;
+
+  /// כתובת הקובץ, או כתובת מניפסט הפיצול כשה-DB מפוצל.
   final String downloadUrl;
+
+  /// [downloadUrl] היא מניפסט פיצול שעוד לא פוענח ל-[split].
+  final bool isSplitManifest;
+
+  /// החלקים, כשה-DB מתפרסם בחלקים מתחת למגבלת GitHub.
+  final SplitAsset? split;
 }
