@@ -161,6 +161,19 @@ void _markMainWindowRevealed() {
   if (!WindowRole.isSecondary) StartupTimeline.instance.finishAtReveal();
 }
 
+/// Cosmetic: until it finishes, drag handles show the system hand cursor.
+/// Per window, so secondary windows run it too.
+Future<void> _runDeferredCursorSetup() async {
+  try {
+    await _mainWindowRevealedCompleter.future.timeout(
+      const Duration(seconds: 20),
+    );
+  } on TimeoutException {
+    // Continue anyway, or the custom cursor would never be created.
+  }
+  await AppCursors.ensureInitialized();
+}
+
 /// Getter for accessing the window listener from other parts of the app
 AppWindowListener? get appWindowListener => _appWindowListener;
 
@@ -347,7 +360,7 @@ void main(List<String> args) async {
   // ינהל אותו בעצמו. ראו "ניהול הבהוב הסמן" ב-rtl_text_field.dart.
   EditableText.debugDeterministicCursor = true;
 
-  unawaited(AppCursors.ensureInitialized());
+  unawaited(_runDeferredCursorSetup());
 
   await StartupTimeline.instance.phase('earlyInit', () async {
     await _initializeDataRootForEarlyLogging();
@@ -1960,7 +1973,7 @@ void secondaryWindowMain(List<String> args) async {
   }
 
   Bloc.observer = AppBlocObserver();
-  unawaited(AppCursors.ensureInitialized());
+  unawaited(_runDeferredCursorSetup());
 
   // ⚠️ המטען נשמר **גולמי** ומפוענח מאוחר יותר, ב-`TabsBloc`.
   //
