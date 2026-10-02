@@ -29,7 +29,7 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
   # ב-Windows שחזור ה-SDK איטי מהתקנה, אבל ה-pub cache מקצר את pub get
   # מ-~100 ל-~10 שניות, כך שבסך הכל ה-cache משתלם.
@@ -52,7 +52,7 @@ jobs:
         shell: pwsh
         run: |
           git config --global core.longpaths true
-          flutter pub get
+          flutter pub get --enforce-lockfile
 
   # תואם ל-build_linux ב-flutter_tests.yml: אותו ראנר, קונטיינר וכלים.
   # בלי zstd ה-cache נדחס אחרת ולא יימצא.
@@ -84,4 +84,4 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile

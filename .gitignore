@@ -113,7 +113,6 @@ flutter/
 
 seforim.db
 LOG.txt
-pubspec.lock
 macos/Podfile.lock
 macos/Flutter/GeneratedPluginRegistrant.swift
 isolate.pdf
@@ -137,7 +136,6 @@ seforim.db-shm
 .gitignore
 seforim.db-wal
 .gstack/
-pubspec.lock
 
 # נתוני הביוגרפיות מוזרקים בזמן בנייה מה-release של ta-shma-to-otzaria
 assets/bio/biographies.tsb

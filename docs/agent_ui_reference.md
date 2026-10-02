@@ -68,7 +68,7 @@ The **navigation rail's `חיפוש`** item is the exception: it keeps plain `Ot
 
 Three shared widgets take an `icon:` / `searchIcon:` parameter for exactly this — `OtzariaSearchField`, `ItemsListView`, and any field's `prefixIcon`. Pass the scoped icon rather than wrapping the prefix in a `leading:` widget, which would drop `OtzariaSearchField`'s focus-color and sizing behaviour.
 
-**Finding an icon:** 135 icons, listed in `OtzariaIcons.values` and in the package's `index.html` catalog. The names follow the Fluent convention (`<name>_24_<regular|filled>`), so a Fluent name is usually the right thing to look up first. `otzaria_icons` is pinned by commit in `pubspec.lock`, and **`pubspec.lock` is gitignored** — if an icon in the catalog is undefined in your checkout, run `flutter pub upgrade otzaria_icons`.
+**Finding an icon:** 135 icons, listed in `OtzariaIcons.values` and in the package's `index.html` catalog. The names follow the Fluent convention (`<name>_24_<regular|filled>`), so a Fluent name is usually the right thing to look up first. `otzaria_icons` is pinned by commit in `pubspec.yaml` and `pubspec.lock`. If an icon in the catalog is undefined in your checkout, the pinned commit predates it.
 
 **Sizes:** every icon is drawn on a 24px grid, and the `_24_` in the name is the grid, not a size limit — pass `size:` freely. But the `book_open_*` family is drawn at different weights for different display sizes; `otzaria_icon_2_page_24_regular/filled` is the general-purpose "open book" and the only one of them with a `filled` twin, so it is what a nav rail or any regular/filled pair needs.
 

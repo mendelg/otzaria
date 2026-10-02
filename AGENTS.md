@@ -470,6 +470,8 @@ dart fix --apply            # Auto-fix common issues
 flutter clean && flutter pub get  # Nuclear option for build issues
 ```
 
+`pubspec.lock` is committed. Do not run `flutter pub upgrade` as part of an unrelated change: a pull request that changes `pubspec.lock` without changing `pubspec.yaml` fails the Lockfile Guard check, and CI resolves dependencies with `--enforce-lockfile`.
+
 ### Windows `search_engine_cargokit` build failure
 
 If MSB8066 hides a `PathExistsException` while copying `search_engine.dll`, inspect `flutter build windows --debug -v`: a process may hold the destination DLL open (often an orphaned `flutter_tester.exe`). Identify the holder before stopping it; a running app's DLL under `runner/Debug` is unrelated. Tests load a separate copy from `build/test_engine/` via `test/support/search_engine_test_init.dart`; do not point them back to the plugin build output.
