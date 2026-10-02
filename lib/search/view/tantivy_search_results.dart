@@ -17,6 +17,7 @@ import 'package:otzaria/search/bloc/search_event.dart';
 import 'package:otzaria/search/bloc/search_state.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/utils/in_book_search_routing.dart';
+import 'package:otzaria/search/utils/result_text_status.dart';
 import 'package:otzaria/search/models/external_search_status.dart';
 import 'package:otzaria/search/utils/search_result_opener.dart';
 import 'package:otzaria/search/utils/snippet_builder.dart';
@@ -1107,19 +1108,30 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                   ),
                                 const SizedBox(height: 8),
                                 // הטקסט שנמצא
-                                RichText(
-                                  textAlign: TextAlign.justify,
-                                  text: TextSpan(
+                                if (isResultTextUnavailable(result))
+                                  Text(
+                                    unavailableResultText,
                                     style: TextStyle(
-                                      fontSize: 16,
+                                      fontSize: 13,
                                       color: Theme.of(
                                         context,
-                                      ).colorScheme.onSurface,
-                                      height: 1.5,
+                                      ).colorScheme.onSurfaceVariant,
                                     ),
-                                    children: snippetSpans,
+                                  )
+                                else
+                                  RichText(
+                                    textAlign: TextAlign.justify,
+                                    text: TextSpan(
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurface,
+                                        height: 1.5,
+                                      ),
+                                      children: snippetSpans,
+                                    ),
                                   ),
-                                ),
                                 // תוצאות שאוחדו לכרטיס זה (במצב איחוד תוצאות)
                                 if (result.mergedCount > 1)
                                   MergedSiblingsSection(
