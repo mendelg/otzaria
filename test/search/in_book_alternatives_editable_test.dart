@@ -24,6 +24,7 @@ Future<void> main() async {
     (tester) async {
       final previous = SearchQueryBuilder.normalizeParametersForMode(
         SearchMode.advanced,
+        customSpacing: {'שלום_0': '2'},
         alternativeWords: {
           0: ['שלם'],
         },
@@ -68,6 +69,18 @@ Future<void> main() async {
       expect(tab.alternativeWords[0], ['שלם', 'שולם']);
       // עריכה בדיאלוג אינה משנה את הגדרות המסך — גם אם הדיאלוג יבוטל.
       expect(previous.alternativeWords[0], ['שלם']);
+      final remove = find.descendant(
+        of: find.widgetWithText(ListTile, 'שלם'),
+        matching: find.byType(IconButton),
+      );
+      await tester.ensureVisible(remove);
+      await tester.tap(remove);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(tab.alternativeWords[0], ['שולם']);
+      expect(previous.alternativeWords[0], ['שלם']);
+      tab.spacingValues['שלום_0'] = '9';
+      expect(previous.customSpacing, {'שלום_0': '2'});
       tab.searchOptions['שלום_0']!['סיומות'] = true;
       expect(previous.searchOptions['שלום_0'], {'קידומות': true});
     },
