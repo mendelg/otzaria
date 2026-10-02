@@ -25,6 +25,7 @@ import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/services/personal_note_draft_service.dart';
 import 'package:otzaria/plugins/storage/plugin_system_database.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
+import 'package:otzaria/plugins/models/plugin_valid_permissions.dart';
 import 'package:otzaria/plugins/services/plugin_manifest_validator.dart';
 import 'package:otzaria/plugins/services/plugin_user_folder_grants.dart';
 import 'package:otzaria/plugins/services/plugin_report_service.dart';
@@ -1227,8 +1228,7 @@ class BackupService {
   //   }
   // }
 
-  // שחזור תוספים: נתיב ההתקנה מותאם לשינויי מערכות ושם משתמש.
-  // אם תוסף אחד נכשל — מחזיר `true` כדי שהמשתמש יראה שחזור חלקי.
+  // כשל בתוסף אחד מדווח כשחזור חלקי בלי למנוע שחזור של שאר התוספים.
   static Future<({bool hadFailures, int restored})> _restorePlugins(
     List<Map<String, dynamic>> pluginsData,
     List<BackupStore> stores, {
@@ -1263,9 +1263,7 @@ class BackupService {
           ..['install_path'] = installPath
           ..['enabled'] = 0
           ..['source_type'] = 'packaged'
-          ..['dev_root_path'] = null
-          ..['network_access_granted'] = 0
-          ..['run_on_startup_granted'] = 0;
+          ..['dev_root_path'] = null;
         final plugin = InstalledPlugin.fromDbMap(installation);
         await PluginManifestValidator.validateManifest(
           manifest: plugin.manifest,
@@ -1292,9 +1290,12 @@ class BackupService {
         // רשומת ההתקנה.
         await db.insertOrUpdatePlugin(plugin);
 
-        // Grants are limited to what the manifest declares, and the folder and
-        // file grants in `_internal` hold absolute paths, so they are dropped.
-        final declared = plugin.manifest.permissions.toSet();
+        // הרשאות רשת והפעלה ברקע דורשות אישור מקומי אחרי שחזור.
+        // הרשאות נתיבים ב-_internal שייכות למכשיר שממנו נוצר הגיבוי.
+        final declared = plugin.manifest.permissions.toSet()
+          ..remove(pluginNetworkAccessPermission)
+          ..remove('network.localhost')
+          ..remove(pluginRunOnStartupPermission);
         await db.importPluginAuxData(pluginId, {
           'permissions': [
             for (final row in entry['permissions'] as List? ?? const [])

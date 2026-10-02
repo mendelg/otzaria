@@ -386,6 +386,7 @@
   "שחזור חלקי — חסרים בקובץ הגיבוי: {items}.": "Partial restore — missing from the backup file: {items}.",
   "קובץ גיבוי זה נוצר בגרסה שגיבתה רק חלק מההגדרות, ולכן הגדרות שאינן בו לא שוחזרו — בהן קיצורי מקלדת, ברירות המחדל של החיפוש, התאמות צורת הדף והתאמות פר-ספר. יש לבדוק אם קיים גיבוי חדש יותר, או להגדיר אותן מחדש.": "This backup file was created by a version that backed up only some of the settings, so settings it does not contain were not restored — among them keyboard shortcuts, search defaults, page-shape layouts and per-book adjustments. Check whether a newer backup exists, or set them again.",
   "ב-{count} הערות קובץ הגיבוי אינו כולל את המילים שאליהן הן קושרו, ולכן הן מסומנות כעת על הקטע כולו. הקישור למילים נכנס לגיבוי בגרסה מאוחרת יותר.": "For {count} notes the backup file does not include the words they were attached to, so they are now marked across the whole passage. Word-level attachment was added to the backup in a later version.",
+  "התוספים שוחזרו מושבתים. יש להפעיל אותם בהגדרות ← ניהול כלים, ולתת מחדש גישה לתיקיות אם נדרשת.": "Plugins were restored disabled. Enable them in Settings > Tools management, and grant folder access again if needed.",
   "תיקיות הספרים הבאות שוחזרו אך לא נמצאו במחשב זה:\n{folders}\nיש להוסיף אותן מחדש בהגדרות הספרייה, או לחברן לאותו נתיב.": "These library folders were restored but were not found on this computer:\n{folders}\nAdd them again in the Library Settings, or reconnect them at the same path.",
   "האפליקציה תיטען מחדש כעת.": "Otzaria will reload now.",
   "השחזור הושלם": "Restore Complete",
@@ -1174,7 +1175,6 @@
   "התוספים אינם מפותחים ע\"י אוצריא, ואין לפנות אליהם בנושא": "Plugins are not developed by Otzaria; please do not contact Otzaria about them",
   "לחנות התוספים המלאה": "Open the full plugin store",
   "שחזר את כל החלונות בהפעלה": "Reopen all windows on startup",
-  "התוספים שוחזרו מושבתים. יש להפעיל אותם בהגדרות ← ניהול כלים, ולתת מחדש גישה לתיקיות אם נדרשת.": "Plugins were restored disabled. Enable them in Settings > Tools management, and grant folder access again if needed.",
   "כל החלונות שהיו פתוחים בסגירה ייפתחו שוב, במקומם": "Every window that was open at exit reopens where it was",
   "ייפתח חלון אחד, עם הכרטיסיות של כל החלונות": "A single window opens, with the tabs of all windows",
 
