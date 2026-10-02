@@ -15,6 +15,7 @@ import 'package:otzaria/plugins/services/plugin_store_link_parser.dart';
 import 'package:otzaria/search/models/search_configuration.dart'
     show SearchMode;
 import 'package:otzaria/settings/view/settings_screen.dart' show SettingsTab;
+import 'package:otzaria/tools/tool_query.dart' show ToolQuery;
 import 'package:otzaria/utils/book_link_builder.dart';
 
 /// פעולה הנגזרת מקישור `otzaria://...` חיצוני.
@@ -29,9 +30,12 @@ class OpenScreenAction extends ExternalUriAction {
 }
 
 /// פתיחת לשונית כלי במסך הכלים לפי מזהה (built-in או תוסף).
+///
+/// [query] — טקסט לחיפוש מיידי בכלי, רק לכלים שב-[ToolQuery.supportedToolIds].
 class OpenToolAction extends ExternalUriAction {
   final String toolId;
-  const OpenToolAction(this.toolId);
+  final ToolQuery? query;
+  const OpenToolAction(this.toolId, {this.query});
 }
 
 /// פתיחת תוסף ישירות לפי מזהה התוסף — גם אם אינו מוצמד ללשוניות.
@@ -164,6 +168,11 @@ class OpenToolsLauncherAction extends ExternalUriAction {
   const OpenToolsLauncherAction();
 }
 
+/// פתיחת טופס הדיווח על התוכנה (תקלה, קריסה, ביצועים או הצעה).
+class OpenAppReportAction extends ExternalUriAction {
+  const OpenAppReportAction();
+}
+
 /// פתיחת הדף היומי — פותח את ספר ה-PDF של התלמוד הבבלי בדף הנכון ליום.
 class OpenDailyPageAction extends ExternalUriAction {
   const OpenDailyPageAction();
@@ -206,6 +215,10 @@ class ShowInfoAction extends ExternalUriAction {
 /// * `otzaria://open/measurements`          – מדות ושיעורים
 /// * `otzaria://open/aramaic_dictionary`    – מילון ארמי-עברי
 /// * `otzaria://open/acronyms_dictionary`   – ראשי תיבות
+/// * `otzaria://open/tikkun_korim`          – תיקון קוראים
+/// * `otzaria://open/biographies`           – ביוגרפיות
+/// * `?q=<text>` (גם ב-`tool/<id>`)          – חיפוש מיידי בביוגרפיות, בראשי
+///   תיבות, במילון ובגימטריה; `&from=hebrew` במילון: מעברית לארמית
 /// * `otzaria://open/library`               – ספרייה
 /// * `otzaria://open/search`                – פותח את מסך החיפוש (ללא הפעלת חיפוש)
 /// * `otzaria://open/search?q=<text>`        – פותח לשונית חיפוש חדשה ומפעיל חיפוש
@@ -227,6 +240,7 @@ class ShowInfoAction extends ExternalUriAction {
 /// * `otzaria://open/inspection`            – פותח מסך עיון בספר האחרון שנפתח
 /// * `otzaria://open/sdk`                   – פותח הגדרות ← כלים (ניהול תוספים)
 /// * `otzaria://open/daily_page`            – פותח את הדף היומי (PDF תלמוד בבלי בדף הנכון)
+/// * `otzaria://open/report`                – פותח את טופס הדיווח על התוכנה
 /// * `otzaria://open/tool/<tool-id>`        – כרטיסיית כלי בעיון לפי מזהה מלא
 /// * `otzaria://open/plugin/<plugin-id>`    – פתיחת תוסף ישירות לפי מזהה (גם לא-מוצמד)
 /// * `otzaria://open/tab/<index>`           – מעבר לטאב פתוח לפי מיקומו (0-based; Jump List)
@@ -279,6 +293,7 @@ class ExternalUriRouter {
     'tikkun_korim': 'builtin.tikkun_korim',
     'aramaic_dictionary': 'builtin.aramaic_dictionary',
     'acronyms_dictionary': 'builtin.acronyms_dictionary',
+    'biographies': 'builtin.biographies',
   };
 
   static const Map<String, Screen> _screenAliases = {
@@ -454,6 +469,22 @@ class ExternalUriRouter {
     return ShowInfoAction(topic, errorLimit: errorLimit, fileLimit: fileLimit);
   }
 
+  /// `q=` לכלי שיודע לקבל אותו; `from=hebrew` הופך את כיוון המילון הארמי.
+  static ToolQuery? _toolQueryOf(
+    String toolId,
+    Map<String, String> parameters,
+  ) {
+    if (!ToolQuery.supportedToolIds.contains(toolId)) return null;
+    final text = parameters['q']?.trim() ?? '';
+    if (text.isEmpty) return null;
+    final from = parameters['from']?.trim().toLowerCase();
+    return ToolQuery(
+      text,
+      hebrewToAramaic:
+          toolId == 'builtin.aramaic_dictionary' && from == 'hebrew',
+    );
+  }
+
   static String? _parseLocalInstall(Uri uri) {
     final segments = uri.pathSegments
         .where((segment) => segment.isNotEmpty)
@@ -538,6 +569,10 @@ class ExternalUriRouter {
         return const OpenDailyPageAction();
       }
 
+      if (firstLower == 'report') {
+        return const OpenAppReportAction();
+      }
+
       // settings בלי sub-tab — פותח הגדרות ללא ניווט לטאב ספציפי.
       if (firstLower == 'settings') {
         return const OpenSettingsTabAction();
@@ -555,7 +590,10 @@ class ExternalUriRouter {
 
       final toolId = _toolAliases[firstLower];
       if (toolId != null) {
-        return OpenToolAction(toolId);
+        return OpenToolAction(
+          toolId,
+          query: _toolQueryOf(toolId, queryParameters),
+        );
       }
       if (firstLower == 'tools') {
         return const OpenToolsLauncherAction();
@@ -581,7 +619,7 @@ class ExternalUriRouter {
       if (rawId.isEmpty) {
         return null;
       }
-      return OpenToolAction(rawId);
+      return OpenToolAction(rawId, query: _toolQueryOf(rawId, queryParameters));
     }
 
     if (segments.length == 2 && firstLower == 'plugin') {

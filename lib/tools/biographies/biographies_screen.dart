@@ -10,6 +10,7 @@ import 'package:otzaria/theme/theme_exports.dart';
 import 'package:otzaria/tools/biographies/models/biography.dart';
 import 'package:otzaria/tools/biographies/repository/biographies_repository.dart';
 import 'package:otzaria/tools/biographies/widgets/biography_card.dart';
+import 'package:otzaria/tools/tool_query.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
 import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/widgets/feedback/tool_empty_state.dart';
@@ -17,15 +18,17 @@ import 'package:otzaria/widgets/misc/tool_ui_helpers.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 
 class BiographiesScreen extends StatefulWidget {
-  const BiographiesScreen({super.key, this.repository});
+  const BiographiesScreen({super.key, this.repository, this.queryInbox});
 
   final BiographiesRepository? repository;
+  final ToolQueryInbox? queryInbox;
 
   @override
   State<BiographiesScreen> createState() => _BiographiesScreenState();
 }
 
-class _BiographiesScreenState extends State<BiographiesScreen> {
+class _BiographiesScreenState extends State<BiographiesScreen>
+    with ToolQueryConsumer {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   late final BiographiesRepository _repository =
@@ -33,6 +36,18 @@ class _BiographiesScreenState extends State<BiographiesScreen> {
   List<Biography> _allBiographies = [];
   List<Biography> _filteredResults = [];
   bool _isLoading = true;
+
+  @override
+  ToolQueryInbox? get toolQueryInbox => widget.queryInbox;
+
+  @override
+  bool get canApplyToolQuery => !_isLoading;
+
+  @override
+  void applyToolQuery(ToolQuery query) {
+    fillSearchField(_searchController, query.text);
+    _performSearch(query.text);
+  }
 
   @override
   void initState() {
@@ -69,6 +84,7 @@ class _BiographiesScreenState extends State<BiographiesScreen> {
       setState(() => _isLoading = false);
       UiSnack.showError(ToolsMessages.biographiesLoadError(e));
     }
+    consumeToolQuery();
   }
 
   void _performSearch(String query) {

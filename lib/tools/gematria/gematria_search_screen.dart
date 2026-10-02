@@ -12,6 +12,7 @@ import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'package:otzaria/tools/gematria/gematria_search.dart';
 import 'package:otzaria/tools/gematria/models/gematria_search_result.dart';
 import 'package:otzaria/tools/gematria/widgets/gematria_result_card.dart';
+import 'package:otzaria/tools/tool_query.dart';
 import 'package:otzaria/widgets/layout/context_overlay_panel.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
@@ -30,13 +31,16 @@ String _bookNameWithoutTextExtension(String fileName) {
 }
 
 class GematriaSearchScreen extends StatefulWidget {
-  const GematriaSearchScreen({super.key});
+  const GematriaSearchScreen({super.key, this.queryInbox});
+
+  final ToolQueryInbox? queryInbox;
 
   @override
   GematriaSearchScreenState createState() => GematriaSearchScreenState();
 }
 
-class GematriaSearchScreenState extends State<GematriaSearchScreen> {
+class GematriaSearchScreenState extends State<GematriaSearchScreen>
+    with ToolQueryConsumer {
   static const double _settingsPanelWidth = 400;
 
   final TextEditingController _searchController = TextEditingController();
@@ -49,6 +53,17 @@ class GematriaSearchScreenState extends State<GematriaSearchScreen> {
   bool _showingSettings = false;
   List<String> _activeParams = []; // פרמטרי החיפוש האחרון, לתצוגה למשתמש
   int _latestSearchId = 0;
+
+  @override
+  ToolQueryInbox? get toolQueryInbox => widget.queryInbox;
+
+  @override
+  void applyToolQuery(ToolQuery query) {
+    fillSearchField(_searchController, linkQueryText(query.text));
+    // פאנל ההגדרות מסתיר את התוצאות.
+    if (_showingSettings) setState(() => _showingSettings = false);
+    _performSearch();
+  }
 
   /// בונה את תוויות פרמטרי הגימטריה הפעילים להצגה למשתמש (שיטה + דגלים).
   @visibleForTesting
@@ -72,6 +87,11 @@ class GematriaSearchScreenState extends State<GematriaSearchScreen> {
     if (filterDuplicates) labels.add('ללא כפילויות');
     return labels;
   }
+
+  /// טקסט מקישור מגיע לרוב מנוקד או עם גרשיים, שהשדה דוחה כקלט לא תקין.
+  @visibleForTesting
+  static String linkQueryText(String text) =>
+      utils.removeVolwels(text).replaceAll(RegExp(r'''["'׳״]'''), '').trim();
 
   /// מחזירה אם תוצאת החיפוש שייכת לבקשה העדכנית ביותר.
   @visibleForTesting

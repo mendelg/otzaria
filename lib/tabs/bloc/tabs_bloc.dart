@@ -421,6 +421,10 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
         targetTitle,
         ignoreLocation: event.navigateToPositionIfReused,
       );
+      _forwardToolQueryToExistingTab(
+        existingTab: matchingPane ?? state.tabs[matchingIndex],
+        incomingTab: event.tab,
+      );
       event.tab.dispose();
       final tabsToSave = state.tabs;
       // התאמה בחלונית מפוצלת דורשת גם עדכון של החלונית הפעילה.
@@ -577,6 +581,16 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
         ),
       );
     }
+  }
+
+  /// כלי פתוח מקבל את בקשת החיפוש של הטאב הנכנס, שאחרת נזרקת איתו.
+  void _forwardToolQueryToExistingTab({
+    required OpenedTab existingTab,
+    required OpenedTab incomingTab,
+  }) {
+    if (existingTab is! ToolTab || incomingTab is! ToolTab) return;
+    final query = incomingTab.queryInbox.take();
+    if (query != null) existingTab.queryInbox.post(query);
   }
 
   TextBookTab? _resolveTextBookTab(
