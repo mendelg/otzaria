@@ -45,6 +45,7 @@ import 'package:otzaria/history/bloc/history_event.dart';
 import 'package:otzaria/library/bloc/library_bloc.dart';
 import 'package:otzaria/library/bloc/library_state.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
+import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/tour/tour_target_keys.dart';
 import 'package:otzaria/update/my_update_widget.dart';
@@ -102,28 +103,8 @@ const double _kTabContentMinWidth = 12.0;
 /// גובה גוף הכרטיסיה, בלי המפריד שלצדה.
 const double _kTabBodyHeight = 32.0;
 
-/// גובה הסרגל העליון, וגם הגובה שהכרטיסיה **מציירת** בו.
-///
-/// ⚠️ שני הדברים חייבים להיות אותו מספר, וזה תיקון של באג שחזר שלוש
-/// פעמים. גוף הכרטיסיה הוא [_kTabBodyHeight] = 32 והסרגל 40, כלומר בין
-/// הכרטיסיה לתוכן שמתחתיה נשארים ארבעה פיקסלים של צבע הרצועה — הקו הבהיר
-/// שהמשתמש ראה. הפתרון: ה-widget של הכרטיסיה מקבל את כל 40, הצייר ממרכז
-/// בתוכו כרטיסיה בגובה 32 ומושך אותה עד התחתית, והתוכן ממורכז בנפרד.
-///
-/// ### ⚠️ ולמה **לא** ציור מחוץ לגבולות
-///
-/// הגרסה הקודמת פתרה את זה בכך שהצייר יצא ארבעה פיקסלים מתחת ל-widget
-/// שלו. זה עבד — **לפעמים**. הרצועה היא `SingleChildScrollView`, והוא
-/// חותך את הציור ברגע שהתוכן גולש (`_shouldClipAtPaintOffset`): כלומר
-/// בדיוק כשיש הרבה כרטיסיות, או שהחלון על חצי מסך, החריגה נמחקת והקו
-/// חוזר. זה גם ההסבר המלא ל"מופיע רק בחלק מהחלונות ולא הצלחתי לאבחן
-/// מתי כן ומתי לא".
-///
-/// לפני כן נוסה גם להרחיב את הסרגל בחמשה פיקסלים כדי "להזמין מקום";
-/// שם התוצאה הייתה הפוכה — התוכן נדחף למטה והפער גדל.
-///
-/// **המסקנה: ציור שיוצא מגבולות ה-widget שלו תלוי בחסדי כל אב בעץ.**
-/// כאן אין חריגה אנכית בכלל.
+/// הכרטיסייה מציירת בתוך כל גובה הסרגל, כדי שגלילה לא תחתוך את רקעה.
+/// גוף הכרטיסייה ממורכז, והרקע נמשך עד לתוכן שמתחתיה.
 const double _kTopBarHeight = 40.0;
 
 /// רוחבי הטאבים בשורה: הנבחר עשוי להיות רחב מהשאר (ראה [_kTabSelectedMinWidth]).
@@ -562,25 +543,52 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
   }
 
   Widget _buildScrollableTabsArea(TabsState state) {
-    // LayoutBuilder נפרד מודד רק את הרוחב (ילדו SizedBox ריק) ושומר אותו ב-state;
-    // הרשימה — שמכילה Tooltip/OverlayPortal ומפתחות גלובליים — נבנית כאח שלו,
-    // לא תחתיו. אחרת רינדור-מחדש של טאב בזמן layout מפעיל את ה-OverlayPortal
-    // וזורק "_RenderLayoutBuilder was mutated".
-    return Stack(
-      children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            if (_tabsAreaWidth == null || (_tabsAreaWidth! - w).abs() > 0.5) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) setState(() => _tabsAreaWidth = w);
-              });
-            }
-            return const SizedBox.shrink();
-          },
-        ),
-        _buildTabsContent(state),
-      ],
+    final registry = PluginNewTabPageRegistry.instance;
+    return ListenableBuilder(
+      listenable: registry,
+      builder: (context, _) {
+        final showNewTabButton = registry.hasActiveRegistration;
+        final tabsContent = _buildTabsContent(state);
+        final tabWidths = _pinnedTabWidths ?? _lastComputedTabWidths!;
+        final visibleTabsWidth = state.tabs.isEmpty
+            ? 0.0
+            : tabWidths.selected +
+                  tabWidths.unselected * (state.tabs.length - 1);
+
+        return Stack(
+          children: [
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final reservedForPlus = showNewTabButton ? 32.0 : 0.0;
+                final availableForTabs = math.max(
+                  0.0,
+                  constraints.maxWidth - reservedForPlus,
+                );
+                if (_tabsAreaWidth == null ||
+                    (_tabsAreaWidth! - availableForTabs).abs() > 0.5) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      setState(() => _tabsAreaWidth = availableForTabs);
+                    }
+                  });
+                }
+                return const SizedBox.shrink();
+              },
+            ),
+            tabsContent,
+            if (showNewTabButton)
+              PositionedDirectional(
+                start: visibleTabsWidth,
+                top: 4,
+                child: MetaData(
+                  metaData: _kTabHitMarker,
+                  behavior: HitTestBehavior.opaque,
+                  child: _buildOpenLibraryButton(context),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -705,6 +713,15 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
     );
   }
 
+  Widget _buildOpenLibraryButton(BuildContext context) {
+    return IconButton(
+      icon: const Icon(FluentIcons.add_24_regular, size: 18),
+      tooltip: context.settingsText('כרטיסייה חדשה'),
+      onPressed: PluginNewTabPageRegistry.instance.open,
+      style: _kIconButtonStyle,
+    );
+  }
+
   Widget _buildReadingSettingsButton(BuildContext context) {
     return DragToMoveArea(
       child: Padding(
@@ -734,7 +751,11 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
         return Container(
           color: AppSurfaces.readerBackground(context),
           height: _kTopBarHeight,
-          child: _buildScrollableTabsArea(state),
+          child: Row(
+            children: [
+              Expanded(child: _buildScrollableTabsArea(state)),
+            ],
+          ),
         );
       },
     );
