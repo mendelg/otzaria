@@ -21,7 +21,6 @@ import 'package:otzaria/indexing/utils/book_facet_metadata_cache.dart';
 import 'package:otzaria/indexing/utils/pdf_extraction_prefetcher.dart';
 import 'package:otzaria/indexing/models/catalogue_order_resolver.dart';
 import 'package:otzaria/indexing/models/indexing_run_result.dart';
-import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/attached_libraries/models/attached_library.dart';
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
 import 'package:otzaria/models/book_source.dart';
@@ -408,8 +407,6 @@ class IndexingRepository {
     final failures = <IndexingFailure>[];
 
     try {
-      await _setDbReadBoost(true);
-
       final catalogueOrder = buildCatalogueOrderResolver(library);
       await Future.wait([
         GenerationCache.instance.warmUp(),
@@ -677,7 +674,6 @@ class IndexingRepository {
       }
     } finally {
       prefetcher.dispose();
-      await _setDbReadBoost(false);
       _tantivyDataProvider.isIndexing.value = false;
     }
     return cancelled
@@ -1705,7 +1701,6 @@ class IndexingRepository {
     final failures = <IndexingFailure>[];
 
     try {
-      await _setDbReadBoost(true);
       for (final book in books) {
         await _waitWhilePaused();
         if (!_tantivyDataProvider.isIndexing.value) {
@@ -1815,7 +1810,6 @@ class IndexingRepository {
         _stampCatalogueOrderAfterCommit();
       }
     } finally {
-      await _setDbReadBoost(false);
       _tantivyDataProvider.isIndexing.value = false;
     }
     return cancelled
@@ -1831,48 +1825,6 @@ class IndexingRepository {
             indexedBooks: actuallyIndexed,
             failures: List.unmodifiable(failures),
           );
-  }
-
-  /// מפעיל/מכבה בוסט זמני לחיבורי הקריאה של ה-DB לטובת הקריאות הרציפות
-  /// הכבדות בזמן אינדוקס (כל שורות כל ספר נקראות ברצף). מכסה גם את seforim.db
-  /// וגם את user_books.db — ספרי המשתמש נקראים מחיבור נפרד. user_books מבוסט
-  /// רק אם כבר פתוח (כדי לא ליצור DB ריק); בזרימת אינדוקס הוא נפתח ממילא בעת
-  /// טעינת הספרייה. כשלון אינו קריטי — האינדוקס ימשיך עם פרופיל הסרק החסכוני.
-  Future<void> _setDbReadBoost(bool enabled) async {
-    final repos = <SeforimRepository?>[
-      SqliteDataProvider.instance.repository,
-      UserBooksDatabaseHolder.instance.repositoryIfInitialized,
-      ...await _attachedRepositoriesForBoost(enabled),
-    ];
-    for (final repo in repos) {
-      if (repo == null) continue;
-      try {
-        if (enabled) {
-          await repo.setReadBoostMode();
-        } else {
-          await repo.restoreReadCacheDefaults();
-        }
-      } catch (e) {
-        debugPrint('[Indexing] DB read-boost toggle failed: $e');
-      }
-    }
-  }
-
-  /// מסד מצורף נפתח כאן רק כשמבקשים בוסט; שחזור אינו פותח מסד סגור.
-  static Future<List<SeforimRepository?>> _attachedRepositoriesForBoost(
-    bool enabled,
-  ) async {
-    try {
-      final registry = AttachedLibraryRegistry.instance;
-      if (!enabled) return registry.openRepositories;
-      return await Future.wait([
-        for (final library in registry.visibleLibraries)
-          registry.repositoryFor(library.slug),
-      ]);
-    } catch (e) {
-      debugPrint('[Indexing] attached DB read-boost skipped: $e');
-      return const [];
-    }
   }
 
   /// Cancels the ongoing indexing process.
@@ -2289,7 +2241,6 @@ class IndexingRepository {
     // בדיוק כמו במסלולי האינדוקס עצמם.
     _tantivyDataProvider.isIndexing.value = true;
     try {
-      await _setDbReadBoost(true);
       final scanStopwatch = Stopwatch()..start();
       var processed = 0;
       for (final book in candidates) {
@@ -2334,7 +2285,6 @@ class IndexingRepository {
         '🔎 reconcile: סריקת $processed/$total ספרים ב-${scanStopwatch.elapsed}',
       );
     } finally {
-      await _setDbReadBoost(false);
       _tantivyDataProvider.isIndexing.value = false;
     }
 
