@@ -246,9 +246,7 @@ void main() {
         }
         catalogStopwatch.stop();
 
-        // על הנתונים האמיתיים (13,105 ערכים) ההפרש נמדד כ-437ms מול 21ms —
-        // פי 20. כאן דורשים רק פי 3 כדי לא להישבר על מכונת CI איטית, בלי
-        // לאבד את המשמעות: המסלול הישן חייב להיות לפחות פי כמה איטי יותר.
+        // סף פי 3 משאיר מרווח לתנודות זמן במכונות CI איטיות.
         expect(
           legacyStopwatch.elapsedMicroseconds,
           greaterThan(catalogStopwatch.elapsedMicroseconds * 3),
