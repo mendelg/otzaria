@@ -35,13 +35,20 @@ jobs:
           DEPENDENCIES_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'dependencies') }}
         run: |
           set -euo pipefail
-          files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[].filename')
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
+            --jq '.[] | .status + " " + .filename')
 
-          if ! grep -qx 'pubspec.lock' <<<"$files"; then
+          lock_status=$(awk '$2 == "pubspec.lock" { print $1 }' <<<"$files")
+          if [ -z "$lock_status" ]; then
             echo "pubspec.lock is unchanged."
             exit 0
           fi
-          if grep -qx 'pubspec.yaml' <<<"$files"; then
+          # Only the pull request that starts tracking the file adds it.
+          if [ "$lock_status" = "added" ]; then
+            echo "pubspec.lock is added."
+            exit 0
+          fi
+          if awk '$2 == "pubspec.yaml" { found = 1 } END { exit !found }' <<<"$files"; then
             echo "pubspec.lock changes together with pubspec.yaml."
             exit 0
           fi
