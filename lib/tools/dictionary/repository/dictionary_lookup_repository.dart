@@ -502,12 +502,7 @@ class DictionaryLookupRepository {
         const <LaazDictionaryEntry>[];
   }
 
-  /// קטלוג ראשי תיבות לחיפוש, עם המפתח המנורמל שכבר חושב בזמן הטעינה.
-  ///
-  /// שחשוב: החזרת מפתח מנורמל+תווית מקורית יחד, במקום רק התווית (כפי
-  /// שהשיטה הקודמת, `getAllAcronyms`, עשתה) — אחרת מסך חיפוש שמשתמש בה
-  /// חייב לנרמל כל מפתח מחדש בכל הקשה. כאן המפתח המנורמל נשאר זמין, כדי
-  /// שהחיפוש לא יחזור על אותו נירמול 13,000+ פעמים.
+  /// קטלוג לחיפוש עם תווית מקורית ומפתח מנורמל.
   List<AcronymCatalogEntry> getAcronymSearchCatalog() {
     return List<AcronymCatalogEntry>.unmodifiable([
       for (final entry in _acronymsByKey.entries)

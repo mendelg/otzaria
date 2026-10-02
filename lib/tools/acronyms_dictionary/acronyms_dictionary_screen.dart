@@ -16,7 +16,9 @@ import 'package:otzaria/widgets/feedback/tool_empty_state.dart';
 import 'package:otzaria/widgets/misc/tool_ui_helpers.dart';
 
 class AcronymsDictionaryScreen extends StatefulWidget {
-  const AcronymsDictionaryScreen({super.key});
+  const AcronymsDictionaryScreen({super.key, this.repository});
+
+  final DictionaryLookupRepository? repository;
 
   @override
   State<AcronymsDictionaryScreen> createState() =>
@@ -26,8 +28,8 @@ class AcronymsDictionaryScreen extends StatefulWidget {
 class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  final DictionaryLookupRepository _dictionaryRepository =
-      DictionaryLookupRepository.instance;
+  late final DictionaryLookupRepository _dictionaryRepository =
+      widget.repository ?? DictionaryLookupRepository.instance;
   List<AcronymCatalogEntry> _catalog = [];
   List<AcronymCatalogEntry> _filteredResults = [];
   bool _isLoading = true;
@@ -83,9 +85,6 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
       return;
     }
 
-    // מנורמל פעם אחת לכל החיפוש — לא בכל רשומה בקטלוג (כ-13,000 רשומות).
-    // המפתח המנורמל של כל רשומה כבר חושב מראש ב-getAcronymSearchCatalog,
-    // ולכן אין צורך לנרמל גם אותו מחדש כאן.
     final normalizedQuery = _dictionaryRepository.normalizeAcronymQuery(query);
 
     setState(() {
