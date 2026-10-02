@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:otzaria/plugins/plugin_constants.dart';
 import 'package:otzaria/plugins/repository/plugin_registry_repository.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_condition_evaluator.dart';
 import 'package:otzaria/plugins/services/plugin_shortcut_registry.dart';
@@ -662,6 +663,8 @@ class PluginRuntimeDispatcher {
   }
 
   Future<void> reloadPlugin(String pluginId) async {
+    await PluginSafeMode.ready;
+    if (PluginSafeMode.isActive) return;
     if (_shutdownMode != _PluginRuntimeShutdownMode.idle) return;
     ContextMenuRegistry.instance.removeAll(pluginId);
     PluginShortcutRegistry.instance.removeAll(pluginId);
@@ -699,6 +702,8 @@ class PluginRuntimeDispatcher {
   }
 
   Future<void> dispatchEvent(String topic, Map<String, dynamic> payload) async {
+    await PluginSafeMode.ready;
+    if (PluginSafeMode.isActive) return;
     if (_shutdownMode != _PluginRuntimeShutdownMode.idle) return;
     if (topic == 'theme.changed') _lastThemePayload = payload;
     // הנקודה היחידה שדרכה עוברות כל הודעות שינוי ההגדרות — תנאי `when`
@@ -824,6 +829,8 @@ class PluginRuntimeDispatcher {
     bool resumeForegroundIfNeeded = false,
     PluginInstanceId? instanceId,
   }) async {
+    await PluginSafeMode.ready;
+    if (PluginSafeMode.isActive) return;
     if (_shutdownMode != _PluginRuntimeShutdownMode.idle) return;
     if (instanceId != null) {
       await _dispatchEventToInstance(pluginId, instanceId, topic, payload);

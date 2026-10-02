@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:otzaria/plugins/view/safe_mode_controls.dart';
 import 'package:otzaria/core/windowing/app_window_scope.dart';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'package:flutter/foundation.dart';
@@ -299,6 +300,7 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                const SafeModeTitleBarIndicator(),
                                 const ManagedUpdateTitleBarIndicator(),
                                 _buildFullscreenCaptionButton(
                                   context,

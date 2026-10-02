@@ -1135,6 +1135,8 @@
   "לחנות התוספים המלאה": "Open the full plugin store",
   "שחזר את כל החלונות בהפעלה": "Reopen all windows on startup",
   "{count} קבוצות סימניות": "{count} bookmark groups",
+  "מצב בטוח": "Safe mode",
+  "הפעל מחדש כרגיל": "Restart normally",
   "כל החלונות שהיו פתוחים בסגירה ייפתחו שוב, במקומם": "Every window that was open at exit reopens where it was",
   "ייפתח חלון אחד, עם הכרטיסיות של כל החלונות": "A single window opens, with the tabs of all windows",
   "דיווחים על התוכנה": "App Reports",

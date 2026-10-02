@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:otzaria/plugins/services/startup_crash_counter.dart';
 import 'package:otzaria/app_report/services/app_crash_session.dart';
 import 'package:otzaria/core/http_client_registry.dart';
 import 'package:otzaria/core/pre_close_registry.dart';
@@ -291,6 +292,7 @@ class AppWindowListener extends WindowListener {
     // ב-`TerminateProcess` של ה-runner בלי ששום חלון ריץ את הכיבוי המסודר,
     // ואז ה-canary נשאר וההפעלה הבאה מסרבת לטעון את התוספים. אידמפוטנטי.
     PluginCrashGuard.markCleanShutdownSync();
+    StartupCrashCounter.markStableSync();
 
     // ⚠️ הפיצול הוא לפי *בעלות* — מה פר-חלון ומה פר-תהליך — ולא לפי סדר.
     // הצעד הפר-חלוני היחיד הוא ה-flush, והוא יושב באמצע רצף פר-תהליכי:

@@ -26,6 +26,9 @@ import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/navigation/view/main_window_screen.dart';
 import 'package:otzaria/plugins/view/webview_environment_holder.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
+import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
+import 'package:otzaria/plugins/bloc/plugin_system_event.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
@@ -183,6 +186,9 @@ class _WindowBusHostState extends State<WindowBusHost> {
 
   Future<Object?> _handleRequest(Map<String, dynamic> request) async {
     switch (request['type']) {
+      case PluginSafeMode.readyRequest:
+        await PluginSafeMode.ready;
+        return PluginSafeMode.isActive;
       case MultiWindowService.requestDescribe:
         return _describe();
       case MultiWindowService.requestReceiveTab:
@@ -212,7 +218,11 @@ class _WindowBusHostState extends State<WindowBusHost> {
         // הגדרה שונתה בחלון אחר — מוחלת על ה-box המקומי ומרעננת את ה-state.
         return SettingsSync.instance.handleRequest(request);
       case MultiWindowService.requestRestart:
-        return _restartSelf();
+        return _restartSelf(
+          pluginSafeMode: request['pluginSafeMode'] is bool
+              ? request['pluginSafeMode'] as bool
+              : null,
+        );
       case MultiWindowService.requestCloseWindow:
         return _closeSelfPolitely();
       default:
@@ -224,9 +234,15 @@ class _WindowBusHostState extends State<WindowBusHost> {
   ///
   /// ⚠️ חלון מוסתר (שנסגר ומחכה ל-Ctrl+Shift+T) אינו נבנה מחדש: סגירת
   /// ה-`TabsBloc` שלו הייתה כותבת מחדש את הסשן שהמשתמש מחק בסגירה.
-  Future<bool> _restartSelf() async {
+  Future<bool> _restartSelf({bool? pluginSafeMode}) async {
     if (!mounted) return false;
-    if (!await AppWindowScope.controllerOf(context).isVisible()) return false;
+    if (pluginSafeMode != null) PluginSafeMode.active.value = pluginSafeMode;
+    await PluginSafeMode.ready;
+    if (!mounted) return false;
+    if (!await AppWindowScope.controllerOf(context).isVisible()) {
+      if (mounted) context.read<PluginSystemBloc>().add(LoadPlugins());
+      return false;
+    }
     if (!mounted) return false;
     await resetRuntimeStateForAppRestart();
     if (!mounted) return false;

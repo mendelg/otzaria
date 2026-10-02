@@ -573,10 +573,10 @@ class _ToolsLauncherPanelState extends State<ToolsLauncherPanel> {
       ),
       if (plugin != null)
         ToolTileAction(
-          icon: plugin.enabled
+          icon: plugin.savedEnabled
               ? FluentIcons.pause_circle_24_regular
               : FluentIcons.play_circle_24_regular,
-          label: plugin.enabled ? 'השבת' : 'הפעל',
+          label: plugin.savedEnabled ? 'השבת' : 'הפעל',
           onTap: () => togglePluginEnabled(context, plugin),
         ),
       if (plugin != null)

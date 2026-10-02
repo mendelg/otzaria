@@ -17,6 +17,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:otzaria/plugins/view/safe_mode_controls.dart';
+import 'package:otzaria/plugins/services/startup_crash_counter.dart';
 import 'package:otzaria/attached_libraries/bloc/attached_libraries_bloc.dart';
 import 'package:otzaria/attached_libraries/repository/attached_libraries_repository.dart';
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
@@ -134,6 +136,7 @@ import 'package:otzaria/plugins/services/plugin_packager_cli.dart';
 import 'package:otzaria/plugins/services/plugin_store_link_parser.dart';
 import 'package:otzaria/plugins/services/plugin_protocol_registration_service.dart';
 import 'package:otzaria/plugins/utils/plugin_dev_tools_mode.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 import 'package:otzaria/core/sentry_event_filter.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
@@ -345,6 +348,7 @@ void main(List<String> args) async {
       .timeout(const Duration(seconds: 20), onTimeout: () {});
 
   PluginDevToolsMode.initFromArgs(args);
+  PluginSafeMode.initFromArgs(args);
   // שכבות טקסט של ספרים סרוקים שומרות עברית בסדר ויזואלי; בלי זה חיפוש,
   // העתקה ואינדוקס מקבלים את המילים הפוכות.
   Pdfrx.normalizeHebrewText = true;
@@ -904,10 +908,13 @@ Future<void> _initializeRestartableRuntime() async {
       );
     }),
   );
+  final previousPluginDecision = PluginSafeMode.ready;
+  PluginSafeMode.ready = _runDeferredPluginSafeMode(previousPluginDecision);
 
   // אינם נחוצים להצגת ה-UI הראשי. unawaited לבדו אינו דוחה: הקוד שעד ה-await
   // הראשון בכל אחד מהם רץ כאן, ולכן עבודה סינכרונית חייבת לחכות לחשיפה בעצמה.
   unawaited(_runDeferredAutoBackup());
+  unawaited(_runDeferredStartupStability());
   unawaited(_runDeferredRestoreWindows());
   unawaited(_runDeferredProtocolRegistration());
   unawaited(_runDeferredSwapRecovery());
@@ -1096,6 +1103,80 @@ Future<void> _runDeferredCrashCheck() async {
     ).handle(candidate);
   } catch (error, stackTrace) {
     _logNonFatalInitializationError('Crash report check', error, stackTrace);
+  }
+}
+
+Future<void> _runDeferredPluginSafeMode(Future<void> previousDecision) async {
+  try {
+    await _mainWindowRevealedCompleter.future.timeout(
+      const Duration(seconds: 20),
+    );
+  } on TimeoutException {
+    // טעינת התוספים אינה תלויה בהצלחת חשיפת החלון.
+  }
+  try {
+    await previousDecision;
+    await _timedPhase(
+      'pluginSafeMode',
+      () => PluginSafeMode.initializeSession(
+        isSecondary: WindowRole.isSecondary,
+        onError: (error, stackTrace) => _logNonFatalInitializationError(
+          'Plugin safe mode',
+          error,
+          stackTrace,
+        ),
+        waitForPrimary: () async {
+          final owner = WindowBus.instance.ownerPort;
+          if (owner == null) throw StateError('Main window unavailable');
+          final decision = await WindowBus.instance.requestPort(
+            owner,
+            {'type': PluginSafeMode.readyRequest},
+            timeout: const Duration(seconds: 20),
+          );
+          if (decision is! bool) {
+            throw StateError('Main window safe-mode decision unavailable');
+          }
+          return decision;
+        },
+      ),
+    );
+  } catch (error, stackTrace) {
+    PluginSafeMode.active.value = true;
+    _logNonFatalInitializationError('Plugin safe mode', error, stackTrace);
+  }
+}
+
+/// Clears the startup crash count once the app has run stably, and explains
+/// a safe mode that was entered because of it.
+Future<void> _runDeferredStartupStability() async {
+  // Per process: the count belongs to the main window's launch.
+  if (WindowRole.isSecondary) return;
+  try {
+    await _mainWindowRevealedCompleter.future.timeout(
+      const Duration(seconds: 20),
+    );
+  } on TimeoutException {
+    // Continue anyway, or a slow reveal would count as a crash.
+  }
+  try {
+    await PluginSafeMode.ready;
+    if (PluginSafeMode.enteredAfterCrashes) {
+      final context = navigatorKey.currentContext;
+      // Not awaited: a dialog left open must not keep the run from counting
+      // as stable.
+      if (context != null && context.mounted) {
+        unawaited(showSafeModeAfterCrashesDialog(context));
+      }
+    }
+    // Mobile has no window close event; leaving the app shows it ran fine.
+    final lifecycle = AppLifecycleListener(
+      onPause: () => unawaited(StartupCrashCounter.markStable()),
+    );
+    await Future<void>.delayed(StartupCrashCounter.stableAfter);
+    lifecycle.dispose();
+    await StartupCrashCounter.markStable();
+  } catch (error, stackTrace) {
+    _logNonFatalInitializationError('Startup stability', error, stackTrace);
   }
 }
 

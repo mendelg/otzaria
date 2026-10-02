@@ -1,5 +1,6 @@
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_event.dart';
 import 'package:otzaria/plugins/bloc/plugin_system_state.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
@@ -21,6 +22,9 @@ import 'package:otzaria/plugins/services/plugin_dev_watch_service.dart';
 import 'package:otzaria/plugins/services/plugin_download_service.dart';
 import 'package:otzaria/plugins/services/plugin_external_search_service.dart';
 import 'package:otzaria/plugins/services/plugin_file_server.dart';
+import 'package:otzaria/plugins/services/plugin_search_dialog_registry.dart';
+import 'package:otzaria/plugins/services/plugin_external_editions_registry.dart';
+import 'package:otzaria/plugins/services/plugin_condition_evaluator.dart';
 import 'package:otzaria/plugins/services/plugin_in_book_search_service.dart';
 import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/plugins/services/plugin_install_report_service.dart';
@@ -153,7 +157,20 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     // יחליף את התוסף בספינר, ה-WebView ייהרס ויטען מאפס.
     if (state is! PluginSystemLoaded) emit(PluginSystemLoading());
     try {
+      await PluginSafeMode.ready;
       final plugins = await repository.getAllPlugins();
+      if (PluginSafeMode.isActive) {
+        devWatchService.syncWatchers(const []);
+        // Listing only. Contribution sync treats a disabled plugin as removed
+        // and unpublishes its data, so nothing else runs in safe mode.
+        for (final plugin in plugins) {
+          _clearPluginRegistrations(plugin.pluginId);
+          PluginRuntimeDispatcher.instance.invalidatePlugin(plugin.pluginId);
+        }
+        _registerPluginShortcuts(const []);
+        emit(PluginSystemLoaded(plugins));
+        return;
+      }
       devWatchService.syncWatchers(await repository.getDevelopmentPlugins());
       _registerPluginShortcuts(plugins);
       await PluginStartupContributionsService.instance.sync(
@@ -181,6 +198,8 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     SeedBundledPlugins event,
     Emitter<PluginSystemState> emit,
   ) async {
+    await PluginSafeMode.ready;
+    if (PluginSafeMode.isActive) return;
     try {
       if (await _bundledSeedService.seedPending()) add(LoadPlugins());
     } catch (e) {
@@ -652,6 +671,10 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     EnablePluginRequested event,
     Emitter<PluginSystemState> emit,
   ) async {
+    if (PluginSafeMode.isActive) {
+      await _saveChoiceInSafeMode(event.pluginId, enabled: true);
+      return;
+    }
     try {
       final plugin = await repository.getPlugin(event.pluginId);
       if (plugin != null) {
@@ -668,16 +691,12 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     DisablePluginRequested event,
     Emitter<PluginSystemState> emit,
   ) async {
+    if (PluginSafeMode.isActive) {
+      await _saveChoiceInSafeMode(event.pluginId, enabled: false);
+      return;
+    }
     try {
-      _removeDeclarative(event.pluginId);
-      ContextMenuRegistry.instance.removeAll(event.pluginId);
-      PluginToolbarRegistry.instance.removeAll(event.pluginId);
-      PluginShortcutRegistry.instance.removeAll(event.pluginId);
-      PluginHighlightRegistry.instance.removePlugin(event.pluginId);
-      PluginFileServer.instance.revokeAllForPlugin(event.pluginId);
-      _removeSearchProviders(event.pluginId);
-      PluginLibraryBooksRegistry.instance.removePlugin(event.pluginId);
-      PluginNewTabPageRegistry.instance.remove(event.pluginId);
+      _clearPluginRegistrations(event.pluginId);
       final plugin = await repository.getPlugin(event.pluginId);
       if (plugin != null) {
         await repository.savePlugin(plugin.copyWith(enabled: false));
@@ -687,6 +706,41 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
     } catch (e) {
       UiSnack.showError(PluginMessages.disablePluginError(e));
     }
+  }
+
+  /// Nothing loads or unloads in safe mode; only the user's choice is stored
+  /// for the next normal start.
+  Future<void> _saveChoiceInSafeMode(
+    String pluginId, {
+    required bool enabled,
+  }) async {
+    try {
+      await repository.saveEnabledChoice(pluginId, enabled);
+      UiSnack.show(PluginMessages.safeModeChoiceSaved(enabled: enabled));
+      add(LoadPlugins());
+    } catch (e) {
+      UiSnack.showError(
+        enabled
+            ? PluginMessages.enablePluginError(e)
+            : PluginMessages.disablePluginError(e),
+      );
+    }
+  }
+
+  void _clearPluginRegistrations(String pluginId) {
+    _removeDeclarative(pluginId);
+    ContextMenuRegistry.instance.removeAll(pluginId);
+    PluginToolbarRegistry.instance.removeAll(pluginId);
+    PluginShortcutRegistry.instance.removeAll(pluginId);
+    PluginHighlightRegistry.instance.removePlugin(pluginId);
+    PluginFileServer.instance.revokeAllForPlugin(pluginId);
+    _removeSearchProviders(pluginId);
+    PluginLibraryBooksRegistry.instance.removePlugin(pluginId);
+    PluginNewTabPageRegistry.instance.remove(pluginId);
+    PluginSearchDialogRegistry.instance.removeAll(pluginId);
+    PluginExternalEditionsRegistry.instance.removePlugin(pluginId);
+    PluginLazyActivationService.instance.removePlugin(pluginId);
+    PluginConditionEvaluator.instance.removePlugin(pluginId);
   }
 
   Future<void> _onSetPluginPermissionRequested(

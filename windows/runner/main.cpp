@@ -343,6 +343,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   std::vector<std::string> command_line_arguments =
       GetCommandLineArguments();
+  // Holding Shift while Otzaria starts opens it in safe mode, without plugins.
+  if (!is_cli_invocation && (::GetAsyncKeyState(VK_SHIFT) & 0x8000)) {
+    command_line_arguments.push_back("--safe-mode");
+  }
 
   // ⚠️ בלי זה `main(List<String> args)` מקבל רשימה ריקה תמיד, ואז:
   // `IsCliInvocation` עוקף את המופע היחיד בנייטיב, אבל Dart אינו רואה את

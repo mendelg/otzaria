@@ -423,10 +423,10 @@ class _PluginActionsMenu extends StatelessWidget {
             metrics,
             AppMenuEntry<VoidCallback>(
               value: () => togglePluginEnabled(context, plugin),
-              icon: plugin.enabled
+              icon: plugin.savedEnabled
                   ? FluentIcons.pause_circle_24_regular
                   : FluentIcons.play_circle_24_regular,
-              label: plugin.enabled ? 'השבת' : 'הפעל',
+              label: plugin.savedEnabled ? 'השבת' : 'הפעל',
             ),
           ),
           const PopupMenuDivider(),
