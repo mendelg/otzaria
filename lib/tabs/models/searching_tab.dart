@@ -351,6 +351,26 @@ class SearchingTab extends OpenedTab {
     return searchBloc.getFacetCountFromState(_normalizeFacet(facet));
   }
 
+  /// מעתיק הגדרות פר-מילה לעריכה בטאב הזה. המקור עשוי להיות פלט מנורמל
+  /// (רשימות באורך קבוע), ועריכה בטאב אינה משנה אותו.
+  void copyWordSettingsFrom({
+    required Map<String, Map<String, bool>> searchOptions,
+    required Map<int, List<String>> alternativeWords,
+    required Map<String, String> spacingValues,
+  }) {
+    this.searchOptions.addAll(
+      searchOptions.map(
+        (key, value) => MapEntry(key, Map<String, bool>.from(value)),
+      ),
+    );
+    this.alternativeWords.addAll(
+      alternativeWords.map(
+        (key, value) => MapEntry(key, List<String>.from(value)),
+      ),
+    );
+    this.spacingValues.addAll(spacingValues);
+  }
+
   @override
   void dispose() {
     titleNotifier.dispose();

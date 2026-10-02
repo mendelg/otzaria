@@ -1067,9 +1067,11 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
             matchPolicy: _matchPolicy,
           ),
         );
-        tempTab.searchOptions.addAll(_searchOptions);
-        tempTab.alternativeWords.addAll(_alternativeWords);
-        tempTab.spacingValues.addAll(_spacingValues);
+        tempTab.copyWordSettingsFrom(
+          searchOptions: _searchOptions,
+          alternativeWords: _alternativeWords,
+          spacingValues: _spacingValues,
+        );
 
         final result = await showDialog<SearchDialogResult>(
           context: context,
