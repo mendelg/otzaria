@@ -63,8 +63,7 @@ class SeforimRepository {
   /// הספר הגדול ביותר כ-28 אלף ערכים; כ-5MB של אובייקטים.
   static const int _altTocCacheMaxEntries = 50000;
 
-  /// הקאש הגלובלי (ראו [attachAltTocIndex]); כשהוא קיים ערכי הספר נבנים
-  /// ממנו ולא מהמסד.
+  /// אינדקס גלובלי לחיפוש ישיר, ללא בניית אובייקטים לכל ערכי הספר.
   AltTocFlatIndex? _altTocIndex;
 
   SeforimRepository(
@@ -128,6 +127,12 @@ class SeforimRepository {
 
   @visibleForTesting
   Iterable<int> get debugTocCachedBookIds => _tocCache.keys;
+
+  @visibleForTesting
+  int get debugAltTocCacheEntryCount => _altTocCacheEntryCount;
+
+  @visibleForTesting
+  Iterable<int> get debugAltTocCachedBookIds => _altTocCache.keys;
 
   int? _lastDataVersion;
 
@@ -3062,13 +3067,29 @@ extension BookAcronymRepository on SeforimRepository {
     // Fallback שטוח — רק כשההיררכי לא מצא דבר. מאפשר לציטוט להגיע לכותרת
     // עמוקה בלי שמות הביניים ("דף לו" תחת ספר→פרשה→דף ב"הזוהר המתורגם",
     // "סימן ה" תחת בית יוסף→אורח חיים).
-    final altCache = await _buildAltTocCacheForBook(bookId, bookTitle);
-    if (altCache.isNotEmpty) {
+    final index = _altTocIndex;
+    final compactEntries = index?._entriesOfBook(bookId);
+    final altCache = index == null
+        ? await _buildAltTocCacheForBook(bookId, bookTitle)
+        : const <AltTocIndexEntry>[];
+    if (compactEntries?.isNotEmpty ?? altCache.isNotEmpty) {
       // ציטוט דף, או טוקן בודד שה-AltToc כבר מוצא ("זהר לו"), מטופלים שם.
       // אחרת ("בית יוסף תקיב") מותר לדלג על חלק ביניים, בהתאמה לכותרת היעד עצמה.
       if (_isDafCitationForAltTocFallback(queryTokens) ||
           (queryTokens.length == 1 &&
-              _searchAltTocFlat(altCache, queryTokens).isNotEmpty)) {
+              (index != null
+                  ? _searchAltTocFlat(
+                      compactEntries!,
+                      queryTokens,
+                      ownTokensOf: index._ownTokensOf,
+                      pathTokensOf: index.refTokensOf,
+                    ).isNotEmpty
+                  : _searchAltTocFlat(
+                      altCache,
+                      queryTokens,
+                      ownTokensOf: (entry) => entry.ownTokens,
+                      pathTokensOf: (entry) => entry.pathTokens,
+                    ).isNotEmpty))) {
         return const [];
       }
       return _searchTocFlat(
@@ -3594,11 +3615,7 @@ extension BookAcronymRepository on SeforimRepository {
   // AltToc (כותרות-משנה) — חיפוש במבנים חלופיים (עליות, פרשות, וכד')
   // ─────────────────────────────────────────────────────────────────────────
 
-  /// מחפש בכותרות-משנה (AltToc) של [bookId] לפי [queryTokens].
-  ///
-  /// מחזיר ערכים בפורמט זהה ל-[getTocEntriesForReference]:
-  /// `{'reference': ..., 'segment': ..., 'level': ...}`.
-  /// אם אין מבנים חלופיים לספר, מחזיר רשימה ריקה.
+  /// מחפש בכותרות-משנה של [bookId], בפורמט של [getTocEntriesForReference].
   Future<List<Map<String, dynamic>>> getAltTocEntriesForReference(
     int bookId,
     String bookTitle, {
@@ -3606,27 +3623,36 @@ extension BookAcronymRepository on SeforimRepository {
   }) async {
     if (queryTokens == null || queryTokens.isEmpty) return const [];
 
+    final index = _altTocIndex;
+    if (index != null) {
+      final matches = _searchAltTocFlat(
+        index._entriesOfBook(bookId),
+        queryTokens,
+        ownTokensOf: index._ownTokensOf,
+        pathTokensOf: index.refTokensOf,
+      );
+      return matches.map(index._tocRowOf).toList();
+    }
+
     final entries = await _buildAltTocCacheForBook(bookId, bookTitle);
     if (entries.isEmpty) return const [];
 
-    final matches = _searchAltTocFlat(entries, queryTokens);
+    final matches = _searchAltTocFlat(
+      entries,
+      queryTokens,
+      ownTokensOf: (entry) => entry.ownTokens,
+      pathTokensOf: (entry) => entry.pathTokens,
+    );
     return matches.map((e) => e.toTocMap()).toList();
   }
 
-  /// חיפוש **שטוח** בכותרות-המשנה: מחזיר כל ערך שכל טוקני השאילתה מופיעים
-  /// בנתיב המלא שלו, **והטוקן האחרון** מופיע בטקסט של הערך עצמו (העלה).
-  ///
-  /// בניגוד לחיפוש ההיררכי (שדורש שהטוקן הראשון יתאים לשורש), כאן המשתמש יכול
-  /// לדלג על שמות-ביניים: ב"טור" כותרות-המשנה ("הלכות הלואה") יושבות תחת שם
-  /// החלק ("חושן משפט"), שלרוב נבלע בזיהוי שם הספר — כך שחיפוש היררכי משורש
-  /// החלק לא היה מגיע אליהן. תנאי "הטוקן האחרון בעלה" מונע הצפה: שאילתה כמו
-  /// "חושן" מחזירה רק את החלק "חושן משפט", לא את כל 133 ההלכות שתחתיו.
-  ///
-  /// תומך בטרנספוזיציית אותיות עבריות ("טל" ↔ "לט") כמו החיפוש ההיררכי.
-  List<AltTocIndexEntry> _searchAltTocFlat(
-    List<AltTocIndexEntry> entries,
-    List<String> tokens,
-  ) {
+  /// הטוקן האחרון חייב להופיע בעלה, כדי שחיפוש הורה לא יציף את כל ילדיו.
+  List<T> _searchAltTocFlat<T>(
+    List<T> entries,
+    List<String> tokens, {
+    required List<String> Function(T) ownTokensOf,
+    required List<String> Function(T) pathTokensOf,
+  }) {
     if (tokens.isEmpty) return const [];
 
     var cite = parseDafCitation(tokens);
@@ -3640,26 +3666,27 @@ extension BookAcronymRepository on SeforimRepository {
     final lastAlts = hebrewTokenAlternatives(tokens.last);
 
     return entries.where((e) {
+      final ownTokens = ownTokensOf(e);
       if (cite != null) {
-        final m = matchDafCitation(e.ownTokens, cite);
+        final m = matchDafCitation(ownTokens, cite);
         if (m != null) {
           // ערך "דף" — התאמה מיקומית מכריעה
           return m &&
               citePrefix.every(
-                (t) => hebrewTokenAlternatives(t).any(e.pathTokens.contains),
+                (t) => hebrewTokenAlternatives(t).any(pathTokensOf(e).contains),
               );
         }
         // תת-כותרת תחת דף ("דף יב." → "ב") שייכת לדף שמעליה.
         if (explicitDaf &&
-            e.pathTokens.contains('דף') &&
-            !nearestDafInPathMatches(e.pathTokens, cite)) {
+            pathTokensOf(e).contains('דף') &&
+            !nearestDafInPathMatches(pathTokensOf(e), cite)) {
           return false;
         }
       }
       // אנטי-הצפה: הטוקן האחרון חייב להתאים לטקסט של הערך עצמו (העלה).
-      if (!lastAlts.any((a) => e.ownTokens.contains(a))) return false;
+      if (!lastAlts.any((a) => ownTokens.contains(a))) return false;
       // כל טוקני השאילתה חייבים להופיע בנתיב המלא (בכל סדר).
-      final pathTokens = e.pathTokens;
+      final pathTokens = pathTokensOf(e);
       for (final token in tokens) {
         final alts = hebrewTokenAlternatives(token);
         if (!alts.any((a) => pathTokens.contains(a))) return false;
@@ -3669,19 +3696,13 @@ extension BookAcronymRepository on SeforimRepository {
   }
 
   /// ערכי ה-AltToc של [bookId] (כל המבנים החלופיים יחד), ממוינים לפי segment.
-  /// מהקאש הגלובלי כשהוא מחובר, אחרת מהמסד.
+  /// נבנים מהמסד ונשמרים בקאש LRU חסום.
   Future<List<AltTocIndexEntry>> _buildAltTocCacheForBook(
     int bookId,
     String bookTitle,
   ) async {
     final cached = _altTocCache.remove(bookId);
     if (cached != null) return _altTocCache[bookId] = cached;
-    final index = _altTocIndex;
-    if (index != null) {
-      final entries = index._entriesOfBook(bookId);
-      _sortAltTocForBook(entries);
-      return _putAltTocCache(bookId, entries);
-    }
     if (!(await _capabilities).hasAltToc) return const [];
 
     final db = await _database.database;
@@ -3734,7 +3755,12 @@ extension BookAcronymRepository on SeforimRepository {
     }
 
     final entries = [for (final id in rowsById.keys) entryFor(id)!];
-    _sortAltTocForBook(entries);
+    _sortAltTocForBook(
+      entries,
+      segmentOf: (entry) => entry.segment,
+      levelOf: (entry) => entry.level,
+      idOf: (entry) => entry.id,
+    );
     return _putAltTocCache(bookId, entries);
   }
 
@@ -3789,13 +3815,19 @@ extension BookAcronymRepository on SeforimRepository {
 
 /// הסדר של `ORDER BY lineIndex, level, id` ואחריו מיון לפי segment. המיון
 /// השני אינו יציב, ולכן חייב לרוץ על אותו קלט כדי לשמור על אותו סדר.
-void _sortAltTocForBook(List<AltTocIndexEntry> entries) {
+void _sortAltTocForBook<T>(
+  List<T> entries, {
+  required int Function(T) segmentOf,
+  required int Function(T) levelOf,
+  required int Function(T) idOf,
+}) {
   entries.sort((a, b) {
-    if (a.segment != b.segment) return a.segment.compareTo(b.segment);
-    if (a.level != b.level) return a.level.compareTo(b.level);
-    return a.id.compareTo(b.id);
+    final segment = segmentOf(a).compareTo(segmentOf(b));
+    if (segment != 0) return segment;
+    final level = levelOf(a).compareTo(levelOf(b));
+    return level != 0 ? level : idOf(a).compareTo(idOf(b));
   });
-  entries.sort((a, b) => a.segment.compareTo(b.segment));
+  entries.sort((a, b) => segmentOf(a).compareTo(segmentOf(b)));
 }
 
 /// מה שחישוב טווח קטע צריך מכותרת: מיקומה ורמתה.

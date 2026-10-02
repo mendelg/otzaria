@@ -74,7 +74,7 @@ final class AltTocFlatIndex {
   final Int32List _dafNumbers;
   final List<String> _dafTokens;
 
-  /// ערכי כל ספר בסדר `id`: `_bookEntries[_bookStarts[slot].._bookStarts[slot+1]]`.
+  /// טווחי הערכים לכל ספר; המזהים ממוינים לפי מיקום בחיפוש הראשון בספר.
   final Int32List _bookStarts;
   final Int32List _bookEntries;
 
@@ -157,31 +157,37 @@ final class AltTocFlatIndex {
     };
   }
 
-  /// ערכי [bookId] כאובייקטים, בסדר `id` — רק לספר שנקרא.
-  List<AltTocIndexEntry> _entriesOfBook(int bookId) {
-    final slot = _bookSlots[bookId];
-    if (slot == null) return [];
-    final built = <int, AltTocIndexEntry>{};
-    AltTocIndexEntry entryFor(int i) {
-      final existing = built[i];
-      if (existing != null) return existing;
-      final parent = _parents[i];
-      return built[i] = AltTocIndexEntry(
-        id: _ids[i],
-        book: bookOf(i),
-        parent: parent < 0 ? null : entryFor(parent),
-        text: _texts[_textOf[i]],
-        segment: _segments[i],
-        level: _levels[i],
-        dbLineId: _lineIds[i],
-        ownTokens: _textTokens[_textOf[i]],
-      );
-    }
+  final Set<int> _sortedBooks = {};
 
-    return [
-      for (var k = _bookStarts[slot]; k < _bookStarts[slot + 1]; k++)
-        entryFor(_bookEntries[k]),
-    ];
+  List<String> _ownTokensOf(int i) => _textTokens[_textOf[i]];
+
+  Map<String, dynamic> _tocRowOf(int i) => {
+    'reference': referenceOf(i),
+    'segment': _segments[i],
+    'level': _levels[i],
+    'dbLineId': _lineIds[i],
+  };
+
+  /// ממיין פעם אחת; עותק זמני של מזהים זול ממיון חוזר או קאש של רשומות.
+  List<int> _entriesOfBook(int bookId) {
+    final slot = _bookSlots[bookId];
+    if (slot == null) return const [];
+    final entries = Int32List.sublistView(
+      _bookEntries,
+      _bookStarts[slot],
+      _bookStarts[slot + 1],
+    );
+    if (_sortedBooks.add(bookId)) {
+      final sorted = entries.toList();
+      _sortAltTocForBook(
+        sorted,
+        segmentOf: segmentOf,
+        levelOf: levelOf,
+        idOf: (i) => _ids[i],
+      );
+      entries.setAll(0, sorted);
+    }
+    return entries;
   }
 }
 

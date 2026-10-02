@@ -205,6 +205,124 @@ void main() {
       expect(index.dafNumberOf(byId['פרק א דף']!), isNull);
     });
 
+    test('חיפוש קומפקטי שומר סדר אחרי פינוי LRU וביטול חיצוני', () async {
+      final lines = await seed();
+      final db = await database.database;
+      final textId = db
+          .select("SELECT id FROM tocText WHERE text = 'פרק א'")
+          .first['id'];
+      for (var structure = 1; structure <= 3; structure++) {
+        db.execute(
+          'WITH RECURSIVE numbers(n) AS (SELECT 0 UNION ALL '
+          'SELECT n + 1 FROM numbers WHERE n < 17999) '
+          'INSERT INTO alt_toc_entry (id, structureId, textId, level, lineId) '
+          'SELECT ? + n, ?, ?, n % 3, ? FROM numbers',
+          [
+            structure * 100000,
+            structure,
+            textId,
+            structure == 1 ? lines[2] : null,
+          ],
+        );
+      }
+      db.execute("INSERT INTO tocText(text) VALUES ('מבוא')");
+      final intro = db.lastInsertRowId;
+      final firstBook = db
+          .select('SELECT bookId FROM alt_toc_structure WHERE id = 1')
+          .first['bookId'];
+      db.execute(
+        'INSERT INTO tocEntry (bookId, textId, level, lineId, lineIndex) VALUES (?, ?, 0, ?, 0)',
+        [firstBook, intro, lines[0]],
+      );
+      final index = await build(chunk: 5000);
+      final books = {
+        for (var i = 0; i < index.length; i++)
+          index.bookOf(i).id: index.bookOf(i),
+      };
+      final expected = <int, List<Map<String, dynamic>>>{};
+      for (final book in books.values) {
+        expected[book.id] = await repository.getAltTocEntriesForReference(
+          book.id,
+          book.title,
+          queryTokens: ['פרק'],
+        );
+      }
+      expect(repository.debugAltTocCacheEntryCount, lessThanOrEqualTo(50000));
+      expect(repository.debugAltTocCachedBookIds, books.keys.skip(1));
+      final first = books.values.first;
+      expect(
+        await repository.getAltTocEntriesForReference(
+          first.id,
+          first.title,
+          queryTokens: ['פרק'],
+        ),
+        expected[first.id],
+      );
+      expect(repository.debugAltTocCachedBookIds, [books.keys.last, first.id]);
+
+      await repository.invalidateTocCacheIfChangedExternally();
+      repository.attachAltTocIndex(index);
+      final oracle = SeforimRepository(database);
+      for (var repeat = 0; repeat < 2; repeat++) {
+        for (final book in books.values) {
+          expect(
+            await repository.getAltTocEntriesForReference(
+              book.id,
+              book.title,
+              queryTokens: ['פרק'],
+            ),
+            expected[book.id],
+          );
+          for (final query in queries) {
+            expect(
+              await repository.getAltTocEntriesForReference(
+                book.id,
+                book.title,
+                queryTokens: query,
+              ),
+              await oracle.getAltTocEntriesForReference(
+                book.id,
+                book.title,
+                queryTokens: query,
+              ),
+            );
+          }
+          expect(
+            await repository.getTocEntriesForReference(
+              book.id,
+              book.title,
+              queryTokens: ['דף', 'יב'],
+            ),
+            isEmpty,
+          );
+        }
+      }
+      expect(repository.debugAltTocCacheEntryCount, 0);
+      expect(repository.debugAltTocCachedBookIds, isEmpty);
+
+      final external = MyDatabase.withPath(path.join(tempDir.path, 'test.db'));
+      addTearDown(external.close);
+      (await external.database).execute(
+        "UPDATE tocText SET text = 'פרק חדש' WHERE id = ?",
+        [textId],
+      );
+      await repository.invalidateTocCacheIfChangedExternally();
+      final fresh = SeforimRepository(database);
+      expect(
+        await repository.getAltTocEntriesForReference(
+          first.id,
+          first.title,
+          queryTokens: ['חדש'],
+        ),
+        await fresh.getAltTocEntriesForReference(
+          first.id,
+          first.title,
+          queryTokens: ['חדש'],
+        ),
+      );
+      expect(repository.debugAltTocCacheEntryCount, greaterThan(0));
+    });
+
     test('שורות צרות (JOIN) ושורות עם תוכן (אינדקס) נותנות אותו קאש', () async {
       await seed();
       List<Map<String, dynamic>> rows(AltTocFlatIndex index) => [
