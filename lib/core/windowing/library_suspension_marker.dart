@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui' show IsolateNameServer;
 
 import 'package:flutter/foundation.dart';
 import 'package:otzaria/core/windowing/window_bus.dart';
+import 'package:seforim_library_updater/seforim_library_updater.dart';
 
 /// סימון תהליכי לכך שמסד הספרייה מושעה לכתיבה חיצונית.
 ///
@@ -85,7 +87,7 @@ class LibrarySuspensionMarker {
     port.listen((message) {
       if (message is! SendPort || _waiters.contains(message)) return;
       _waiters.add(message);
-      Isolate.current.addOnExitListener(message, response: token);
+      Isolate.current.addOnExitListener(message, response: notice ?? token);
       _exitObservers.add(message);
     });
     _port = port;
@@ -116,20 +118,31 @@ class LibrarySuspensionMarker {
     _exitObservers.clear();
   }
 
-  /// מסיר נעילה שבעליה, בעל [token], כבר הסתיים לפי הודעת הסיום של ה-VM.
-  ///
-  /// לעולם לא נקרא מתוך timeout: בעלים חי, גם חסום בקריאה נייטיב, אינו
-  /// שולח הודעת סיום. השם [_reaperName] מונע ששני מנקים יסירו נעילה חדשה.
-  static void reapExitedOwner(String token) {
+  /// משחזר החלפה שנקטעה לפני הסרת הנעילה; נקרא רק מהודעת יציאה של ה-VM.
+  static Future<void> recoverExitedOwner(Map<String, dynamic> notice) async {
+    final token = notice['operationId'] as String;
     final guard = RawReceivePort();
-    if (!IsolateNameServer.registerPortWithName(guard.sendPort, _reaperName)) {
-      guard.close();
-      return;
+    while (!IsolateNameServer.registerPortWithName(
+      guard.sendPort,
+      _reaperName,
+    )) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
     }
     try {
+      WindowBus.removeExitedWindow(
+        notice['ownerSlot'] as int?,
+        notice['ownerPort'] as SendPort?,
+      );
       final owned = IsolateNameServer.lookupPortByName(_tokenName(token));
       if (owned == null) return;
       if (IsolateNameServer.lookupPortByName(_name) == owned) {
+        final dbPath = notice['dbPath'] as String?;
+        if (dbPath != null) {
+          await const LibraryDbRecoveryService().recoverIfNeeded(dbPath);
+          if (!File(dbPath).existsSync()) {
+            throw StateError('מסד הספרייה חסר אחרי התאוששות: $dbPath');
+          }
+        }
         IsolateNameServer.removePortNameMapping(_name);
       }
       IsolateNameServer.removePortNameMapping(_tokenName(token));
@@ -159,7 +172,13 @@ class LibrarySuspensionMarker {
           final message = await messages.first.timeout(
             poll < cap ? poll : cap,
           );
-          if (message is String) reapExitedOwner(message);
+          if (message is Map && message['body'] is Map) {
+            await recoverExitedOwner(
+              Map<String, dynamic>.from(message['body'] as Map),
+            );
+          } else if (message is String) {
+            await recoverExitedOwner({'operationId': message});
+          }
         } on TimeoutException {
           // הסימון עדיין רשום; בודקים שוב.
         }

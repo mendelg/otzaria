@@ -76,6 +76,17 @@ class WindowBus {
   SendPort? portOf(int slot) =>
       IsolateNameServer.lookupPortByName(_slotName(slot));
 
+  /// מסיר רישום של חלון שה-VM אישר שמת, רק אם ה-port עדיין שייך לו.
+  static void removeExitedWindow(int? slot, SendPort? port) {
+    if (slot == null || port == null) return;
+    if (IsolateNameServer.lookupPortByName(_slotName(slot)) == port) {
+      IsolateNameServer.removePortNameMapping(_slotName(slot));
+    }
+    if (IsolateNameServer.lookupPortByName(_ownerName) == port) {
+      IsolateNameServer.removePortNameMapping(_ownerName);
+    }
+  }
+
   /// המשבצות התפוסות חוץ משלנו. סינכרוני; משבצת רשומה אינה מבטיחה מאזין.
   List<int> otherRegisteredSlots() => [
     for (var candidate = 1; candidate <= slotCount; candidate++)

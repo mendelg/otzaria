@@ -46,9 +46,10 @@ class LibraryAccessRoutine {
 
 /// השעיה פעילה שהוחזרה מ-[LibraryAccessGate.suspendAll].
 class LibrarySuspension {
-  LibrarySuspension._(this.operationId);
+  LibrarySuspension._(this.operationId, this.dbPath);
 
   final String operationId;
+  final String? dbPath;
   final Set<int> _sent = {};
   final Set<int> _acked = {};
   bool _resumed = false;
@@ -189,12 +190,15 @@ class LibraryAccessGate {
   ///
   /// אינו סוגר את ה-isolate הנוכחי — זה תפקיד [selfAccess] / הקורא. בכשל
   /// זורק [LibrarySuspendFailed] אחרי שכבר שלח resume לכולם.
-  Future<LibrarySuspension> suspendAll() async {
+  Future<LibrarySuspension> suspendAll() => _suspendAll();
+
+  Future<LibrarySuspension> _suspendAll({String? dbPath}) async {
     if (_active != null) {
       throw StateError('LibraryAccessGate.suspendAll is not reentrant');
     }
     final suspension = LibrarySuspension._(
       '$pid-${DateTime.now().microsecondsSinceEpoch}-${++_counter}',
+      dbPath,
     );
     _active = suspension;
     if (!await LibrarySuspensionMarker.acquire(
@@ -247,10 +251,13 @@ class LibraryAccessGate {
   ];
 
   /// בפורמט הודעת אפיק, כי ה-VM שולח אותה ישירות ל-port של החלון.
-  Map<String, Object> _exitNotice(LibrarySuspension suspension) => {
+  Map<String, Object?> _exitNotice(LibrarySuspension suspension) => {
     'body': {
       'type': requestOwnerExited,
       'operationId': suspension.operationId,
+      'dbPath': suspension.dbPath,
+      'ownerSlot': _bus.slot,
+      'ownerPort': _bus.slot == null ? null : _bus.portOf(_bus.slot!),
     },
   };
 
@@ -368,7 +375,7 @@ class LibraryAccessGate {
     required String dbPath,
     required Future<T> Function(LibraryExclusiveScope scope) body,
   }) async {
-    final suspension = await suspendAll();
+    final suspension = await _suspendAll(dbPath: dbPath);
     final scope = LibraryExclusiveScope._();
     try {
       await selfAccess.suspend();
@@ -405,9 +412,15 @@ class LibraryAccessGate {
           () => _peerResume(operationId, request['dbReplaced'] == true),
         );
       case requestOwnerExited:
-        LibrarySuspensionMarker.reapExitedOwner(operationId);
-        // לא ידוע אם המסד הוחלף לפני המוות, ולכן מרעננים.
-        return _serialize(() => _peerResume(operationId, true));
+        return _serialize(() async {
+          try {
+            await LibrarySuspensionMarker.recoverExitedOwner(request);
+          } catch (error, stackTrace) {
+            _log('owner exit recovery failed', error, stackTrace);
+            rethrow;
+          }
+          return _peerResume(operationId, true);
+        });
       default:
         return Future.value();
     }
