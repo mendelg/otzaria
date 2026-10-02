@@ -116,6 +116,21 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('header buttons still occupy both edges without plugins', (
+    tester,
+  ) async {
+    await pumpPanel(tester, width: 220);
+    final button = find.byType(TabSearchButton);
+    final row = tester.element(button).findAncestorWidgetOfExactType<Row>()!;
+    final delta =
+        tester.getRect(button).left - tester.getRect(find.byWidget(row)).left;
+    expect(
+      delta,
+      moreOrLessEquals(0, epsilon: 0.5),
+      reason: 'A hidden new-tab button must not reserve a spaceBetween slot',
+    );
+  });
+
   testWidgets('העמודה מציגה את כל הכרטיסיות בזו אחר זו', (tester) async {
     await pumpPanel(tester);
 

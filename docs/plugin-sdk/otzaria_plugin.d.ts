@@ -2120,7 +2120,7 @@ export interface OtzariaGlobal {
 
   /**
    * Registers this plugin page as the target of the reader "+" button.
-   * Pass { enabled: false } to restore the built-in library fallback.
+   * Pass { enabled: false } to remove this plugin registration.
    * Requires navigation.write.
    */
   call(

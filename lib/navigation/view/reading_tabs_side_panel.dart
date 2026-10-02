@@ -163,39 +163,35 @@ class _ReadingTabsSidePanelState extends State<ReadingTabsSidePanel> {
   /// שורת הכפתורים שבראש העמודה. במצב מכווץ אין מקום לשני כפתורים זה לצד זה,
   /// ולכן הם נערמים זה מעל זה — וחיפוש הכרטיסיות נשאר נגיש.
   Widget _buildHeader(BuildContext context, {required bool collapsed}) {
-    final buttons = [
-      _buildCollapseButton(context, collapsed: collapsed),
-      const TabSearchButton(),
-      ListenableBuilder(
-        listenable: PluginNewTabPageRegistry.instance,
-        builder: (context, _) {
-          if (!PluginNewTabPageRegistry.instance.hasActiveRegistration) {
-            return const SizedBox.shrink();
-          }
-          return IconButton(
-            iconSize: 18,
-            visualDensity: VisualDensity.compact,
-            tooltip: context.settingsText('כרטיסייה חדשה'),
-            icon: const Icon(FluentIcons.add_24_regular),
-            onPressed: PluginNewTabPageRegistry.instance.open,
+    return ListenableBuilder(
+      listenable: PluginNewTabPageRegistry.instance,
+      builder: (context, _) {
+        final buttons = [
+          _buildCollapseButton(context, collapsed: collapsed),
+          const TabSearchButton(),
+          if (PluginNewTabPageRegistry.instance.hasActiveRegistration)
+            IconButton(
+              iconSize: 18,
+              visualDensity: VisualDensity.compact,
+              tooltip: context.settingsText('כרטיסייה חדשה'),
+              icon: const Icon(FluentIcons.add_24_regular),
+              onPressed: PluginNewTabPageRegistry.instance.open,
+            ),
+        ];
+        if (collapsed) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [for (final button in buttons) Center(child: button)],
           );
-        },
-      ),
-    ];
-
-    if (collapsed) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [for (final button in buttons) Center(child: button)],
-      );
-    }
-
-    return SizedBox(
-      height: 36,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: buttons,
-      ),
+        }
+        return SizedBox(
+          height: 36,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: buttons,
+          ),
+        );
+      },
     );
   }
 

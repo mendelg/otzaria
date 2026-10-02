@@ -20,6 +20,8 @@ import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/navigation/view/custom_title_bar.dart';
+import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
+import 'package:otzaria/plugins/services/plugin_page_launcher.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/shortcuts/shortcut_helper.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
@@ -44,6 +46,111 @@ void main() {
   setUp(() async {
     await Settings.init(cacheProvider: MemorySettingsCache());
   });
+
+  testWidgets(
+    'adding a tab without plugins keeps correct width on its first frame',
+    (tester) async {
+      final first = _makeTextTab('ספר א');
+      final second = _makeTextTab('ספר ב');
+      final tabsBloc = _TestTabsBloc(
+        TabsState(tabs: [first], currentTabIndex: 0),
+      );
+      final navigationBloc = _TestNavigationBloc(
+        const NavigationState(currentScreen: Screen.reading),
+      );
+      final settingsBloc = _TestSettingsBloc(SettingsState.initial());
+      addTearDown(() async {
+        first.dispose();
+        second.dispose();
+        await tabsBloc.close();
+        await navigationBloc.close();
+        await settingsBloc.close();
+      });
+      await _setSurfaceSize(tester, const Size(1200, 800));
+      await _pumpTitleBar(
+        tester,
+        tabsBloc: tabsBloc,
+        navigationBloc: navigationBloc,
+        settingsBloc: settingsBloc,
+      );
+      await tester.pumpAndSettle();
+      expect(PluginNewTabPageRegistry.instance.hasActiveRegistration, isFalse);
+      expect(
+        tester.widget<ReadingTabStrip>(find.byType(ReadingTabStrip)).widths,
+        [140],
+      );
+      tabsBloc.emitState(TabsState(tabs: [first, second], currentTabIndex: 0));
+      await tester.idle();
+      await tester.pump();
+      final firstFrame = tester
+          .widget<ReadingTabStrip>(find.byType(ReadingTabStrip))
+          .widths;
+      await tester.pumpAndSettle();
+      final finalFrame = tester
+          .widget<ReadingTabStrip>(find.byType(ReadingTabStrip))
+          .widths;
+      expect(
+        firstFrame,
+        finalFrame,
+        reason:
+            'Changing count without resizing must not need a corrective frame',
+      );
+    },
+  );
+
+  for (final size in [const Size(1200, 800), const Size(600, 900)]) {
+    testWidgets('new tab has one button and latest plugin wins at $size', (
+      tester,
+    ) async {
+      final registry = PluginNewTabPageRegistry.instance;
+      final launcher = PluginPageLauncher.instance;
+      final oldNavigator = launcher.navigator;
+      final opened = <String>[];
+      launcher.navigator = opened.add;
+      final tabs = List.generate(20, (i) => _makeTextTab('ספר מספר $i'));
+      final tabsBloc = _TestTabsBloc(TabsState(tabs: tabs, currentTabIndex: 0));
+      final navigationBloc = _TestNavigationBloc(
+        const NavigationState(currentScreen: Screen.reading),
+      );
+      final settingsBloc = _TestSettingsBloc(SettingsState.initial());
+      addTearDown(() async {
+        registry.remove('review.first');
+        registry.remove('review.second');
+        launcher.markPageClosed('review.first');
+        launcher.markPageClosed('review.second');
+        launcher.navigator = oldNavigator;
+        for (final tab in tabs) {
+          tab.dispose();
+        }
+        await tabsBloc.close();
+        await navigationBloc.close();
+        await settingsBloc.close();
+      });
+      await _setSurfaceSize(tester, size);
+      await _pumpTitleBar(
+        tester,
+        tabsBloc: tabsBloc,
+        navigationBloc: navigationBloc,
+        settingsBloc: settingsBloc,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('כרטיסייה חדשה'), findsNothing);
+      registry.register('review.first');
+      registry.register('review.second');
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('כרטיסייה חדשה'), findsOneWidget);
+      await tester.tap(find.byTooltip('כרטיסייה חדשה'));
+      expect(opened, ['review.second']);
+      registry.remove('review.second');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('כרטיסייה חדשה'));
+      expect(opened, ['review.second', 'review.first']);
+      registry.remove('review.first');
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('כרטיסייה חדשה'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('tooltip של TextBookTab כולל את כותרת המיקום בפועל', (
     tester,

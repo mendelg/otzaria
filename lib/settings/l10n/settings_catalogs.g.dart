@@ -696,6 +696,7 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'כניסה לפורום': 'Go to the Forum',
     'כעת: {parts}': 'Now: {parts}',
     'כרטיסיות פתוחות': 'Open tabs',
+    'כרטיסייה חדשה': 'New tab',
     'כשאתה יודע לאן להגיע, הקלד שם ספר, פרק או פסוק. איתור = נווט, חיפוש = גלה.\n\nקיצור: {shortcut}': 'When you know where you want to look, type a sefer, a perek or a pasuk. Find takes you there; Search shows you what you did not know.\n\nShortcut: {shortcut}',
     'כתב': 'Text',
     'כתובת דואר אלקטרוני לזיהוי': 'Email Address for Identification',

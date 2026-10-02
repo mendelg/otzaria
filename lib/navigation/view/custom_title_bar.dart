@@ -103,28 +103,8 @@ const double _kTabContentMinWidth = 12.0;
 /// גובה גוף הכרטיסיה, בלי המפריד שלצדה.
 const double _kTabBodyHeight = 32.0;
 
-/// גובה הסרגל העליון, וגם הגובה שהכרטיסיה **מציירת** בו.
-///
-/// ⚠️ שני הדברים חייבים להיות אותו מספר, וזה תיקון של באג שחזר שלוש
-/// פעמים. גוף הכרטיסיה הוא [_kTabBodyHeight] = 32 והסרגל 40, כלומר בין
-/// הכרטיסיה לתוכן שמתחתיה נשארים ארבעה פיקסלים של צבע הרצועה — הקו הבהיר
-/// שהמשתמש ראה. הפתרון: ה-widget של הכרטיסיה מקבל את כל 40, הצייר ממרכז
-/// בתוכו כרטיסיה בגובה 32 ומושך אותה עד התחתית, והתוכן ממורכז בנפרד.
-///
-/// ### ⚠️ ולמה **לא** ציור מחוץ לגבולות
-///
-/// הגרסה הקודמת פתרה את זה בכך שהצייר יצא ארבעה פיקסלים מתחת ל-widget
-/// שלו. זה עבד — **לפעמים**. הרצועה היא `SingleChildScrollView`, והוא
-/// חותך את הציור ברגע שהתוכן גולש (`_shouldClipAtPaintOffset`): כלומר
-/// בדיוק כשיש הרבה כרטיסיות, או שהחלון על חצי מסך, החריגה נמחקת והקו
-/// חוזר. זה גם ההסבר המלא ל"מופיע רק בחלק מהחלונות ולא הצלחתי לאבחן
-/// מתי כן ומתי לא".
-///
-/// לפני כן נוסה גם להרחיב את הסרגל בחמשה פיקסלים כדי "להזמין מקום";
-/// שם התוצאה הייתה הפוכה — התוכן נדחף למטה והפער גדל.
-///
-/// **המסקנה: ציור שיוצא מגבולות ה-widget שלו תלוי בחסדי כל אב בעץ.**
-/// כאן אין חריגה אנכית בכלל.
+/// הכרטיסייה מציירת בתוך כל גובה הסרגל, כדי שגלילה לא תחתוך את רקעה.
+/// גוף הכרטיסייה ממורכז, והרקע נמשך עד לתוכן שמתחתיה.
 const double _kTopBarHeight = 40.0;
 
 /// רוחבי הטאבים בשורה: הנבחר עשוי להיות רחב מהשאר (ראה [_kTabSelectedMinWidth]).
@@ -568,6 +548,12 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
       listenable: registry,
       builder: (context, _) {
         final showNewTabButton = registry.hasActiveRegistration;
+        final tabsContent = _buildTabsContent(state);
+        final tabWidths = _pinnedTabWidths ?? _lastComputedTabWidths!;
+        final visibleTabsWidth = state.tabs.isEmpty
+            ? 0.0
+            : tabWidths.selected +
+                  tabWidths.unselected * (state.tabs.length - 1);
 
         return Stack(
           children: [
@@ -578,28 +564,21 @@ class _CustomTitleBarState extends State<CustomTitleBar> {
                   0.0,
                   constraints.maxWidth - reservedForPlus,
                 );
-                final widths = _computeTabWidths(
-                  availableForTabs,
-                  state.tabs.length,
-                );
-                final visibleTabsWidth = math.min(
-                  availableForTabs,
-                  widths.selected +
-                      widths.unselected * math.max(0, state.tabs.length - 1),
-                );
                 if (_tabsAreaWidth == null ||
-                    (_tabsAreaWidth! - visibleTabsWidth).abs() > 0.5) {
+                    (_tabsAreaWidth! - availableForTabs).abs() > 0.5) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted) setState(() => _tabsAreaWidth = visibleTabsWidth);
+                    if (mounted) {
+                      setState(() => _tabsAreaWidth = availableForTabs);
+                    }
                   });
                 }
                 return const SizedBox.shrink();
               },
             ),
-            _buildTabsContent(state),
+            tabsContent,
             if (showNewTabButton)
               PositionedDirectional(
-                start: _tabsAreaWidth ?? 0,
+                start: visibleTabsWidth,
                 top: 4,
                 child: MetaData(
                   metaData: _kTabHitMarker,
