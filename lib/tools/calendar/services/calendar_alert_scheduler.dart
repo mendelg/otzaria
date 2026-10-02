@@ -149,12 +149,13 @@ class CalendarAlertScheduler {
     }
   }
 
-  /// Replaces the scheduled reminders of calendar events.
+  /// מחליף את תזכורות האירועים לפי המצב העדכני לאחר ביטול התזכורות הקודמות.
+  /// זמן התזכורת והצליל נקראים לפני כל תזמון.
   Future<void> rescheduleEventNotifications({
-    required List<CustomEvent> events,
-    required bool enabled,
-    required int defaultMinutes,
-    required bool soundEnabled,
+    required List<CustomEvent> Function() events,
+    required bool Function() enabled,
+    required int Function() defaultMinutes,
+    required bool Function() soundEnabled,
   }) async {
     // Cancel previously scheduled calendar EVENT notifications only.
     final prevIdsJson = _settings.getCalendarEventNotificationIdsJson();
@@ -172,7 +173,7 @@ class CalendarAlertScheduler {
       await _notifications.cancelNotification(id);
     }
 
-    if (!enabled) {
+    if (!enabled()) {
       await _settings.updateCalendarEventNotificationIdsJson('[]');
       return;
     }
@@ -181,7 +182,7 @@ class CalendarAlertScheduler {
 
     final now = _now();
 
-    for (final event in events) {
+    for (final event in events()) {
       if (event.recurring) {
         // שנתי: השנה והבאה; שבועי/חודשי: כל יום בחלון הקרוב שבו מתחיל מופע.
         final annual =
@@ -256,8 +257,8 @@ class CalendarAlertScheduler {
               title: event.title,
               body: event.description,
               eventDate: eventDateTime,
-              reminderMinutes: event.notificationMinutes ?? defaultMinutes,
-              soundEnabled: soundEnabled,
+              reminderMinutes: event.notificationMinutes ?? defaultMinutes(),
+              soundEnabled: soundEnabled(),
             );
           }
         }
@@ -292,8 +293,8 @@ class CalendarAlertScheduler {
             title: event.title,
             body: event.description,
             eventDate: eventDateTime,
-            reminderMinutes: event.notificationMinutes ?? defaultMinutes,
-            soundEnabled: soundEnabled,
+            reminderMinutes: event.notificationMinutes ?? defaultMinutes(),
+            soundEnabled: soundEnabled(),
           );
         }
       }

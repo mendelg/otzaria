@@ -1383,10 +1383,10 @@ class CalendarCubit extends Cubit<CalendarState> {
 
   Future<void> _rescheduleNotifications() =>
       _alerts.rescheduleEventNotifications(
-        events: state.events,
-        enabled: state.calendarNotificationsEnabled,
-        defaultMinutes: state.calendarNotificationTime,
-        soundEnabled: state.calendarNotificationSound,
+        events: () => state.events,
+        enabled: () => state.calendarNotificationsEnabled,
+        defaultMinutes: () => state.calendarNotificationTime,
+        soundEnabled: () => state.calendarNotificationSound,
       );
 }
 
