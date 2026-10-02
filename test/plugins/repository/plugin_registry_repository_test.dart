@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
 import 'package:otzaria/plugins/models/plugin_manifest.dart';
@@ -87,6 +88,35 @@ void main() {
   group('PluginRegistryRepository in safe mode', () {
     setUp(() => PluginSafeMode.active.value = true);
     tearDown(PluginSafeMode.resetForTesting);
+
+    test('all runtime reads wait for the safe-mode decision', () async {
+      PluginSafeMode.active.value = false;
+      final decision = Completer<void>();
+      PluginSafeMode.ready = decision.future;
+      final repo = PluginRegistryRepository(
+        database: _FakeDb([_plugin(id: 'a')]),
+      );
+      var completed = 0;
+      final all = repo.getAllPlugins().then((v) {
+        completed++;
+        return v;
+      });
+      final one = repo.getPlugin('a').then((v) {
+        completed++;
+        return v;
+      });
+      final enabled = repo.getIsEnabled('a').then((v) {
+        completed++;
+        return v;
+      });
+      await pumpEventQueue();
+      expect(completed, 0);
+      PluginSafeMode.active.value = true;
+      decision.complete();
+      expect((await all).single.enabled, isFalse);
+      expect((await one)!.enabled, isFalse);
+      expect(await enabled, isFalse);
+    });
 
     test('every plugin reads as disabled', () async {
       final repo = PluginRegistryRepository(

@@ -908,18 +908,8 @@ Future<void> _initializeRestartableRuntime() async {
       );
     }),
   );
-  // Must be known before the plugin system loads in this window.
-  if (WindowRole.isSecondary) {
-    await PluginSafeMode.initForSecondaryWindow();
-  } else {
-    final earlyEnds = await StartupCrashCounter.recordLaunch();
-    if (earlyEnds >= StartupCrashCounter.safeModeThreshold &&
-        !PluginSafeMode.isActive) {
-      PluginSafeMode.active.value = true;
-      PluginSafeMode.enteredAfterCrashes = true;
-    }
-    unawaited(PluginSafeMode.publishForSecondaryWindows());
-  }
+  final previousPluginDecision = PluginSafeMode.ready;
+  PluginSafeMode.ready = _runDeferredPluginSafeMode(previousPluginDecision);
 
   // אינם נחוצים להצגת ה-UI הראשי. unawaited לבדו אינו דוחה: הקוד שעד ה-await
   // הראשון בכל אחד מהם רץ כאן, ולכן עבודה סינכרונית חייבת לחכות לחשיפה בעצמה.
@@ -1116,6 +1106,46 @@ Future<void> _runDeferredCrashCheck() async {
   }
 }
 
+Future<void> _runDeferredPluginSafeMode(Future<void> previousDecision) async {
+  try {
+    await _mainWindowRevealedCompleter.future.timeout(
+      const Duration(seconds: 20),
+    );
+  } on TimeoutException {
+    // טעינת התוספים אינה תלויה בהצלחת חשיפת החלון.
+  }
+  try {
+    await previousDecision;
+    await _timedPhase(
+      'pluginSafeMode',
+      () => PluginSafeMode.initializeSession(
+        isSecondary: WindowRole.isSecondary,
+        onError: (error, stackTrace) => _logNonFatalInitializationError(
+          'Plugin safe mode',
+          error,
+          stackTrace,
+        ),
+        waitForPrimary: () async {
+          final owner = WindowBus.instance.ownerPort;
+          if (owner == null) throw StateError('Main window unavailable');
+          final decision = await WindowBus.instance.requestPort(
+            owner,
+            {'type': PluginSafeMode.readyRequest},
+            timeout: const Duration(seconds: 20),
+          );
+          if (decision is! bool) {
+            throw StateError('Main window safe-mode decision unavailable');
+          }
+          return decision;
+        },
+      ),
+    );
+  } catch (error, stackTrace) {
+    PluginSafeMode.active.value = true;
+    _logNonFatalInitializationError('Plugin safe mode', error, stackTrace);
+  }
+}
+
 /// Clears the startup crash count once the app has run stably, and explains
 /// a safe mode that was entered because of it.
 Future<void> _runDeferredStartupStability() async {
@@ -1129,6 +1159,7 @@ Future<void> _runDeferredStartupStability() async {
     // Continue anyway, or a slow reveal would count as a crash.
   }
   try {
+    await PluginSafeMode.ready;
     if (PluginSafeMode.enteredAfterCrashes) {
       final context = navigatorKey.currentContext;
       // Not awaited: a dialog left open must not keep the run from counting

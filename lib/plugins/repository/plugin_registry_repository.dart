@@ -12,6 +12,7 @@ class PluginRegistryRepository {
     : _db = database ?? PluginSystemDatabase.instance;
 
   Future<List<InstalledPlugin>> getAllPlugins() async {
+    await PluginSafeMode.ready;
     final plugins = (await _db.getAllInstalledPlugins())
         .map(_sessionView)
         .toList();
@@ -29,6 +30,7 @@ class PluginRegistryRepository {
   /// Read-modify-write paths (reordering, permissions, updates) would
   /// otherwise persist the session-only disabled state.
   Future<InstalledPlugin> _keepSavedEnabled(InstalledPlugin plugin) async {
+    await PluginSafeMode.ready;
     if (!PluginSafeMode.isActive) return plugin;
     final saved = await _db.getInstalledPlugin(plugin.pluginId);
     return saved == null ? plugin : plugin.copyWith(enabled: saved.enabled);
@@ -75,6 +77,7 @@ class PluginRegistryRepository {
   }
 
   Future<InstalledPlugin?> getPlugin(String pluginId) async {
+    await PluginSafeMode.ready;
     final plugin = await _db.getInstalledPlugin(pluginId);
     return plugin == null ? null : _sessionView(plugin);
   }
@@ -277,6 +280,7 @@ class PluginRegistryRepository {
 
   /// מחזיר האם התוסף מופעל. null = לא נמצא (=treat as disabled).
   Future<bool> getIsEnabled(String pluginId) async {
+    await PluginSafeMode.ready;
     if (PluginSafeMode.isActive) return false;
     final plugin = await _db.getInstalledPlugin(pluginId);
     return plugin?.enabled ?? false;

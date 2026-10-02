@@ -3,6 +3,10 @@ import 'dart:isolate';
 import 'dart:ui' as ui show IsolateNameServer;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
+import 'package:otzaria/plugins/bloc/plugin_system_event.dart';
+import 'package:otzaria/plugins/bloc/plugin_system_state.dart';
 import 'package:window_manager/window_manager.dart' show TitleBarStyle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/windowing/app_window_controller.dart';
@@ -12,6 +16,7 @@ import 'package:otzaria/core/windowing/multi_window_service.dart';
 import 'package:otzaria/core/windowing/window_bus.dart';
 import 'package:otzaria/core/windowing/window_bus_host.dart';
 import 'package:otzaria/core/windowing/window_role.dart';
+import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
 
 /// ⚠️ קידומת ייחודית לסוויטה — [ui.IsolateNameServer] גלובלי לתהליך.
 const String _namespace = 'otzaria.test.bushost.close';
@@ -30,6 +35,7 @@ void main() {
   });
 
   tearDown(() {
+    PluginSafeMode.resetForTesting();
     WindowBus.instance.onRequest = null;
     WindowBus.instance.unregister();
     for (var i = 1; i <= WindowBus.slotCount; i++) {
@@ -56,6 +62,85 @@ void main() {
       'type': MultiWindowService.requestCloseWindow,
     });
   }
+
+  testWidgets('בקשת מוכנות מחלון משני ממתינה להחלטה ומשתחררת פעם אחת', (
+    tester,
+  ) async {
+    final decision = Completer<void>();
+    PluginSafeMode.ready = decision.future;
+    final window = _RecordingWindow();
+    await tester.pumpWidget(
+      AppWindowScope(
+        controller: window,
+        geometry: window,
+        child: const WindowBusHost(child: SizedBox()),
+      ),
+    );
+    var completed = false;
+    final request = WindowBus
+        .instance
+        .onRequest!({'type': PluginSafeMode.readyRequest})
+        .then((value) {
+          completed = true;
+          return value;
+        });
+    await tester.pump();
+    expect(completed, isFalse);
+    PluginSafeMode.active.value = true;
+    decision.complete();
+    expect(await request, isTrue);
+    expect(
+      await WindowBus.instance.onRequest!({
+        'type': PluginSafeMode.readyRequest,
+      }),
+      isTrue,
+    );
+  });
+
+  testWidgets('בחירה מחלון משני מוחלת גם על ראשי מוסתר בלי איפוס כרטיסיות', (
+    tester,
+  ) async {
+    final plugins = _RecordingPlugins();
+    final window = _RecordingWindow(visible: false);
+    await tester.pumpWidget(
+      BlocProvider<PluginSystemBloc>.value(
+        value: plugins,
+        child: AppWindowScope(
+          controller: window,
+          geometry: window,
+          child: const WindowBusHost(child: SizedBox()),
+        ),
+      ),
+    );
+    for (final mode in [true, false]) {
+      expect(
+        await WindowBus.instance.onRequest!({
+          'type': MultiWindowService.requestRestart,
+          'pluginSafeMode': mode,
+        }),
+        isFalse,
+      );
+      expect(PluginSafeMode.isActive, mode);
+      expect(
+        await WindowBus.instance.onRequest!({
+          'type': PluginSafeMode.readyRequest,
+        }),
+        mode,
+      );
+    }
+    expect(plugins.events, everyElement(isA<LoadPlugins>()));
+    expect(plugins.events, hasLength(2));
+    expect(window.closeCalls, 0);
+  });
+
+  test('restartPeers carries the explicit session choice', () async {
+    final peer = _FakePeer(2)..register();
+    addTearDown(peer.dispose);
+    MultiWindowService.restartPeers(pluginSafeMode: false);
+    await peer.received.future.timeout(const Duration(seconds: 2));
+    expect(peer.lastType, MultiWindowService.requestRestart);
+    expect(peer.lastBody!['pluginSafeMode'], isFalse);
+  });
 
   testWidgets('בקשת סגירה נכנסת עוברת במסלול הסגירה הרגיל', (tester) async {
     final window = _RecordingWindow();
@@ -127,6 +212,7 @@ class _FakePeer {
   final bool answer;
   final Completer<void> received = Completer<void>();
   Object? lastType;
+  Map? lastBody;
   late final ReceivePort _port;
 
   void register() {
@@ -137,7 +223,8 @@ class _FakePeer {
     );
     _port.listen((message) {
       final map = message as Map;
-      lastType = (map['body'] as Map)['type'];
+      lastBody = map['body'] as Map;
+      lastType = lastBody!['type'];
       (map['reply'] as SendPort).send({'ok': true, 'result': answer});
       if (!received.isCompleted) received.complete();
     });
@@ -211,4 +298,14 @@ class _RecordingWindow implements AppWindowController, AppWindowGeometry {
   Future<void> startDragging() async {}
   @override
   Future<void> unmaximize() async {}
+}
+
+class _RecordingPlugins extends Fake implements PluginSystemBloc {
+  @override
+  Stream<PluginSystemState> get stream => const Stream.empty();
+  @override
+  PluginSystemState get state => PluginSystemInitial();
+  final events = <PluginSystemEvent>[];
+  @override
+  void add(PluginSystemEvent event) => events.add(event);
 }

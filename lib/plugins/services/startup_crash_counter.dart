@@ -18,6 +18,8 @@ class StartupCrashCounter {
 
   static bool _recorded = false;
 
+  static bool get recordedThisProcess => _recorded;
+
   /// Records this launch and returns how many launches right before it ended
   /// early. Only the first call per process counts.
   static Future<int> recordLaunch() async {
@@ -25,7 +27,7 @@ class StartupCrashCounter {
     _recorded = true;
     try {
       final file = await _file();
-      final previous = file.existsSync()
+      final previous = await file.exists()
           ? int.tryParse((await file.readAsString()).trim()) ?? 0
           : 0;
       await file.writeAsString('${previous + 1}', flush: true);
@@ -39,7 +41,7 @@ class StartupCrashCounter {
   static Future<void> markStable() async {
     try {
       final file = await _file();
-      if (file.existsSync()) await file.delete();
+      if (await file.exists()) await file.delete();
     } catch (error) {
       debugPrint('Startup crash counter reset failed: $error');
     }

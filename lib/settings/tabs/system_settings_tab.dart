@@ -13,8 +13,6 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:otzaria/plugins/utils/plugin_safe_mode.dart';
-import 'package:otzaria/plugins/view/safe_mode_controls.dart';
 import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/core/messages/report_messages.dart';
 import 'package:otzaria/core/messages/settings_messages.dart';
@@ -177,14 +175,6 @@ class SystemSettingsTab extends StatefulWidget {
       tab: SettingsTab.system,
       cardId: 'system.advanced',
       keywords: ['חלון', 'חלונות', 'הפעלה', 'שחזור', 'מופעל', 'לא מופעל'],
-    ),
-    SettingsSearchEntry(
-      id: 'system.advanced.safeMode',
-      title: 'מצב בטוח',
-      subtitle: 'הפעלה מחדש בלי תוספים, לאיתור תקלה שתוסף גורם לה',
-      tab: SettingsTab.system,
-      cardId: 'system.advanced',
-      keywords: ['תוספים', 'תוסף', 'קריסה', 'בטוח', 'safe mode', 'שיפט'],
     ),
     SettingsSearchEntry(
       id: 'system.advanced.backup',
@@ -2619,34 +2609,6 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
               setState(() {});
             },
           ),
-        ValueListenableBuilder<bool>(
-          valueListenable: PluginSafeMode.active,
-          builder: (context, safeMode, _) => SettingsActionTile.text(
-            icon: FluentIcons.shield_24_regular,
-            title: context.settingsText('מצב בטוח'),
-            subtitle: safeMode
-                ? context.settingsText(
-                    'מצב בטוח פעיל: אף תוסף אינו נטען עד להפעלה מחדש רגילה',
-                  )
-                : [
-                    context.settingsText(
-                      'הפעלה מחדש בלי תוספים, לאיתור תקלה שתוסף גורם לה',
-                    ),
-                    if (Platform.isWindows)
-                      context.settingsText(
-                        'אפשר גם להחזיק Shift בזמן פתיחת התוכנה',
-                      ),
-                  ].join('. '),
-            actions: [
-              ActionButton.neutral(
-                text: safeMode
-                    ? context.settingsText('הפעל מחדש כרגיל')
-                    : context.settingsText('הפעל מחדש במצב בטוח'),
-                onPressed: () => restartWithSafeMode(context, on: !safeMode),
-              ),
-            ],
-          ),
-        ),
         // ── צור/שחזר גיבוי ──
         SettingsActionTile.text(
           icon: FluentIcons.arrow_sync_24_regular,

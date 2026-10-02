@@ -1,15 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
-import 'package:otzaria/core/app_paths.dart';
-import 'package:path/path.dart' as p;
+import 'package:otzaria/plugins/services/startup_crash_counter.dart';
 
-/// Safe mode: no plugin loads for the rest of this process, while every
-/// plugin keeps its saved enabled state.
-///
-/// Turned on by `--safe-mode`, by holding Shift while Otzaria starts on
-/// Windows, or from settings; a normal restart turns it off.
+/// מצב בטוח משבית תוספים בסשן בלבד ושומר את בחירת המשתמש.
 class PluginSafeMode {
   PluginSafeMode._();
 
@@ -17,58 +9,54 @@ class PluginSafeMode {
 
   static bool get isActive => active.value;
 
+  static Future<void> ready = SynchronousFuture<void>(null);
+  static const String readyRequest = 'pluginSafeModeReady';
+
+  /// ההחלטה מתקבלת אחרי חשיפת החלון ולפני קריאת מצב התוספים.
+  static Future<void> initializeSession({
+    required bool isSecondary,
+    Future<bool> Function()? waitForPrimary,
+    void Function(Object, StackTrace)? onError,
+  }) async {
+    try {
+      if (isSecondary) {
+        if (waitForPrimary == null) {
+          throw StateError('Primary decision required');
+        }
+        active.value = await waitForPrimary();
+      } else if (!StartupCrashCounter.recordedThisProcess) {
+        final earlyEnds = await StartupCrashCounter.recordLaunch();
+        if (earlyEnds >= StartupCrashCounter.safeModeThreshold && !isActive) {
+          active.value = true;
+          enteredAfterCrashes = true;
+        }
+      }
+    } catch (error, stackTrace) {
+      active.value = true;
+      if (onError != null) {
+        onError(error, stackTrace);
+      } else {
+        debugPrint('Plugin safe mode initialization failed: $error');
+      }
+    }
+  }
+
   /// Safe mode was turned on because the previous launches crashed while
   /// starting, not by the user.
   static bool enteredAfterCrashes = false;
 
-  static const String _markerFileName = 'safe_mode_session.json';
-
-  /// Called once from main(); reads the flag only, with no file access.
+  /// קריאת דגל הפעלה אינה נוגעת בקבצים.
   static void initFromArgs(List<String> args) {
     active.value = args.any(isSafeModeFlag);
   }
 
-  /// Records an active safe mode for secondary windows. Called once data paths
-  /// are configured; does nothing otherwise, and a stale marker from another
-  /// process is ignored by its process id.
-  static Future<void> publishForSecondaryWindows() async {
-    if (isActive) await set(true);
-  }
-
-  /// Secondary windows are isolates of the same process: they follow the
-  /// main window through a marker file that records its process id.
-  static Future<void> initForSecondaryWindow() async {
-    try {
-      final file = await _markerFile();
-      if (!file.existsSync()) return;
-      final data = jsonDecode(await file.readAsString());
-      active.value = data is Map && data['pid'] == pid;
-    } catch (error) {
-      debugPrint('Safe mode marker read failed: $error');
-    }
-  }
-
-  static Future<void> set(bool value) async {
-    active.value = value;
-    try {
-      final file = await _markerFile();
-      if (value) {
-        await file.writeAsString(jsonEncode({'pid': pid}));
-      } else if (file.existsSync()) {
-        await file.delete();
-      }
-    } catch (error) {
-      debugPrint('Safe mode marker write failed: $error');
-    }
-  }
-
-  static Future<File> _markerFile() async =>
-      File(p.join(await AppPaths.getDataRootPath(), _markerFileName));
+  static Future<void> set(bool value) async => active.value = value;
 
   @visibleForTesting
   static void resetForTesting() {
     active.value = false;
     enteredAfterCrashes = false;
+    ready = SynchronousFuture<void>(null);
   }
 }
 

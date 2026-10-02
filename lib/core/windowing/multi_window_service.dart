@@ -595,9 +595,12 @@ class MultiWindowService {
 
   /// מבקש מכל שאר החלונות להיבנות מחדש — אחרי שחזור גיבוי או ייבוא, כדי
   /// שיטענו את הנתונים החדשים במקום לכתוב מעליהם את מה שבזיכרונם.
-  static void restartPeers() {
+  static void restartPeers({bool? pluginSafeMode}) {
     if (!canOpenWindows) return;
-    WindowBus.instance.broadcast({'type': requestRestart});
+    WindowBus.instance.broadcast({
+      'type': requestRestart,
+      'pluginSafeMode': ?pluginSafeMode,
+    });
   }
 
   /// בקשה לחלון להיסגר במסלול הסגירה הרגיל שלו.

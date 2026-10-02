@@ -7,24 +7,18 @@ import 'package:otzaria/plugins/view/webview_environment_holder.dart';
 import 'package:otzaria/widgets/controls/bar_button.dart';
 import 'package:otzaria/widgets/dialogs/confirmation_dialog.dart';
 import 'package:otzaria/widgets/misc/restart_widget.dart';
+import 'package:otzaria/settings/l10n/settings_text.dart';
 
-/// Restarts the app in place with safe mode turned [on] or off, after the
-/// user confirms.
-Future<void> restartWithSafeMode(
-  BuildContext context, {
-  required bool on,
-}) async {
+/// יציאה ממצב בטוח לאחר אישור המשתמש.
+Future<void> restartNormally(BuildContext context) async {
   final confirmed = await showConfirmationDialog(
     context: context,
-    title: on ? 'הפעלה מחדש במצב בטוח' : 'יציאה ממצב בטוח',
-    content: on
-        ? 'אוצריא תופעל מחדש בלי אף תוסף, עד להפעלה מחדש רגילה. '
-              'ההגדרות של התוספים אינן משתנות.'
-        : 'אוצריא תופעל מחדש כרגיל, והתוספים הפעילים ייטענו שוב.',
-    confirmText: 'הפעל מחדש',
+    title: 'יציאה ממצב בטוח',
+    content: 'אוצריא תופעל מחדש כרגיל, והתוספים הפעילים ייטענו שוב.',
+    confirmText: context.settingsText('הפעל מחדש כרגיל'),
   );
   if (confirmed != true || !context.mounted) return;
-  await _restart(context, safeMode: on);
+  await _restart(context, safeMode: false);
 }
 
 Future<void> _restart(BuildContext context, {required bool safeMode}) async {
@@ -32,7 +26,7 @@ Future<void> _restart(BuildContext context, {required bool safeMode}) async {
   PluginSafeMode.enteredAfterCrashes = false;
   await resetRuntimeStateForAppRestart();
   if (!context.mounted) return;
-  MultiWindowService.restartPeers();
+  MultiWindowService.restartPeers(pluginSafeMode: safeMode);
   RestartWidget.restartApp(
     context,
     afterRestart: WebViewEnvironmentHolder.disposeForAppRestart,
@@ -50,7 +44,7 @@ Future<void> showSafeModeAfterCrashesDialog(BuildContext context) async {
         'הפעם בלי תוספים. אם תוסף גורם לתקלה, אפשר להשבית אותו בהגדרות ← '
         'ניהול כלים, ואחר כך להפעיל מחדש כרגיל.',
     cancelText: 'הישאר במצב בטוח',
-    confirmText: 'הפעל מחדש כרגיל',
+    confirmText: context.settingsText('הפעל מחדש כרגיל'),
   );
   if (restartNormally == true && context.mounted) {
     await _restart(context, safeMode: false);
@@ -69,9 +63,9 @@ class SafeModeTitleBarIndicator extends StatelessWidget {
       builder: (context, active, _) => !active
           ? const SizedBox.shrink()
           : BarButton.text(
-              text: 'מצב בטוח',
+              text: context.settingsText('מצב בטוח'),
               icon: FluentIcons.shield_24_regular,
-              onPressed: () => restartWithSafeMode(context, on: false),
+              onPressed: () => restartNormally(context),
             ),
     );
   }
