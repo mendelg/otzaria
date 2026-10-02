@@ -206,6 +206,7 @@ class _WindowBusHostState extends State<WindowBusHost> {
         return UserStateListStore.instance.handleRequest(request);
       case LibraryAccessGate.requestSuspend:
       case LibraryAccessGate.requestResume:
+      case LibraryAccessGate.requestOwnerExited:
         return LibraryAccessGate.instance.handlePeerRequest(request);
       case SettingsSync.requestChanged:
         // הגדרה שונתה בחלון אחר — מוחלת על ה-box המקומי ומרעננת את ה-state.

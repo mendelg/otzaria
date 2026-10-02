@@ -76,6 +76,17 @@ class WindowBus {
   SendPort? portOf(int slot) =>
       IsolateNameServer.lookupPortByName(_slotName(slot));
 
+  /// מסיר רישום של חלון שה-VM אישר שמת, רק אם ה-port עדיין שייך לו.
+  static void removeExitedWindow(int? slot, SendPort? port) {
+    if (slot == null || port == null) return;
+    if (IsolateNameServer.lookupPortByName(_slotName(slot)) == port) {
+      IsolateNameServer.removePortNameMapping(_slotName(slot));
+    }
+    if (IsolateNameServer.lookupPortByName(_ownerName) == port) {
+      IsolateNameServer.removePortNameMapping(_ownerName);
+    }
+  }
+
   /// המשבצות התפוסות חוץ משלנו. סינכרוני; משבצת רשומה אינה מבטיחה מאזין.
   List<int> otherRegisteredSlots() => [
     for (var candidate = 1; candidate <= slotCount; candidate++)
@@ -147,16 +158,17 @@ class WindowBus {
     if (message is! Map) return;
     final reply = message['reply'];
     final body = message['body'];
-    if (reply is! SendPort || body is! Map) return;
+    // בלי reply: הודעת סיום של isolate, שה-VM שולח ואין למי לענות.
+    if (body is! Map || (reply != null && reply is! SendPort)) return;
     final request = Map<String, dynamic>.from(body);
 
     Future<void>(() async {
       try {
         final handler = onRequest;
         final result = handler == null ? null : await handler(request);
-        reply.send({'ok': true, 'result': result});
+        (reply as SendPort?)?.send({'ok': true, 'result': result});
       } catch (e) {
-        reply.send({'ok': false, 'error': '$e'});
+        (reply as SendPort?)?.send({'ok': false, 'error': '$e'});
       }
     });
   }

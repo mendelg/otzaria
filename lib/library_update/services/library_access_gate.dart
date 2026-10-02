@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:otzaria/core/error_log_file.dart';
@@ -45,9 +46,10 @@ class LibraryAccessRoutine {
 
 /// השעיה פעילה שהוחזרה מ-[LibraryAccessGate.suspendAll].
 class LibrarySuspension {
-  LibrarySuspension._(this.operationId);
+  LibrarySuspension._(this.operationId, this.dbPath);
 
   final String operationId;
+  final String? dbPath;
   final Set<int> _sent = {};
   final Set<int> _acked = {};
   bool _resumed = false;
@@ -120,6 +122,9 @@ class LibraryAccessGate {
   static const String requestSuspend = 'library.suspend';
   static const String requestResume = 'library.resume';
 
+  /// נשלח ע"י ה-VM, לא ע"י המתאם, כשה-isolate של המתאם מסתיים.
+  static const String requestOwnerExited = 'library.ownerExited';
+
   final WindowBus _bus;
   final LibraryAccessRoutine selfAccess;
   final LibraryAccessRoutine peerAccess;
@@ -185,19 +190,27 @@ class LibraryAccessGate {
   ///
   /// אינו סוגר את ה-isolate הנוכחי — זה תפקיד [selfAccess] / הקורא. בכשל
   /// זורק [LibrarySuspendFailed] אחרי שכבר שלח resume לכולם.
-  Future<LibrarySuspension> suspendAll() async {
+  Future<LibrarySuspension> suspendAll() => _suspendAll();
+
+  Future<LibrarySuspension> _suspendAll({String? dbPath}) async {
     if (_active != null) {
       throw StateError('LibraryAccessGate.suspendAll is not reentrant');
     }
-    if (!LibrarySuspensionMarker.acquire()) {
+    final suspension = LibrarySuspension._(
+      '$pid-${DateTime.now().microsecondsSinceEpoch}-${++_counter}',
+      dbPath,
+    );
+    _active = suspension;
+    if (!await LibrarySuspensionMarker.acquire(
+      suspension.operationId,
+      observers: _peerPorts(_bus.otherRegisteredSlots()),
+      notice: _exitNotice(suspension),
+    )) {
+      _active = null;
       throw const LibrarySuspendFailed(
         'חלון אחר כבר מחליף את מסד הספרייה. נסו שוב בעוד רגע.',
       );
     }
-    final suspension = LibrarySuspension._(
-      '$pid-${DateTime.now().microsecondsSinceEpoch}-${++_counter}',
-    );
-    _active = suspension;
     try {
       final failed = <int>{};
       var pending = const <int>[];
@@ -233,6 +246,21 @@ class LibraryAccessGate {
     }
   }
 
+  List<SendPort> _peerPorts(Iterable<int> slots) => [
+    for (final slot in slots) ?_bus.portOf(slot),
+  ];
+
+  /// בפורמט הודעת אפיק, כי ה-VM שולח אותה ישירות ל-port של החלון.
+  Map<String, Object?> _exitNotice(LibrarySuspension suspension) => {
+    'body': {
+      'type': requestOwnerExited,
+      'operationId': suspension.operationId,
+      'dbPath': suspension.dbPath,
+      'ownerSlot': _bus.slot,
+      'ownerPort': _bus.slot == null ? null : _bus.portOf(_bus.slot!),
+    },
+  };
+
   List<int> _unackedSlots(LibrarySuspension suspension) => [
     for (final slot in _bus.otherRegisteredSlots())
       if (!suspension._acked.contains(slot)) slot,
@@ -244,6 +272,8 @@ class LibraryAccessGate {
   ) async {
     final port = _bus.portOf(slot);
     if (port == null) return _PeerOutcome.gone;
+    // חלון מושעה חייב לשמוע על מות המתאם, ולכן נדרך לפני ה-suspend.
+    await LibrarySuspensionMarker.notifyOnExit([port], _exitNotice(suspension));
     suspension._sent.add(slot);
     final response = await _bus.requestPortDetailed(
       port,
@@ -345,7 +375,7 @@ class LibraryAccessGate {
     required String dbPath,
     required Future<T> Function(LibraryExclusiveScope scope) body,
   }) async {
-    final suspension = await suspendAll();
+    final suspension = await _suspendAll(dbPath: dbPath);
     final scope = LibraryExclusiveScope._();
     try {
       await selfAccess.suspend();
@@ -381,6 +411,16 @@ class LibraryAccessGate {
         return _serialize(
           () => _peerResume(operationId, request['dbReplaced'] == true),
         );
+      case requestOwnerExited:
+        return _serialize(() async {
+          try {
+            await LibrarySuspensionMarker.recoverExitedOwner(request);
+          } catch (error, stackTrace) {
+            _log('owner exit recovery failed', error, stackTrace);
+            rethrow;
+          }
+          return _peerResume(operationId, true);
+        });
       default:
         return Future.value();
     }
