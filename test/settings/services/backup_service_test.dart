@@ -1,3 +1,4 @@
+import 'package:otzaria/plugins/services/plugin_user_folder_grants.dart';
 import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'dart:convert';
@@ -27,6 +28,7 @@ import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/storage/personal_notes_database.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/settings/services/backup_service.dart';
+import 'package:otzaria/settings/services/backup/backup_import_merge.dart';
 import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'package:otzaria/workspaces/workspace_repository.dart';
 import 'package:path/path.dart' as p;
@@ -457,6 +459,7 @@ void main() {
       required String installPath,
       String sourceType = 'packaged',
       String? devRootPath,
+      List<String> permissions = const ['clipboard.read'],
     }) {
       final manifest = PluginManifest.fromJson({
         'id': id,
@@ -464,7 +467,7 @@ void main() {
         'version': '1.0.0',
         'entrypoint': 'index.html',
         'icon': 'assets/logo.png',
-        'permissions': ['clipboard.read'],
+        'permissions': permissions,
       });
       return InstalledPlugin(
         pluginId: id,
@@ -502,8 +505,9 @@ void main() {
 
     /// יוצר תוסף מותקן עם קובץ התקנה וקובץ נתונים, ומחזיר את הנתיבים.
     Future<({String installPath, String dataPath})> installTestPlugin(
-      String pluginId,
-    ) async {
+      String pluginId, {
+      List<String> permissions = const ['clipboard.read'],
+    }) async {
       final db = PluginSystemDatabase.instance;
       final installPath = await AppPaths.getPluginInstallPath(pluginId);
       await File(p.join(installPath, 'index.html')).create(recursive: true);
@@ -512,7 +516,11 @@ void main() {
       await File(p.join(dataPath, 'state.bin')).create(recursive: true);
       await File(p.join(dataPath, 'state.bin')).writeAsBytes([7, 7, 7]);
       await db.insertOrUpdatePlugin(
-        buildPlugin(id: pluginId, installPath: installPath),
+        buildPlugin(
+          id: pluginId,
+          installPath: installPath,
+          permissions: permissions,
+        ),
       );
       return (installPath: installPath, dataPath: dataPath);
     }
@@ -628,6 +636,120 @@ void main() {
       expect(bystander.readAsStringSync(), 'חייב לשרוד');
       expect(dataRoot.existsSync(), isTrue);
       expect(result.skippedSections, contains('plugins'));
+    });
+
+    // A backup file is untrusted input: whatever it claims, the plugin comes
+    // back as a disabled packaged install without grants it did not declare.
+    test('restoring does not trust installation state from the file', () async {
+      final db = PluginSystemDatabase.instance;
+      const pluginId = 'trusted.plugin';
+      final paths = await installTestPlugin(
+        pluginId,
+        permissions: [
+          'clipboard.read',
+          'network.access',
+          'network.localhost',
+          'app.run_on_startup',
+        ],
+      );
+      await db.setPermission(pluginId, 'clipboard.read', true);
+      await db.setPermission(pluginId, 'network.access', true);
+      await db.setPermission(pluginId, 'network.localhost', true);
+      await db.setPermission(pluginId, 'app.run_on_startup', true);
+      await db.setPermission(pluginId, 'fs.user_files.write', true);
+      await db.setPluginKV(pluginId, 'settings', 'theme', '"dark"');
+      await db.setPluginKV(
+        pluginId,
+        PluginUserFolderGrants.namespace,
+        'user_folder_grants',
+        '{"C:\\Users":true}',
+      );
+      await db.publishRecord(
+        pluginId,
+        'test.records',
+        'global',
+        'sample',
+        '{"value":1}',
+        null,
+      );
+      final backup = await createPluginsBackup();
+
+      final json =
+          jsonDecode(await File(backup.path).readAsString())
+              as Map<String, dynamic>;
+      final entry = (json['plugins'] as List).single as Map<String, dynamic>;
+      (entry['installation'] as Map)
+        ..['enabled'] = 1
+        ..['source_type'] = 'development'
+        ..['dev_root_path'] = tempDir.path
+        ..['network_access_granted'] = 1
+        ..['run_on_startup_granted'] = 1;
+      await File(backup.path).writeAsString(jsonEncode(json));
+      await db.deletePlugin(pluginId);
+      await Directory(paths.installPath).delete(recursive: true);
+
+      final result = await BackupService.restoreFromBackup(backup.path);
+
+      final restored = (await db.getAllInstalledPlugins()).singleWhere(
+        (plugin) => plugin.pluginId == pluginId,
+      );
+      expect(await db.getPermission(pluginId, 'network.access'), isNull);
+      expect(await db.getPermission(pluginId, 'network.localhost'), isNull);
+      expect(await db.getPermission(pluginId, 'app.run_on_startup'), isNull);
+      expect(restored.enabled, isFalse);
+      expect(restored.isDevelopment, isFalse);
+      expect(restored.devRootPath, isNull);
+      expect(restored.networkAccessGranted, isFalse);
+      expect(restored.runOnStartupGranted, isFalse);
+      expect(await db.getPermission(pluginId, 'clipboard.read'), isTrue);
+      expect(
+        await db.getPermission(pluginId, 'fs.user_files.write'),
+        isNot(true),
+      );
+      expect(await db.getPluginKV(pluginId, 'settings', 'theme'), '"dark"');
+      expect(
+        await db.getPluginKV(
+          pluginId,
+          PluginUserFolderGrants.namespace,
+          'user_folder_grants',
+        ),
+        isNull,
+      );
+      expect(await db.getPublishedRecordsByType('test.records'), [
+        '{"value":1}',
+      ]);
+      expect(result.restoredPlugins, 1);
+    });
+
+    test('ייבוא ממזג שומר הרשאות ונתונים של תוסף שכבר מותקן', () async {
+      final db = PluginSystemDatabase.instance;
+      const pluginId = 'existing.plugin';
+      const permissions = [
+        'clipboard.read',
+        'network.access',
+        'network.localhost',
+        'app.run_on_startup',
+      ];
+      await installTestPlugin(pluginId, permissions: permissions);
+      for (final permission in permissions) {
+        await db.setPermission(pluginId, permission, true);
+      }
+      await db.setPluginKV(pluginId, 'settings', 'theme', '"backup"');
+      final backup = await createPluginsBackup();
+      await db.setPluginKV(pluginId, 'settings', 'theme', '"local"');
+
+      final result = await BackupService.restoreFromBackup(
+        backup.path,
+        mode: BackupImportMode.merge,
+      );
+
+      expect(result.restoredPlugins, 0);
+      expect(result.added?.plugins, 0);
+      expect((await db.getAllInstalledPlugins()).single.enabled, isTrue);
+      for (final permission in permissions) {
+        expect(await db.getPermission(pluginId, permission), isTrue);
+      }
+      expect(await db.getPluginKV(pluginId, 'settings', 'theme'), '"local"');
     });
 
     test('גיבוי אינו עוקב אחרי symlink בתיקיית נתוני התוסף', () async {

@@ -2346,6 +2346,11 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
           'סעיפים שלא ניתן היה לייבא: {items}.',
           args: {'items': skipped.join(", ")},
         ),
+      if (added.plugins > 0)
+        context.settingsText(
+          'התוספים שוחזרו מושבתים. יש להפעיל אותם בהגדרות ← ניהול כלים, '
+          'ולתת מחדש גישה לתיקיות אם נדרשת.',
+        ),
       context.settingsText('האפליקציה תיטען מחדש כעת.'),
     ].join('\n\n');
 
@@ -2408,6 +2413,11 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
             'ולכן הן מסומנות כעת על הקטע כולו. הקישור למילים נכנס לגיבוי '
             'בגרסה מאוחרת יותר.',
             args: {'count': result.notesWithoutAnchor},
+          ),
+        if (result.restoredPlugins > 0)
+          context.settingsText(
+            'התוספים שוחזרו מושבתים. יש להפעיל אותם בהגדרות ← ניהול כלים, '
+            'ולתת מחדש גישה לתיקיות אם נדרשת.',
           ),
         if (missingFolders.isNotEmpty)
           context.settingsText(
