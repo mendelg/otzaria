@@ -18,6 +18,7 @@ import 'package:otzaria/search/bloc/search_state.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/utils/in_book_search_routing.dart';
 import 'package:otzaria/search/utils/result_text_status.dart';
+import 'package:otzaria/search/utils/index_freshness_warner.dart';
 import 'package:otzaria/search/models/external_search_status.dart';
 import 'package:otzaria/search/utils/search_result_opener.dart';
 import 'package:otzaria/search/utils/snippet_builder.dart';
@@ -34,7 +35,7 @@ import 'package:otzaria/widgets/misc/middle_click_open.dart';
 import 'package:otzaria/widgets/feedback/otzaria_empty_state.dart';
 import 'package:otzaria/widgets/layout/adaptive_side_pane.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show MergedSibling;
+    show MergedSibling, SearchResult, TextStatus;
 
 /// אזור התוצאות של טאב החיפוש — רשימת גלילה אחת לשני המקורות: תוצאות
 /// המנוע המובנה, ואיתן (כשספק חיצוני של תוסף פעיל) בלוק התוצאות החיצוניות
@@ -437,6 +438,27 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
     );
   }
 
+  /// ספר שהמנוע מצא בו שורה שהשתנתה מאז האינדוקס עובר לבדיקת הטריות. בזה
+  /// אחר זה: כל בדיקה טוענת ספר שלם, והמטמון של הבודק חוסך את החוזרות.
+  Future<void> _warnForStaleResults(List<SearchResult> results) async {
+    final staleBooks = <String, String>{
+      for (final result in results)
+        if (result.textStatus == TextStatus.stale && !result.isPdf)
+          result.filePath: result.title,
+    };
+    for (final MapEntry(key: filePath, value: title) in staleBooks.entries) {
+      final resolution = await widget.tab.searchBloc.resolveBookForIndexedPath(
+        filePath,
+        indexedTitle: title,
+      );
+      if (!mounted) return;
+      final book = resolution.book;
+      if (book is TextBook) {
+        await IndexFreshnessWarner.instance.warnIfContentDrifted(book);
+      }
+    }
+  }
+
   /// עוטף את אזור התוצאות בחלונית התצוגה המקדימה (בפריסה הרחבה בלבד).
   Widget _wrapWithPreviewPane(Widget mainContent, BoxConstraints constraints) {
     return BlocBuilder<SettingsBloc, SettingsState>(
@@ -572,6 +594,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                 _handleScroll();
               }
             });
+            unawaited(_warnForStaleResults(state.results));
           },
           child: BlocBuilder<SearchBloc, SearchState>(
             builder: (context, state) {
@@ -853,6 +876,10 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
               }
 
               final wrappedTitleText = _formatTitleForWrapping(titleText);
+              final secondaryLineStyle = TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              );
 
               // ההדגשה מגיעה מוכנה מהמנוע בתוך rawHtml, ולכן המפתח תלוי רק
               // ב-HTML ובסגנון התצוגה — לא בפרמטרי החיפוש.
@@ -1037,13 +1064,13 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                             ),
                                     ),
                                     IconButton(
-                                      icon: Icon(
+                                      icon: const Icon(
                                         FluentIcons.copy_24_regular,
                                         size: 16,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
                                       ),
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
                                       tooltip: 'העתק טקסט',
                                       visualDensity: VisualDensity.compact,
                                       padding: EdgeInsets.zero,
@@ -1051,41 +1078,45 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                         minWidth: 28,
                                         minHeight: 28,
                                       ),
-                                      onPressed: () {
-                                        final plainText = utils
-                                            .stripHtmlIfNeeded(
-                                              rawHtml,
-                                            );
-                                        // אותה התנהגות כמו העתקה ממסך הקריאה:
-                                        // המקור והכותרת מצורפים לפי ההגדרות.
-                                        // titleText כבר עבר החלפת שמות קודש.
-                                        final bookName =
-                                            settingsState.replaceHolyNames
-                                            ? utils.replaceHolyNames(
-                                                result.title,
-                                                style:
-                                                    settingsState.holyNameStyle,
-                                              )
-                                            : result.title;
-                                        final textToCopy =
-                                            CopyUtils.formatTextWithHeaders(
-                                              originalText: plainText,
-                                              copyWithHeaders:
-                                                  settingsState.copyWithHeaders,
-                                              copyHeaderFormat: settingsState
-                                                  .copyHeaderFormat,
-                                              bookName: bookName,
-                                              currentPath:
-                                                  CopyUtils.referencePath(
+                                      onPressed: !hasCopyableResultText(result)
+                                          ? null
+                                          : () {
+                                              final plainText = utils
+                                                  .stripHtmlIfNeeded(
+                                                    rawHtml,
+                                                  );
+                                              // אותה התנהגות כמו העתקה ממסך הקריאה:
+                                              // המקור והכותרת מצורפים לפי ההגדרות.
+                                              // titleText כבר עבר החלפת שמות קודש.
+                                              final bookName =
+                                                  settingsState.replaceHolyNames
+                                                  ? utils.replaceHolyNames(
+                                                      result.title,
+                                                      style: settingsState
+                                                          .holyNameStyle,
+                                                    )
+                                                  : result.title;
+                                              final textToCopy =
+                                                  CopyUtils.formatTextWithHeaders(
+                                                    originalText: plainText,
+                                                    copyWithHeaders:
+                                                        settingsState
+                                                            .copyWithHeaders,
+                                                    copyHeaderFormat:
+                                                        settingsState
+                                                            .copyHeaderFormat,
                                                     bookName: bookName,
-                                                    reference: titleText,
-                                                  ),
-                                            );
-                                        Clipboard.setData(
-                                          ClipboardData(text: textToCopy),
-                                        );
-                                        UiSnack.show(UiSnack.textCopied);
-                                      },
+                                                    currentPath:
+                                                        CopyUtils.referencePath(
+                                                          bookName: bookName,
+                                                          reference: titleText,
+                                                        ),
+                                                  );
+                                              Clipboard.setData(
+                                                ClipboardData(text: textToCopy),
+                                              );
+                                              UiSnack.show(UiSnack.textCopied);
+                                            },
                                     ),
                                   ],
                                 ),
@@ -1094,12 +1125,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                     padding: const EdgeInsets.only(top: 2),
                                     child: Text(
                                       wrappedTitleText,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                      ),
+                                      style: secondaryLineStyle,
                                       textAlign: TextAlign.right,
                                       softWrap: true,
                                       maxLines: 2,
@@ -1111,12 +1137,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                 if (isResultTextUnavailable(result))
                                   Text(
                                     unavailableResultText,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
-                                    ),
+                                    style: secondaryLineStyle,
                                   )
                                 else
                                   RichText(
