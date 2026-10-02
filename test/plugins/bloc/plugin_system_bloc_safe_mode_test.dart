@@ -14,6 +14,7 @@ import 'package:otzaria/plugins/services/plugin_search_dialog_registry.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/services/plugin_external_editions_registry.dart';
 import 'package:otzaria/plugins/services/plugin_lazy_activation_service.dart';
+import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
 
 InstalledPlugin _plugin() => InstalledPlugin(
   pluginId: 'p1',
@@ -113,6 +114,10 @@ void main() {
   test(
     'safe restart removes search, editions and lazy registrations without unpublishing data',
     () async {
+      final newTabs = PluginNewTabPageRegistry.instance;
+      newTabs.register('p1');
+      addTearDown(() => newTabs.remove('p1'));
+      expect(newTabs.activePluginId, 'p1');
       final registry = PluginSearchDialogRegistry.instance;
       registry.registerPayload('p1', {
         'id': 'review-search',
@@ -158,6 +163,7 @@ void main() {
       await PluginRuntimeDispatcher.instance.prepareForAppRestart();
       await send(LoadPlugins());
       expect(editions.configs, isEmpty);
+      expect(newTabs.hasActiveRegistration, isFalse);
       expect(lazy.isActivationCurrent('p1', generation), isFalse);
       expect(repo.saved, isEmpty);
       expect(host.syncs, 0);
