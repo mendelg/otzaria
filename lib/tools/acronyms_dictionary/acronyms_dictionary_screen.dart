@@ -28,8 +28,8 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
   final FocusNode _searchFocusNode = FocusNode();
   final DictionaryLookupRepository _dictionaryRepository =
       DictionaryLookupRepository.instance;
-  Map<String, List<String>> _dictionaryData = {};
-  List<MapEntry<String, List<String>>> _filteredResults = [];
+  List<AcronymCatalogEntry> _catalog = [];
+  List<AcronymCatalogEntry> _filteredResults = [];
   bool _isLoading = true;
 
   @override
@@ -60,7 +60,7 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
       if (!mounted) return;
 
       setState(() {
-        _dictionaryData = _dictionaryRepository.getAllAcronyms();
+        _catalog = _dictionaryRepository.getAcronymSearchCatalog();
         _isLoading = false;
       });
     } catch (e) {
@@ -83,42 +83,51 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
       return;
     }
 
+    // מנורמל פעם אחת לכל החיפוש — לא בכל רשומה בקטלוג (כ-13,000 רשומות).
+    // המפתח המנורמל של כל רשומה כבר חושב מראש ב-getAcronymSearchCatalog,
+    // ולכן אין צורך לנרמל גם אותו מחדש כאן.
+    final normalizedQuery = _dictionaryRepository.normalizeAcronymQuery(query);
+
     setState(() {
       _filteredResults =
-          _dictionaryData.entries
+          _catalog
               .where(
                 (entry) =>
-                    entry.key.contains(query) ||
-                    _dictionaryRepository.acronymMatchesQuery(
-                      acronym: entry.key,
-                      query: query,
-                    ) ||
-                    entry.value.any((meaning) => meaning.contains(query)),
+                    entry.displayAcronym.contains(query) ||
+                    (normalizedQuery.isNotEmpty &&
+                        entry.normalizedKey.contains(normalizedQuery)) ||
+                    entry.meanings.any((meaning) => meaning.contains(query)),
               )
               .toList()
             ..sort((a, b) {
               final rankCompare = _matchRank(
-                a.key,
+                a,
                 query,
-              ).compareTo(_matchRank(b.key, query));
+                normalizedQuery,
+              ).compareTo(_matchRank(b, query, normalizedQuery));
               if (rankCompare != 0) return rankCompare;
-              final lengthCompare = a.key.length.compareTo(b.key.length);
+              final lengthCompare = a.displayAcronym.length.compareTo(
+                b.displayAcronym.length,
+              );
               if (lengthCompare != 0) return lengthCompare;
-              return a.key.compareTo(b.key);
+              return a.displayAcronym.compareTo(b.displayAcronym);
             });
     });
   }
 
   /// דירוג התאמת מפתח לשאילתה: נמוך = דומה יותר.
   /// התאמה מדויקת < מתחיל ב- < מכיל < התאמה בפירוש בלבד.
-  int _matchRank(String key, String query) {
+  int _matchRank(
+    AcronymCatalogEntry entry,
+    String query,
+    String normalizedQuery,
+  ) {
+    final key = entry.displayAcronym;
     if (key == query) return 0;
     if (key.startsWith(query)) return 1;
     if (key.contains(query)) return 2;
-    if (_dictionaryRepository.acronymMatchesQuery(
-      acronym: key,
-      query: query,
-    )) {
+    if (normalizedQuery.isNotEmpty &&
+        entry.normalizedKey.contains(normalizedQuery)) {
       return 3;
     }
     return 4;
@@ -189,8 +198,8 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
       itemBuilder: (context, index) {
         final entry = _filteredResults[index];
         return AcronymResultCard(
-          acronym: entry.key,
-          meanings: entry.value,
+          acronym: entry.displayAcronym,
+          meanings: entry.meanings,
         );
       },
     );

@@ -20,6 +20,20 @@ class AcronymDictionaryEntry {
   final List<String> meanings;
 }
 
+/// רשומת קטלוג ראשי תיבות לחיפוש: התווית המקורית לתצוגה, לצד המפתח המנורמל
+/// שכבר חושב פעם אחת בזמן הטעינה (ראו [DictionaryLookupRepository.getAcronymSearchCatalog]).
+class AcronymCatalogEntry {
+  const AcronymCatalogEntry({
+    required this.displayAcronym,
+    required this.normalizedKey,
+    required this.meanings,
+  });
+
+  final String displayAcronym;
+  final String normalizedKey;
+  final List<String> meanings;
+}
+
 /// מייצג רשומה במילון ארמי-עברי.
 class AramaicDictionaryEntry {
   const AramaicDictionaryEntry({
@@ -488,15 +502,26 @@ class DictionaryLookupRepository {
         const <LaazDictionaryEntry>[];
   }
 
-  /// מחזיר את כלל רשומות ראשי התיבות.
-  Map<String, List<String>> getAllAcronyms() {
-    return Map<String, List<String>>.unmodifiable(
-      _acronymsByKey.map(
-        (key, meanings) =>
-            MapEntry(_originalAcronymByKey[key] ?? key, meanings),
-      ),
-    );
+  /// קטלוג ראשי תיבות לחיפוש, עם המפתח המנורמל שכבר חושב בזמן הטעינה.
+  ///
+  /// שחשוב: החזרת מפתח מנורמל+תווית מקורית יחד, במקום רק התווית (כפי
+  /// שהשיטה הקודמת, `getAllAcronyms`, עשתה) — אחרת מסך חיפוש שמשתמש בה
+  /// חייב לנרמל כל מפתח מחדש בכל הקשה. כאן המפתח המנורמל נשאר זמין, כדי
+  /// שהחיפוש לא יחזור על אותו נירמול 13,000+ פעמים.
+  List<AcronymCatalogEntry> getAcronymSearchCatalog() {
+    return List<AcronymCatalogEntry>.unmodifiable([
+      for (final entry in _acronymsByKey.entries)
+        AcronymCatalogEntry(
+          displayAcronym: _originalAcronymByKey[entry.key] ?? entry.key,
+          normalizedKey: entry.key,
+          meanings: entry.value,
+        ),
+    ]);
   }
+
+  /// מנרמל שאילתת חיפוש לראשי תיבות, לשימוש חד-פעמי מחוץ ל-repository —
+  /// במקום לתת לכל קריאה ל-[acronymMatchesQuery] לנרמל את אותה שאילתה מחדש.
+  String normalizeAcronymQuery(String raw) => _normalizeAcronym(raw);
 
   /// מחזיר את כל רשומות המילון הארמי-עברי.
   List<AramaicDictionaryEntry> getAllAramaicEntries() {
