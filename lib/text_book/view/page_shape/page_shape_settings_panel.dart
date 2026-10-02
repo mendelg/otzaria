@@ -434,11 +434,12 @@ class _PageShapeSettingsPanelState extends State<PageShapeSettingsPanel> {
 
   List<SegmentOption<CommentatorSaveScope>> get _commentatorSaveScopeOptions {
     return [
-      const SegmentOption(value: CommentatorSaveScope.book, label: 'ספר'),
+      // תמיד לספר הנוכחי — בבורר התצוגה "שולחן עבודה" חל על כל ספרי השולחן.
+      const SegmentOption(value: CommentatorSaveScope.book, label: 'ספר זה'),
       if (_hasWorkspace)
         const SegmentOption(
           value: CommentatorSaveScope.workspace,
-          label: 'שולחן עבודה',
+          label: 'ספר זה בשולחן',
         ),
       if (_availableCategories.isNotEmpty)
         const SegmentOption(

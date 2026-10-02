@@ -166,7 +166,8 @@ void main() {
   testWidgets('תחום שמירת התצוגה מוצג כשלוש בחירות', (tester) async {
     await pumpPanel(tester, currentWorkspaceId: 'workspace-1');
 
-    expect(find.text('ספר זה'), findsOneWidget);
+    // "ספר זה" מופיע גם בבורר שמירת המפרשים.
+    expect(find.text('ספר זה'), findsNWidgets(2));
     expect(find.text('שולחן עבודה זה'), findsOneWidget);
     expect(find.text('גלובלי'), findsOneWidget);
   });
@@ -177,7 +178,7 @@ void main() {
     await pumpPanel(tester, currentWorkspaceId: 'workspace-1');
 
     expect(find.text('שמירת בחירת מפרשים'), findsOneWidget);
-    expect(find.text('שולחן עבודה'), findsOneWidget);
+    expect(find.text('ספר זה בשולחן'), findsOneWidget);
   });
 
   testWidgets(
@@ -195,7 +196,7 @@ void main() {
   testWidgets('בלי שולחן פעיל, בורר שמירת המפרשים אינו מוצג', (tester) async {
     await pumpPanel(tester);
 
-    expect(find.text('שולחן עבודה'), findsNothing);
+    expect(find.text('ספר זה בשולחן'), findsNothing);
   });
 
   testWidgets('שמירה בתחום שולחן עבודה אינה דורסת את הגדרת הספר', (
@@ -211,7 +212,7 @@ void main() {
       availableCommentators: const ['רש"י על בראשית', 'רמב"ן על בראשית'],
     );
 
-    await tester.tap(find.text('שולחן עבודה'));
+    await tester.tap(find.text('ספר זה בשולחן'));
     await tester.pumpAndSettle();
 
     expect(
