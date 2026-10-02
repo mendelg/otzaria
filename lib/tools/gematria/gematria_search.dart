@@ -272,7 +272,7 @@ class GimatriaSearch {
     } else {
       // ⚠️ ללא bookTitles - סריקת כל הספרים בספרייה (כבד מאוד!).
       // המסך אמור תמיד להעביר bookTitles כדי לתחום לתנ"ך.
-      final allBooks = await repository.getAllBooks();
+      final allBooks = await repository.getAllBooksLean();
       bookIdsByDbPath[repository.database.readOnlyTarget] = allBooks
           .map((b) => b.id)
           .toList();

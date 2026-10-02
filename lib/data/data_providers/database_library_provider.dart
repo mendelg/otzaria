@@ -2926,7 +2926,9 @@ class DatabaseLibraryProvider implements LibraryProvider {
     try {
       final hasTalmudBavliDirectory =
           await _bundledTalmudBavliDirectoryExists();
-      final books = await repository.getAllBooks();
+      // Only base fields are needed; loading every relation again doubles the
+      // catalog cost.
+      final books = await repository.getAllBooksLean();
       final categories = await repository.getAllCategories();
 
       _cachedKeys.clear();
