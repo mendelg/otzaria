@@ -1108,9 +1108,11 @@ class TextBookSearchViewState extends State<TextBookSearchView>
             matchPolicy: _matchPolicy,
           ),
         );
-        tempTab.searchOptions.addAll(_searchOptions);
-        tempTab.alternativeWords.addAll(_alternativeWords);
-        tempTab.spacingValues.addAll(_spacingValues);
+        tempTab.copyWordSettingsFrom(
+          searchOptions: _searchOptions,
+          alternativeWords: _alternativeWords,
+          spacingValues: _spacingValues,
+        );
         // התוצאה החוזרת מהדיאלוג היא תמיד מפת פר-מילה; קריאה במצב גלובלי
         // הייתה קוראת מהמפה הגלובלית הריקה ומאבדת את הבחירות המשוחזרות.
         tempTab.useGlobalSearchOptions.value = false;
