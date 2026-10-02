@@ -64,6 +64,11 @@ class DatabaseGenerator {
     _totalBooksToProcess = total;
   }
 
+  Future<void> _restoreDurability() async {
+    await repository.setSynchronous('NORMAL');
+    await repository.setJournalMode('WAL');
+  }
+
   /// Initializes the generator for sync operations where generate() is not called.
   /// [libraryRoot] Optional root path for library-relative calculations.
   void initializeForSync({String? libraryRoot}) {
@@ -77,8 +82,9 @@ class DatabaseGenerator {
       // Disable foreign keys for better performance
       await _disableForeignKeys();
 
-      // Set maximum performance mode for bulk generation
-      await repository.setMaxPerformanceMode();
+      // יצירה מאפס: קריסה באמצע מחייבת ממילא יצירה מחדש, לכן מוותרים על עמידות.
+      await repository.setSynchronous('OFF');
+      await repository.setJournalMode('MEMORY');
 
       // Process hierarchy - expect sourceDirectory to be the parent folder containing "אוצריא"
       final libraryPath = path.join(sourceDirectory, 'אוצריא');
@@ -106,12 +112,12 @@ class DatabaseGenerator {
 
       // Restore PRAGMAs
       await _enableForeignKeys();
-      await repository.restoreNormalMode();
+      await _restoreDurability();
     } catch (e, stackTrace) {
       // Restore settings on error
       try {
         await _enableForeignKeys();
-        await repository.restoreNormalMode();
+        await _restoreDurability();
       } catch (innerEx) {
         _log.warning(
           'Error restoring database settings after failure',
