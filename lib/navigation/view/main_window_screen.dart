@@ -1954,6 +1954,14 @@ class MainWindowScreenState extends State<MainWindowScreen>
       ),
   ];
 
+  /// מסתיים כשעמוד היעד כבר נוכחי — אחרי [transition] ו-frame נוסף. עד אז
+  /// [excludeOffscreenPagesFromFocus] חוסם בו פוקוס, ובקשה נדחית בשקט.
+  @visibleForTesting
+  static Future<void> afterPageBecomesCurrent(Future<void> transition) async {
+    await transition;
+    await WidgetsBinding.instance.endOfFrame;
+  }
+
   @visibleForTesting
   static List<Widget> buildTransitionPages(
     List<Widget> canonical, {
@@ -2064,6 +2072,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
       _lastScreen = state.currentScreen;
     }
 
+    var pageTransition = Future<void>.value();
     final targetPage = _pageIndexForScreen(state.currentScreen);
     if (targetPage != null && _currentPageIndex != targetPage) {
       if (_isCrossSliding) {
@@ -2104,7 +2113,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
               curve: Curves.easeInOut,
             );
           case PageTransitionKind.crossSlide:
-            unawaited(_slideToDistantPage(currentPage, targetPage));
+            pageTransition = _slideToDistantPage(currentPage, targetPage);
         }
       } else {
         setState(() {
@@ -2115,8 +2124,13 @@ class MainWindowScreenState extends State<MainWindowScreen>
 
     if (state.currentScreen == Screen.library) {
       if (shouldAutofocusLibrarySearch(defaultTargetPlatform)) {
-        context.read<FocusRepository>().requestLibrarySearchFocus(
-          selectAll: true,
+        unawaited(
+          afterPageBecomesCurrent(pageTransition).then((_) {
+            if (!mounted || _lastScreen != Screen.library) return;
+            this.context.read<FocusRepository>().requestLibrarySearchFocus(
+              selectAll: true,
+            );
+          }),
         );
       }
     } else if (state.currentScreen == Screen.reading) {
@@ -4156,13 +4170,6 @@ class MainWindowScreenState extends State<MainWindowScreen>
     } else {
       context.read<NavigationBloc>().add(
         NavigateToScreen(screen),
-      );
-    }
-
-    if (screen == Screen.library &&
-        shouldAutofocusLibrarySearch(defaultTargetPlatform)) {
-      context.read<FocusRepository>().requestLibrarySearchFocus(
-        selectAll: true,
       );
     }
   }
