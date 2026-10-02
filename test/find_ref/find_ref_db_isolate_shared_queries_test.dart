@@ -586,6 +586,51 @@ void main() {
       );
     });
 
+    test('חיפוש שממתין לבנייה אינו חוסם בקשות אחרות', () async {
+      await seedAltTocDb();
+      final isolate = await slowBuildIsolate();
+
+      var searchDone = false;
+      final search = isolate
+          .searchAltTocFlat(const GlobalAltTocRequest(queryTokens: ['פרשה']))
+          .then((rows) {
+            searchDone = true;
+            return rows;
+          });
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(await isolate.getTocEntries(1, 'בראשית'), isNotEmpty);
+      expect(searchDone, isFalse, reason: 'הבקשה המתינה לכל הבנייה');
+      expect(await search, hasLength(entryCount));
+    });
+
+    test('ביטול חיפוש שממתין לבנייה שומר את ההתקדמות', () async {
+      await seedAltTocDb();
+      final isolate = await slowBuildIsolate();
+      final scope = FindRefDbIsolate.allocateSearchScope();
+
+      final stale = isolate.searchAltTocFlat(
+        const GlobalAltTocRequest(queryTokens: ['פרשה']),
+        searchScope: scope,
+        searchEpoch: 1,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      FindRefDbIsolate.cancelSearchScopeIfRunning(scope, 2);
+      await expectLater(stale, throwsA(isA<FindRefQueryCancelled>()));
+
+      // בלי ההתקדמות שנשמרה הבנייה הייתה מתחילה מחדש (כ-800ms).
+      final stopwatch = Stopwatch()..start();
+      expect(
+        await isolate.searchAltTocFlat(
+          const GlobalAltTocRequest(queryTokens: ['פרשה']),
+          searchScope: scope,
+          searchEpoch: 2,
+        ),
+        hasLength(entryCount),
+      );
+      expect(stopwatch.elapsed, lessThan(const Duration(milliseconds: 650)));
+    });
+
     test('השהיה באמצע חימום משחררת את החיבור ואינה חושפת קאש חלקי', () async {
       await seedAltTocDb();
       final isolate = await slowBuildIsolate();

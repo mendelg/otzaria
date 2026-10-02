@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:logging/logging.dart';
@@ -28,6 +30,8 @@ import '../daos/database.dart';
 import '../db_capabilities.dart';
 import '../sqlite3_utils.dart';
 
+part 'alt_toc_flat_index.dart';
+
 /// Repository class for accessing and manipulating the Seforim database.
 /// Provides methods for CRUD operations on books, categories, lines, TOC entries, and links.
 ///
@@ -50,13 +54,17 @@ class SeforimRepository {
   /// מספיק לכמה מהספרים הגדולים ביותר יחד; ספר שגדול מהתקרה לבדו עדיין נשמר.
   static const int defaultTocCacheMaxEntries = 200000;
 
-  /// קאש בזיכרון לערכי AltToc (כותרות-משנה) לכל ספר, ממוינים לפי segment.
+  /// קאש LRU לערכי AltToc (כותרות-משנה) לכל ספר, ממוינים לפי segment, חסום
+  /// לפי מספר הערכים — כמו [_tocCache].
   final Map<int, List<AltTocIndexEntry>> _altTocCache =
       <int, List<AltTocIndexEntry>>{};
+  int _altTocCacheEntryCount = 0;
 
-  /// הקאש הגלובלי מקובץ לפי ספר (ראו [attachAltTocIndex]); כשהוא קיים הוא
-  /// מחליף את [_altTocCache] — אותם אובייקטים, בלי עותק שני.
-  Map<int, List<AltTocIndexEntry>>? _altTocIndexByBook;
+  /// הספר הגדול ביותר כ-28 אלף ערכים; כ-5MB של אובייקטים.
+  static const int _altTocCacheMaxEntries = 50000;
+
+  /// אינדקס גלובלי לחיפוש ישיר, ללא בניית אובייקטים לכל ערכי הספר.
+  AltTocFlatIndex? _altTocIndex;
 
   SeforimRepository(
     this._database, {
@@ -70,26 +78,36 @@ class SeforimRepository {
   void _invalidateTocCache({int? bookId}) {
     if (bookId != null) {
       _tocCacheEntryCount -= _tocCache.remove(bookId)?.all.length ?? 0;
-      _altTocCache.remove(bookId);
+      _altTocCacheEntryCount -= _altTocCache.remove(bookId)?.length ?? 0;
     } else {
       _tocCache.clear();
       _tocCacheEntryCount = 0;
       _altTocCache.clear();
+      _altTocCacheEntryCount = 0;
     }
-    _altTocIndexByBook = null;
+    _altTocIndex = null;
   }
 
-  /// מגיש את ה-AltToc הפר-ספר מתוך [entries] של הקאש הגלובלי, עד לאיפוס הבא.
-  void attachAltTocIndex(List<AltTocIndexEntry> entries) {
-    final byBook = <int, List<AltTocIndexEntry>>{};
-    for (final e in entries) {
-      (byBook[e.book.id] ??= []).add(e);
-    }
-    for (final list in byBook.values) {
-      _sortAltTocForBook(list);
-    }
-    _altTocIndexByBook = byBook;
+  /// מגיש את ה-AltToc הפר-ספר מתוך [index] הגלובלי, עד לאיפוס הבא.
+  void attachAltTocIndex(AltTocFlatIndex index) {
+    _altTocIndex = index;
     _altTocCache.clear();
+    _altTocCacheEntryCount = 0;
+  }
+
+  List<AltTocIndexEntry> _putAltTocCache(
+    int bookId,
+    List<AltTocIndexEntry> entries,
+  ) {
+    _altTocCacheEntryCount -= _altTocCache.remove(bookId)?.length ?? 0;
+    _altTocCache[bookId] = entries;
+    _altTocCacheEntryCount += entries.length;
+    while (_altTocCacheEntryCount > _altTocCacheMaxEntries &&
+        _altTocCache.length > 1) {
+      final oldest = _altTocCache.keys.first;
+      _altTocCacheEntryCount -= _altTocCache.remove(oldest)!.length;
+    }
+    return entries;
   }
 
   /// מפנה את הספרים שלא נקראו זמן רב ביותר עד שהקאש בתוך התקרה. הספר החדש
@@ -109,6 +127,12 @@ class SeforimRepository {
 
   @visibleForTesting
   Iterable<int> get debugTocCachedBookIds => _tocCache.keys;
+
+  @visibleForTesting
+  int get debugAltTocCacheEntryCount => _altTocCacheEntryCount;
+
+  @visibleForTesting
+  Iterable<int> get debugAltTocCachedBookIds => _altTocCache.keys;
 
   int? _lastDataVersion;
 
@@ -3043,13 +3067,30 @@ extension BookAcronymRepository on SeforimRepository {
     // Fallback שטוח — רק כשההיררכי לא מצא דבר. מאפשר לציטוט להגיע לכותרת
     // עמוקה בלי שמות הביניים ("דף לו" תחת ספר→פרשה→דף ב"הזוהר המתורגם",
     // "סימן ה" תחת בית יוסף→אורח חיים).
-    final altCache = await _buildAltTocCacheForBook(bookId, bookTitle);
-    if (altCache.isNotEmpty) {
+    final index = _altTocIndex;
+    final compactEntries = index?._entriesOfBook(bookId);
+    final altCache = index == null
+        ? await _buildAltTocCacheForBook(bookId, bookTitle)
+        : const <AltTocIndexEntry>[];
+    if (compactEntries?.isNotEmpty ?? altCache.isNotEmpty) {
       // ציטוט דף, או טוקן בודד שה-AltToc כבר מוצא ("זהר לו"), מטופלים שם.
       // אחרת ("בית יוסף תקיב") מותר לדלג על חלק ביניים, בהתאמה לכותרת היעד עצמה.
       if (_isDafCitationForAltTocFallback(queryTokens) ||
           (queryTokens.length == 1 &&
-              _searchAltTocFlat(altCache, queryTokens).isNotEmpty)) {
+              (index != null
+                  ? _searchAltTocFlat(
+                      compactEntries!,
+                      queryTokens,
+                      ownTokensOf: index._ownTokensOf,
+                      pathTokensOf: index.refTokensOf,
+                      refMaskOf: (i) => index.refMasks[i],
+                    ).isNotEmpty
+                  : _searchAltTocFlat(
+                      altCache,
+                      queryTokens,
+                      ownTokensOf: (entry) => entry.ownTokens,
+                      pathTokensOf: (entry) => entry.pathTokens,
+                    ).isNotEmpty))) {
         return const [];
       }
       return _searchTocFlat(
@@ -3224,8 +3265,8 @@ extension BookAcronymRepository on SeforimRepository {
   bool _hasLineBookIndex(sqlite3.Database db) =>
       DbCapabilities.forDatabase(_database.path, db).hasLineBookIndex;
 
-  /// מיפוי `line.id → line.lineIndex` לספר, מהאינדקס המכסה: `JOIN line`
-  /// קרא עמוד 16KB של טקסט לכל ערך TOC. [neededLineIds] רק לנסיגה.
+  /// מיפוי `line.id → line.lineIndex` ל-[neededLineIds], מהאינדקס המכסה בלבד:
+  /// ה-`+` מונע חיפוש לפי rowid, שקורא את עמודי טבלת `line` עצמה.
   Map<int, int> _lineIndexesForBook(
     sqlite3.Database db,
     int bookId,
@@ -3235,8 +3276,9 @@ extension BookAcronymRepository on SeforimRepository {
       return _lineIndexesByIds(db, neededLineIds);
     }
     final rows = db.select(
-      'SELECT id, lineIndex FROM line WHERE bookId = ?',
-      [bookId],
+      'SELECT id, lineIndex FROM line WHERE bookId = ? '
+      'AND +id IN (SELECT value FROM json_each(?))',
+      [bookId, '[${neededLineIds.join(',')}]'],
     );
     return {
       for (final row in rows) row['id'] as int: row['lineIndex'] as int,
@@ -3266,23 +3308,6 @@ extension BookAcronymRepository on SeforimRepository {
     return result;
   }
 
-  /// מסדר שורות TOC כפי ש-`ORDER BY lineIndex, level` היה מסדר אותן
-  /// (NULL ראשון, כמנהג SQLite), עם `id` כשובר-שוויון דטרמיניסטי.
-  void _sortByLineIndexThenLevel(List<Map<String, dynamic>> rows) {
-    rows.sort((a, b) {
-      final ai = a['lineIndex'] as int?;
-      final bi = b['lineIndex'] as int?;
-      if (ai != bi) {
-        if (ai == null) return -1;
-        if (bi == null) return 1;
-        return ai.compareTo(bi);
-      }
-      final levelCompare = (a['level'] as int).compareTo(b['level'] as int);
-      if (levelCompare != 0) return levelCompare;
-      return (a['id'] as int).compareTo(b['id'] as int);
-    });
-  }
-
   /// בונה (פעם אחת לכל [bookId]) את רשימת ערכי ה-TOC המעובדים.
   /// כל ערך כולל את ה-reference המלא (כולל נתיב אבות שלם) ואת הטוקנים המנורמלים
   /// שלו מראש. מבנה היררכי (childrenByParentId) מאפשר חיפוש רמה-אחר-רמה.
@@ -3296,7 +3321,7 @@ extension BookAcronymRepository on SeforimRepository {
 
     final db = await _database.database;
 
-    final rawEntries = db
+    final rawRows = db
         .select(
           '''
         SELECT t.id, tt.text, t.level, t.textId, t.lineId, t.parentId
@@ -3306,49 +3331,64 @@ extension BookAcronymRepository on SeforimRepository {
       ''',
           [bookId],
         )
-        .toMapList();
+        .rows;
 
-    final lineIndexes = rawEntries.isEmpty
-        ? const <int, int>{}
-        : _lineIndexesForBook(db, bookId, [
-            for (final e in rawEntries)
-              if (e['lineId'] case final int lineId) lineId,
-          ]);
-    final tocEntries = <Map<String, dynamic>>[];
-    for (final e in rawEntries) {
-      final lineId = e['lineId'] as int?;
-      tocEntries.add({
-        ...e,
-        // שורה חסרה (lineId שאינו קיים) נופלת ל-lineId עצמו, כפי שעשה
-        // ה-COALESCE על ה-LEFT JOIN.
-        'lineIndex': lineId == null ? null : (lineIndexes[lineId] ?? lineId),
-        'dbLineId': lineId ?? 0,
-      });
-    }
-    _sortByLineIndexThenLevel(tocEntries);
-
-    if (tocEntries.isEmpty) {
+    if (rawRows.isEmpty) {
       _putTocCache(bookId, _TocBookCache.empty);
       return _TocBookCache.empty;
     }
+
+    final lineIndexes = _lineIndexesForBook(db, bookId, [
+      for (final r in rawRows)
+        if (r[4] case final int lineId) lineId,
+    ]);
+    final tocEntries = [
+      for (final r in rawRows)
+        (
+          id: r[0] as int,
+          text: r[1] as String,
+          level: r[2] as int,
+          textId: r[3] as int,
+          lineId: r[4] as int?,
+          parentId: r[5] as int?,
+          // שורה חסרה (lineId שאינו קיים) נופלת ל-lineId עצמו, כפי שעשה
+          // ה-COALESCE על ה-LEFT JOIN.
+          lineIndex: r[4] == null
+              ? null
+              : (lineIndexes[r[4] as int] ?? r[4] as int),
+        ),
+    ];
+    // כמו `ORDER BY lineIndex, level` (NULL ראשון), ו-`id` שובר שוויון.
+    tocEntries.sort((a, b) {
+      final ai = a.lineIndex;
+      final bi = b.lineIndex;
+      if (ai != bi) {
+        if (ai == null) return -1;
+        if (bi == null) return 1;
+        return ai.compareTo(bi);
+      }
+      final levelCompare = a.level.compareTo(b.level);
+      if (levelCompare != 0) return levelCompare;
+      return a.id.compareTo(b.id);
+    });
 
     // מפות עזר לבניית נתיב אבות ומבנה היררכי.
     final entryTexts = <int, String>{};
     final entryLevels = <int, int>{};
     final entryParentIds = <int, int?>{};
     for (final e in tocEntries) {
-      final id = e['id'] as int;
-      entryTexts[id] = e['text'] as String;
-      entryLevels[id] = e['level'] as int;
-      entryParentIds[id] = e['parentId'] as int?;
+      entryTexts[e.id] = e.text;
+      entryLevels[e.id] = e.level;
+      entryParentIds[e.id] = e.parentId;
     }
 
-    // בונה נתיב reference מלא ע"י מעבר רקורסיבי על שרשרת האבות.
+    final pathById = <int, String>{};
     String buildPath(int? id) {
       if (id == null) return bookTitle;
       final lvl = entryLevels[id];
       if (lvl == null || lvl == 0) return bookTitle;
-      return '${buildPath(entryParentIds[id])} ${entryTexts[id]!}';
+      return pathById[id] ??=
+          '${buildPath(entryParentIds[id])} ${entryTexts[id]!}';
     }
 
     final built = <_CachedTocEntry>[];
@@ -3357,14 +3397,14 @@ extension BookAcronymRepository on SeforimRepository {
     final tokensByTextId = <int, List<String>>{};
 
     for (final e in tocEntries) {
-      final id = e['id'] as int;
-      final level = e['level'] as int;
+      final id = e.id;
+      final level = e.level;
       if (level == 0) continue;
 
-      final text = e['text'] as String;
-      final lineIndex = e['lineIndex'] as int? ?? 0;
-      final dbLineId = e['dbLineId'] as int? ?? 0;
-      final parentId = e['parentId'] as int?;
+      final text = e.text;
+      final lineIndex = e.lineIndex ?? 0;
+      final dbLineId = e.lineId ?? 0;
+      final parentId = e.parentId;
 
       final ancestorPath = buildPath(parentId);
       final fullRef = text.isNotEmpty ? '$ancestorPath $text' : ancestorPath;
@@ -3373,7 +3413,7 @@ extension BookAcronymRepository on SeforimRepository {
       // ספר — 30 אלף ערכים חולקים כ-1,000 טקסטים. בלי המטמון אותה מחרוזת
       // מנורמלת מחדש בכל ערך.
       final ownTokens = tokensByTextId.putIfAbsent(
-        e['textId'] as int,
+        e.textId,
         () => normalizeForFindRefMatch(
           text,
         ).split(' ').where((t) => t.isNotEmpty).toList(growable: false),
@@ -3576,11 +3616,7 @@ extension BookAcronymRepository on SeforimRepository {
   // AltToc (כותרות-משנה) — חיפוש במבנים חלופיים (עליות, פרשות, וכד')
   // ─────────────────────────────────────────────────────────────────────────
 
-  /// מחפש בכותרות-משנה (AltToc) של [bookId] לפי [queryTokens].
-  ///
-  /// מחזיר ערכים בפורמט זהה ל-[getTocEntriesForReference]:
-  /// `{'reference': ..., 'segment': ..., 'level': ...}`.
-  /// אם אין מבנים חלופיים לספר, מחזיר רשימה ריקה.
+  /// מחפש בכותרות-משנה של [bookId], בפורמט של [getTocEntriesForReference].
   Future<List<Map<String, dynamic>>> getAltTocEntriesForReference(
     int bookId,
     String bookTitle, {
@@ -3588,27 +3624,42 @@ extension BookAcronymRepository on SeforimRepository {
   }) async {
     if (queryTokens == null || queryTokens.isEmpty) return const [];
 
+    final index = _altTocIndex;
+    if (index != null) {
+      final entries = index._entriesOfBook(bookId);
+      final matches = _searchAltTocFlat(
+        entries,
+        queryTokens,
+        ownTokensOf: index._ownTokensOf,
+        pathTokensOf: index.refTokensOf,
+        refMaskOf: (i) => index.refMasks[i],
+      ).toList();
+      return index
+          ._orderedMatches(bookId, entries, matches)
+          .map(index._tocRowOf)
+          .toList();
+    }
+
     final entries = await _buildAltTocCacheForBook(bookId, bookTitle);
     if (entries.isEmpty) return const [];
 
-    final matches = _searchAltTocFlat(entries, queryTokens);
+    final matches = _searchAltTocFlat(
+      entries,
+      queryTokens,
+      ownTokensOf: (entry) => entry.ownTokens,
+      pathTokensOf: (entry) => entry.pathTokens,
+    );
     return matches.map((e) => e.toTocMap()).toList();
   }
 
-  /// חיפוש **שטוח** בכותרות-המשנה: מחזיר כל ערך שכל טוקני השאילתה מופיעים
-  /// בנתיב המלא שלו, **והטוקן האחרון** מופיע בטקסט של הערך עצמו (העלה).
-  ///
-  /// בניגוד לחיפוש ההיררכי (שדורש שהטוקן הראשון יתאים לשורש), כאן המשתמש יכול
-  /// לדלג על שמות-ביניים: ב"טור" כותרות-המשנה ("הלכות הלואה") יושבות תחת שם
-  /// החלק ("חושן משפט"), שלרוב נבלע בזיהוי שם הספר — כך שחיפוש היררכי משורש
-  /// החלק לא היה מגיע אליהן. תנאי "הטוקן האחרון בעלה" מונע הצפה: שאילתה כמו
-  /// "חושן" מחזירה רק את החלק "חושן משפט", לא את כל 133 ההלכות שתחתיו.
-  ///
-  /// תומך בטרנספוזיציית אותיות עבריות ("טל" ↔ "לט") כמו החיפוש ההיררכי.
-  List<AltTocIndexEntry> _searchAltTocFlat(
-    List<AltTocIndexEntry> entries,
-    List<String> tokens,
-  ) {
+  /// הטוקן האחרון חייב להופיע בעלה, כדי שחיפוש הורה לא יציף את כל ילדיו.
+  Iterable<T> _searchAltTocFlat<T>(
+    List<T> entries,
+    List<String> tokens, {
+    required List<String> Function(T) ownTokensOf,
+    required List<String> Function(T) pathTokensOf,
+    int Function(T)? refMaskOf,
+  }) {
     if (tokens.isEmpty) return const [];
 
     var cite = parseDafCitation(tokens);
@@ -3619,47 +3670,59 @@ extension BookAcronymRepository on SeforimRepository {
       if (cite != null) citePrefix = tokens.sublist(0, tokens.indexOf('דף'));
     }
     final explicitDaf = cite != null && tokens.contains('דף');
-    final lastAlts = hebrewTokenAlternatives(tokens.last);
+    final alternatives = [
+      for (final token in tokens) hebrewTokenAlternatives(token),
+    ];
+    final lastAlts = alternatives.last;
+    // ציון דף עשוי להתאים גם בלי טוקן העמוד בעלה או בנתיב.
+    final lastMask = cite == null && refMaskOf != null
+        ? altTocTokenMask(lastAlts)
+        : 0;
 
     return entries.where((e) {
+      if (lastMask != 0 && (refMaskOf!(e) & lastMask) == 0) return false;
+      final ownTokens = ownTokensOf(e);
+      List<String>? checkedPath;
       if (cite != null) {
-        final m = matchDafCitation(e.ownTokens, cite);
+        final m = matchDafCitation(ownTokens, cite);
         if (m != null) {
           // ערך "דף" — התאמה מיקומית מכריעה
-          return m &&
-              citePrefix.every(
-                (t) => hebrewTokenAlternatives(t).any(e.pathTokens.contains),
-              );
+          if (!m || citePrefix.isEmpty) return m;
+          final pathTokens = pathTokensOf(e);
+          for (var at = 0; at < citePrefix.length; at++) {
+            if (!alternatives[at].any(pathTokens.contains)) return false;
+          }
+          return true;
         }
         // תת-כותרת תחת דף ("דף יב." → "ב") שייכת לדף שמעליה.
-        if (explicitDaf &&
-            e.pathTokens.contains('דף') &&
-            !nearestDafInPathMatches(e.pathTokens, cite)) {
-          return false;
+        if (explicitDaf) {
+          checkedPath = pathTokensOf(e);
+          if (checkedPath.contains('דף') &&
+              !nearestDafInPathMatches(checkedPath, cite)) {
+            return false;
+          }
         }
       }
       // אנטי-הצפה: הטוקן האחרון חייב להתאים לטקסט של הערך עצמו (העלה).
-      if (!lastAlts.any((a) => e.ownTokens.contains(a))) return false;
+      if (!lastAlts.any((a) => ownTokens.contains(a))) return false;
+      if (tokens.length == 1) return true;
       // כל טוקני השאילתה חייבים להופיע בנתיב המלא (בכל סדר).
-      final pathTokens = e.pathTokens;
-      for (final token in tokens) {
-        final alts = hebrewTokenAlternatives(token);
+      final pathTokens = checkedPath ?? pathTokensOf(e);
+      for (final alts in alternatives) {
         if (!alts.any((a) => pathTokens.contains(a))) return false;
       }
       return true;
-    }).toList();
+    });
   }
 
   /// ערכי ה-AltToc של [bookId] (כל המבנים החלופיים יחד), ממוינים לפי segment.
-  /// מהקאש הגלובלי כשהוא מחובר; אחרת נבנים פעם אחת לספר.
+  /// נבנים מהמסד ונשמרים בקאש LRU חסום.
   Future<List<AltTocIndexEntry>> _buildAltTocCacheForBook(
     int bookId,
     String bookTitle,
   ) async {
-    final index = _altTocIndexByBook;
-    if (index != null) return index[bookId] ?? const [];
-    final cached = _altTocCache[bookId];
-    if (cached != null) return cached;
+    final cached = _altTocCache.remove(bookId);
+    if (cached != null) return _altTocCache[bookId] = cached;
     if (!(await _capabilities).hasAltToc) return const [];
 
     final db = await _database.database;
@@ -3712,8 +3775,17 @@ extension BookAcronymRepository on SeforimRepository {
     }
 
     final entries = [for (final id in rowsById.keys) entryFor(id)!];
-    _sortAltTocForBook(entries);
-    return _altTocCache[bookId] = entries;
+    _sortAltTocForBook(
+      entries,
+      compareKeys: (a, b) {
+        final segment = a.segment.compareTo(b.segment);
+        if (segment != 0) return segment;
+        final level = a.level.compareTo(b.level);
+        return level != 0 ? level : a.id.compareTo(b.id);
+      },
+      compareSegments: (a, b) => a.segment.compareTo(b.segment),
+    );
+    return _putAltTocCache(bookId, entries);
   }
 
   /// מחזיר את כל הספרים שיש להם לפחות מבנה AltToc אחד.
@@ -3750,29 +3822,30 @@ extension BookAcronymRepository on SeforimRepository {
   /// כל ערכי ה-AltToc בספרייה עם הנתיב המלא, לחיפוש הגלובלי של FindRef.
   /// מפתחות: bookId, bookTitle, bookOrderIndex, reference, segment, level, dbLineId.
   Future<List<Map<String, dynamic>>> getAllAltTocFlatEntries() async {
-    final build = beginAltTocFlatBuild();
+    final build = beginAltTocFlatIndex();
     while (!await build.step()) {}
-    return [for (final e in build.entries) e.toFlatRow()];
+    final index = build.index;
+    return [for (var i = 0; i < index.length; i++) index.flatRowOf(i)];
   }
 
-  /// אותם ערכים כמו [getAllAltTocFlatEntries], כ-[AltTocIndexEntry] ובמקטעים
+  /// אותם ערכים כמו [getAllAltTocFlatEntries], כ-[AltTocFlatIndex] ובמקטעים
   /// סינכרוניים קצרים — כדי ש-worker ישלב בקשות אחרות בין המקטעים.
-  AltTocFlatBuild beginAltTocFlatBuild({
-    int entriesPerStep = 5000,
+  AltTocFlatIndexBuild beginAltTocFlatIndex({
+    int rowsPerStep = 15000,
+    int textsPerStep = 10000,
     int linesPerStep = 10000,
-    int rowsPerStep = 5000,
-  }) => AltTocFlatBuild._(this, entriesPerStep, linesPerStep, rowsPerStep);
+  }) => AltTocFlatIndexBuild._(this, rowsPerStep, textsPerStep, linesPerStep);
 }
 
 /// הסדר של `ORDER BY lineIndex, level, id` ואחריו מיון לפי segment. המיון
 /// השני אינו יציב, ולכן חייב לרוץ על אותו קלט כדי לשמור על אותו סדר.
-void _sortAltTocForBook(List<AltTocIndexEntry> entries) {
-  entries.sort((a, b) {
-    if (a.segment != b.segment) return a.segment.compareTo(b.segment);
-    if (a.level != b.level) return a.level.compareTo(b.level);
-    return a.id.compareTo(b.id);
-  });
-  entries.sort((a, b) => a.segment.compareTo(b.segment));
+void _sortAltTocForBook<T>(
+  List<T> entries, {
+  required int Function(T, T) compareKeys,
+  required int Function(T, T) compareSegments,
+}) {
+  entries.sort(compareKeys);
+  entries.sort(compareSegments);
 }
 
 /// מה שחישוב טווח קטע צריך מכותרת: מיקומה ורמתה.
@@ -3823,8 +3896,8 @@ final class AltTocBook {
   final double orderIndex;
 }
 
-/// ערך AltToc קומפקטי. הנתיב וטוקניו נגזרים משרשרת [parent] ולא נשמרים בכל
-/// ערך: הקאש הגלובלי מחזיק את כל ערכי הספרייה לאורך חיי ה-worker.
+/// ערך AltToc של ספר. הנתיב וטוקניו נגזרים משרשרת [parent] ולא נשמרים בכל
+/// ערך.
 final class AltTocIndexEntry implements _TocSpan {
   AltTocIndexEntry({
     required this.id,
@@ -3855,12 +3928,6 @@ final class AltTocIndexEntry implements _TocSpan {
   /// טוקני [text] המנורמלים; רשימה אחת לכל טקסט חוזר.
   final List<String> ownTokens;
 
-  /// טוקני [reference] המנורמל כמחרוזת אחת — נקבעים רק בקאש הגלובלי.
-  late final List<String> refTokens;
-
-  /// [altTocTokenMask] של [refTokens] — סינון מהיר לפני בדיקת הטוקנים.
-  late final int refTokenMask;
-
   String get _path {
     final parentPath = parent?._path ?? '';
     return parentPath.isEmpty ? text : '$parentPath $text';
@@ -3869,34 +3936,9 @@ final class AltTocIndexEntry implements _TocSpan {
   /// הנתיב המלא, יחסי לספר (בלי שם הספר), למשל "פרשת לך לך עליה ו".
   String get reference => text.isEmpty ? (parent?._path ?? '') : _path;
 
-  /// [reference], עם נתיבי האבות מ-[paths] — לערכים רבים מאותו עץ.
-  String referenceUsing(Map<AltTocIndexEntry, String> paths) {
-    final parentPath = parent?.pathUsing(paths) ?? '';
-    if (text.isEmpty) return parentPath;
-    return parentPath.isEmpty ? text : '$parentPath $text';
-  }
-
-  /// הנתיב שממנו נבנה [reference] של ילדיו, נשמר ב-[paths].
-  String pathUsing(Map<AltTocIndexEntry, String> paths) {
-    final cached = paths[this];
-    if (cached != null) return cached;
-    final parentPath = parent?.pathUsing(paths) ?? '';
-    return paths[this] = parentPath.isEmpty ? text : '$parentPath $text';
-  }
-
   List<String> get pathTokens => [...?parent?.pathTokens, ...ownTokens];
 
   Map<String, dynamic> toTocMap() => {
-    'reference': reference,
-    'segment': segment,
-    'level': level,
-    'dbLineId': dbLineId,
-  };
-
-  Map<String, dynamic> toFlatRow() => {
-    'bookId': book.id,
-    'bookTitle': book.title,
-    'bookOrderIndex': book.orderIndex,
     'reference': reference,
     'segment': segment,
     'level': level,
@@ -3947,244 +3989,4 @@ class _TocBookCache {
     required this.childrenByParentId,
     this.hasBareDafHeadings = false,
   });
-}
-
-enum _AltTocFlatPhase { start, entries, lineSetup, lines, rows, done }
-
-/// בניית [SeforimRepository.getAllAltTocFlatEntries] בשלבים. סדר הערכים הוא
-/// סדר `alt_toc_entry.id`, כמו בסריקת השאילתה המקורית.
-class AltTocFlatBuild {
-  AltTocFlatBuild._(
-    this._repo,
-    this._entriesPerStep,
-    this._linesPerStep,
-    this._rowsPerStep,
-  );
-
-  final SeforimRepository _repo;
-  final int _entriesPerStep;
-  final int _linesPerStep;
-  final int _rowsPerStep;
-
-  _AltTocFlatPhase _phase = _AltTocFlatPhase.start;
-  late sqlite3.Database _db;
-  int _cursor = 0;
-  int _maxEntryId = 0;
-  final List<Map<String, dynamic>> _entries = [];
-  final Map<int, int> _rowIndexById = {};
-  final Map<int, AltTocBook> _books = {};
-  final Map<int, AltTocIndexEntry> _built = {};
-  final _AltTocTokenPool _tokens = _AltTocTokenPool();
-  final Map<int, int> _lineIndexes = {};
-  List<List<int>> _lineSlices = const [];
-  String? _lineSliceSql;
-
-  /// בסדר `alt_toc_entry.id`; [AltTocIndexEntry.refTokens] לא נקבעים כאן.
-  final List<AltTocIndexEntry> entries = [];
-
-  /// טוקני [AltTocIndexEntry.reference] מנורמל, עם אותן מחרוזות משותפות.
-  List<String> refTokensOf(AltTocIndexEntry entry) =>
-      _tokens.tokensOf(entry.reference);
-
-  bool get isDone => _phase == _AltTocFlatPhase.done;
-
-  /// מבצע מקטע אחד. מחזיר true כשהבנייה הושלמה.
-  Future<bool> step() async {
-    switch (_phase) {
-      case _AltTocFlatPhase.start:
-        await _start();
-      case _AltTocFlatPhase.entries:
-        _readEntries();
-      case _AltTocFlatPhase.lineSetup:
-        await _planLineSlices();
-      case _AltTocFlatPhase.lines:
-        _readLineSlice();
-      case _AltTocFlatPhase.rows:
-        _buildRows();
-      case _AltTocFlatPhase.done:
-        break;
-    }
-    return isDone;
-  }
-
-  Future<void> _start() async {
-    if (!(await _repo._capabilities).hasAltToc) {
-      _phase = _AltTocFlatPhase.done;
-      return;
-    }
-    _db = await _repo._database.database;
-    final range = _db.select(
-      'SELECT MIN(id) AS lo, MAX(id) AS hi FROM alt_toc_entry',
-    );
-    final lo = range.first['lo'] as int?;
-    if (lo == null) {
-      _phase = _AltTocFlatPhase.done;
-      return;
-    }
-    _cursor = lo;
-    _maxEntryId = range.first['hi'] as int;
-    _phase = _AltTocFlatPhase.entries;
-  }
-
-  void _readEntries() {
-    final upper = _cursor + _entriesPerStep;
-    final rows = _db
-        .select(
-          '''
-      SELECT s.bookId AS bookId,
-             b.title AS bookTitle,
-             b.orderIndex AS bookOrderIndex,
-             e.id AS entryId,
-             t.text AS text,
-             e.level AS level,
-             e.parentId AS parentId,
-             e.lineId AS lineId,
-             e.textId AS textId
-      FROM alt_toc_entry e
-      JOIN alt_toc_structure s ON e.structureId = s.id
-      JOIN book b ON b.id = s.bookId
-      JOIN tocText t ON e.textId = t.id
-      WHERE e.id >= ? AND e.id < ?
-      ORDER BY e.id
-    ''',
-          [_cursor, upper],
-        )
-        .toMapList();
-    for (final r in rows) {
-      _rowIndexById[r['entryId'] as int] = _entries.length;
-      _entries.add(r);
-    }
-    _cursor = upper;
-    if (_cursor > _maxEntryId) _phase = _AltTocFlatPhase.lineSetup;
-  }
-
-  /// `INDEXED BY` חובה: בלעדיו SQLite בוחר rowid, ואז 185MB קריאות במקום 15MB.
-  /// הספרים מחולקים לפי מספר שורות, כדי שכל מקטע יסרוק כ-[_linesPerStep].
-  Future<void> _planLineSlices() async {
-    _cursor = 0;
-    _phase = _AltTocFlatPhase.lines;
-    final needed = [
-      for (final r in _entries)
-        if (r['lineId'] case final int lineId) lineId,
-    ];
-    if (needed.isEmpty) {
-      _phase = _AltTocFlatPhase.rows;
-      return;
-    }
-    if (!_repo._hasLineBookIndex(_db)) {
-      final ids = needed.toSet().toList(growable: false);
-      _lineSlices = [
-        for (var i = 0; i < ids.length; i += _linesPerStep)
-          ids.sublist(
-            i,
-            i + _linesPerStep > ids.length ? ids.length : i + _linesPerStep,
-          ),
-      ];
-      return;
-    }
-    final hasLineIndexOnEntries = _db
-        .select(
-          "SELECT 1 FROM sqlite_master WHERE type = 'index' "
-          "AND name = 'idx_alt_toc_entry_line'",
-        )
-        .isNotEmpty;
-    // בלי אינדקס על lineId, EXISTS היה סורק את הטבלה לכל שורה.
-    final entryFilter = hasLineIndexOnEntries
-        ? 'EXISTS (SELECT 1 FROM alt_toc_entry e WHERE e.lineId = l.id)'
-        : 'l.id IN (SELECT lineId FROM alt_toc_entry WHERE lineId IS NOT NULL)';
-    final weightColumn =
-        (await _repo._capabilities).hasColumn(
-          'book',
-          'totalLines',
-        )
-        ? 'totalLines'
-        : '0';
-    final books = _db.select(
-      'SELECT id, $weightColumn AS weight FROM book '
-      'WHERE id IN (SELECT bookId FROM alt_toc_structure) ORDER BY id',
-    );
-    final slices = <List<int>>[];
-    var current = <int>[];
-    var weight = 0;
-    for (final row in books) {
-      current.add(row['id'] as int);
-      final lines = row['weight'] as int? ?? 0;
-      weight += lines > 0 ? lines : 1000;
-      if (weight >= _linesPerStep || current.length >= 500) {
-        slices.add(current);
-        current = <int>[];
-        weight = 0;
-      }
-    }
-    if (current.isNotEmpty) slices.add(current);
-    _lineSlices = slices;
-    _lineSliceSql = entryFilter;
-  }
-
-  void _readLineSlice() {
-    if (_cursor >= _lineSlices.length) {
-      _cursor = 0;
-      _phase = _AltTocFlatPhase.rows;
-      return;
-    }
-    final slice = _lineSlices[_cursor++];
-    final filter = _lineSliceSql;
-    if (filter == null) {
-      _lineIndexes.addAll(_repo._lineIndexesByIds(_db, slice));
-      return;
-    }
-    final placeholders = List.filled(slice.length, '?').join(',');
-    final rows = _db.select(
-      'SELECT l.id AS id, l.lineIndex AS lineIndex '
-      'FROM line l INDEXED BY idx_line_book_index '
-      'WHERE l.bookId IN ($placeholders) AND $filter',
-      slice,
-    );
-    for (final row in rows) {
-      _lineIndexes[row['id'] as int] = row['lineIndex'] as int;
-    }
-  }
-
-  AltTocIndexEntry? _entryFor(int? id) {
-    if (id == null) return null;
-    final existing = _built[id];
-    if (existing != null) return existing;
-    final rowIndex = _rowIndexById[id];
-    if (rowIndex == null) return null;
-    final r = _entries[rowIndex];
-    final bookId = r['bookId'] as int;
-    final lineId = r['lineId'] as int?;
-    final text = r['text'] as String;
-    return _built[id] = AltTocIndexEntry(
-      id: id,
-      book: _books[bookId] ??= AltTocBook(
-        bookId,
-        r['bookTitle'] as String,
-        (r['bookOrderIndex'] as num).toDouble(),
-      ),
-      parent: _entryFor(r['parentId'] as int?),
-      text: text,
-      segment: lineId == null ? 0 : (_lineIndexes[lineId] ?? 0),
-      level: r['level'] as int,
-      dbLineId: lineId ?? 0,
-      ownTokens: _tokens.ownTokens(r['textId'] as int, text),
-    );
-  }
-
-  void _buildRows() {
-    final end = _cursor + _rowsPerStep > _entries.length
-        ? _entries.length
-        : _cursor + _rowsPerStep;
-    for (var i = _cursor; i < end; i++) {
-      entries.add(_entryFor(_entries[i]['entryId'] as int)!);
-    }
-    _cursor = end;
-    if (_cursor < _entries.length) return;
-    _phase = _AltTocFlatPhase.done;
-    // נחוצים רק לבנייה; מאגר הטוקנים נשאר לנרמול הנתיבים שאחריה.
-    _entries.clear();
-    _rowIndexById.clear();
-    _built.clear();
-    _lineIndexes.clear();
-  }
 }
