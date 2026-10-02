@@ -722,7 +722,7 @@ class DictionaryLookupRepository {
   }
 
   static Future<List<LaazDictionaryEntry>> _defaultLoadLaazEntries() async {
-    // קריאת ה-DB נשארת ב-main isolate (FFI); רק הפירוק עובר ל-compute.
+    // השורות מפוענחות ב-DbReadWorker; כאן רק מפרקים אותן ב-compute.
     final lines = await loadDictionaryBookLines(laazBookTitle);
     if (lines.isEmpty) return const <LaazDictionaryEntry>[];
     return compute(LaazDictionaryEntry.parseLines, lines);

@@ -403,7 +403,7 @@ jobs:
               | add // {}) as $tests
             | map(select(.type == "testDone" and (.hidden | not)))
             | map(select(($suites[($tests[.testID | tostring].suiteID) | tostring] // "")
-                | test("line_content_(codec|split)|db_read_worker_compressed")))
+                | test("line_content_(codec|split)|db_read_worker_compressed|line_codec_isolate_placement")))
             | "\(map(select(.skipped | not)) | length) \(map(select(.skipped)) | length)"
           ' test-results.json)
           echo "zstd codec tests (shard ${{ matrix.shard }}): $ran ran, $skipped skipped"

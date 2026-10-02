@@ -331,12 +331,7 @@ class SqliteDataProvider {
       final startLine = (currentLine - 10).clamp(0, book.totalLines - 1);
       final endLine = (currentLine + 10).clamp(0, book.totalLines - 1);
 
-      final lines = await resolvedBook.repository.getLines(
-        book.id,
-        startLine,
-        endLine,
-      );
-      return migrationLinesToText(lines);
+      return await _linesText(resolvedBook, startLine, endLine);
     } catch (e, st) {
       debugPrint(
         '[SqliteDataProvider] getBookQuickPreview failed for '
@@ -374,17 +369,11 @@ class SqliteDataProvider {
 
       final normalizedStart = startLine.clamp(0, book.totalLines - 1);
       final normalizedEnd = endLine.clamp(normalizedStart, book.totalLines - 1);
-      final lines = await resolvedBook.repository.getLines(
-        book.id,
-        normalizedStart,
-        normalizedEnd,
-      );
-
       return (
         startLine: normalizedStart,
         endLine: normalizedEnd,
         totalLines: book.totalLines,
-        text: migrationLinesToText(lines),
+        text: await _linesText(resolvedBook, normalizedStart, normalizedEnd),
       );
     } catch (e, st) {
       debugPrint(
@@ -648,6 +637,29 @@ class SqliteDataProvider {
     }
 
     return results;
+  }
+
+  /// השורות [start]..[end] כטקסט אחד; seforim.db מפוענח ב-[DbReadWorker].
+  Future<String> _linesText(
+    ResolvedDbBookRecord resolved,
+    int start,
+    int end,
+  ) async {
+    if (!resolved.source.isOfficial) {
+      final lines = await resolved.repository.getLines(
+        resolved.book.id,
+        start,
+        end,
+      );
+      return migrationLinesToText(lines);
+    }
+    final lines = await DbReadWorker.lines(
+      _dbPath,
+      resolved.book.id,
+      start,
+      end,
+    );
+    return lines.map((line) => line.content).join('\n');
   }
 
   Future<ResolvedDbBookRecord?> _resolveBookRecord(

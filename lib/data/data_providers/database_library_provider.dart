@@ -1126,11 +1126,12 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
   required ReadOnlyDbTarget target,
   required String bookTitle,
   int? categoryId,
+  ReadOnlyConnection? connection,
 }) {
   sqlite3.Database? db;
   try {
-    db = openReadOnlyTarget(target);
-    final capabilities = DbCapabilities.probe(db);
+    db = connection?.db ?? openReadOnlyTarget(target);
+    final capabilities = connection?.capabilities ?? DbCapabilities.probe(db);
     if (!capabilities.hasAltToc) return (markers: const {}, headings: const {});
 
     final bookId = _selectBookId(
@@ -1207,9 +1208,9 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
     ).toMapList();
 
     // השאילתה מביאה לכל כותרת את שורתה ושתיים שלפניה — חלון הבדיקה כולו.
-    final linesByIndex = <int, String?>{};
+    // שורה מפוענחת רק כשבדיקת הנראוּת מגיעה אליה, ופעם אחת.
+    final rawByIndex = <int, Object?>{};
     final rows = <({int lineIndex, String label})>[];
-    final codec = LineContentCodec.of(db);
     for (final row in headingRows) {
       final lineIndex = row['lineIndex'];
       final rawLabel = row['label'];
@@ -1218,15 +1219,22 @@ InlineSectionMarks _loadInlineSectionMarksInIsolate({
           ? parashaHeadingLabel(rawLabel)
           : rawLabel;
       if (label == null) continue;
-      linesByIndex[lineIndex] = codec.text(row['line0']);
-      linesByIndex[lineIndex - 1] ??= codec.text(row['line1']);
-      linesByIndex[lineIndex - 2] ??= codec.text(row['line2']);
+      rawByIndex[lineIndex] = row['line0'];
+      rawByIndex[lineIndex - 1] ??= row['line1'];
+      rawByIndex[lineIndex - 2] ??= row['line2'];
       rows.add((lineIndex: lineIndex, label: label));
     }
-    final headings = buildSectionHeadings(rows, (i) => linesByIndex[i]);
+    final codec = LineContentCodec.of(db);
+    final linesByIndex = <int, String?>{};
+    final headings = buildSectionHeadings(
+      rows,
+      (i) => linesByIndex.containsKey(i)
+          ? linesByIndex[i]
+          : linesByIndex[i] = codec.text(rawByIndex[i]),
+    );
     return (markers: markers, headings: headings);
   } finally {
-    db?.close();
+    if (connection == null) db?.close();
   }
 }
 
@@ -1506,6 +1514,12 @@ Object? runRangeRequestOnConnection(
       startLineIndex: args['startLineIndex'] as int,
       endLineIndex: args['endLineIndex'] as int,
       targetBookTitles: (args['targetBookTitles'] as List?)?.cast<String>(),
+      connection: connection,
+    ),
+    'inlineSectionMarks' => _loadInlineSectionMarksInIsolate(
+      target: target,
+      bookTitle: args['bookTitle'] as String,
+      categoryId: args['categoryId'] as int?,
       connection: connection,
     ),
     _ => throw StateError('Unknown DbReadWorker method: $method'),
@@ -4768,11 +4782,17 @@ class DatabaseLibraryProvider implements LibraryProvider {
     final target = _isolateTargetFor(source);
     if (target == null) return empty;
 
+    // ב-worker הקבוע: מפענח השורות נטען פעם אחת לחיבור, לא בכל פתיחת ספר.
     try {
-      return await _runInlineSectionMarksInIsolate(
-        target: target,
-        bookTitle: bookTitle,
-        categoryId: categoryId,
+      return await _loadOnReadWorker(
+        target,
+        'inlineSectionMarks',
+        {'bookTitle': bookTitle, 'categoryId': categoryId},
+        () => _runInlineSectionMarksInIsolate(
+          target: target,
+          bookTitle: bookTitle,
+          categoryId: categoryId,
+        ),
       );
     } catch (e) {
       debugPrint(
