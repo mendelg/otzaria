@@ -264,6 +264,7 @@ class DbReadWorker {
               ? bookReadCheckpointPort
               : null,
           setUpForTesting: workerSetUpForTesting,
+          cacheKib: identical(slot, _books) ? 8000 : null,
         ),
         debugName: slot.name,
         onError: service._errorPort.sendPort,
@@ -521,6 +522,15 @@ class DbReadWorker {
   }
 
   @visibleForTesting
+  static Future<Object?> cacheSizeForTesting(
+    String dbPath, {
+    required bool books,
+  }) async {
+    final service = await _instanceOrSpawn(books ? _books : _ranges);
+    return service._send('cacheSizeForTesting', {'dbPath': dbPath});
+  }
+
+  @visibleForTesting
   static void disposeForTesting() {
     _closedUntilReopen = false;
     bookReadCheckpointPort = null;
@@ -643,12 +653,16 @@ class _Bootstrap {
     required this.queryCache,
     this.bookReadCheckpointPort,
     this.setUpForTesting,
+    this.cacheKib,
   });
 
   final SendPort mainSendPort;
   final Map<String, Map<String, String>> queryCache;
   final SendPort? bookReadCheckpointPort;
   final void Function()? setUpForTesting;
+
+  // קריאת ספר שלם נוגעת בכל דף פעם אחת; מטמון גדול רק מחזיק זיכרון.
+  final int? cacheKib;
 }
 
 class _Suspended implements Exception {
@@ -697,6 +711,10 @@ void _workerMain(_Bootstrap bootstrap) {
     );
     try {
       await repo.ensureInitialized();
+      final cacheKib = bootstrap.cacheKib;
+      if (cacheKib != null) {
+        await repo.executeRawQuery('PRAGMA cache_size=-$cacheKib');
+      }
     } catch (_) {
       repo.database.close();
       rethrow;
@@ -767,6 +785,10 @@ void _workerMain(_Bootstrap bootstrap) {
         return null;
       case 'shrinkMemory':
         return repository?.database.shrinkMemoryIfOpen() ?? false;
+      case 'cacheSizeForTesting':
+        final repo = await ensureRepo(args['dbPath'] as String);
+        final db = await repo.database.database;
+        return db.select('PRAGMA cache_size').single.values.single;
       case 'linkContent':
         final repo = await ensureRepo(args['dbPath'] as String);
         final book = await resolveOfficialBook(

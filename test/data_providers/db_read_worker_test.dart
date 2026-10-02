@@ -754,6 +754,37 @@ void main() {
     );
   });
 
+  test('only the book worker runs with an 8MB page cache', () async {
+    final dbPath = await seedDb('seforim');
+    final defaultCacheSize = await onDirectConnection(dbPath, (repo) async {
+      await repo.ensureInitialized();
+      final db = await repo.database.database;
+      return db.select('PRAGMA cache_size').single.values.single;
+    });
+    expect(defaultCacheSize, isNot(-8000));
+
+    Future<void> expectCacheSizes() async {
+      expect(
+        await DbReadWorker.cacheSizeForTesting(dbPath, books: true),
+        -8000,
+      );
+      expect(
+        await DbReadWorker.cacheSizeForTesting(dbPath, books: false),
+        defaultCacheSize,
+      );
+    }
+
+    await expectCacheSizes();
+    expect(await DbReadWorker.shrinkMemoryIfRunning(), isTrue);
+    await expectCacheSizes();
+    expect(await DbReadWorker.suspendForExternalWrite(), isTrue);
+    await DbReadWorker.resumeAfterExternalWrite();
+    await expectCacheSizes();
+    await DbReadWorker.closeConnectionIfRunning();
+    DbReadWorker.allowReopen();
+    await expectCacheSizes();
+  });
+
   group('DatabaseLibraryProvider דרך ה-worker', () {
     late String dbPath;
 
