@@ -67,15 +67,11 @@ class GoogleCalendarRepository {
     }
   }
 
-  /// Merges the events of [calendarIds] between [timeMin] and [timeMax] into
-  /// [existingEvents], read once the calendar colors are loaded.
-  ///
-  /// Returns null when no authorized client is available, throws
-  /// [GoogleCalendarSyncException] when fetching fails, and lets errors while
-  /// obtaining the client propagate.
+  /// ממזג אירועים מהלוחות שנבחרו בטווח [timeMin]–[timeMax].
+  /// הבחירה והאירועים המקומיים נקראים אחרי קבלת ההרשאה וטעינת צבעי הלוחות.
   Future<List<CustomEvent>?> fetchEvents({
     required List<CustomEvent> Function() existingEvents,
-    required List<String> calendarIds,
+    required List<String> Function() calendarIds,
     required DateTime timeMin,
     required DateTime timeMax,
     required bool interactive,
@@ -93,7 +89,7 @@ class GoogleCalendarRepository {
       );
 
       // Fetch events from all selected calendars with pagination.
-      for (final calendarId in calendarIds) {
+      for (final calendarId in calendarIds()) {
         try {
           String? pageToken;
           do {

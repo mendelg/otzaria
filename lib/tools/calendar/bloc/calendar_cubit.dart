@@ -954,7 +954,7 @@ class CalendarCubit extends Cubit<CalendarState> {
       final now = DateTime.now();
       final events = await _googleCalendar.fetchEvents(
         existingEvents: () => state.events,
-        calendarIds: state.googleCalendarSelectedIds,
+        calendarIds: () => state.googleCalendarSelectedIds,
         timeMin: now.subtract(Duration(days: state.googleCalendarSyncPastDays)),
         timeMax: now.add(Duration(days: state.googleCalendarSyncFutureDays)),
         interactive: interactive,

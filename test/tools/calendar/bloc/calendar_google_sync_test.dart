@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +13,8 @@ import 'package:timezone/data/latest_all.dart' as tz_data;
 
 class _Settings implements SettingsRepository {
   int? lastSync;
+  String savedEventsJson = '[]';
+  final firstEventsSaved = Completer<void>();
 
   @override
   Future<Map<String, dynamic>> loadSettings() async => {
@@ -32,7 +35,13 @@ class _Settings implements SettingsRepository {
   };
 
   @override
-  Future<void> updateCalendarEvents(String json) async {}
+  Future<void> updateCalendarEvents(String json) async {
+    savedEventsJson = json;
+    if (!firstEventsSaved.isCompleted) firstEventsSaved.complete();
+  }
+
+  @override
+  Future<void> updateGoogleCalendarSelectedIds(List<String> ids) async {}
 
   @override
   Future<void> updateGoogleCalendarLastSync(int value) async =>
@@ -165,6 +174,63 @@ void main() {
     expect(cubit.state.googleCalendarSyncError, isNull);
     expect(settings.lastSync, isNotNull);
   });
+
+  test(
+    'selection changes during a sync do not restore deselected events',
+    () async {
+      final colorsStarted = Completer<void>();
+      final releaseColors = Completer<void>();
+      final requestedCalendars = <String>[];
+      var holdColors = false;
+      var colorRequests = 0;
+      final (cubit, settings) = await build(
+        _Google(
+          handler: (request) async {
+            if (request.url.path.contains('calendarList')) {
+              if (holdColors && ++colorRequests == 1) {
+                colorsStarted.complete();
+                await releaseColors.future;
+              }
+              return _json({'items': []});
+            }
+            if (!holdColors) return _json({'items': []});
+            final calendarId = request.url.pathSegments[3];
+            requestedCalendars.add(calendarId);
+            return _json({
+              'items': [
+                {
+                  'id': 'event-$calendarId',
+                  'summary': 'אירוע מ-$calendarId',
+                  'start': {'date': '2026-10-05'},
+                  'end': {'date': '2026-10-06'},
+                },
+              ],
+            });
+          },
+        ),
+      );
+      await settings.firstEventsSaved.future;
+      holdColors = true;
+      final olderSync = cubit.syncGoogleCalendar(interactive: false);
+      await colorsStarted.future;
+      await cubit.updateGoogleCalendarSelectedIds(['new-calendar']);
+      await cubit.syncGoogleCalendar(interactive: false);
+      final eventsAfterNewerSync = List<CustomEvent>.of(cubit.state.events);
+      releaseColors.complete();
+      await olderSync;
+
+      expect(eventsAfterNewerSync.map((e) => e.title), [
+        'אירוע מ-new-calendar',
+      ]);
+      expect(requestedCalendars, ['new-calendar', 'new-calendar']);
+      expect(cubit.state.googleCalendarSelectedIds, ['new-calendar']);
+      expect(cubit.state.events.map((e) => e.title), ['אירוע מ-new-calendar']);
+      expect(
+        (jsonDecode(settings.savedEventsJson) as List).map((e) => e['title']),
+        ['אירוע מ-new-calendar'],
+      );
+    },
+  );
 
   test('a calendar that fails to load is skipped', () async {
     final (cubit, _) = await build(
