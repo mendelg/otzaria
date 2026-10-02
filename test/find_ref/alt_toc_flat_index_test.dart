@@ -211,16 +211,20 @@ void main() {
       final textId = db
           .select("SELECT id FROM tocText WHERE text = 'פרק א'")
           .first['id'];
+      final otherTextId = db
+          .select("SELECT id FROM tocText WHERE text = 'הלכות שבת'")
+          .first['id'];
       for (var structure = 1; structure <= 3; structure++) {
         db.execute(
           'WITH RECURSIVE numbers(n) AS (SELECT 0 UNION ALL '
           'SELECT n + 1 FROM numbers WHERE n < 17999) '
           'INSERT INTO alt_toc_entry (id, structureId, textId, level, lineId) '
-          'SELECT ? + n, ?, ?, n % 3, ? FROM numbers',
+          'SELECT ? + n, ?, CASE WHEN n % 2 = 0 THEN ? ELSE ? END, n % 3, ? FROM numbers',
           [
             structure * 100000,
             structure,
             textId,
+            otherTextId,
             structure == 1 ? lines[2] : null,
           ],
         );
@@ -262,6 +266,17 @@ void main() {
 
       await repository.invalidateTocCacheIfChangedExternally();
       repository.attachAltTocIndex(index);
+      for (final book in books.values) {
+        expect(
+          await repository.getAltTocEntriesForReference(
+            book.id,
+            book.title,
+            queryTokens: ['איןכזהטוקן'],
+          ),
+          isEmpty,
+        );
+      }
+      expect(index.debugSortedBookCount, 0);
       final oracle = SeforimRepository(database);
       for (var repeat = 0; repeat < 2; repeat++) {
         for (final book in books.values) {
@@ -299,6 +314,7 @@ void main() {
       }
       expect(repository.debugAltTocCacheEntryCount, 0);
       expect(repository.debugAltTocCachedBookIds, isEmpty);
+      expect(index.debugSortedBookCount, books.length);
 
       final external = MyDatabase.withPath(path.join(tempDir.path, 'test.db'));
       addTearDown(external.close);
@@ -321,6 +337,60 @@ void main() {
         ),
       );
       expect(repository.debugAltTocCacheEntryCount, greaterThan(0));
+    });
+
+    test('ספר קטן עם מיקומים גלובליים מפוזרים שומר סדר והתאמות', () async {
+      await seed();
+      final db = await database.database;
+      final aText = db
+          .select("SELECT id FROM tocText WHERE text = 'פרק א'")
+          .first['id'];
+      final cText = db
+          .select("SELECT id FROM tocText WHERE text = 'חמש'")
+          .first['id'];
+      db.execute(
+        'WITH RECURSIVE numbers(n) AS (SELECT 0 UNION ALL '
+        'SELECT n + 1 FROM numbers WHERE n < 1999) '
+        'INSERT INTO alt_toc_entry (id, structureId, textId, level) '
+        'SELECT 100000 + n, 1, ?, 0 FROM numbers',
+        [aText],
+      );
+      db.execute(
+        'INSERT INTO alt_toc_entry (id, structureId, textId, level) '
+        'VALUES (400000, 3, ?, 0)',
+        [cText],
+      );
+      final bookId =
+          db
+                  .select('SELECT bookId FROM alt_toc_structure WHERE id = 3')
+                  .first['bookId']
+              as int;
+      final expected = await repository.getAltTocEntriesForReference(
+        bookId,
+        'ספר חמש',
+        queryTokens: ['חמש'],
+      );
+      final index = await build(chunk: 1000);
+      repository.attachAltTocIndex(index);
+      expect(
+        await repository.getAltTocEntriesForReference(
+          bookId,
+          'ספר חמש',
+          queryTokens: ['חמש'],
+        ),
+        expected,
+      );
+      expect(index.debugSortedBookCount, 1);
+      expect(
+        await repository.getAltTocEntriesForReference(
+          bookId,
+          'ספר חמש',
+          queryTokens: ['חמש'],
+        ),
+        expected,
+      );
+      expect(repository.debugAltTocCacheEntryCount, 0);
+      expectConsistent(index);
     });
 
     test('שורות צרות (JOIN) ושורות עם תוכן (אינדקס) נותנות אותו קאש', () async {

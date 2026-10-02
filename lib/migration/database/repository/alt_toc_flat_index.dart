@@ -159,6 +159,9 @@ final class AltTocFlatIndex {
 
   final Set<int> _sortedBooks = {};
 
+  @visibleForTesting
+  int get debugSortedBookCount => _sortedBooks.length;
+
   List<String> _ownTokensOf(int i) => _textTokens[_textOf[i]];
 
   Map<String, dynamic> _tocRowOf(int i) => {
@@ -168,26 +171,51 @@ final class AltTocFlatIndex {
     'dbLineId': _lineIds[i],
   };
 
-  /// ממיין פעם אחת; עותק זמני של מזהים זול ממיון חוזר או קאש של רשומות.
   List<int> _entriesOfBook(int bookId) {
     final slot = _bookSlots[bookId];
     if (slot == null) return const [];
-    final entries = Int32List.sublistView(
+    return Int32List.sublistView(
       _bookEntries,
       _bookStarts[slot],
       _bookStarts[slot + 1],
     );
-    if (_sortedBooks.add(bookId)) {
-      final sorted = entries.toList();
-      _sortAltTocForBook(
-        sorted,
-        segmentOf: segmentOf,
-        levelOf: levelOf,
-        idOf: (i) => _ids[i],
-      );
-      entries.setAll(0, sorted);
+  }
+
+  List<int> _orderedMatches(int bookId, List<int> entries, List<int> matches) {
+    if (matches.isEmpty || _sortedBooks.contains(bookId)) return matches;
+    // מסננים אחרי מיון הטווח המלא: מיון התוצאות בלבד משנה סדר שוויונות.
+    final first = entries.first;
+    final span = entries.last - first + 1;
+    final selected = span <= 4 * entries.length ? Uint8List(span) : null;
+    final sparse = selected == null ? matches.toSet() : const <int>{};
+    if (selected != null) {
+      for (final i in matches) {
+        selected[i - first] = 1;
+      }
     }
-    return entries;
+    final sorted = entries.toList();
+    _sortAltTocForBook(
+      sorted,
+      compareKeys: (a, b) {
+        final segment = _segments[a].compareTo(_segments[b]);
+        if (segment != 0) return segment;
+        final level = _levels[a].compareTo(_levels[b]);
+        return level != 0 ? level : _ids[a].compareTo(_ids[b]);
+      },
+      compareSegments: (a, b) => _segments[a].compareTo(_segments[b]),
+    );
+    entries.setAll(0, sorted);
+    _sortedBooks.add(bookId);
+    if (selected == null) {
+      return [
+        for (final i in entries)
+          if (sparse.contains(i)) i,
+      ];
+    }
+    return [
+      for (final i in entries)
+        if (selected[i - first] != 0) i,
+    ];
   }
 }
 

@@ -3083,6 +3083,7 @@ extension BookAcronymRepository on SeforimRepository {
                       queryTokens,
                       ownTokensOf: index._ownTokensOf,
                       pathTokensOf: index.refTokensOf,
+                      refMaskOf: (i) => index.refMasks[i],
                     ).isNotEmpty
                   : _searchAltTocFlat(
                       altCache,
@@ -3625,13 +3626,18 @@ extension BookAcronymRepository on SeforimRepository {
 
     final index = _altTocIndex;
     if (index != null) {
+      final entries = index._entriesOfBook(bookId);
       final matches = _searchAltTocFlat(
-        index._entriesOfBook(bookId),
+        entries,
         queryTokens,
         ownTokensOf: index._ownTokensOf,
         pathTokensOf: index.refTokensOf,
-      );
-      return matches.map(index._tocRowOf).toList();
+        refMaskOf: (i) => index.refMasks[i],
+      ).toList();
+      return index
+          ._orderedMatches(bookId, entries, matches)
+          .map(index._tocRowOf)
+          .toList();
     }
 
     final entries = await _buildAltTocCacheForBook(bookId, bookTitle);
@@ -3647,11 +3653,12 @@ extension BookAcronymRepository on SeforimRepository {
   }
 
   /// הטוקן האחרון חייב להופיע בעלה, כדי שחיפוש הורה לא יציף את כל ילדיו.
-  List<T> _searchAltTocFlat<T>(
+  Iterable<T> _searchAltTocFlat<T>(
     List<T> entries,
     List<String> tokens, {
     required List<String> Function(T) ownTokensOf,
     required List<String> Function(T) pathTokensOf,
+    int Function(T)? refMaskOf,
   }) {
     if (tokens.isEmpty) return const [];
 
@@ -3663,36 +3670,49 @@ extension BookAcronymRepository on SeforimRepository {
       if (cite != null) citePrefix = tokens.sublist(0, tokens.indexOf('דף'));
     }
     final explicitDaf = cite != null && tokens.contains('דף');
-    final lastAlts = hebrewTokenAlternatives(tokens.last);
+    final alternatives = [
+      for (final token in tokens) hebrewTokenAlternatives(token),
+    ];
+    final lastAlts = alternatives.last;
+    // ציון דף עשוי להתאים גם בלי טוקן העמוד בעלה או בנתיב.
+    final lastMask = cite == null && refMaskOf != null
+        ? altTocTokenMask(lastAlts)
+        : 0;
 
     return entries.where((e) {
+      if (lastMask != 0 && (refMaskOf!(e) & lastMask) == 0) return false;
       final ownTokens = ownTokensOf(e);
+      List<String>? checkedPath;
       if (cite != null) {
         final m = matchDafCitation(ownTokens, cite);
         if (m != null) {
           // ערך "דף" — התאמה מיקומית מכריעה
-          return m &&
-              citePrefix.every(
-                (t) => hebrewTokenAlternatives(t).any(pathTokensOf(e).contains),
-              );
+          if (!m || citePrefix.isEmpty) return m;
+          final pathTokens = pathTokensOf(e);
+          for (var at = 0; at < citePrefix.length; at++) {
+            if (!alternatives[at].any(pathTokens.contains)) return false;
+          }
+          return true;
         }
         // תת-כותרת תחת דף ("דף יב." → "ב") שייכת לדף שמעליה.
-        if (explicitDaf &&
-            pathTokensOf(e).contains('דף') &&
-            !nearestDafInPathMatches(pathTokensOf(e), cite)) {
-          return false;
+        if (explicitDaf) {
+          checkedPath = pathTokensOf(e);
+          if (checkedPath.contains('דף') &&
+              !nearestDafInPathMatches(checkedPath, cite)) {
+            return false;
+          }
         }
       }
       // אנטי-הצפה: הטוקן האחרון חייב להתאים לטקסט של הערך עצמו (העלה).
       if (!lastAlts.any((a) => ownTokens.contains(a))) return false;
+      if (tokens.length == 1) return true;
       // כל טוקני השאילתה חייבים להופיע בנתיב המלא (בכל סדר).
-      final pathTokens = pathTokensOf(e);
-      for (final token in tokens) {
-        final alts = hebrewTokenAlternatives(token);
+      final pathTokens = checkedPath ?? pathTokensOf(e);
+      for (final alts in alternatives) {
         if (!alts.any((a) => pathTokens.contains(a))) return false;
       }
       return true;
-    }).toList();
+    });
   }
 
   /// ערכי ה-AltToc של [bookId] (כל המבנים החלופיים יחד), ממוינים לפי segment.
@@ -3757,9 +3777,13 @@ extension BookAcronymRepository on SeforimRepository {
     final entries = [for (final id in rowsById.keys) entryFor(id)!];
     _sortAltTocForBook(
       entries,
-      segmentOf: (entry) => entry.segment,
-      levelOf: (entry) => entry.level,
-      idOf: (entry) => entry.id,
+      compareKeys: (a, b) {
+        final segment = a.segment.compareTo(b.segment);
+        if (segment != 0) return segment;
+        final level = a.level.compareTo(b.level);
+        return level != 0 ? level : a.id.compareTo(b.id);
+      },
+      compareSegments: (a, b) => a.segment.compareTo(b.segment),
     );
     return _putAltTocCache(bookId, entries);
   }
@@ -3817,17 +3841,11 @@ extension BookAcronymRepository on SeforimRepository {
 /// השני אינו יציב, ולכן חייב לרוץ על אותו קלט כדי לשמור על אותו סדר.
 void _sortAltTocForBook<T>(
   List<T> entries, {
-  required int Function(T) segmentOf,
-  required int Function(T) levelOf,
-  required int Function(T) idOf,
+  required int Function(T, T) compareKeys,
+  required int Function(T, T) compareSegments,
 }) {
-  entries.sort((a, b) {
-    final segment = segmentOf(a).compareTo(segmentOf(b));
-    if (segment != 0) return segment;
-    final level = levelOf(a).compareTo(levelOf(b));
-    return level != 0 ? level : idOf(a).compareTo(idOf(b));
-  });
-  entries.sort((a, b) => segmentOf(a).compareTo(segmentOf(b)));
+  entries.sort(compareKeys);
+  entries.sort(compareSegments);
 }
 
 /// מה שחישוב טווח קטע צריך מכותרת: מיקומה ורמתה.
