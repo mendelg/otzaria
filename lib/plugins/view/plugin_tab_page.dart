@@ -25,7 +25,7 @@ import 'package:otzaria/plugins/storage/plugin_system_database.dart';
 import 'package:otzaria/plugins/repository/plugin_registry_repository.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:otzaria/plugins/bridge/plugin_bridge_adapter.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/search/search_repository.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
 import 'package:otzaria/history/bloc/history_bloc.dart';

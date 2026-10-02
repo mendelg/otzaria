@@ -7,7 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import 'package:otzaria/tools/calendar/services/google_calendar_service.dart';
 import 'package:otzaria/tools/calendar/services/notification_service.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_main_panel.dart';
 
 import '../../../test_helpers/memory_cache_provider.dart';

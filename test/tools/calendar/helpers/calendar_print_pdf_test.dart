@@ -7,7 +7,7 @@ import 'package:kosher_dart/kosher_dart.dart';
 import 'package:opentype_shaper/opentype_shaper.dart';
 import 'package:otzaria/tools/calendar/helpers/calendar_print_helpers.dart';
 import 'package:otzaria/tools/calendar/helpers/zmanim_helpers.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:pdf/pdf.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 

@@ -8,7 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:otzaria/tools/calendar/models/zman_definition.dart';
 import 'package:otzaria/tools/calendar/helpers/zmanim_helpers.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/widgets/dialogs/dialogs_exports.dart';
 
 /// תוכן דיאלוג "זמנים נוספים" — טבלה קומפקטית מקובצת לפי קטגוריות של כל

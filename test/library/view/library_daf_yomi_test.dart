@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/library/view/library_daf_yomi.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 
 /// מספק CalendarState קבוע בלי להריץ את אתחול ה-cubit האמיתי.
 class _StubCalendarCubit extends Cubit<CalendarState> implements CalendarCubit {

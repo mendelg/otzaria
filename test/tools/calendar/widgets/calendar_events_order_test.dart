@@ -11,7 +11,7 @@ import 'package:otzaria/theme/app_seed_colors.dart';
 import 'package:otzaria/theme/app_theme_data.dart';
 import 'package:otzaria/tools/calendar/services/google_calendar_service.dart';
 import 'package:otzaria/tools/calendar/services/notification_service.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_day_cell.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_events_panel.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;

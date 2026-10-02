@@ -62,7 +62,7 @@ import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:otzaria/update/my_update_widget.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/widgets/dialogs/ad_popup_dialog.dart';
 import 'package:otzaria/settings/services/safer_mode_guard.dart';
 import 'package:otzaria/main.dart'

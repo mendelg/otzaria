@@ -10,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_side_panel.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_top_bar.dart';
 

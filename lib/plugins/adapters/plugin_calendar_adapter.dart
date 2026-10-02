@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:kosher_dart/kosher_dart.dart';
 import 'package:otzaria/plugins/storage/plugin_system_database.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 
 /// PluginCalendarAdapter
 ///

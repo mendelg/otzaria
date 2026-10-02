@@ -20,7 +20,7 @@ import 'package:otzaria/tabs/models/tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/tabs/models/tool_tab.dart';
 import 'package:otzaria/tabs/tabs_repository.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/utils/navigation/book_open_coordinator.dart';
 import 'package:otzaria/workspaces/bloc/workspace_bloc.dart';
 

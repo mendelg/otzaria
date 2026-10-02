@@ -8,7 +8,7 @@ import 'package:opentype_shaper/opentype_shaper.dart';
 import 'package:otzaria/printing/shaped_text/pdf_shaped_font.dart';
 import 'package:otzaria/printing/shaped_text/shaped_text_layout.dart';
 import 'package:otzaria/printing/shaped_text/shaped_text_widget.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/tools/calendar/helpers/zmanim_helpers.dart';
 import 'package:otzaria/tools/calendar/helpers/calendar_date_helpers.dart';
 

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:otzaria/tools/calendar/utils/calendar_cubit.dart';
+import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_events_panel.dart';
 import 'package:otzaria/tools/calendar/widgets/calendar_times_panel.dart';
 
