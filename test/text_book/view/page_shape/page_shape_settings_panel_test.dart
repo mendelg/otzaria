@@ -180,6 +180,18 @@ void main() {
     expect(find.text('שולחן עבודה'), findsOneWidget);
   });
 
+  testWidgets(
+    'תוויות שמירת המפרשים מציינות שהבחירה לספר הנוכחי (issue #1731)',
+    (tester) async {
+      await pumpPanel(tester, currentWorkspaceId: 'workspace-1');
+
+      // "שולחן עבודה" לבדו נקרא כמו "שולחן עבודה זה" שבבורר התצוגה (כל ספרי
+      // השולחן), בעוד שכאן הבחירה היא לספר הנוכחי בשולחן זה בלבד.
+      expect(find.text('שולחן עבודה'), findsNothing);
+      expect(find.text('ספר'), findsNothing);
+    },
+  );
+
   testWidgets('בלי שולחן פעיל, בורר שמירת המפרשים אינו מוצג', (tester) async {
     await pumpPanel(tester);
 
