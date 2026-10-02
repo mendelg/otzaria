@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'package:bloc/bloc.dart';
 import 'package:otzaria/core/app_paths.dart';
 import 'package:file_picker/file_picker.dart';
@@ -542,11 +543,22 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     await _deleteDbFamily(tempPath);
     try {
       await write(tempPath);
+      await Isolate.run(() => requireReadableDbSchema(tempPath));
       await _deleteDbFamily(finalPath);
       await File(tempPath).rename(finalPath);
     } catch (_) {
       await _deleteDbFamily(tempPath);
       rethrow;
+    }
+  }
+
+  /// מסד בסכמה חדשה מזו שהגרסה קוראת היה מחליף את הספרייה ונכשל בכל ספר.
+  @visibleForTesting
+  static void requireReadableDbSchema(String dbPath) {
+    final schema = const LocalDbVersionReader().read(dbPath).schemaVersion;
+    const readable = DatabaseConstants.readableDbSchemaVersion;
+    if (schema != null && schema > readable) {
+      throw UnsupportedDbSchemaException(schema, readable);
     }
   }
 
@@ -1978,4 +1990,20 @@ class DatabaseReleaseAsset {
 
   /// החלקים, כשה-DB מתפרסם בחלקים מתחת למגבלת GitHub.
   final SplitAsset? split;
+}
+
+/// ה-DB שנבחר חדש מהסכמה שהגרסה הזו קוראת.
+class UnsupportedDbSchemaException implements Exception {
+  final int schemaVersion;
+  final int readableSchemaVersion;
+
+  const UnsupportedDbSchemaException(
+    this.schemaVersion,
+    this.readableSchemaVersion,
+  );
+
+  @override
+  String toString() =>
+      'ספריית הספרים בסכמה $schemaVersion, חדשה מזו שהגרסה הזו קוראת '
+      '($readableSchemaVersion) — נדרש עדכון של התוכנה';
 }
