@@ -964,6 +964,8 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'סנכרן': 'Sync',
     'סנכרן אירועים עם Google Calendar': 'Sync events with Google Calendar',
     'סעיפים שלא ניתן היה לייבא: {items}.': 'Sections that could not be imported: {items}.',
+    'ספר זה': 'This Sefer',
+    'ספר זה בשולחן': 'Workspace Sefer',
     'ספרדי': 'Sephardic',
     'ספרי PDF ייפתחו בתצוגה רגילה': 'PDF seforim will open in the regular view',
     'ספרי PDF ייפתחו בתצוגת ספר': 'PDF seforim will open in Sefer view',

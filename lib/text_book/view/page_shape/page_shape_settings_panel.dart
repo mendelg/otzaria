@@ -7,6 +7,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
+import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:otzaria/text_book/view/page_shape/utils/page_shape_commentary_selection.dart';
 import 'package:otzaria/text_book/view/page_shape/utils/page_shape_settings_manager.dart';
@@ -434,11 +435,15 @@ class _PageShapeSettingsPanelState extends State<PageShapeSettingsPanel> {
 
   List<SegmentOption<CommentatorSaveScope>> get _commentatorSaveScopeOptions {
     return [
-      const SegmentOption(value: CommentatorSaveScope.book, label: 'ספר'),
+      // תמיד לספר הנוכחי — בבורר התצוגה "שולחן עבודה" חל על כל ספרי השולחן.
+      SegmentOption(
+        value: CommentatorSaveScope.book,
+        label: context.settingsText('ספר זה'),
+      ),
       if (_hasWorkspace)
-        const SegmentOption(
+        SegmentOption(
           value: CommentatorSaveScope.workspace,
-          label: 'שולחן עבודה',
+          label: context.settingsText('ספר זה בשולחן'),
         ),
       if (_availableCategories.isNotEmpty)
         const SegmentOption(
