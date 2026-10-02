@@ -291,6 +291,24 @@ PdfViewerSizeDelegateProvider pdfSizeDelegateProviderForLayoutMode(
         );
 }
 
+/// העמוד הנוכחי: בתצוגה רגילה זה שבראש החלון, ובתצוגת ספר הכפולה שבמרכזו —
+/// כפולה נמוכה מהחלון ממורכזת בו, וראש החלון נופל אז בכפולה הקודמת.
+@visibleForTesting
+PdfViewerCalculateCurrentPageNumberFunction pdfCurrentPageCalculatorFor(
+  PdfLayoutMode layoutMode,
+) => layoutMode.isBookView
+    ? (visibleRect, pageRects, controller) => pdfTopmostVisiblePage(
+        Rect.fromLTWH(
+          visibleRect.left,
+          visibleRect.center.dy,
+          visibleRect.width,
+          0,
+        ),
+        pageRects,
+      )
+    : (visibleRect, pageRects, controller) =>
+          pdfTopmostVisiblePage(visibleRect, pageRects);
+
 class PdfBookScreen extends StatefulWidget {
   final PdfBookTab tab;
   final bool isInCombinedView;
@@ -1717,10 +1735,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
               verticalMargin: params.margin * 2,
             )
           : null,
-      calculateCurrentPageNumber: layoutMode.isBookView
-          ? null
-          : (visibleRect, pageRects, controller) =>
-                pdfTopmostVisiblePage(visibleRect, pageRects),
+      calculateCurrentPageNumber: pdfCurrentPageCalculatorFor(layoutMode),
       normalizeMatrix: layoutMode.isBookView
           ? (matrix, viewSize, layout, controller) {
               if (_isPageTurnInProgress) {
