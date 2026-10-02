@@ -181,6 +181,10 @@ class DbReadWorker {
   @visibleForTesting
   static SendPort? bookReadCheckpointPort;
 
+  /// רץ ראשון בכל isolate של ה-worker; בדיקות טוענות בו את libzstd.
+  @visibleForTesting
+  static void Function()? workerSetUpForTesting;
+
   static Iterable<DbReadWorker> get _runningWorkers => _slots
       .map((slot) => slot.instance)
       .whereType<DbReadWorker>()
@@ -232,6 +236,7 @@ class DbReadWorker {
           bookReadCheckpointPort: identical(slot, _books)
               ? bookReadCheckpointPort
               : null,
+          setUpForTesting: workerSetUpForTesting,
         ),
         debugName: slot.name,
         onError: service._errorPort.sendPort,
@@ -588,11 +593,13 @@ class _Bootstrap {
     required this.mainSendPort,
     required this.queryCache,
     this.bookReadCheckpointPort,
+    this.setUpForTesting,
   });
 
   final SendPort mainSendPort;
   final Map<String, Map<String, String>> queryCache;
   final SendPort? bookReadCheckpointPort;
+  final void Function()? setUpForTesting;
 }
 
 class _Suspended implements Exception {
@@ -606,6 +613,7 @@ BookTextKey _bookTextKey(Map<String, Object?> args) =>
 const _maxResolvedBooks = 4096;
 
 void _workerMain(_Bootstrap bootstrap) {
+  bootstrap.setUpForTesting?.call();
   QueryLoader.seedCache(bootstrap.queryCache);
   final receivePort = ReceivePort();
   bootstrap.mainSendPort.send(receivePort.sendPort);

@@ -5,8 +5,12 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:zstandard_native/zstandard_native_bindings.dart';
 
+/// מוגדר ב-CI: libzstd או המילון האמיתי שחסרים מכשילים את הבדיקות במקום לדלג.
+bool get codecTestsRequired =>
+    Platform.environment['OTZARIA_REQUIRE_CODEC_TESTS'] == '1';
+
 /// libzstd לבדיקות: `OTZARIA_ZSTD_LIB`, ה-DLL של בניית Windows, או libzstd
-/// של המערכת (ה-API זהה ל-bindings). null — אין, והבדיקה מדלגת.
+/// של המערכת (ה-API זהה ל-bindings). null — אין, והבדיקה מדלגת (ב-CI נכשלת).
 DynamicLibrary? openZstdForTests() {
   final candidates = [
     ?Platform.environment['OTZARIA_ZSTD_LIB'],
@@ -17,10 +21,34 @@ DynamicLibrary? openZstdForTests() {
     '/opt/homebrew/lib/libzstd.dylib',
     '/usr/local/lib/libzstd.dylib',
   ];
+  final errors = <String>[];
   for (final candidate in candidates) {
     try {
       return DynamicLibrary.open(candidate);
-    } catch (_) {}
+    } catch (error) {
+      errors.add('$candidate: $error');
+    }
+  }
+  if (codecTestsRequired) {
+    throw StateError(
+      'OTZARIA_REQUIRE_CODEC_TESTS=1 אבל libzstd לא נטען:\n${errors.join('\n')}',
+    );
+  }
+  return null;
+}
+
+/// מילון line_content האמיתי של SeforimLibrary (2MB, לא ברפו): מ-
+/// `OTZARIA_LINE_CONTENT_DICT` או `build/test_fixtures/line_content.zdict`, שה-CI מוריד.
+Uint8List? realLineContentDictionary() {
+  final path =
+      Platform.environment['OTZARIA_LINE_CONTENT_DICT'] ??
+      'build/test_fixtures/line_content.zdict';
+  final file = File(path);
+  if (file.existsSync()) return file.readAsBytesSync();
+  if (codecTestsRequired) {
+    throw StateError(
+      'OTZARIA_REQUIRE_CODEC_TESTS=1 אבל המילון חסר ב-$path',
+    );
   }
   return null;
 }
