@@ -66,6 +66,8 @@ abstract class CommonMessages {
   // ── הערות ושמירה ────────────────────────────────────────────────────────
   static const String noteCreated = 'ההערה נוצרה והוצבה בסרגל';
   static const String savedSuccessfully = 'השינויים נשמרו בהצלחה';
+  static const String diagnosticsSaveError =
+      'שמירת האבחון נכשלה. האיסוף הופסק והנתונים נשמרו בזיכרון.';
   static const String cleanupCompleted = 'ניקוי טיוטות הושלם';
 
   // ── טלפון ───────────────────────────────────────────────────────────────
