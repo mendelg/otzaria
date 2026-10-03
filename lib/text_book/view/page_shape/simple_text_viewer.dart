@@ -1,4 +1,5 @@
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
 import 'package:otzaria/text_display/view/copy_as_menu.dart';
@@ -48,7 +49,6 @@ import 'package:otzaria/utils/text/copy_utils.dart';
 import 'package:otzaria/utils/ui/context_menu_utils.dart' show ContextMenuUtils;
 import 'package:otzaria/core/messages/text_book_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
-import 'package:otzaria/utils/text/global_search_helper.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:otzaria/personal_notes/personal_notes_system.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -1856,71 +1856,34 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     final entries = <AppContextMenuEntry>[];
 
     if (widget.isMainText) {
-      // החיפוש עובד תמיד על טקסט ללא ניקוד וטעמים — מנקים פעם אחת לשימוש
-      // בשורת האייקונים, בכיתובי החיפוש ובשאילתת החיפוש בפועל.
-      final rawText = capturedText?.trim() ?? '';
-      final cleanedText = utils.hasNikud(rawText)
-          ? utils.removeVolwels(rawText).trim()
-          : rawText;
-      final hasSelectedText = cleanedText.isNotEmpty;
-      // ציטוט קצר של הבחירה לכיתוב/tooltip: עד maxChars תווים ואז "...".
-      // חיתוך לפי graphemes (לא code units) כדי לא לשבור תווים מורכבים.
-      String quote(int maxChars) {
-        final chars = cleanedText.characters;
-        return chars.length > maxChars
-            ? '${chars.take(maxChars)}...'
-            : cleanedText;
-      }
+      final menuSelection = ReaderMenuSelection(capturedText);
 
       // שורת אייקונים עליונה בסגנון Windows 11 — הרשימה המלאה נשארת מתחת.
       entries.add(
-        AppContextMenuEntry.iconRow([
-          AppContextMenuIconAction(
-            label: 'חיפוש',
-            tooltip: hasSelectedText
-                ? 'חיפוש "${quote(14)}" בכל הספרים'
-                : 'חיפוש בכל הספרים',
-            icon: FluentIcons.library_24_regular,
-            enabled: hasSelectedText,
-            onTap: () =>
-                openGlobalSearch(context, cleanedText, insertAdjacent: true),
-          ),
-          AppContextMenuIconAction(
-            label: 'העתקה',
-            icon: FluentIcons.copy_24_regular,
-            enabled: hasSelectedText,
-            onTap: () => _copyFormattedText(capturedText),
-          ),
-          AppContextMenuIconAction(
-            label: 'הערה',
-            icon: FluentIcons.note_add_24_regular,
-            onTap: () => _createNoteForCurrentLine(index, capturedText),
-          ),
-          if (state.book.id != null)
-            AppContextMenuIconAction(
-              label: 'קישור',
-              icon: OtzariaIcons.link_copy_24_regular,
-              submenuBuilder: () => buildDirectLinkSubmenuActions(
-                bookId: state.book.id!,
-                source: state.book.source,
-                index: index,
-                selectedText: capturedText,
-              ),
-            ),
-        ]),
+        buildReaderIconRow(
+          context: context,
+          selection: menuSelection,
+          book: state.book,
+          paragraphIndex: index,
+          selectedText: capturedText,
+          onCopy: () => _copyFormattedText(capturedText),
+          onAddNote: () => _createNoteForCurrentLine(index, capturedText),
+        ),
       );
       entries.add(_copyAsEntry(state, capturedText));
       entries.add(const AppContextMenuEntry.divider());
 
       entries.add(
         AppContextMenuEntry(
-          label: hasSelectedText ? 'חפש "${quote(10)}" בספר זה' : 'חיפוש',
+          label: menuSelection.hasText
+              ? 'חפש "${menuSelection.quote(10)}" בספר זה'
+              : 'חיפוש',
           icon: OtzariaIcons.book_search_24_regular,
-          enabled: hasSelectedText,
-          onTap: hasSelectedText
+          enabled: menuSelection.hasText,
+          onTap: menuSelection.hasText
               ? () {
                   if (widget.onOpenSearch != null) {
-                    widget.onOpenSearch!(cleanedText);
+                    widget.onOpenSearch!(menuSelection.cleaned);
                   } else {
                     UiSnack.show(TextBookMessages.searchUnavailableInThisView);
                   }

@@ -1,4 +1,5 @@
 import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
+import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/text_display/view/copy_as_menu.dart';
 import 'dart:async';
@@ -17,7 +18,6 @@ import 'package:otzaria/widgets/lists/scroll_position_reanchor.dart';
 import 'package:otzaria/widgets/text/rtl_selection_shortcuts.dart';
 import 'package:otzaria/widgets/text/selection_copy_shortcuts.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
-import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria/widgets/misc/smooth_wheel_scroll.dart';
 import 'package:otzaria/settings/settings_exports.dart';
@@ -46,7 +46,6 @@ import 'package:otzaria/utils/text/copy_utils.dart';
 import 'package:otzaria/core/messages/text_book_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:super_clipboard/super_clipboard.dart';
-import 'package:otzaria/utils/text/global_search_helper.dart';
 import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/widgets/feedback/scrollable_positioned_list_scrollbar.dart';
@@ -1365,65 +1364,28 @@ class _CombinedViewState extends State<CombinedView> {
       ];
     }
 
-    // החיפוש עובד תמיד על טקסט ללא ניקוד וטעמים — מנקים פעם אחת לשימוש
-    // בשורת האייקונים, בכיתובי החיפוש ובשאילתת החיפוש בפועל.
-    final rawText = selectedText?.trim() ?? '';
-    final cleanedText = utils.hasNikud(rawText)
-        ? utils.removeVolwels(rawText).trim()
-        : rawText;
-    final hasSelectedText = cleanedText.isNotEmpty;
-    // ציטוט קצר של הבחירה לכיתוב/tooltip: עד maxChars תווים ואז "...".
-    // חיתוך לפי graphemes (לא code units) כדי לא לשבור תווים מורכבים.
-    String quote(int maxChars) {
-      final chars = cleanedText.characters;
-      return chars.length > maxChars
-          ? '${chars.take(maxChars)}...'
-          : cleanedText;
-    }
+    final menuSelection = ReaderMenuSelection(selectedText);
 
     return [
       // שורת אייקונים עליונה בסגנון Windows 11 — הרשימה המלאה נשארת מתחת.
-      AppContextMenuEntry.iconRow([
-        AppContextMenuIconAction(
-          label: 'חיפוש',
-          tooltip: hasSelectedText
-              ? 'חיפוש "${quote(14)}" בכל הספרים'
-              : 'חיפוש בכל הספרים',
-          icon: FluentIcons.library_24_regular,
-          enabled: hasSelectedText,
-          onTap: () =>
-              openGlobalSearch(context, cleanedText, insertAdjacent: true),
-        ),
-        AppContextMenuIconAction(
-          label: 'העתקה',
-          icon: FluentIcons.copy_24_regular,
-          enabled: hasSelectedText,
-          onTap: () => _copyFormattedText(selectedText),
-        ),
-        AppContextMenuIconAction(
-          label: 'הערה',
-          icon: FluentIcons.note_add_24_regular,
-          onTap: () => _showNoteEditor(selectedText),
-        ),
-        if (state.book.id != null)
-          AppContextMenuIconAction(
-            label: 'קישור',
-            icon: OtzariaIcons.link_copy_24_regular,
-            submenuBuilder: () => buildDirectLinkSubmenuActions(
-              bookId: state.book.id!,
-              source: state.book.source,
-              index: paragraphIndex,
-              selectedText: selectedText,
-            ),
-          ),
-      ]),
+      buildReaderIconRow(
+        context: context,
+        selection: menuSelection,
+        book: state.book,
+        paragraphIndex: paragraphIndex,
+        selectedText: selectedText,
+        onCopy: () => _copyFormattedText(selectedText),
+        onAddNote: () => _showNoteEditor(selectedText),
+      ),
       _copyAsEntry(state, selectedText),
       const AppContextMenuEntry.divider(),
       AppContextMenuEntry(
-        label: hasSelectedText ? 'חפש "${quote(10)}" בספר זה' : 'חיפוש',
+        label: menuSelection.hasText
+            ? 'חפש "${menuSelection.quote(10)}" בספר זה'
+            : 'חיפוש',
         icon: FluentIcons.search_24_regular,
-        onTap: hasSelectedText
-            ? () => widget.openLeftPaneTab(1, searchText: cleanedText)
+        onTap: menuSelection.hasText
+            ? () => widget.openLeftPaneTab(1, searchText: menuSelection.cleaned)
             : () => widget.openLeftPaneTab(1),
       ),
       AppContextMenuEntry(
@@ -1505,7 +1467,7 @@ class _CombinedViewState extends State<CombinedView> {
         state: state,
         lines: widget.data,
         paragraphIndex: paragraphIndex,
-        hasSelection: hasSelectedText,
+        hasSelection: menuSelection.hasText,
         selectedText: selectedText,
         anchor: _selectionAnchor,
         settings: () => _selectionRenderSettings(
