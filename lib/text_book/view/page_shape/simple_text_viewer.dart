@@ -1998,15 +1998,11 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       if (commentaryBookId != null) {
         entries.add(const AppContextMenuEntry.divider());
         entries.add(
-          AppContextMenuEntry(
-            label: 'העתק קישור ישיר',
-            icon: OtzariaIcons.link_24_regular,
-            childrenBuilder: () => buildDirectLinkContextMenuEntries(
-              bookId: commentaryBookId,
-              source: widget.reportBook?.source ?? BookSource.official,
-              index: index,
-              selectedText: capturedText,
-            ),
+          buildCopyDirectLinkEntry(
+            bookId: commentaryBookId,
+            source: widget.reportBook?.source ?? BookSource.official,
+            index: index,
+            selectedText: capturedText,
           ),
         );
       }

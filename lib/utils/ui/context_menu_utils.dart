@@ -28,7 +28,6 @@ import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
 import 'package:otzaria/text_book/view/selection/selected_text_copy.dart';
-import 'package:otzaria_icons/otzaria_icons.dart';
 
 /// תווית פריט תפריט ההקשר לפתיחה ברקע — משותפת לתוצאות חיפוש ולמפרשים.
 const kOpenInNewTabLabel = 'פתח בכרטיסייה חדשה';
@@ -207,15 +206,11 @@ class ContextMenuUtils {
     if (targetBookId != null) {
       entries.add(const AppContextMenuEntry.divider());
       entries.add(
-        AppContextMenuEntry(
-          label: 'העתק קישור ישיר',
-          icon: OtzariaIcons.link_24_regular,
-          childrenBuilder: () => buildDirectLinkContextMenuEntries(
-            bookId: targetBookId,
-            source: link.targetSource,
-            index: link.index2 - 1,
-            selectedText: savedSelectedText,
-          ),
+        buildCopyDirectLinkEntry(
+          bookId: targetBookId,
+          source: link.targetSource,
+          index: link.index2 - 1,
+          selectedText: savedSelectedText,
         ),
       );
     }
