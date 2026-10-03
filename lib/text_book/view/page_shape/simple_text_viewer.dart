@@ -1,4 +1,5 @@
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/text_book/utils/reader_paragraph_copy.dart';
 import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
@@ -45,11 +46,9 @@ import 'package:otzaria/widgets/text/selection_copy_shortcuts.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
-import 'package:otzaria/utils/text/copy_utils.dart';
 import 'package:otzaria/utils/ui/context_menu_utils.dart' show ContextMenuUtils;
 import 'package:otzaria/core/messages/text_book_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 import 'package:otzaria/personal_notes/personal_notes_system.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
@@ -2351,70 +2350,30 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
 
     final settingsState = context.read<SettingsBloc>().state;
     final textBookState = context.read<TextBookBloc>().state;
+    final loaded = textBookState is TextBookLoaded ? textBookState : null;
 
     // ההעתקה משקפת את התצוגה — פרופיל ערוץ ההעתקה של הטור (או פרופיל
     // מפורש מ"העתק כ..." / קיצור דינמי).
-    final processedText = textBookState is TextBookLoaded
-        ? applyTextDisplayProfile(
-            text,
-            profile ??
-                textBookState.displayProfile(
-                  target: _textTarget,
-                  channel: TextChannel.copy,
-                ),
-          )
-        : text;
-
-    final plainText = utils.stripHtmlIfNeeded(processedText);
-
-    String finalText = plainText;
-    String finalHtmlText = processedText;
-
-    if (settingsState.copyWithHeaders != 'none' &&
-        textBookState is TextBookLoaded) {
-      final headerBook = widget.reportBook ?? textBookState.book;
-      final bookName = CopyUtils.extractBookName(headerBook);
-      final currentPath = await CopyUtils.extractCurrentPath(
-        headerBook,
-        index,
-        bookContent: widget.reportBook != null
-            ? widget.content
-            : textBookState.content,
-      );
-
-      finalText = CopyUtils.formatTextWithHeaders(
-        originalText: plainText,
-        copyWithHeaders: settingsState.copyWithHeaders,
-        copyHeaderFormat: settingsState.copyHeaderFormat,
-        bookName: bookName,
-        currentPath: currentPath,
-      );
-
-      finalHtmlText = CopyUtils.formatTextWithHeaders(
-        originalText: processedText,
-        copyWithHeaders: settingsState.copyWithHeaders,
-        copyHeaderFormat: settingsState.copyHeaderFormat,
-        bookName: bookName,
-        currentPath: currentPath,
-      );
-    }
-
-    // שם הוי"ה כבר הוחלף לפי פרופיל ההעתקה — לא להחיל שוב.
-    final copyContent = CopyUtils.applyCopyPreferencesForClipboard(
-      plainText: finalText,
-      htmlText: finalHtmlText,
-      replaceHolyNames: false,
+    await copyParagraphToClipboard(
+      processedText: loaded != null
+          ? applyTextDisplayProfile(
+              text,
+              profile ??
+                  loaded.displayProfile(
+                    target: _textTarget,
+                    channel: TextChannel.copy,
+                  ),
+            )
+          : text,
+      index: index,
+      copyWithHeaders: settingsState.copyWithHeaders,
+      copyHeaderFormat: settingsState.copyHeaderFormat,
+      headerBook: loaded == null ? null : (widget.reportBook ?? loaded.book),
+      bookContent: widget.reportBook != null ? widget.content : loaded?.content,
+      fontFamily: widget.fontFamily ?? settingsState.fontFamily,
+      fontSize: widget.fontSize,
+      plainTextOnly: plainTextOnly,
     );
-
-    await SystemClipboard.instance?.write([
-      CopyUtils.buildClipboardItem(
-        plainText: copyContent.plainText,
-        htmlText: copyContent.htmlText,
-        fontFamily: widget.fontFamily ?? settingsState.fontFamily,
-        fontSize: widget.fontSize,
-        plainTextOnly: plainTextOnly,
-      ),
-    ]);
   }
 
   /// העתקת טקסט מעוצב

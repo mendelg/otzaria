@@ -1,4 +1,5 @@
 import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
+import 'package:otzaria/text_book/utils/reader_paragraph_copy.dart';
 import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/text_display/view/copy_as_menu.dart';
@@ -41,10 +42,8 @@ import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/personal_notes/personal_notes_system.dart';
 import 'package:otzaria/bookmarks/utils/section_bookmark.dart';
-import 'package:otzaria/utils/text/copy_utils.dart';
 import 'package:otzaria/core/messages/text_book_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/widgets/feedback/scrollable_positioned_list_scrollbar.dart';
@@ -1533,62 +1532,23 @@ class _CombinedViewState extends State<CombinedView> {
     final text = widget.data[index];
     if (text.trim().isEmpty) return;
 
-    // קבלת ההגדרות הנוכחיות
     final settingsState = context.read<SettingsBloc>().state;
     final textBookState = context.read<TextBookBloc>().state;
+    final loaded = textBookState is TextBookLoaded ? textBookState : null;
 
-    final processedText = profile != null
-        ? applyTextDisplayProfile(text, profile)
-        : _applyDisplayTextPreferences(text, textBookState);
-
-    final plainText = utils.stripHtmlIfNeeded(processedText);
-
-    String finalText = plainText;
-    String finalHtmlText = processedText;
-
-    // אם צריך להוסיף כותרות
-    if (settingsState.copyWithHeaders != 'none' &&
-        textBookState is TextBookLoaded) {
-      final bookName = CopyUtils.extractBookName(textBookState.book);
-      final currentPath = await CopyUtils.extractCurrentPath(
-        textBookState.book,
-        index,
-        bookContent: textBookState.content,
-      );
-
-      finalText = CopyUtils.formatTextWithHeaders(
-        originalText: plainText,
-        copyWithHeaders: settingsState.copyWithHeaders,
-        copyHeaderFormat: settingsState.copyHeaderFormat,
-        bookName: bookName,
-        currentPath: currentPath,
-      );
-
-      finalHtmlText = CopyUtils.formatTextWithHeaders(
-        originalText: processedText,
-        copyWithHeaders: settingsState.copyWithHeaders,
-        copyHeaderFormat: settingsState.copyHeaderFormat,
-        bookName: bookName,
-        currentPath: currentPath,
-      );
-    }
-
-    // שם הוי"ה כבר הוחלף לפי פרופיל ההעתקה — לא להחיל שוב.
-    final copyContent = CopyUtils.applyCopyPreferencesForClipboard(
-      plainText: finalText,
-      htmlText: finalHtmlText,
-      replaceHolyNames: false,
+    await copyParagraphToClipboard(
+      processedText: profile != null
+          ? applyTextDisplayProfile(text, profile)
+          : _applyDisplayTextPreferences(text, textBookState),
+      index: index,
+      copyWithHeaders: settingsState.copyWithHeaders,
+      copyHeaderFormat: settingsState.copyHeaderFormat,
+      headerBook: loaded?.book,
+      bookContent: loaded?.content,
+      fontFamily: settingsState.fontFamily,
+      fontSize: widget.textSize,
+      plainTextOnly: plainTextOnly,
     );
-
-    await SystemClipboard.instance?.write([
-      CopyUtils.buildClipboardItem(
-        plainText: copyContent.plainText,
-        htmlText: copyContent.htmlText,
-        fontFamily: settingsState.fontFamily,
-        fontSize: widget.textSize,
-        plainTextOnly: plainTextOnly,
-      ),
-    ]);
   }
 
   /// העתקת טקסט מעוצב (HTML) ללוח
