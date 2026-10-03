@@ -861,6 +861,7 @@ class __SegmentedTileState<T> extends State<_SegmentedTile<T>> {
             expandToFillWidth: isNarrow,
             showSelectedIcon: false,
             height: 40,
+            maxLabelLines: 2,
           ),
         );
 
