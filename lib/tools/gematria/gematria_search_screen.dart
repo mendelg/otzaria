@@ -188,6 +188,7 @@ class GematriaSearchScreenState extends State<GematriaSearchScreen>
     final searchId = ++_latestSearchId;
 
     if (searchText.isEmpty) {
+      _clearResults();
       return;
     }
 
@@ -226,6 +227,7 @@ class GematriaSearchScreenState extends State<GematriaSearchScreen>
       final validChars = RegExp(r'^[א-תםןךףץ\s0-9]+$');
       if (!validChars.hasMatch(searchText)) {
         if (mounted) {
+          _clearResults();
           UiSnack.showError(ToolsMessages.gematriaInvalidInput);
         }
         return;
@@ -243,7 +245,10 @@ class GematriaSearchScreenState extends State<GematriaSearchScreen>
       }
     }
 
-    if (targetGimatria == 0) return;
+    if (targetGimatria == 0) {
+      _clearResults();
+      return;
+    }
 
     final activeParams = buildActiveParamLabels(
       gematriaMethod: gematriaMethod,
@@ -283,10 +288,8 @@ class GematriaSearchScreenState extends State<GematriaSearchScreen>
               '$libraryPath/ספרייה/תנך/כתובים',
             ];
 
-      // קריאה אחת: searchInFiles בוחר אוטומטית בין DB (עם bookTitles)
-      // לבין סריקת קבצים על כל folders. זה גם מטפל בכשל באמצע שאילתה ב-DB
-      // (יפול ל-file search על כל התיקיות), וגם לא מפעיל סריקת ספרייה מלאה
-      // כש-DB החזיר 0 תוצאות תקפות.
+      // searchInFiles בוחר בין DB ממוקד לבין fallback על התיקיות;
+      // אין לסרוק את כל הספרייה כשחיפוש תקין החזיר אפס תוצאות.
       final allResults = await GimatriaSearch.searchInFiles(
         searchPaths,
         targetGimatria,
