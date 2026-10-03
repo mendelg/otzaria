@@ -144,7 +144,7 @@ const _kSegBaseWithIcon = 80.0;
 const _kSegCharWidth = 8.0;
 const _kSegGroupPadding = 24.0;
 const _kSegMinWidth = 180.0;
-const _kSegMaxWidth = 400.0;
+const _kSegMaxWidth = 440.0;
 
 double _segGroupWidth(List<SegmentOption<dynamic>> options) {
   final hasIcons = options.any((o) => o.icon != null || o.rtlIcon != null);
@@ -859,6 +859,7 @@ class __SegmentedTileState<T> extends State<_SegmentedTile<T>> {
             currentValue: widget.currentValue,
             onChanged: widget.onChanged,
             expandToFillWidth: isNarrow,
+            showSelectedIcon: false,
             height: 40,
           ),
         );
