@@ -1,7 +1,12 @@
+import 'package:flutter/widgets.dart';
 import 'package:otzaria/book_common/selection/selected_text_restore.dart';
+import 'package:otzaria/plugins/models/plugin_context_menu_item.dart';
+import 'package:otzaria/plugins/utils/highlight_click_resolver.dart';
+import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
 import 'package:otzaria/plugins/services/reader_selection_service.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
+import 'package:otzaria/widgets/misc/app_popup_menu.dart';
 import 'package:otzaria/widgets/smart_text/render_settings.dart';
 
 /// Where the reader's current selection sits in the book's lines.
@@ -92,4 +97,49 @@ Map<String, dynamic> buildReaderSelectionPayload({
     bookSource: PluginBookIdentity.sourceOf(book),
     bookUid: PluginBookIdentity.uidOf(book),
   );
+}
+
+/// Plugin entries for the `reader-highlight` context: a right click on
+/// highlighted text with no active selection. Empty unless the click at
+/// [tapPosition] falls on a highlight in paragraph [paragraphIndex].
+List<AppContextMenuEntry> buildClickedHighlightPluginEntries({
+  required RenderObject? root,
+  required TextBookLoaded state,
+  required String rawText,
+  required int paragraphIndex,
+  required Offset tapPosition,
+  required RenderSettings settings,
+  required List<(String, PluginContextMenuItem)> pluginItems,
+  required BuildContext menuContext,
+}) {
+  if (root == null) return const [];
+  final book = state.book;
+  final clicked = resolveClickedHighlights(
+    root: root,
+    globalPosition: tapPosition,
+    bookId: book.title,
+    bookUid: PluginBookIdentity.uidOf(book),
+    sectionIndex: paragraphIndex,
+    rawText: rawText,
+    settings: settings,
+  );
+  if (clicked.isEmpty) return const [];
+  final entries = buildPluginContextMenuEntries(
+    records: pluginItems,
+    selection: buildClickedHighlightsPayload(
+      highlights: clicked,
+      bookId: book.title,
+      bookTitle: book.title,
+      sectionIndex: paragraphIndex,
+      currentRef: state.currentTitle,
+      bookDbId: book.id,
+      bookType: PluginBookIdentity.typeOf(book),
+      bookSource: PluginBookIdentity.sourceOf(book),
+      bookUid: PluginBookIdentity.uidOf(book),
+    ),
+    context: 'reader-highlight',
+    selectionActionDispatcher: pluginSelectionActionDispatcherOf(menuContext),
+  );
+  if (entries.isEmpty) return const [];
+  return [const AppContextMenuEntry.divider(), ...entries];
 }

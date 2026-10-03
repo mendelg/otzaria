@@ -73,8 +73,6 @@ import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_renderer.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
-import 'package:otzaria/plugins/models/plugin_context_menu_item.dart';
-import 'package:otzaria/plugins/utils/highlight_click_resolver.dart';
 import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
 import 'package:otzaria/text_book/utils/commentators_context_menu.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart'
@@ -1517,8 +1515,10 @@ class _CombinedViewState extends State<CombinedView> {
           settingsState,
         );
         if (!hasSelectedText) {
-          return _buildClickedHighlightEntries(
+          return buildClickedHighlightPluginEntries(
+            root: context.findRenderObject(),
             state: state,
+            rawText: widget.data[paragraphIndex],
             paragraphIndex: paragraphIndex,
             menuContext: menuContext,
             tapPosition: tapPosition,
@@ -1572,48 +1572,6 @@ class _CombinedViewState extends State<CombinedView> {
             );
           }),
     );
-  }
-
-  /// פריטי תוסף להקשר `reader-highlight` — לחיצה ימנית על טקסט מודגש
-  /// כשאין בחירה פעילה. מוצגים רק כשהלחיצה נופלת על הדגשה בפועל.
-  List<AppContextMenuEntry> _buildClickedHighlightEntries({
-    required TextBookLoaded state,
-    required int paragraphIndex,
-    required BuildContext menuContext,
-    required Offset tapPosition,
-    required RenderSettings settings,
-    required List<(String, PluginContextMenuItem)> pluginItems,
-  }) {
-    final root = context.findRenderObject();
-    if (root == null) return const [];
-    final clicked = resolveClickedHighlights(
-      root: root,
-      globalPosition: tapPosition,
-      bookId: state.book.title,
-      bookUid: PluginBookIdentity.uidOf(state.book),
-      sectionIndex: paragraphIndex,
-      rawText: widget.data[paragraphIndex],
-      settings: settings,
-    );
-    if (clicked.isEmpty) return const [];
-    final entries = buildPluginContextMenuEntries(
-      records: pluginItems,
-      selection: buildClickedHighlightsPayload(
-        highlights: clicked,
-        bookId: state.book.title,
-        bookTitle: state.book.title,
-        sectionIndex: paragraphIndex,
-        currentRef: state.currentTitle,
-        bookDbId: state.book.id,
-        bookType: PluginBookIdentity.typeOf(state.book),
-        bookSource: PluginBookIdentity.sourceOf(state.book),
-        bookUid: PluginBookIdentity.uidOf(state.book),
-      ),
-      context: 'reader-highlight',
-      selectionActionDispatcher: pluginSelectionActionDispatcherOf(menuContext),
-    );
-    if (entries.isEmpty) return const [];
-    return [const AppContextMenuEntry.divider(), ...entries];
   }
 
   void _selectParagraphForContextMenu(int paragraphIndex) {
