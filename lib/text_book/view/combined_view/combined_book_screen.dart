@@ -1,4 +1,5 @@
 import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
+import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/text_display/view/copy_as_menu.dart';
 import 'dart:async';
 
@@ -71,7 +72,6 @@ import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_renderer.dart';
-import 'package:otzaria/plugins/services/reader_selection_service.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
 import 'package:otzaria/plugins/models/plugin_context_menu_item.dart';
 import 'package:otzaria/plugins/utils/highlight_click_resolver.dart';
@@ -1526,78 +1526,14 @@ class _CombinedViewState extends State<CombinedView> {
             pluginItems: pluginItems,
           );
         }
-        const selectionService = ReaderSelectionService();
-        final lineStart = _selectionLineStart;
-        final lineEnd = _selectionLineEnd;
-        final Map<String, dynamic> selection;
-        if (lineStart != null &&
-            lineEnd != null &&
-            lineEnd > lineStart &&
-            lineStart >= 0 &&
-            lineEnd < widget.data.length) {
-          // בחירה חוצת-פסקאות: עוגן נפרד לכל פסקה שנכללת בבחירה.
-          final rawTexts = [
-            for (var i = lineStart; i <= lineEnd; i++) widget.data[i],
-          ];
-          final renderedLines = [
-            for (final raw in rawTexts)
-              renderSelectionLine(rawText: raw, settings: selectionSettings),
-          ];
-          selection = selectionService.buildMultiSectionPayload(
-            bookId: state.book.title,
-            bookTitle: state.book.title,
-            firstSectionIndex: lineStart,
-            rawTexts: rawTexts,
-            lineRanges:
-                locateSelectionRangesPerLine(
-                  selectedText: selectedText ?? '',
-                  visibleLines: renderedLines,
-                  startColumnHint: _selectionStartColumn,
-                ) ??
-                const [],
-            settings: selectionSettings,
-            selectedText: selectedText ?? '',
-            currentRef: state.currentTitle,
-            bookDbId: state.book.id,
-            bookType: PluginBookIdentity.typeOf(state.book),
-            bookSource: PluginBookIdentity.sourceOf(state.book),
-          );
-        } else {
-          // העוגן נקבע בפסקה שבה הבחירה מתחילה — לא בפסקת הלחיצה, אחרת
-          // צירוף שחוזר גם בפסקת הלחיצה גונב את העוגן.
-          final sectionIndex =
-              (lineStart != null &&
-                  lineStart >= 0 &&
-                  lineStart < widget.data.length)
-              ? lineStart
-              : paragraphIndex;
-          final renderedLine = renderSelectionLine(
-            rawText: widget.data[sectionIndex],
-            settings: selectionSettings,
-          );
-          final localRange = selectionService.locateRenderedRange(
-            renderedText: renderedLine,
-            selectedText: selectedText ?? '',
-            startHint: sectionIndex == paragraphIndex
-                ? (_selectionPointerColumn ?? _selectionStartColumn)
-                : _selectionStartColumn,
-          );
-          selection = selectionService.buildPayload(
-            bookId: state.book.title,
-            bookTitle: state.book.title,
-            sectionIndex: sectionIndex,
-            rawText: widget.data[sectionIndex],
-            settings: selectionSettings,
-            selectedText: selectedText ?? '',
-            renderedStartUtf16: localRange?.start,
-            renderedEndUtf16: localRange?.end,
-            currentRef: state.currentTitle,
-            bookDbId: state.book.id,
-            bookType: PluginBookIdentity.typeOf(state.book),
-            bookSource: PluginBookIdentity.sourceOf(state.book),
-            bookUid: PluginBookIdentity.uidOf(state.book),
-          );
-        }
+        final selection = buildReaderSelectionPayload(
+          state: state,
+          lines: widget.data,
+          paragraphIndex: paragraphIndex,
+          selectedText: selectedText ?? '',
+          anchor: _selectionAnchor,
+          settings: selectionSettings,
+        );
         return <AppContextMenuEntry>[
           const AppContextMenuEntry.divider(),
           ...buildPluginContextMenuEntries(
@@ -1611,6 +1547,13 @@ class _CombinedViewState extends State<CombinedView> {
       }(),
     ];
   }
+
+  ReaderSelectionAnchor get _selectionAnchor => (
+    lineStart: _selectionLineStart,
+    lineEnd: _selectionLineEnd,
+    startColumn: _selectionStartColumn,
+    pointerColumn: _selectionPointerColumn,
+  );
 
   void _prefetchParagraphCommentators(
     TextBookLoaded state,

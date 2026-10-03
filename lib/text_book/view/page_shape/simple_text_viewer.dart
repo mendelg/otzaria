@@ -1,4 +1,5 @@
 import 'package:otzaria/models/book_source.dart';
+import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
 import 'package:otzaria/text_display/view/copy_as_menu.dart';
 import 'dart:async';
@@ -73,7 +74,6 @@ import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_renderer.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
-import 'package:otzaria/plugins/services/reader_selection_service.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
 import 'package:otzaria/plugins/models/plugin_context_menu_item.dart';
 import 'package:otzaria/plugins/utils/highlight_click_resolver.dart';
@@ -2061,78 +2061,14 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
             ),
           );
         } else {
-          const selectionService = ReaderSelectionService();
-          final lineStart = _selectionLineStart;
-          final lineEnd = _selectionLineEnd;
-          final Map<String, dynamic> selection;
-          if (lineStart != null &&
-              lineEnd != null &&
-              lineEnd > lineStart &&
-              lineStart >= 0 &&
-              lineEnd < widget.content.length) {
-            // בחירה חוצת-פסקאות: עוגן נפרד לכל פסקה שנכללת בבחירה.
-            final rawTexts = [
-              for (var i = lineStart; i <= lineEnd; i++) widget.content[i],
-            ];
-            final renderedLines = [
-              for (final raw in rawTexts)
-                renderSelectionLine(rawText: raw, settings: selectionSettings),
-            ];
-            selection = selectionService.buildMultiSectionPayload(
-              bookId: state.book.title,
-              bookTitle: state.book.title,
-              firstSectionIndex: lineStart,
-              rawTexts: rawTexts,
-              lineRanges:
-                  locateSelectionRangesPerLine(
-                    selectedText: capturedText ?? '',
-                    visibleLines: renderedLines,
-                    startColumnHint: _selectionStartColumn,
-                  ) ??
-                  const [],
-              settings: selectionSettings,
-              selectedText: capturedText ?? '',
-              currentRef: state.currentTitle,
-              bookDbId: state.book.id,
-              bookType: PluginBookIdentity.typeOf(state.book),
-              bookSource: PluginBookIdentity.sourceOf(state.book),
-            );
-          } else {
-            // העוגן נקבע בפסקה שבה הבחירה מתחילה — לא בפסקת הלחיצה, אחרת
-            // צירוף שחוזר גם בפסקת הלחיצה גונב את העוגן.
-            final sectionIndex =
-                (lineStart != null &&
-                    lineStart >= 0 &&
-                    lineStart < widget.content.length)
-                ? lineStart
-                : index;
-            final renderedLine = renderSelectionLine(
-              rawText: widget.content[sectionIndex],
-              settings: selectionSettings,
-            );
-            final localRange = selectionService.locateRenderedRange(
-              renderedText: renderedLine,
-              selectedText: capturedText ?? '',
-              startHint: sectionIndex == index
-                  ? (_selectionPointerColumn ?? _selectionStartColumn)
-                  : _selectionStartColumn,
-            );
-            selection = selectionService.buildPayload(
-              bookId: state.book.title,
-              bookTitle: state.book.title,
-              sectionIndex: sectionIndex,
-              rawText: widget.content[sectionIndex],
-              settings: selectionSettings,
-              selectedText: capturedText ?? '',
-              renderedStartUtf16: localRange?.start,
-              renderedEndUtf16: localRange?.end,
-              currentRef: state.currentTitle,
-              bookDbId: state.book.id,
-              bookType: PluginBookIdentity.typeOf(state.book),
-              bookSource: PluginBookIdentity.sourceOf(state.book),
-              bookUid: PluginBookIdentity.uidOf(state.book),
-            );
-          }
+          final selection = buildReaderSelectionPayload(
+            state: state,
+            lines: widget.content,
+            paragraphIndex: index,
+            selectedText: capturedText ?? '',
+            anchor: _selectionAnchor,
+            settings: selectionSettings,
+          );
           entries.add(const AppContextMenuEntry.divider());
           entries.addAll(
             buildPluginContextMenuEntries(
@@ -2168,6 +2104,13 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
 
     return _normalizeEntries(entries);
   }
+
+  ReaderSelectionAnchor get _selectionAnchor => (
+    lineStart: _selectionLineStart,
+    lineEnd: _selectionLineEnd,
+    startColumn: _selectionStartColumn,
+    pointerColumn: _selectionPointerColumn,
+  );
 
   /// פריטי תוסף להקשר `reader-highlight` — לחיצה ימנית על טקסט מודגש
   /// כשאין בחירה פעילה. מוצגים רק כשהלחיצה נופלת על הדגשה בפועל.
