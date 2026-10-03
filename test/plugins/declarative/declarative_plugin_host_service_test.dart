@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/books.dart';
@@ -7,6 +9,7 @@ import 'package:otzaria/plugins/declarative/services/declarative_plugin_host_ser
 import 'package:otzaria/plugins/declarative/services/declarative_program_executor.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
 import 'package:otzaria/plugins/models/plugin_manifest.dart';
+import 'package:otzaria/plugins/services/plugin_network_gate.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
 import 'package:otzaria/tabs/models/external_book_matches.dart';
 
@@ -345,6 +348,151 @@ void main() {
       expect(fixture.errors, isEmpty);
       expect(fixture.access.opened.single, {'id': 42});
     });
+
+    test(r'$storage נקרא מאחסון התוסף בזמן הלחיצה', () async {
+      final fixture = _Fixture(
+        declaredPermissions: const [
+          'app.startup_contributions',
+          'reader.context_menu',
+          'network.localhost',
+        ],
+      );
+      addTearDown(fixture.dispose);
+      fixture.permissions.add('network.localhost');
+      fixture.storageValues['servicePort'] = 39701;
+
+      await fixture.host.dispatchSelectionAction(fixture.plugin.pluginId, {
+        'type': 'localService.post',
+        'args': {
+          'port': {r'$storage': 'servicePort'},
+          'path': '/text/search',
+          'body': {
+            'text': {r'$selection': 'selectedText'},
+          },
+        },
+      }, payload);
+
+      expect(fixture.errors, isEmpty);
+      expect(fixture.storageReads, ['servicePort']);
+      final request = fixture.localService.requests.single;
+      expect(request.uri.toString(), 'http://127.0.0.1:39701/text/search');
+      expect(jsonDecode(request.body), {'text': 'טקסט מסומן'});
+    });
+  });
+
+  group('dispatchLibraryBookAction', () {
+    const book = <String, dynamic>{
+      'provider': 'mylib',
+      'id': 7008,
+      'title': 'אבני נזר',
+    };
+    final openAction = <String, dynamic>{
+      'type': 'localService.post',
+      'args': {
+        'port': {r'$storage': 'servicePort'},
+        'path': '/book/open',
+        'body': {
+          'id': {r'$book': 'id'},
+          'title': {r'$book': 'title'},
+        },
+        'unavailableMessage': 'השירות אינו פועל',
+      },
+    };
+
+    _Fixture fixtureWithService() {
+      final fixture = _Fixture(
+        declaredPermissions: const [
+          'app.startup_contributions',
+          'library.books.provide',
+          'network.localhost',
+        ],
+      );
+      fixture.permissions.add('network.localhost');
+      fixture.storageValues['servicePort'] = 39700;
+      return fixture;
+    }
+
+    test('פונה לשירות המקומי עם זהות הספר, בלי מנוע', () async {
+      final fixture = fixtureWithService();
+      addTearDown(fixture.dispose);
+      fixture.localService.reply = const DeclarativeLocalServiceResponse(
+        status: 200,
+        body: '{"message":"אבני נזר נפתח בבר אילן"}',
+      );
+
+      await fixture.host.dispatchLibraryBookAction(
+        fixture.plugin.pluginId,
+        openAction,
+        book,
+      );
+
+      expect(fixture.errors, isEmpty);
+      final request = fixture.localService.requests.single;
+      expect(request.uri.toString(), 'http://127.0.0.1:39700/book/open');
+      expect(jsonDecode(request.body), {'id': 7008, 'title': 'אבני נזר'});
+      expect(fixture.snacks.shown.single, (
+        message: 'אבני נזר נפתח בבר אילן',
+        severity: 'success',
+        pluginName: 'Host',
+      ));
+    });
+
+    test(r'$selection אינו זמין בספר ספק', () async {
+      final fixture = fixtureWithService();
+      addTearDown(fixture.dispose);
+
+      await fixture.host.dispatchLibraryBookAction(fixture.plugin.pluginId, {
+        'type': 'localService.post',
+        'args': {
+          'port': 39700,
+          'path': '/x',
+          'body': {
+            'text': {r'$selection': 'selectedText'},
+          },
+        },
+      }, book);
+
+      expect(fixture.localService.requests, isEmpty);
+      expect(
+        fixture.errors.single,
+        isA<DeclarativeProgramException>().having(
+          (error) => error.code,
+          'code',
+          'declarative.invalid_reference',
+        ),
+      );
+    });
+
+    test('פורט שלא נשמר עדיין: הודעת "אינו פועל", בלי בקשה', () async {
+      final fixture = fixtureWithService();
+      addTearDown(fixture.dispose);
+      fixture.storageValues.remove('servicePort');
+
+      await fixture.host.dispatchLibraryBookAction(
+        fixture.plugin.pluginId,
+        openAction,
+        book,
+      );
+
+      expect(fixture.localService.requests, isEmpty);
+      expect(fixture.errors, isEmpty);
+      expect(fixture.snacks.shown.single.message, 'השירות אינו פועל');
+    });
+
+    test('הרשאת network.localhost שבוטלה חוסמת את הבקשה', () async {
+      final fixture = fixtureWithService();
+      addTearDown(fixture.dispose);
+      fixture.permissions.remove('network.localhost');
+
+      await fixture.host.dispatchLibraryBookAction(
+        fixture.plugin.pluginId,
+        openAction,
+        book,
+      );
+
+      expect(fixture.localService.requests, isEmpty);
+      expect(fixture.errors, hasLength(1));
+    });
   });
 }
 
@@ -358,6 +506,10 @@ class _Fixture {
   final errors = <Object>[];
   final _BookAccess access = _BookAccess();
   final _StorageWriter storage = _StorageWriter();
+  final storageValues = <String, Object?>{};
+  final storageReads = <String>[];
+  final localService = _LocalServiceClient();
+  final snacks = _SnackPresenter();
   final settingsRevision = ValueNotifier<int>(0);
   late final InstalledPlugin plugin;
   late final DeclarativePluginHostService host;
@@ -381,6 +533,13 @@ class _Fixture {
       bookOpener: access,
       toolbarRegistry: toolbar,
       storageWriter: storage,
+      storageReader: _StorageReader((key) {
+        storageReads.add(key);
+        return storageValues[key];
+      }),
+      localServiceClient: localService,
+      networkGate: (_, _) async => PluginNetworkDecision.allowed,
+      snackPresenter: snacks,
       settingsRevision: settingsRevision,
       onError: (_, error, _) => errors.add(error),
     );
@@ -390,6 +549,48 @@ class _Fixture {
     host.dispose();
     settingsRevision.dispose();
   }
+}
+
+class _StorageReader implements DeclarativeStorageReader {
+  final Object? Function(String key) read;
+
+  _StorageReader(this.read);
+
+  @override
+  Future<Object?> get(String pluginId, String key) async => read(key);
+}
+
+class _LocalServiceClient implements DeclarativeLocalServiceClient {
+  DeclarativeLocalServiceResponse reply = const DeclarativeLocalServiceResponse(
+    status: 204,
+    body: '',
+  );
+  final requests = <({Uri uri, String body})>[];
+
+  @override
+  Future<DeclarativeLocalServiceResponse> post(
+    Uri uri,
+    String jsonBody, {
+    required Duration timeout,
+  }) async {
+    requests.add((uri: uri, body: jsonBody));
+    return reply;
+  }
+}
+
+class _SnackPresenter implements DeclarativeSnackPresenter {
+  final shown = <({String message, String severity, String pluginName})>[];
+
+  @override
+  void show(String message, String severity, {required String pluginName}) {
+    shown.add((message: message, severity: severity, pluginName: pluginName));
+  }
+
+  @override
+  void showPending(String message, {required String pluginName}) {}
+
+  @override
+  void hidePending() {}
 }
 
 class _StorageWriter implements DeclarativeStorageWriter {

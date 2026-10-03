@@ -1,12 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:http/http.dart' as http;
 import 'package:otzaria/core/messages/plugin_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
+import 'package:otzaria/plugins/declarative/compiler/declarative_action_compiler.dart';
 import 'package:otzaria/plugins/declarative/models/declarative_program.dart';
 import 'package:otzaria/plugins/models/installed_plugin.dart';
 import 'package:otzaria/plugins/plugin_constants.dart';
 import 'package:otzaria/plugins/repository/plugin_registry_repository.dart';
 import 'package:otzaria/plugins/services/plugin_condition_evaluator.dart';
+import 'package:otzaria/plugins/services/plugin_network_fetch_service.dart';
+import 'package:otzaria/plugins/services/plugin_network_gate.dart';
 import 'package:otzaria/tabs/models/external_book_matches.dart';
 
 abstract interface class DeclarativeBookOpener {
@@ -32,6 +38,12 @@ abstract interface class DeclarativeSearchOpener {
 /// הצגת הודעת מערכת. המימוש הדיפולטי הוא UiSnack.
 abstract interface class DeclarativeSnackPresenter {
   void show(String message, String severity, {required String pluginName});
+
+  /// הודעת המתנה שנשארת עד ההודעה הבאה או עד [hidePending].
+  void showPending(String message, {required String pluginName});
+
+  /// מסתיר את ההודעה הנוכחית.
+  void hidePending();
 }
 
 class UiSnackPresenter implements DeclarativeSnackPresenter {
@@ -49,6 +61,15 @@ class UiSnackPresenter implements DeclarativeSnackPresenter {
         UiSnack.show(text);
     }
   }
+
+  @override
+  void showPending(String message, {required String pluginName}) =>
+      UiSnack.showChecking(
+        PluginMessages.declarativeSnack(message, pluginName),
+      );
+
+  @override
+  void hidePending() => UiSnack.hide();
 }
 
 /// כתיבה לאחסון ה-KV של תוסף מפעולה דקלרטיבית — בלי מנוע JS.
@@ -56,6 +77,35 @@ abstract interface class DeclarativeStorageWriter {
   Future<void> set(String pluginId, String key, Object? value);
 
   Future<void> remove(String pluginId, String key);
+}
+
+/// קריאה מאחסון ה-KV של תוסף בזמן לחיצה (`$storage`) — בלי מנוע JS.
+abstract interface class DeclarativeStorageReader {
+  /// הערך המפוענח, או `null` כשהמפתח אינו קיים.
+  Future<Object?> get(String pluginId, String key);
+}
+
+/// אותו מחסן ואותו namespace של `storage.get` בגשר ובתכניות.
+class PluginKvStorageReader implements DeclarativeStorageReader {
+  final PluginRegistryRepository _repository;
+
+  PluginKvStorageReader({PluginRegistryRepository? repository})
+    : _repository = repository ?? PluginRegistryRepository();
+
+  @override
+  Future<Object?> get(String pluginId, String key) async {
+    final raw = await _repository.getKV(
+      pluginId,
+      kDefaultStorageNamespace,
+      key,
+    );
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw);
+    } on FormatException {
+      return raw;
+    }
+  }
 }
 
 /// המימוש בפועל: אותו מחסן ואותו namespace של `storage.set` בגשר, כולל
@@ -88,12 +138,113 @@ class PluginKvStorageWriter implements DeclarativeStorageWriter {
   }
 }
 
+/// תשובת שירות מקומי ל-`localService.post`.
+class DeclarativeLocalServiceResponse {
+  final int status;
+
+  /// הגוף כטקסט, עד [PluginLocalServiceClient.maxResponseLength] תווים.
+  final String body;
+
+  const DeclarativeLocalServiceResponse({
+    required this.status,
+    required this.body,
+  });
+
+  bool get ok => status >= 200 && status < 300;
+}
+
+/// שליחת בקשת `POST` לשירות מקומי. בדיקת ההרשאה וה-allowlist אצל המבצע.
+/// שגיאת חיבור או זמן המתנה שעבר נזרקות (`SocketException`,
+/// `http.ClientException`, `TimeoutException`), ותשובה שאינה UTF-8 תקין
+/// נזרקת כ-`FormatException`.
+abstract interface class DeclarativeLocalServiceClient {
+  Future<DeclarativeLocalServiceResponse> post(
+    Uri uri,
+    String jsonBody, {
+    required Duration timeout,
+  });
+}
+
+/// המימוש בפועל: אותו שירות הבקשות של `network.fetchStream`.
+class PluginLocalServiceClient implements DeclarativeLocalServiceClient {
+  /// הקריאה נעצרת אחרי כך וכך תווים: התשובה נועדה להודעה קצרה בלבד.
+  static const int maxResponseLength = 64 * 1024;
+
+  final PluginNetworkFetchService _fetchService;
+
+  PluginLocalServiceClient({PluginNetworkFetchService? fetchService})
+    : _fetchService = fetchService ?? PluginNetworkFetchService();
+
+  @override
+  Future<DeclarativeLocalServiceResponse> post(
+    Uri uri,
+    String jsonBody, {
+    required Duration timeout,
+  }) async {
+    final abort = Completer<void>();
+    final deadline = Timer(timeout, () {
+      if (!abort.isCompleted) abort.complete();
+    });
+    try {
+      final response = await _fetchService.fetchStream(
+        uri,
+        method: 'POST',
+        headers: const {
+          'accept': 'application/json',
+          'content-type': 'application/json; charset=utf-8',
+        },
+        body: jsonBody,
+        abortTrigger: abort.future,
+      );
+      final body = StringBuffer();
+      await for (final chunk in response.body) {
+        body.write(chunk);
+        if (body.length > maxResponseLength) break;
+      }
+      return DeclarativeLocalServiceResponse(
+        status: response.status,
+        body: body.toString(),
+      );
+    } on http.RequestAbortedException {
+      throw TimeoutException('Local service request timed out', timeout);
+    } finally {
+      deadline.cancel();
+    }
+  }
+}
+
+/// לקוח אחד לכל התהליך: כל לחיצה הייתה פותחת `http.Client` חדש שאינו
+/// נסגר לעולם.
+final DeclarativeLocalServiceClient _sharedLocalServiceClient =
+    PluginLocalServiceClient();
+
+/// בקשות `localService.post` שעוד רצות (`<plugin> <uri> <body>`): לחיצה
+/// כפולה אינה שולחת את אותה בקשה פעמיים.
+final Set<String> _localServiceInFlight = {};
+
+/// האם התוסף רשאי לפנות ל-[uri]: אותה בדיקה של `network.fetchStream`
+/// (`network.enabled`, הרשאה מוענקת ו-allowlist).
+typedef DeclarativeNetworkGate =
+    Future<PluginNetworkDecision> Function(Uri uri, InstalledPlugin plugin);
+
+Future<PluginNetworkDecision> _defaultNetworkGate(
+  Uri uri,
+  InstalledPlugin plugin,
+) => evaluatePluginNetworkAccess(
+  uri: uri,
+  pluginId: plugin.pluginId,
+  manifest: plugin.manifest,
+  registry: PluginRegistryRepository(),
+);
+
 class DeclarativeHostActionExecutor {
   final DeclarativeBookOpener bookOpener;
   final DeclarativeStorageWriter? storageWriter;
   final DeclarativeReaderScroller? readerScroller;
   final DeclarativeSearchOpener? searchOpener;
   final DeclarativeSnackPresenter snackPresenter;
+  final DeclarativeLocalServiceClient? localServiceClient;
+  final DeclarativeNetworkGate? networkGate;
 
   const DeclarativeHostActionExecutor({
     required this.bookOpener,
@@ -101,6 +252,8 @@ class DeclarativeHostActionExecutor {
     this.readerScroller,
     this.searchOpener,
     this.snackPresenter = const UiSnackPresenter(),
+    this.localServiceClient,
+    this.networkGate,
   });
 
   Future<bool> execute({
@@ -194,11 +347,144 @@ class DeclarativeHostActionExecutor {
           pluginName: plugin.name,
         );
         return true;
+      case 'localService.post':
+        return _postToLocalService(action, plugin);
       default:
         throw DeclarativeProgramException(
           'declarative.unknown_command',
           'Unknown Host action "${action.type}"',
         );
     }
+  }
+
+  /// שולח את הבקשה ומציג למשתמש את התוצאה. הלחיצה היא של המשתמש, ולכן כל
+  /// סוף מסתיים בהודעה: שירות שאינו עונה, פורט שעוד לא נשמר או גישה חסומה
+  /// אינם תקלה של התוכנה — מוצגת הודעה ומוחזר `false`, בלי חריגה.
+  Future<bool> _postToLocalService(
+    CompiledDeclarativeAction action,
+    InstalledPlugin plugin,
+  ) async {
+    final args = action.args;
+    var settled = false;
+    void show(String message, String severity) {
+      settled = true;
+      snackPresenter.show(message, severity, pluginName: plugin.name);
+    }
+
+    bool unavailable() {
+      show(
+        args['unavailableMessage'] as String? ??
+            PluginMessages.localServiceUnavailable,
+        'error',
+      );
+      return false;
+    }
+
+    // `$storage` ריק: השירות עוד לא שמר את הפורט שלו, כלומר לא עלה.
+    final port = args['port'] as int?;
+    if (port == null) return unavailable();
+    final uri = Uri(
+      scheme: 'http',
+      host: '127.0.0.1',
+      port: port,
+      path: args['path'] as String,
+    );
+    final decision = await (networkGate ?? _defaultNetworkGate)(uri, plugin);
+    if (decision != PluginNetworkDecision.allowed) {
+      show(PluginMessages.localServiceBlocked, 'error');
+      return false;
+    }
+    final pending = args['pendingMessage'] as String?;
+    if (pending != null) {
+      snackPresenter.showPending(pending, pluginName: plugin.name);
+    }
+    final body = jsonEncode(args['body'] ?? const <String, Object?>{});
+    final requestKey = '${plugin.pluginId} $uri $body';
+    if (!_localServiceInFlight.add(requestKey)) return false;
+    try {
+      final DeclarativeLocalServiceResponse response;
+      try {
+        response = await (localServiceClient ?? _sharedLocalServiceClient).post(
+          uri,
+          body,
+          timeout: switch (args['timeoutMs']) {
+            final int ms => Duration(milliseconds: ms),
+            _ => PluginNetworkFetchService.defaultTimeout,
+          },
+        );
+      } on SocketException {
+        return unavailable();
+      } on http.ClientException {
+        return unavailable();
+      } on TimeoutException {
+        return unavailable();
+      } on FormatException {
+        show(PluginMessages.localServiceFailed, 'error');
+        return false;
+      } catch (_) {
+        // גם חריג לא צפוי מסתיים בהודעה למשתמש; הפרטים ממשיכים ל-onError.
+        show(PluginMessages.localServiceFailed, 'error');
+        rethrow;
+      }
+      final reply = _LocalServiceReply.parse(response.body);
+      if (reply.message case final message?) {
+        show(message, reply.severity ?? (response.ok ? 'success' : 'error'));
+      } else if (!response.ok) {
+        show(PluginMessages.localServiceFailed, 'error');
+      }
+      return response.ok;
+    } finally {
+      _localServiceInFlight.remove(requestKey);
+      // הודעת ההמתנה אינה נשארת אחרי תשובה שקטה או חריגה לא צפויה.
+      if (pending != null && !settled) snackPresenter.hidePending();
+    }
+  }
+}
+
+/// `{ "message": "...", "severity"?: "info" | "success" | "error" }` בתשובת
+/// השירות. כל צורה אחרת — בלי הודעה.
+class _LocalServiceReply {
+  final String? message;
+  final String? severity;
+
+  const _LocalServiceReply(this.message, this.severity);
+
+  static final RegExp _controlChars = RegExp(r'[\u0000-\u001F\u007F]');
+
+  /// סימני כיווניות אינם מוצגים, אבל יכולים להפוך את סדר ההודעה ואת ייחוסה
+  /// לתוסף.
+  static final RegExp _bidiControls = RegExp(
+    r'[\u200E\u200F\u202A-\u202E\u2066-\u2069]',
+  );
+
+  factory _LocalServiceReply.parse(String body) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(body);
+    } on FormatException {
+      return const _LocalServiceReply(null, null);
+    }
+    if (decoded is! Map) return const _LocalServiceReply(null, null);
+    final rawMessage = decoded['message'];
+    final message = rawMessage is String
+        ? rawMessage
+              .replaceAll(_controlChars, ' ')
+              .replaceAll(_bidiControls, '')
+              .trim()
+        : '';
+    final severity = decoded['severity'];
+    return _LocalServiceReply(
+      message.isEmpty ? null : _shorten(message),
+      DeclarativeActionCompiler.snackSeverities.contains(severity)
+          ? severity as String
+          : null,
+    );
+  }
+
+  static String _shorten(String message) {
+    const max = DeclarativeActionCompiler.maxSnackLength;
+    return message.length <= max
+        ? message
+        : '${message.substring(0, max - 1)}…';
   }
 }
