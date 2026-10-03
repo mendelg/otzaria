@@ -3255,7 +3255,6 @@ class _PluginReportEditFieldsState extends State<_PluginReportEditFields> {
       children: [
         AppSegmentedControl<String>(
           expandToFillWidth: true,
-          showSelectedIcon: false,
           options: [
             for (final type in PluginReportService.reportTypes)
               SegmentOption(value: type, label: widget.typeLabel(type)),
