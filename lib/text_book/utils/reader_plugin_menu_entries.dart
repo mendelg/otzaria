@@ -4,6 +4,7 @@ import 'package:otzaria/plugins/models/plugin_context_menu_item.dart';
 import 'package:otzaria/plugins/utils/highlight_click_resolver.dart';
 import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
+import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/reader_selection_service.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/widgets/misc/app_popup_menu.dart';
@@ -142,4 +143,60 @@ List<AppContextMenuEntry> buildClickedHighlightPluginEntries({
   );
   if (entries.isEmpty) return const [];
   return [const AppContextMenuEntry.divider(), ...entries];
+}
+
+/// The plugin section of a reader's main text context menu, for a right
+/// click on paragraph [paragraphIndex] of [lines].
+///
+/// With a selection it holds the items of [selectionContext]; without one,
+/// the items of a highlight under the click. [settings] is only computed when
+/// there are plugin items to show.
+List<AppContextMenuEntry> buildReaderPluginMenuEntries({
+  required RenderObject? root,
+  required TextBookLoaded state,
+  required List<String> lines,
+  required int paragraphIndex,
+  required bool hasSelection,
+  required String? selectedText,
+  required ReaderSelectionAnchor anchor,
+  required RenderSettings Function() settings,
+  required Offset tapPosition,
+  required BuildContext menuContext,
+  String selectionContext = 'reader-selection',
+  List<(String, PluginContextMenuItem)>? pluginItems,
+}) {
+  final items = pluginItems ?? ContextMenuRegistry.instance.getAll();
+  if (items.isEmpty || paragraphIndex < 0 || paragraphIndex >= lines.length) {
+    return const [];
+  }
+  final renderSettings = settings();
+  if (!hasSelection) {
+    return buildClickedHighlightPluginEntries(
+      root: root,
+      state: state,
+      rawText: lines[paragraphIndex],
+      paragraphIndex: paragraphIndex,
+      tapPosition: tapPosition,
+      settings: renderSettings,
+      pluginItems: items,
+      menuContext: menuContext,
+    );
+  }
+  final selection = buildReaderSelectionPayload(
+    state: state,
+    lines: lines,
+    paragraphIndex: paragraphIndex,
+    selectedText: selectedText ?? '',
+    anchor: anchor,
+    settings: renderSettings,
+  );
+  return [
+    const AppContextMenuEntry.divider(),
+    ...buildPluginContextMenuEntries(
+      records: items,
+      selection: selection,
+      context: selectionContext,
+      selectionActionDispatcher: pluginSelectionActionDispatcherOf(menuContext),
+    ),
+  ];
 }

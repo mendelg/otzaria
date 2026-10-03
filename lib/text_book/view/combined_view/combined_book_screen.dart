@@ -67,13 +67,11 @@ import 'package:otzaria/tools/dictionary/dictionary_context_menu_entries.dart';
 import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
 import 'package:otzaria/tools/dictionary/widgets/laaz_commentary_subblock.dart';
 import 'package:otzaria/utils/text/word_at_position.dart';
-import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_renderer.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
-import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
 import 'package:otzaria/text_book/utils/commentators_context_menu.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart'
     as inline_notes;
@@ -1502,49 +1500,21 @@ class _CombinedViewState extends State<CombinedView> {
         enabled: paragraphIndex >= 0 && paragraphIndex < widget.data.length,
         onTap: () => _copyParagraphByIndex(paragraphIndex),
       ),
-      // פריטי תפריט מפלאגינים
-      ...() {
-        final pluginItems = ContextMenuRegistry.instance.getAll();
-        if (pluginItems.isEmpty) return const <AppContextMenuEntry>[];
-        if (paragraphIndex < 0 || paragraphIndex >= widget.data.length) {
-          return const <AppContextMenuEntry>[];
-        }
-        final settingsState = menuContext.read<SettingsBloc>().state;
-        final selectionSettings = _selectionRenderSettings(
+      ...buildReaderPluginMenuEntries(
+        root: context.findRenderObject(),
+        state: state,
+        lines: widget.data,
+        paragraphIndex: paragraphIndex,
+        hasSelection: hasSelectedText,
+        selectedText: selectedText,
+        anchor: _selectionAnchor,
+        settings: () => _selectionRenderSettings(
           state,
-          settingsState,
-        );
-        if (!hasSelectedText) {
-          return buildClickedHighlightPluginEntries(
-            root: context.findRenderObject(),
-            state: state,
-            rawText: widget.data[paragraphIndex],
-            paragraphIndex: paragraphIndex,
-            menuContext: menuContext,
-            tapPosition: tapPosition,
-            settings: selectionSettings,
-            pluginItems: pluginItems,
-          );
-        }
-        final selection = buildReaderSelectionPayload(
-          state: state,
-          lines: widget.data,
-          paragraphIndex: paragraphIndex,
-          selectedText: selectedText ?? '',
-          anchor: _selectionAnchor,
-          settings: selectionSettings,
-        );
-        return <AppContextMenuEntry>[
-          const AppContextMenuEntry.divider(),
-          ...buildPluginContextMenuEntries(
-            records: pluginItems,
-            selection: selection,
-            selectionActionDispatcher: pluginSelectionActionDispatcherOf(
-              menuContext,
-            ),
-          ),
-        ];
-      }(),
+          menuContext.read<SettingsBloc>().state,
+        ),
+        tapPosition: tapPosition,
+        menuContext: menuContext,
+      ),
     ];
   }
 

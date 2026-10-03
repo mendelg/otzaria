@@ -69,13 +69,11 @@ import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/tools/dictionary/dictionary_context_menu_entries.dart';
 import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
 import 'package:otzaria/utils/text/word_at_position.dart';
-import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_renderer.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/models/plugin_book_identity.dart';
-import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
 import 'package:otzaria/text_book/view/selection/selection_sync_controller.dart';
 import 'package:otzaria/text_book/utils/commentators_context_menu.dart';
 import 'package:otzaria/text_book/utils/note_inline_render.dart';
@@ -2038,50 +2036,24 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     // העתק קישור ישיר — בטקסט ראשי מוצג כאייקון בשורה העליונה; במפרשים
     // (ללא שורת אייקונים) נשאר כתת-תפריט ברשימה לפי book_id של widget.reportBook.
     if (widget.isMainText) {
-      final pluginItems = ContextMenuRegistry.instance.getAll();
-      final hasPluginSelection = capturedText?.trim().isNotEmpty == true;
-      if (pluginItems.isNotEmpty &&
-          index >= 0 &&
-          index < widget.content.length) {
-        final selectionSettings = _selectionRenderSettings(
+      entries.addAll(
+        buildReaderPluginMenuEntries(
+          root: context.findRenderObject(),
           state: state,
-          settingsState: menuContext.read<SettingsBloc>().state,
-        );
-        if (!hasPluginSelection) {
-          entries.addAll(
-            buildClickedHighlightPluginEntries(
-              root: context.findRenderObject(),
-              state: state,
-              rawText: widget.content[index],
-              paragraphIndex: index,
-              menuContext: menuContext,
-              tapPosition: tapPosition,
-              settings: selectionSettings,
-              pluginItems: pluginItems,
-            ),
-          );
-        } else {
-          final selection = buildReaderSelectionPayload(
+          lines: widget.content,
+          paragraphIndex: index,
+          hasSelection: capturedText?.trim().isNotEmpty == true,
+          selectedText: capturedText,
+          anchor: _selectionAnchor,
+          settings: () => _selectionRenderSettings(
             state: state,
-            lines: widget.content,
-            paragraphIndex: index,
-            selectedText: capturedText ?? '',
-            anchor: _selectionAnchor,
-            settings: selectionSettings,
-          );
-          entries.add(const AppContextMenuEntry.divider());
-          entries.addAll(
-            buildPluginContextMenuEntries(
-              records: pluginItems,
-              selection: selection,
-              context: 'reader-page-shape-selection',
-              selectionActionDispatcher: pluginSelectionActionDispatcherOf(
-                menuContext,
-              ),
-            ),
-          );
-        }
-      }
+            settingsState: menuContext.read<SettingsBloc>().state,
+          ),
+          tapPosition: tapPosition,
+          menuContext: menuContext,
+          selectionContext: 'reader-page-shape-selection',
+        ),
+      );
     } else {
       // רק book_id של המפרש; categoryId אינו תחליף — הוא היה פותח ספר אחר.
       final commentaryBookId = widget.reportBook?.id;

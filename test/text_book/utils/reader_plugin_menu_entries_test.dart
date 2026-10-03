@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/plugins/models/plugin_context_menu_item.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
 import 'package:otzaria/widgets/smart_text/render_settings.dart';
@@ -79,6 +81,103 @@ void main() {
       expect(payload['currentIndex'], 0);
       final sections = payload['sections'] as List;
       expect([for (final s in sections) s['currentIndex']], [0, 1]);
+    });
+  });
+
+  group('buildReaderPluginMenuEntries', () {
+    const items = [
+      (
+        'plugin.a',
+        PluginContextMenuItem(
+          id: 'text',
+          label: 'בטקסט',
+          contexts: ['reader-selection'],
+        ),
+      ),
+      (
+        'plugin.b',
+        PluginContextMenuItem(
+          id: 'page',
+          label: 'בצורת הדף',
+          contexts: ['reader-page-shape-selection'],
+        ),
+      ),
+    ];
+
+    Future<List<String?>> labels(
+      WidgetTester tester, {
+      required bool hasSelection,
+      String? selectionContext,
+      List<(String, PluginContextMenuItem)> pluginItems = items,
+      int paragraphIndex = 0,
+    }) async {
+      late BuildContext context;
+      await tester.pumpWidget(
+        Builder(
+          builder: (c) {
+            context = c;
+            return const SizedBox();
+          },
+        ),
+      );
+      var settingsCalls = 0;
+      final entries = buildReaderPluginMenuEntries(
+        root: null,
+        state: state(),
+        lines: lines,
+        paragraphIndex: paragraphIndex,
+        hasSelection: hasSelection,
+        selectedText: hasSelection ? 'שלום' : null,
+        anchor: (
+          lineStart: null,
+          lineEnd: null,
+          startColumn: null,
+          pointerColumn: null,
+        ),
+        settings: () {
+          settingsCalls++;
+          return settings;
+        },
+        tapPosition: Offset.zero,
+        menuContext: context,
+        selectionContext: selectionContext ?? 'reader-selection',
+        pluginItems: pluginItems,
+      );
+      if (pluginItems.isEmpty) expect(settingsCalls, 0);
+      return [for (final e in entries) e.isDivider ? '---' : e.label];
+    }
+
+    testWidgets('a selection shows the items of the given context', (
+      tester,
+    ) async {
+      expect(await labels(tester, hasSelection: true), ['---', 'בטקסט']);
+      expect(
+        await labels(
+          tester,
+          hasSelection: true,
+          selectionContext: 'reader-page-shape-selection',
+        ),
+        ['---', 'בצורת הדף'],
+      );
+    });
+
+    testWidgets('without plugin items or outside the text it is empty', (
+      tester,
+    ) async {
+      expect(
+        await labels(tester, hasSelection: true, pluginItems: const []),
+        isEmpty,
+      );
+      expect(
+        await labels(tester, hasSelection: true, paragraphIndex: 3),
+        isEmpty,
+      );
+    });
+
+    testWidgets('without a selection only a clicked highlight counts', (
+      tester,
+    ) async {
+      expect(await labels(tester, hasSelection: false), isEmpty);
     });
   });
 }
