@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" \
-            --jq '.[] | .status + " " + .filename')
+            --jq '.[] | .status + " " + (if .previous_filename == "pubspec.lock" then .previous_filename else .filename end)')
 
           lock_status=$(awk '$2 == "pubspec.lock" { print $1 }' <<<"$files")
           if [ -z "$lock_status" ]; then

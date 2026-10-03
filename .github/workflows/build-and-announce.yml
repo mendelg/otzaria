@@ -248,6 +248,7 @@ jobs:
           # עץ חלקי, ואז הקומפילציה נופלת על קובץ חסר במקום על ה-clone.
           git config --global core.longpaths true
           flutter pub get --enforce-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Generate the settings .g.dart files: search index + translation catalog.
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
@@ -669,6 +670,7 @@ jobs:
         run: |
           git config --global core.longpaths true
           flutter pub get --enforce-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
 
