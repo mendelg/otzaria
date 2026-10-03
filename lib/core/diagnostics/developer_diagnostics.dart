@@ -165,7 +165,9 @@ class DeveloperDiagnostics {
   void Function(String text) errorLogWriter = ErrorLogFile.appendText;
 
   final Queue<(DateTime, FrameSample)> _samples = Queue();
-  final List<String> _pending = [];
+  List<String> _pending = [];
+  Future<bool>? _flushInFlight;
+  static const int _maxPendingRecords = 4096;
   final Map<String, int> _rebuildsInWindow = {};
   int _slowTotal = 0;
   int _peakRss = 0;
@@ -174,6 +176,8 @@ class DeveloperDiagnostics {
   bool _startupWritten = false;
   String? _lastContext;
   RebuildDirtyWidgetCallback? _previousRebuildCallback;
+  bool _previousRepaintRainbow = false;
+  bool _previousPaintSize = false;
 
   bool get isCollecting => _running;
   DiagnosticsLaunchMode get launchMode => _launchMode;
@@ -189,6 +193,16 @@ class DeveloperDiagnostics {
 
   /// Turns developer mode on or off for this run (Ctrl+Shift+I).
   void toggle() {
+    if (!_running && _pending.length >= _maxPendingRecords) {
+      if (_flushInFlight == null) {
+        unawaited(
+          _flushAll().then((saved) {
+            if (saved) toggle();
+          }),
+        );
+      }
+      return;
+    }
     _toggledOn = !_running;
     // Turning it off also cancels a launch request, so the shortcut always
     // flips what is on screen.
@@ -220,6 +234,8 @@ class DeveloperDiagnostics {
     if (kDebugMode) {
       _previousRebuildCallback = debugOnRebuildDirtyWidget;
       debugOnRebuildDirtyWidget = _onRebuild;
+      _previousRepaintRainbow = debugRepaintRainbowEnabled;
+      _previousPaintSize = debugPaintSizeEnabled;
     }
     _write({
       'type': 'session',
@@ -235,19 +251,25 @@ class DeveloperDiagnostics {
       'launchMode': _launchMode.name,
       'rebuildTracking': kDebugMode,
     });
+    if (!_running) return;
     _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
   }
 
-  void _stop() {
+  void _stop({bool flush = true}) {
+    if (!_running) return;
     _running = false;
+    _launchMode = DiagnosticsLaunchMode.off;
+    _toggledOn = false;
+    panelVisible.value = false;
     _tick?.cancel();
     _tick = null;
     SchedulerBinding.instance.removeTimingsCallback(_onTimings);
     if (kDebugMode && debugOnRebuildDirtyWidget == _onRebuild) {
       debugOnRebuildDirtyWidget = _previousRebuildCallback;
     }
+    _restoreDebugPaintFlags();
     _write({'type': 'end', 't': _elapsedMs});
-    unawaited(_flush());
+    if (flush) unawaited(_flushAll());
     _samples.clear();
     _rebuildsInWindow.clear();
     stats.value = const FrameStats();
@@ -265,6 +287,7 @@ class DeveloperDiagnostics {
   void _onTimings(List<FrameTiming> timings) {
     final now = DateTime.now();
     for (final timing in timings) {
+      if (!_running) return;
       final sample = FrameSample(
         timing.buildDuration.inMicroseconds / 1000,
         timing.rasterDuration.inMicroseconds / 1000,
@@ -335,9 +358,11 @@ class DeveloperDiagnostics {
     }
   }
 
-  /// Records the current state as a `snapshot` line, and as a readable entry
-  /// in errors.txt so it travels with an app report. Returns the log path.
-  Future<String> snapshot() async {
+  /// שומר תמונת מצב בלוג וב-errors.txt; מחזיר נתיב, או null אם הכתיבה נכשלה.
+  Future<String?> snapshot() async {
+    if (_pending.length >= _maxPendingRecords && !await _flushAll()) {
+      return null;
+    }
     final record = {
       'type': 'snapshot',
       't': _elapsedMs,
@@ -346,8 +371,7 @@ class DeveloperDiagnostics {
       'context': _context(),
       'startup': StartupTimeline.instance.toJson(),
     };
-    _write(record);
-    await _flush();
+    if (!_write(record) || !await _flushAll()) return null;
     try {
       errorLogWriter(
         '=== Developer snapshot ${record['time']} ===\n'
@@ -378,18 +402,57 @@ class DeveloperDiagnostics {
     unawaited(WidgetsBinding.instance.reassembleApplication());
   }
 
-  void _write(Map<String, Object?> record) => _pending.add(jsonEncode(record));
+  void _restoreDebugPaintFlags() {
+    if (!kDebugMode ||
+        (debugRepaintRainbowEnabled == _previousRepaintRainbow &&
+            debugPaintSizeEnabled == _previousPaintSize)) {
+      return;
+    }
+    _setDebugPaintFlag(() {
+      debugRepaintRainbowEnabled = _previousRepaintRainbow;
+      debugPaintSizeEnabled = _previousPaintSize;
+    });
+  }
 
-  Future<void> _flush() async {
-    if (_pending.isEmpty) return;
-    final text = '${_pending.join('\n')}\n';
-    _pending.clear();
+  bool _write(Map<String, Object?> record) {
+    // אחסון תקוע עוצר איסוף במקום לצבור זיכרון ללא גבול.
+    if (_pending.length >= _maxPendingRecords) {
+      _stop();
+      return false;
+    }
+    _pending.add(jsonEncode(record));
+    return true;
+  }
+
+  Future<bool> _flushAll() async {
+    if (_flushInFlight != null && !await _flushInFlight!) return false;
+    return _flush();
+  }
+
+  Future<bool> _flush() {
+    if (_flushInFlight != null) return _flushInFlight!;
+    late final Future<bool> operation;
+    operation = _flushPending().whenComplete(() {
+      if (identical(_flushInFlight, operation)) _flushInFlight = null;
+    });
+    return _flushInFlight = operation;
+  }
+
+  Future<bool> _flushPending() async {
+    if (_pending.isEmpty) return true;
+    final pending = _pending;
+    final count = pending.length;
+    final text = '${pending.join('\n')}\n';
     try {
       final file = File(outputPath);
       await file.parent.create(recursive: true);
       await file.writeAsString(text, mode: FileMode.append, flush: true);
+      pending.removeRange(0, count);
+      return true;
     } catch (error) {
       debugPrint('Developer diagnostics write failed: $error');
+      if (identical(pending, _pending)) _stop(flush: false);
+      return false;
     }
   }
 
@@ -407,10 +470,12 @@ class DeveloperDiagnostics {
       if (kDebugMode && debugOnRebuildDirtyWidget == _onRebuild) {
         debugOnRebuildDirtyWidget = _previousRebuildCallback;
       }
+      _restoreDebugPaintFlags();
     }
     _launchMode = DiagnosticsLaunchMode.off;
     _toggledOn = false;
-    _pending.clear();
+    _pending = [];
+    _flushInFlight = null;
     _samples.clear();
     _rebuildsInWindow.clear();
     contextProvider = null;

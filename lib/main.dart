@@ -355,7 +355,6 @@ void main(List<String> args) async {
   Pdfrx.normalizeHebrewText = true;
 
   SentryWidgetsFlutterBinding.ensureInitialized();
-  DeveloperDiagnostics.instance.initFromLaunch(args);
 
   // אישור קבלה מוקדם לאתר החנות עבור קישורי התקנת תוסף שהגיעו כארגומנטים —
   // נורה כאן, לפני כל אתחול כבד ולפני עליית החלון, כדי שדף החנות יידע תוך
@@ -372,6 +371,7 @@ void main(List<String> args) async {
   await StartupTimeline.instance.phase('earlyInit', () async {
     await _initializeDataRootForEarlyLogging();
     await _initializeLogMetadata();
+    DeveloperDiagnostics.instance.initFromLaunch(args);
     hierarchicalLoggingEnabled = true;
     await _enqueueExternalActivationArgs(args);
   });

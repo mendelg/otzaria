@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria/core/diagnostics/developer_diagnostics.dart';
+import 'package:otzaria/core/messages/common_messages.dart';
+import 'package:otzaria/core/ui_snack.dart';
 
 /// Wraps the app, toggles developer mode on Ctrl+Shift+I, and shows the
 /// diagnostics panel in a corner while it is on.
@@ -102,7 +104,11 @@ class _FrameStatsPanelState extends State<FrameStatsPanel> {
 
   Future<void> _snapshot() async {
     final path = await _diagnostics.snapshot();
-    if (mounted) _showNotice('saved: $path');
+    if (path == null) {
+      UiSnack.showError(CommonMessages.diagnosticsSaveError);
+    } else if (mounted) {
+      _showNotice('saved: $path');
+    }
   }
 
   @override

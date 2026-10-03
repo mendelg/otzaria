@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:otzaria/core/ui_snack.dart';
+import 'package:otzaria/core/messages/common_messages.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/diagnostics/developer_diagnostics.dart';
@@ -120,6 +123,33 @@ void main() {
 
     DeveloperDiagnostics.instance.resetForTesting();
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('a failed snapshot reports an error instead of saved', (
+    tester,
+  ) async {
+    final blocked = File('$outputPath.blocked')..writeAsStringSync('blocked');
+    DeveloperDiagnostics.instance.outputPath = '${blocked.path}/out.jsonl';
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        builder: (context, child) => FrameStatsOverlay(child: child!),
+        home: const _Probe(),
+      ),
+    );
+    DeveloperDiagnostics.instance.toggle();
+    await tester.pump();
+    await tester.runAsync(() async {
+      await tester.tap(find.byIcon(FluentIcons.camera_24_regular));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+    await tester.pump();
+    expect(find.text(CommonMessages.diagnosticsSaveError), findsOneWidget);
+    expect(find.textContaining('saved:'), findsNothing);
+    expect(tester.takeException(), isNull);
+    UiSnack.hide();
+    await tester.pump();
   });
 
   test('formatFrameStats shows timings, memory and top rebuilds', () {
