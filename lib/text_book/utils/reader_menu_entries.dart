@@ -1,10 +1,12 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/widgets.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/models/links.dart';
 import 'package:otzaria/utils/text/global_search_helper.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/misc/app_popup_menu.dart';
 import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
+import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 
 /// The selected text as a reader's context menu searches for it: trimmed
@@ -74,4 +76,37 @@ AppContextMenuEntry buildReaderIconRow({
         ),
       ),
   ]);
+}
+
+/// The children of a paragraph's "קישורים" submenu: [openPaneEntry], when
+/// given, then one entry per link. While the links of the paragraph are
+/// still loading and none is known yet, a disabled "loading" entry.
+List<AppContextMenuEntry> buildParagraphLinksMenuChildren({
+  required List<Link> links,
+  required bool isLoading,
+  required bool removeNikud,
+  required bool removePunctuation,
+  required double maxFontSize,
+  required void Function(Link link) onOpenLink,
+  AppContextMenuEntry? openPaneEntry,
+}) {
+  if (links.isEmpty) {
+    return isLoading
+        ? const [AppContextMenuEntry(label: 'טוען קישורים…', enabled: false)]
+        : const <AppContextMenuEntry>[];
+  }
+  return [
+    if (openPaneEntry != null) ...[
+      openPaneEntry,
+      const AppContextMenuEntry.divider(),
+    ],
+    for (final link in links)
+      buildLinkContextMenuEntry(
+        link: link,
+        removeNikud: removeNikud,
+        removePunctuation: removePunctuation,
+        maxFontSize: maxFontSize,
+        onTap: () => onOpenLink(link),
+      ),
+  ];
 }

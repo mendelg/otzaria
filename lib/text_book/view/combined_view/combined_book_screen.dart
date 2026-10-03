@@ -18,7 +18,6 @@ import 'package:otzaria/widgets/lists/scroll_position_reanchor.dart';
 import 'package:otzaria/widgets/text/rtl_selection_shortcuts.dart';
 import 'package:otzaria/widgets/text/selection_copy_shortcuts.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
-import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria/widgets/misc/smooth_wheel_scroll.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
@@ -1328,40 +1327,31 @@ class _CombinedViewState extends State<CombinedView> {
     }
 
     List<AppContextMenuEntry> buildLinkChildren() {
-      final paragraphLinks = currentParagraphLinks();
-      if (paragraphLinks.isEmpty) {
-        return _paragraphCommentatorsCache.isLoading(state.book, paragraphIndex)
-            ? const [
-                AppContextMenuEntry(label: 'טוען קישורים…', enabled: false),
-              ]
-            : const <AppContextMenuEntry>[];
-      }
       final showOpenLinksPaneEntry = shouldShowOpenLinksPaneEntry(
         hasLinks: true,
         isLinksTabActive: widget.isLinksTabActive?.call() ?? false,
       );
-      return [
-        if (showOpenLinksPaneEntry) ...[
-          AppContextMenuEntry(
-            label: 'פתח קישורים בחלונית צד',
-            onTap: () => widget.onOpenLinksPane?.call(),
-          ),
-          const AppContextMenuEntry.divider(),
-        ],
-        ...paragraphLinks.map(
-          (link) => buildLinkContextMenuEntry(
-            link: link,
-            removeNikud: state.commentaryRemoveNikud,
-            removePunctuation: state.commentaryRemovePunctuation,
-            maxFontSize: widget.textSize,
-            onTap: () async {
-              final tab = await buildLinkTargetTab(link);
-              if (_disposed || !mounted) return;
-              widget.openBookCallback(tab);
-            },
-          ),
+      return buildParagraphLinksMenuChildren(
+        links: currentParagraphLinks(),
+        isLoading: _paragraphCommentatorsCache.isLoading(
+          state.book,
+          paragraphIndex,
         ),
-      ];
+        removeNikud: state.commentaryRemoveNikud,
+        removePunctuation: state.commentaryRemovePunctuation,
+        maxFontSize: widget.textSize,
+        openPaneEntry: showOpenLinksPaneEntry
+            ? AppContextMenuEntry(
+                label: 'פתח קישורים בחלונית צד',
+                onTap: () => widget.onOpenLinksPane?.call(),
+              )
+            : null,
+        onOpenLink: (link) async {
+          final tab = await buildLinkTargetTab(link);
+          if (_disposed || !mounted) return;
+          widget.openBookCallback(tab);
+        },
+      );
     }
 
     final menuSelection = ReaderMenuSelection(selectedText);

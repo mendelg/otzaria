@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/models/links.dart';
+import 'package:otzaria/widgets/misc/app_popup_menu.dart';
 import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 
 void main() {
@@ -73,6 +75,57 @@ void main() {
         'הערה',
         'קישור',
       ]);
+    });
+  });
+
+  group('buildParagraphLinksMenuChildren', () {
+    final link = Link(
+      heRef: 'בראשית א, א',
+      index1: 1,
+      path2: 'בראשית',
+      index2: 1,
+      connectionType: 'reference',
+    );
+
+    List<AppContextMenuEntry> children({
+      List<Link> links = const [],
+      bool isLoading = false,
+      AppContextMenuEntry? openPaneEntry,
+      void Function(Link)? onOpenLink,
+    }) => buildParagraphLinksMenuChildren(
+      links: links,
+      isLoading: isLoading,
+      removeNikud: false,
+      removePunctuation: false,
+      maxFontSize: 18,
+      openPaneEntry: openPaneEntry,
+      onOpenLink: onOpenLink ?? (_) {},
+    );
+
+    test('without links shows the loading entry only while loading', () {
+      expect(children(), isEmpty);
+      final loading = children(isLoading: true);
+      expect(loading.single.label, 'טוען קישורים…');
+      expect(loading.single.enabled, isFalse);
+    });
+
+    test('puts the open pane entry and a divider above the links', () {
+      final opened = <Link>[];
+      final entries = children(
+        links: [link],
+        openPaneEntry: const AppContextMenuEntry(label: 'פתח'),
+        onOpenLink: opened.add,
+      );
+
+      expect(entries, hasLength(3));
+      expect(entries[0].label, 'פתח');
+      expect(entries[1].isDivider, isTrue);
+      entries[2].onTap!();
+      expect(opened, [link]);
+    });
+
+    test('without an open pane entry lists only the links', () {
+      expect(children(links: [link], isLoading: true), hasLength(1));
     });
   });
 }

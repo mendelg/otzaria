@@ -59,7 +59,6 @@ import 'package:otzaria/text_book/view/tabbed_commentary_panel.dart';
 import 'package:otzaria/widgets/smart_text/smart_text.dart';
 import 'package:otzaria/text_book/view/error_report_dialog.dart';
 import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
-import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria/widgets/misc/smooth_wheel_scroll.dart';
 import 'package:otzaria/text_book/view/selection/enhanced_gesture_detector.dart';
 import 'package:otzaria/text_book/view/selection/selection_persistence.dart';
@@ -1811,43 +1810,26 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         index,
       ),
     );
-    List<AppContextMenuEntry> buildLinksItems() {
-      final sortedLinks = currentLineLinks();
-      if (sortedLinks.isEmpty) {
-        return _paragraphCommentatorsCache.isLoading(state.book, index)
-            ? const [
-                AppContextMenuEntry(label: 'טוען קישורים…', enabled: false),
-              ]
-            : const <AppContextMenuEntry>[];
-      }
-      final items = <AppContextMenuEntry>[];
-      if (widget.onOpenSidebarTab != null) {
-        items.add(
-          AppContextMenuEntry(
-            label: 'פתח חלונית קישורים',
-            icon: FluentIcons.panel_right_24_regular,
-            onTap: () => widget.onOpenSidebarTab!(kLinksTabIndex),
-          ),
+    List<AppContextMenuEntry> buildLinksItems() =>
+        buildParagraphLinksMenuChildren(
+          links: currentLineLinks(),
+          isLoading: _paragraphCommentatorsCache.isLoading(state.book, index),
+          removeNikud: state.commentaryRemoveNikud,
+          removePunctuation: state.commentaryRemovePunctuation,
+          maxFontSize: widget.fontSize,
+          openPaneEntry: widget.onOpenSidebarTab != null
+              ? AppContextMenuEntry(
+                  label: 'פתח חלונית קישורים',
+                  icon: FluentIcons.panel_right_24_regular,
+                  onTap: () => widget.onOpenSidebarTab!(kLinksTabIndex),
+                )
+              : null,
+          onOpenLink: (link) async {
+            final tab = await buildLinkTargetTab(link);
+            if (!mounted) return;
+            widget.openBookCallback(tab);
+          },
         );
-        items.add(const AppContextMenuEntry.divider());
-      }
-      items.addAll(
-        sortedLinks.map(
-          (link) => buildLinkContextMenuEntry(
-            link: link,
-            removeNikud: state.commentaryRemoveNikud,
-            removePunctuation: state.commentaryRemovePunctuation,
-            maxFontSize: widget.fontSize,
-            onTap: () async {
-              final tab = await buildLinkTargetTab(link);
-              if (!mounted) return;
-              widget.openBookCallback(tab);
-            },
-          ),
-        ),
-      );
-      return items;
-    }
 
     final hasLinkItems =
         currentLineLinks().isNotEmpty ||
