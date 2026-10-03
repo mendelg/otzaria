@@ -2480,22 +2480,17 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
 
   /// העתקת טקסט מעוצב
   /// "העתק כ..." — וריאציות ההעתקה מפרופיל ערוץ ההעתקה של הטור.
-  AppContextMenuEntry _copyAsEntry(TextBookLoaded state, String? selectedText) {
-    final hasSelection = selectedText != null && selectedText.trim().isNotEmpty;
-    return AppContextMenuEntry(
-      label: 'העתק כ...',
-      icon: OtzariaIcons.alef_copy_24_regular,
-      enabled: hasSelection,
-      children: buildCopyAsMenuEntries(
-        base: state.displayProfile(
-          target: _textTarget,
-          channel: TextChannel.copy,
-        ),
-        hasSelection: hasSelection,
-        onCopy: (profile) => _copyFormattedText(selectedText, false, profile),
-      ),
-    );
-  }
+  AppContextMenuEntry _copyAsEntry(
+    TextBookLoaded state,
+    String? selectedText,
+  ) => buildCopyAsMenuEntry(
+    base: state.displayProfile(
+      target: _textTarget,
+      channel: TextChannel.copy,
+    ),
+    selectedText: selectedText,
+    onCopy: (profile) => _copyFormattedText(selectedText, false, profile),
+  );
 
   /// בקשת העתקה מקיצור דינמי — רק הטור שיעדו תואם מטפל בה.
   void _onDynamicCopyRequest() {

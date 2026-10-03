@@ -1654,22 +1654,17 @@ class _CombinedViewState extends State<CombinedView> {
 
   /// העתקת טקסט מעוצב (HTML) ללוח
   /// "העתק כ..." — וריאציות ההעתקה מפרופיל ערוץ ההעתקה של הגוף.
-  AppContextMenuEntry _copyAsEntry(TextBookLoaded state, String? selectedText) {
-    final hasSelection = selectedText != null && selectedText.trim().isNotEmpty;
-    return AppContextMenuEntry(
-      label: 'העתק כ...',
-      icon: OtzariaIcons.alef_copy_24_regular,
-      enabled: hasSelection,
-      children: buildCopyAsMenuEntries(
-        base: state.displayProfile(
-          target: TextTarget.body,
-          channel: TextChannel.copy,
-        ),
-        hasSelection: hasSelection,
-        onCopy: (profile) => _copyFormattedText(selectedText, false, profile),
-      ),
-    );
-  }
+  AppContextMenuEntry _copyAsEntry(
+    TextBookLoaded state,
+    String? selectedText,
+  ) => buildCopyAsMenuEntry(
+    base: state.displayProfile(
+      target: TextTarget.body,
+      channel: TextChannel.copy,
+    ),
+    selectedText: selectedText,
+    onCopy: (profile) => _copyFormattedText(selectedText, false, profile),
+  );
 
   /// בקשת העתקה מקיצור דינמי (ראה DynamicShortcutDispatcher).
   void _onDynamicCopyRequest() {
