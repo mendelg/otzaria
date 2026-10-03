@@ -65,9 +65,7 @@ import 'package:otzaria/text_book/view/selection/selection_persistence.dart';
 import 'package:otzaria/book_common/selection/selection_hit_test.dart';
 import 'package:otzaria/text_book/view/selection/selected_text_copy.dart';
 import 'package:otzaria/book_common/selection/selected_text_restore.dart';
-import 'package:otzaria/tools/dictionary/dictionary_context_menu_entries.dart';
 import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
-import 'package:otzaria/utils/text/word_at_position.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_renderer.dart';
@@ -1924,18 +1922,14 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       if (siblingEntry != null) entries.add(siblingEntry);
     }
 
-    final dictionaryText = (capturedText?.trim().isNotEmpty == true)
-        ? capturedText
-        : wordAtGlobalPosition(tapPosition);
-    final dictionaryEntries = buildDictionaryContextMenuEntries(
-      context: context,
-      selectedText: dictionaryText,
-      repository: _dictionaryLookupRepository,
+    entries.addAll(
+      buildReaderDictionaryEntries(
+        context: context,
+        selectedText: capturedText,
+        tapPosition: tapPosition,
+        repository: _dictionaryLookupRepository,
+      ),
     );
-    if (dictionaryEntries.isNotEmpty) {
-      entries.add(const AppContextMenuEntry.divider());
-      entries.addAll(dictionaryEntries);
-    }
 
     entries.add(const AppContextMenuEntry.divider());
     final reportTargetBook = widget.reportBook ?? state.book;

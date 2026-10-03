@@ -61,10 +61,8 @@ import 'package:otzaria/text_book/view/selection/selected_text_copy.dart';
 import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/text_book/view/error_report_dialog.dart';
 import 'package:otzaria/text_book/view/widgets/book_source_banner.dart';
-import 'package:otzaria/tools/dictionary/dictionary_context_menu_entries.dart';
 import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
 import 'package:otzaria/tools/dictionary/widgets/laaz_commentary_subblock.dart';
-import 'package:otzaria/utils/text/word_at_position.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_reveal_service.dart';
@@ -1413,23 +1411,12 @@ class _CombinedViewState extends State<CombinedView> {
             ? const <AppContextMenuEntry>[]
             : <AppContextMenuEntry>[entry];
       }(),
-      ...(() {
-        final dictionaryText = (selectedText?.trim().isNotEmpty == true)
-            ? selectedText
-            : wordAtGlobalPosition(tapPosition);
-        final dictionaryEntries = buildDictionaryContextMenuEntries(
-          context: context,
-          selectedText: dictionaryText,
-          repository: _dictionaryLookupRepository,
-        );
-        if (dictionaryEntries.isEmpty) {
-          return const <AppContextMenuEntry>[];
-        }
-        return <AppContextMenuEntry>[
-          const AppContextMenuEntry.divider(),
-          ...dictionaryEntries,
-        ];
-      })(),
+      ...buildReaderDictionaryEntries(
+        context: context,
+        selectedText: selectedText,
+        tapPosition: tapPosition,
+        repository: _dictionaryLookupRepository,
+      ),
       const AppContextMenuEntry.divider(),
       AppContextMenuEntry(
         label: 'הוסף סימניה לקטע זה',

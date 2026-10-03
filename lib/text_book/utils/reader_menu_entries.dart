@@ -2,6 +2,9 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/widgets.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/tools/dictionary/dictionary_context_menu_entries.dart';
+import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
+import 'package:otzaria/utils/text/word_at_position.dart';
 import 'package:otzaria/utils/text/global_search_helper.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/misc/app_popup_menu.dart';
@@ -109,4 +112,25 @@ List<AppContextMenuEntry> buildParagraphLinksMenuChildren({
         onTap: () => onOpenLink(link),
       ),
   ];
+}
+
+/// The dictionary section of a reader's context menu, after a divider: the
+/// lookups for [selectedText], or for the word under [tapPosition] when
+/// nothing is selected. Empty when there is nothing to look up.
+List<AppContextMenuEntry> buildReaderDictionaryEntries({
+  required BuildContext context,
+  required String? selectedText,
+  required Offset tapPosition,
+  required DictionaryLookupRepository repository,
+}) {
+  final lookupText = (selectedText?.trim().isNotEmpty == true)
+      ? selectedText
+      : wordAtGlobalPosition(tapPosition);
+  final entries = buildDictionaryContextMenuEntries(
+    context: context,
+    selectedText: lookupText,
+    repository: repository,
+  );
+  if (entries.isEmpty) return const [];
+  return [const AppContextMenuEntry.divider(), ...entries];
 }

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
 import 'package:otzaria/widgets/misc/app_popup_menu.dart';
 import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 
@@ -126,6 +127,52 @@ void main() {
 
     test('without an open pane entry lists only the links', () {
       expect(children(links: [link], isLoading: true), hasLength(1));
+    });
+  });
+
+  group('buildReaderDictionaryEntries', () {
+    final repository = DictionaryLookupRepository(
+      loadAcronyms: () async => <String, List<String>>{
+        'רש"י': <String>['רבי שלמה יצחקי'],
+      },
+      loadAramaicEntries: () async => const [],
+      loadLaazEntries: () async => const [],
+    );
+
+    Future<List<AppContextMenuEntry>> entries(
+      WidgetTester tester,
+      String? selectedText,
+    ) async {
+      await repository.ensureLoaded();
+      late BuildContext context;
+      await tester.pumpWidget(
+        Builder(
+          builder: (c) {
+            context = c;
+            return const SizedBox();
+          },
+        ),
+      );
+      return buildReaderDictionaryEntries(
+        context: context,
+        selectedText: selectedText,
+        tapPosition: const Offset(-1000, -1000),
+        repository: repository,
+      );
+    }
+
+    testWidgets('a known selection gets a divider and its lookup', (
+      tester,
+    ) async {
+      final result = await entries(tester, 'רש״י');
+      expect(result, hasLength(2));
+      expect(result.first.isDivider, isTrue);
+    });
+
+    testWidgets('nothing to look up leaves the section empty', (
+      tester,
+    ) async {
+      expect(await entries(tester, null), isEmpty);
     });
   });
 }
