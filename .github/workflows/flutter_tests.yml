@@ -58,7 +58,7 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       # חילול אינדקס חיפוש בהגדרות. ה-.g.dart נדחף לרפו, אבל הסקריפט הזה
       # יוודא שהוא עדכני בכל הרצה (אם searchEntries השתנו במהלך ה-PR).
@@ -128,7 +128,7 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       # Resolve the Git or hosted package to cache the native library under the
       # exact root used by flutter_test_config.dart.
@@ -447,7 +447,7 @@ jobs:
           # תלות git על מונורפו נכשלת ב-checkout ("Filename too long") ומשאירה
           # עץ חלקי, ואז הבנייה נופלת על קובץ חסר במקום על ה-clone.
           git config --global core.longpaths true
-          flutter pub get
+          flutter pub get --enforce-lockfile
 
       # The Git-pinned engine may not have precompiled release assets yet.
       - name: Install Rust for native source fallback
@@ -620,7 +620,7 @@ jobs:
             wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 wpe-1.0
 
       - name: Install dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Test fractional scaling policy
         run: linux/runner/test/run_fractional_scaling_test.sh

@@ -247,7 +247,8 @@ jobs:
           # תלות git על מונורפו נכשלת ב-checkout ("Filename too long") ומשאירה
           # עץ חלקי, ואז הקומפילציה נופלת על קובץ חסר במקום על ה-clone.
           git config --global core.longpaths true
-          flutter pub get
+          flutter pub get --enforce-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           # Generate the settings .g.dart files: search index + translation catalog.
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
@@ -668,7 +669,8 @@ jobs:
         shell: pwsh
         run: |
           git config --global core.longpaths true
-          flutter pub get
+          flutter pub get --enforce-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
 
@@ -1171,7 +1173,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          flutter pub get
+          flutter pub get --enforce-lockfile
           # Generate the settings .g.dart files: search index + translation catalog.
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
@@ -1520,8 +1522,7 @@ jobs:
 
       # build-library-index.yml שבמאגר SeforimLibrary בונה את אינדקס הספרייה
       # מחבילת ה-raw הזו, וחותם באיזו גרסת otzaria_search_engine נבנה. הנעילה
-      # אינה ב-git (flutter pub get פותר אותה בכל בנייה), ולכן היא נוסעת לשם
-      # כארטיפקט לצד החבילה — הבנייה כאן מסרבת לאינדקס שנבנה בגרסה אחרת.
+      # נוסעת לשם כארטיפקט לצד החבילה — הבנייה כאן מסרבת לאינדקס שנבנה בגרסה אחרת.
       - name: Upload index build inputs
         if: matrix.target == 'raw' && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7.0.1
@@ -2003,7 +2004,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          flutter pub get
+          flutter pub get --enforce-lockfile
           # Generate the settings .g.dart files: search index + translation catalog.
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
@@ -2137,7 +2138,7 @@ jobs:
 
       - name: Prepare Flutter dependencies for macOS release
         run: |
-          flutter pub get
+          flutter pub get --enforce-lockfile
           # Generate the settings .g.dart files: search index + translation catalog.
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
@@ -2787,7 +2788,7 @@ jobs:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          flutter pub get
+          flutter pub get --enforce-lockfile
           dart run tool/release/generate_release_manifest.dart \
             --tag "$RELEASE_TAG" \
             --version "$RELEASE_VERSION" \
@@ -3151,7 +3152,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          flutter pub get
+          flutter pub get --enforce-lockfile
           mkdir -p update-packages
           for arch in x64 arm64; do
             manifest="release-files/otzaria-app-files-windows-$arch.json"
@@ -3182,7 +3183,7 @@ jobs:
           set -euo pipefail
           # bsdtar משחזר symlinks מ-zip של ditto; unzip אינו מבטיח זאת.
           command -v bsdtar >/dev/null || sudo apt-get install -y libarchive-tools
-          flutter pub get
+          flutter pub get --enforce-lockfile
           rm -rf tree-update-packages
           mkdir -p tree-update-packages
           UPDATE_PACKAGES_PLATFORM=macos bash tool/release/build_update_packages.sh \

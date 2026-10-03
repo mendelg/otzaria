@@ -211,7 +211,7 @@ jobs:
         uses: ./.github/actions/fetch-biographies
 
       - name: Install Flutter dependencies
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
 
       - name: Generate settings search index
         run: dart run tool/generate_search_index.dart

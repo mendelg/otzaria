@@ -37,7 +37,7 @@ jobs:
 
       - name: Prepare Flutter dependencies
         run: |
-          flutter pub get
+          flutter pub get --enforce-lockfile
           dart run tool/generate_search_index.dart
           dart run tool/generate_settings_l10n.dart
 
