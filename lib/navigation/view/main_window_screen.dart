@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
+import 'package:otzaria/app_report/view/app_report_dialog.dart';
 import 'package:otzaria/core/windowing/app_window_scope.dart';
 import 'package:otzaria/core/startup_timeline.dart';
 import 'package:otzaria/core/windowing/multi_window_service.dart';
@@ -408,6 +409,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
 
   /// מונע הערמת פופאפים כשמגיעים כמה קישורי `info` בזה אחר זה.
   bool _isShowingInfoReport = false;
+  bool _isShowingAppReport = false;
   StreamSubscription<FileSystemEvent>? _externalActivationWatchSub;
   StreamSubscription<String>? _externalActivationChannelSub;
 
@@ -1537,8 +1539,8 @@ class MainWindowScreenState extends State<MainWindowScreen>
       case OpenScreenAction(:final screen):
         context.read<NavigationBloc>().add(NavigateToScreen(screen));
         return true;
-      case OpenToolAction(:final toolId):
-        openToolTabById(context, toolId);
+      case OpenToolAction(:final toolId, :final query):
+        openToolTabById(context, toolId, query: query);
         return true;
       case OpenPluginAction(:final pluginId):
         openToolTabById(context, pluginId);
@@ -1631,6 +1633,9 @@ class MainWindowScreenState extends State<MainWindowScreen>
         return true;
       case ShowInfoAction():
         return await _showInfoReport(action);
+      case OpenAppReportAction():
+        _showAppReport();
+        return true;
       case OpenSettingsTabAction(:final tab):
         context.read<NavigationBloc>().add(
           const NavigateToScreen(Screen.settings),
@@ -1681,6 +1686,20 @@ class MainWindowScreenState extends State<MainWindowScreen>
     });
     WidgetsBinding.instance.ensureVisualUpdate();
     return true;
+  }
+
+  /// נדחה לפוסט-פריים מאותה סיבה כמו [_showInfoReport], וטופס אחד בכל פעם.
+  void _showAppReport() {
+    if (_isShowingAppReport) return;
+    _isShowingAppReport = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (mounted) await showAppReportDialog(context);
+      } finally {
+        _isShowingAppReport = false;
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   void _runExternalSearch(String query, {SearchMode? mode}) {

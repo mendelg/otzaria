@@ -11,22 +11,25 @@ import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'package:otzaria/theme/theme_exports.dart';
 import 'package:otzaria/tools/aramaic_dictionary/widgets/aramaic_result_card.dart';
 import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
+import 'package:otzaria/tools/tool_query.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
 import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/widgets/feedback/tool_empty_state.dart';
 import 'package:otzaria/widgets/misc/tool_ui_helpers.dart';
 
 class AramaicDictionaryScreen extends StatefulWidget {
-  const AramaicDictionaryScreen({super.key, this.repository});
+  const AramaicDictionaryScreen({super.key, this.repository, this.queryInbox});
 
   final DictionaryLookupRepository? repository;
+  final ToolQueryInbox? queryInbox;
 
   @override
   State<AramaicDictionaryScreen> createState() =>
       _AramaicDictionaryScreenState();
 }
 
-class _AramaicDictionaryScreenState extends State<AramaicDictionaryScreen> {
+class _AramaicDictionaryScreenState extends State<AramaicDictionaryScreen>
+    with ToolQueryConsumer {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   late final DictionaryLookupRepository _dictionaryRepository =
@@ -35,6 +38,19 @@ class _AramaicDictionaryScreenState extends State<AramaicDictionaryScreen> {
   List<Map<String, String>> _filteredResults = [];
   bool _isLoading = true;
   bool _isHebrewToAramaic = false;
+
+  @override
+  ToolQueryInbox? get toolQueryInbox => widget.queryInbox;
+
+  @override
+  bool get canApplyToolQuery => !_isLoading;
+
+  @override
+  void applyToolQuery(ToolQuery query) {
+    _isHebrewToAramaic = query.hebrewToAramaic;
+    fillSearchField(_searchController, query.text);
+    _performSearch(query.text);
+  }
 
   @override
   void initState() {
@@ -81,6 +97,7 @@ class _AramaicDictionaryScreenState extends State<AramaicDictionaryScreen> {
       });
       UiSnack.showError(ToolsMessages.dictionaryLoadError(e));
     }
+    consumeToolQuery();
   }
 
   void _performSearch(String query) {

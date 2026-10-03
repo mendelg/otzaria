@@ -10,22 +10,29 @@ import 'package:otzaria/shortcuts/shortcut_helper.dart';
 import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'package:otzaria/tools/acronyms_dictionary/widgets/acronym_result_card.dart';
 import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
+import 'package:otzaria/tools/tool_query.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
 import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/widgets/feedback/tool_empty_state.dart';
 import 'package:otzaria/widgets/misc/tool_ui_helpers.dart';
 
 class AcronymsDictionaryScreen extends StatefulWidget {
-  const AcronymsDictionaryScreen({super.key, this.repository});
+  const AcronymsDictionaryScreen({
+    super.key,
+    this.repository,
+    this.queryInbox,
+  });
 
   final DictionaryLookupRepository? repository;
+  final ToolQueryInbox? queryInbox;
 
   @override
   State<AcronymsDictionaryScreen> createState() =>
       _AcronymsDictionaryScreenState();
 }
 
-class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
+class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen>
+    with ToolQueryConsumer {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   late final DictionaryLookupRepository _dictionaryRepository =
@@ -33,6 +40,18 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
   List<AcronymCatalogEntry> _catalog = [];
   List<AcronymCatalogEntry> _filteredResults = [];
   bool _isLoading = true;
+
+  @override
+  ToolQueryInbox? get toolQueryInbox => widget.queryInbox;
+
+  @override
+  bool get canApplyToolQuery => !_isLoading;
+
+  @override
+  void applyToolQuery(ToolQuery query) {
+    fillSearchField(_searchController, query.text);
+    _performSearch(query.text);
+  }
 
   @override
   void initState() {
@@ -73,6 +92,7 @@ class _AcronymsDictionaryScreenState extends State<AcronymsDictionaryScreen> {
       });
       UiSnack.showError(ToolsMessages.dictionaryLoadError(e));
     }
+    consumeToolQuery();
   }
 
   void _performSearch(String query) {

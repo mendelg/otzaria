@@ -267,6 +267,7 @@ class ToolTabScreenState extends State<ToolTabScreen>
           entry.toolId,
           calendarKey: _calendarKey,
           gematriaKey: _gematriaKey,
+          queryInbox: widget.tab.queryInbox,
         ) ??
         _buildUnavailable(
           const ToolUnavailable(ToolUnavailableReason.notFound),

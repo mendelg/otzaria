@@ -14,14 +14,21 @@ import 'package:otzaria/tabs/bloc/tabs_event.dart';
 import 'package:otzaria/tabs/models/tab.dart';
 import 'package:otzaria/tabs/models/tool_tab.dart';
 import 'package:otzaria/tools/tool_catalog_entry.dart';
+import 'package:otzaria/tools/tool_query.dart';
 
 /// פותח כלי ככרטיסיה במסך העיון.
 ///
-/// כלי שכבר פתוח ממוקד (dedupeKey); מופע נוסף נפתח דרך
+/// כלי שכבר פתוח ממוקד (dedupeKey) ומקבל את [query]; מופע נוסף נפתח דרך
 /// [openNewToolTabInstance].
-void openToolTab(BuildContext context, ToolCatalogEntry entry) {
+void openToolTab(
+  BuildContext context,
+  ToolCatalogEntry entry, {
+  ToolQuery? query,
+}) {
   context.read<TabsBloc>().add(
-    OpenOrFocusTab(ToolTab(toolId: entry.toolId, title: entry.label)),
+    OpenOrFocusTab(
+      ToolTab(toolId: entry.toolId, title: entry.label, query: query),
+    ),
   );
   context.read<NavigationBloc>().add(
     const NavigateToScreen(Screen.reading),
@@ -50,7 +57,11 @@ void openNewToolTabInstance(BuildContext context, ToolCatalogEntry entry) {
 /// כשמערכת התוספים עדיין נטענת הכרטיסיה נפתחת אופטימיסטית עם כותרת גיבוי;
 /// `ToolTabScreen` מציג טעינה עד שהמצב האמיתי ידוע. בכל סיבת אי-זמינות אחרת
 /// מוצגת הודעה מפורשת במקום שתיקה.
-void openToolTabById(BuildContext context, String toolId) {
+void openToolTabById(
+  BuildContext context,
+  String toolId, {
+  ToolQuery? query,
+}) {
   final settingsState = context.read<SettingsBloc>().state;
   final result = lookupTool(
     toolId,
@@ -61,11 +72,15 @@ void openToolTabById(BuildContext context, String toolId) {
 
   switch (result) {
     case ToolAvailable(:final entry):
-      openToolTab(context, entry);
+      openToolTab(context, entry, query: query);
     case ToolUnavailable(reason: ToolUnavailableReason.loading):
       context.read<TabsBloc>().add(
         OpenOrFocusTab(
-          ToolTab(toolId: toolId, title: ToolTab.fallbackTitleFor(toolId)),
+          ToolTab(
+            toolId: toolId,
+            title: ToolTab.fallbackTitleFor(toolId),
+            query: query,
+          ),
         ),
       );
       context.read<NavigationBloc>().add(
