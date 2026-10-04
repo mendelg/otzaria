@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:otzaria/book_common/utils/commentators_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -17,7 +18,6 @@ import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/book_common/models/commentator_group.dart';
 import 'package:otzaria/text_book/text_book_repository.dart';
-import 'package:otzaria/text_book/utils/commentators_context_menu.dart';
 import 'package:otzaria/text_book/view/combined_view/combined_book_screen.dart';
 import 'package:otzaria/text_book/view/selection/enhanced_gesture_detector.dart';
 import 'package:otzaria/text_book/view/selection/selection_sync_controller.dart';

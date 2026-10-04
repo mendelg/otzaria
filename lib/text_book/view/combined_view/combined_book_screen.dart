@@ -2,6 +2,7 @@ import 'package:otzaria/shortcuts/dynamic/dynamic_shortcut.dart';
 import 'package:otzaria/text_book/utils/reader_paragraph_copy.dart';
 import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/text_book/utils/reader_plugin_menu_entries.dart';
+import 'package:otzaria/book_common/utils/commentators_menu.dart';
 import 'package:otzaria/text_display/view/copy_as_menu.dart';
 import 'dart:async';
 
@@ -166,14 +167,6 @@ List<Link> buildCombinedViewContextMenuLinksForParagraph({
   paragraphIndex: paragraphIndex,
   queriedLinks: queriedLinks,
 );
-
-@visibleForTesting
-bool shouldShowOpenLinksPaneEntry({
-  required bool hasLinks,
-  required bool isLinksTabActive,
-}) {
-  return hasLinks && !isLinksTabActive;
-}
 
 @visibleForTesting
 bool shouldShowPersonalNotePreview({required bool isPersonalNotesTabActive}) =>
