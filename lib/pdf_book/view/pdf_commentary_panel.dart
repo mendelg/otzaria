@@ -2000,14 +2000,14 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
     // הצ׳יפים נגזרים מכל הקישורים הטעונים ולא מהעמוד הנוכחי: צ׳יפ שנגזר
     // מהעמוד נעלם בדפדוף לעמוד שאין בו אותו סוג, והסינון נכבה בשקט.
-    final typeChipKeys = CommentaryTypeFilter.chipKeysForCommentators(
-      links: visibleLinks,
-      selectedCommentators: showAllWhenEmpty
-          ? visibleLinks
-                .map((link) => utils.getTitleFromPath(link.path2))
-                .toList(growable: false)
-          : widget.tab.activeCommentators.toList(growable: false),
-    );
+    final typeChipKeys = showAllWhenEmpty
+        ? CommentaryTypeFilter.chipKeys(visibleLinks)
+        : CommentaryTypeFilter.chipKeysForCommentators(
+            links: visibleLinks,
+            selectedCommentators: widget.tab.activeCommentators.toList(
+              growable: false,
+            ),
+          );
     final effectiveTypes = CommentaryTypeFilter.effectiveTypes(
       selectedTypes: _selectedCommentaryTypes,
       availableKeys: typeChipKeys,

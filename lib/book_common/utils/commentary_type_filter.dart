@@ -22,16 +22,21 @@ class CommentaryTypeFilter {
   /// מפתחות צ׳יפי סוגי המפרשים שקיימים בפועל ב-[links], בסדר
   /// [LinkTypes.commentaryFilterTypes]. סוג בלי קישורים אינו מקבל צ׳יפ.
   static List<String> chipKeys(List<Link> links) {
+    final cached = _chipKeysCache[links];
+    if (cached != null) return cached;
     final present = <String>{};
     for (final link in links) {
       if (LinkTypes.isCommentaryFilterType(link.connectionType)) {
         present.add(LinkTypes.canonicalType(link.connectionType));
       }
     }
-    return LinkTypes.commentaryFilterTypes
+    return _chipKeysCache[links] = LinkTypes.commentaryFilterTypes
         .where(present.contains)
         .toList(growable: false);
   }
+
+  // במצב "הצג הכל" ב-PDF נקרא על כל קישורי החלון בכל דפדוף.
+  static final _chipKeysCache = Expando<List<String>>('chipKeys');
 
   /// כמו [chipKeys], אך מתעלם מקישורים שספרם אינו ב-[selectedCommentators] —
   /// כדי שלא יוצג צ׳יפ לסוג שכל מפרשיו מוסתרים.
