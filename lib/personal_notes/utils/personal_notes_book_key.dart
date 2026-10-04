@@ -7,6 +7,21 @@ import 'package:otzaria/models/books.dart';
 String personalNotesBookKey(Book book) =>
     personalNotesBookKeyFor(book.title, book.source);
 
+/// מפתחות ההערות של כל הספרים ב-[category] ובתתי-הקטגוריות שלה.
+/// Set ולא List: הסינון בודק כל הערה מול הקטגוריה, שעשויה להכיל אלפי ספרים.
+Set<String> personalNotesBookKeysInCategory(Category category) {
+  final keys = <String>{};
+  void collect(Category cat) {
+    for (final book in cat.books) {
+      keys.add(personalNotesBookKey(book));
+    }
+    cat.subCategories.forEach(collect);
+  }
+
+  collect(category);
+  return keys;
+}
+
 /// כמו [personalNotesBookKey], מכותרת ומקור.
 String personalNotesBookKeyFor(String title, BookSource source) =>
     switch (source) {

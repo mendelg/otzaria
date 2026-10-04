@@ -954,22 +954,6 @@ class _PersonalNotesManagerScreenState
     );
   }
 
-  List<String> _getBooksInCategory(Category category) {
-    final List<String> bookTitles = [];
-
-    void collectBooks(Category cat) {
-      for (final book in cat.books) {
-        bookTitles.add(personalNotesBookKey(book));
-      }
-      for (final subCat in cat.subCategories) {
-        collectBooks(subCat);
-      }
-    }
-
-    collectBooks(category);
-    return bookTitles;
-  }
-
   Widget _buildAllNotesList() {
     final allNotes = <_NoteWithBook>[];
 
@@ -1032,7 +1016,9 @@ class _PersonalNotesManagerScreenState
 
         final category = findCategory(libraryState.library!, _selectedFilter!);
         if (category != null) {
-          final booksInCategory = _getBooksInCategory(category);
+          final booksInCategory = personalNotesBookKeysInCategory(
+            category,
+          );
           filteredNotes = allNotes
               .where((n) => booksInCategory.contains(n.bookId))
               .toList();
