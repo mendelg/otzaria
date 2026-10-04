@@ -208,24 +208,26 @@ String removePunctuation(String text) {
     final buffer = StringBuffer();
     var parenDepth = 0;
     var inTag = false;
+    // יחידות קוד ולא processed[i]: אחרת כל תו מקצה מחרוזת חדשה.
     for (var i = 0; i < processed.length; i++) {
-      final ch = processed[i];
+      final ch = processed.codeUnitAt(i);
 
       if (inTag) {
-        buffer.write(ch);
-        if (ch == '>') inTag = false;
+        buffer.writeCharCode(ch);
+        if (ch == 0x3E) inTag = false; // >
         continue;
       }
 
-      if (ch == '<') {
+      if (ch == 0x3C) {
+        // <
         inTag = true;
-        buffer.write(ch);
+        buffer.writeCharCode(ch);
         continue;
       }
 
       // ישות HTML עוברת כמכלול - אחרת ה-";" שלה נמחק כפיסוק והישות מוצגת
       // כטקסט גלוי (למשל "&thinsp" סביב פסק בתנ"ך).
-      if (ch == '&') {
+      if (ch == 0x26) {
         final entity = _htmlEntity.matchAsPrefix(processed, i);
         if (entity != null) {
           buffer.write(entity.group(0));
@@ -234,46 +236,48 @@ String removePunctuation(String text) {
         }
       }
 
-      if (ch == '(') {
+      if (ch == 0x28) {
+        // (
         parenDepth++;
-        buffer.write(ch);
+        buffer.writeCharCode(ch);
         continue;
       }
 
-      if (ch == ')') {
+      if (ch == 0x29) {
+        // )
         if (parenDepth > 0) {
           parenDepth--;
         }
-        buffer.write(ch);
+        buffer.writeCharCode(ch);
         continue;
       }
 
+      final isAllowedAtEnd = ch == 0x2E || ch == 0x3A; // . :
       final isPunctuation =
-          ch == '!' ||
-          ch == ':' ||
-          ch == ';' ||
-          ch == '.' ||
-          ch == ',' ||
-          ch == '?' ||
-          ch == '-' ||
-          ch == '—' ||
-          ch == '–';
+          isAllowedAtEnd ||
+          ch == 0x21 || // !
+          ch == 0x3B || // ;
+          ch == 0x2C || // ,
+          ch == 0x3F || // ?
+          ch == 0x2D || // -
+          ch == 0x2014 || // —
+          ch == 0x2013; // –
 
-      if (parenDepth > 0 && (ch == ':' || ch == '.')) {
-        buffer.write(ch);
+      if (parenDepth > 0 && isAllowedAtEnd) {
+        buffer.writeCharCode(ch);
         continue;
       }
 
       if (isPunctuation) {
         if (lastAllowedPunctuationIndex != null &&
             i >= lastAllowedPunctuationIndex &&
-            (ch == '.' || ch == ':')) {
-          buffer.write(ch);
+            isAllowedAtEnd) {
+          buffer.writeCharCode(ch);
         }
         continue;
       }
 
-      buffer.write(ch);
+      buffer.writeCharCode(ch);
     }
     processed = buffer.toString();
 
