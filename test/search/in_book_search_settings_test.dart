@@ -84,6 +84,23 @@ void main() {
     });
   });
 
+  group('limitInBookResults', () {
+    test('keeps every result up to the limit', () {
+      final limited = limitInBookResults(List.generate(10, (i) => i));
+      expect(limited.shown, hasLength(10));
+      expect(limited.truncated, isFalse);
+    });
+
+    test('shows the first results and reports the rest', () {
+      final limited = limitInBookResults(
+        List.generate(kInBookResultsShown + 5, (i) => i),
+      );
+      expect(limited.shown, hasLength(kInBookResultsShown));
+      expect(limited.shown.first, 0);
+      expect(limited.truncated, isTrue);
+    });
+  });
+
   group('searchBookWithEngine', () {
     test('searches the book with the settings, in book order', () async {
       final repository = _RecordingSearchRepository();

@@ -469,18 +469,13 @@ class TextBookSearchViewState extends State<TextBookSearchView>
       // The facet filter is a prefix filter in the underlying engine, so when a
       // book is a parent facet (e.g. /.../ספר הזהר) it may also match child
       // facets like commentaries. We therefore post-filter by exact title.
-      //
-      // Use a higher raw limit to avoid losing relevant results that would have
-      // been returned after filtering.
-      const rawLimit = 5000;
-      const displayLimit = 1000;
 
       final List<SearchResult> rawResults;
       rawResults = await searchBookWithEngine(
         widget.searchRepository,
         query: query,
         bookPath: _bookPath!,
-        limit: rawLimit,
+        limit: kInBookEngineFetchLimit,
         settings: _settings,
       );
 
@@ -512,8 +507,7 @@ class TextBookSearchViewState extends State<TextBookSearchView>
           return a.text.compareTo(b.text);
         });
 
-      final results = sorted.take(displayLimit).toList(growable: false);
-      final truncated = sorted.length > displayLimit;
+      final (shown: results, :truncated) = limitInBookResults(sorted);
 
       debugPrint(
         '📚 TextBookSearch: rawResults=${rawResults.length}, '

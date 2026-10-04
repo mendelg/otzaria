@@ -108,3 +108,19 @@ Future<List<SearchResult>> searchBookWithEngine(
     order: ResultsOrder.catalogue,
   );
 }
+
+/// How many results an in-book engine search asks for. The engine filters by
+/// a facet prefix, so it may also return results of other books under the
+/// same facet, which the panes drop; asking for more keeps enough of this
+/// book's results after that.
+const int kInBookEngineFetchLimit = 5000;
+
+/// How many results an in-book search pane shows.
+const int kInBookResultsShown = 1000;
+
+/// The first [kInBookResultsShown] of [results], and whether any were left
+/// out.
+({List<T> shown, bool truncated}) limitInBookResults<T>(List<T> results) => (
+  shown: results.take(kInBookResultsShown).toList(growable: false),
+  truncated: results.length > kInBookResultsShown,
+);
