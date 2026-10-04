@@ -249,10 +249,114 @@ void main() {
       report.copyWith(description: 'אחר'),
     );
     expect(changed!.reportId, isNot(report.reportId));
-    expect(
-      (await service.getPendingReports()).single.description,
-      'אחר',
+    expect((await service.getPendingReports()).single.description, 'אחר');
+  });
+
+  test(
+    'markPendingReportAsSent: עובר להיסטוריה בלי פנייה לשרת (#1766)',
+    () async {
+      var requests = 0;
+      final service = build(
+        MockClient((_) async {
+          requests++;
+          return http.Response('', 500);
+        }),
+      );
+      final report = _report();
+      await service.queueReport(report);
+
+      await service.markPendingReportAsSent(report);
+
+      expect(requests, 0);
+      expect(await service.getPendingReportsCount(), 0);
+      final sent = (await service.getSentReports()).single;
+      expect(sent.reportId, report.reportId);
+      expect(sent.sentAt, isNotNull);
+      expect(sent.diagnostics, isNull);
+      expect(await service.getSentReportsTotal(), 1);
+    },
+  );
+
+  test('סימון כנשלח ממתין לסיום שליחה ידנית לפני שמחזיר אותה לתור', () async {
+    final requestStarted = Completer<void>();
+    final response = Completer<http.Response>();
+    final report = _report();
+    final sender = build(
+      MockClient((_) {
+        requestStarted.complete();
+        return response.future;
+      }),
     );
+    final marker = build(
+      MockClient((_) async => fail('הסימון לא אמור לשלוח בקשת רשת')),
+    );
+    await sender.queueReport(report);
+
+    final submission = sender.submitPendingReport(report);
+    await requestStarted.future;
+    var marked = false;
+    final marking = marker.markPendingReportAsSent(report).then((_) {
+      marked = true;
+    });
+    expect(marked, isFalse);
+
+    response.complete(http.Response('', 503));
+    expect((await submission).isQueued, isTrue);
+    await marking;
+
+    expect(await sender.getPendingReportsCount(), 0);
+    final sent = (await sender.getSentReports()).single;
+    expect(sent.reportId, report.reportId);
+    expect(sent.diagnostics, isNull);
+  });
+
+  test('סימון כנשלח ממתין גם לשליחת flush שכבר התחילה', () async {
+    final requestStarted = Completer<void>();
+    final response = Completer<http.Response>();
+    final report = _report();
+    final sender = build(
+      MockClient((_) {
+        requestStarted.complete();
+        return response.future;
+      }),
+    );
+    final marker = build(
+      MockClient((_) async => fail('הסימון לא אמור לשלוח בקשת רשת')),
+    );
+    await sender.queueReport(report);
+
+    final flushing = sender.flushPendingReports();
+    await requestStarted.future;
+    var marked = false;
+    final marking = marker.markPendingReportAsSent(report).then((_) {
+      marked = true;
+    });
+    expect(marked, isFalse);
+
+    response.complete(http.Response('', 503));
+    expect(await flushing, 0);
+    await marking;
+
+    expect(await sender.getPendingReportsCount(), 0);
+    expect((await sender.getSentReports()).single.reportId, report.reportId);
+  });
+
+  test('flush מסיר כפילות pending שכבר קיימת בהיסטוריה בלי לשלוח', () async {
+    var requests = 0;
+    final service = build(
+      MockClient((_) async {
+        requests++;
+        return http.Response('', 503);
+      }),
+    );
+    final report = _report();
+    await service.markPendingReportAsSent(report);
+    await store.add(AppReportService.pendingKind, report.toJson());
+
+    expect(await service.flushPendingReports(), 0);
+    expect(requests, 0);
+    expect(await service.getPendingReportsCount(), 0);
+    expect((await service.getSentReports()).single.reportId, report.reportId);
   });
 
   test('צילומי מסך: נשלחים, נשמרים בתור בכשל, ונמחקים מההיסטוריה', () async {
