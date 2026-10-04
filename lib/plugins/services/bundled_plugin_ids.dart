@@ -12,6 +12,7 @@
 const bundledPlugins = <String, String>{
   '6a9342ce60ff32edf765ec31': 'com.otzaria_word_editor.superdoc',
   '6a313ffbb3f53b688248fa40': 'com.otzaria.kidush-hachodesh',
+  '6a01cd9954ae49eaed8dab2a': 'otzaria.plugins_directory@windows',
 };
 
 /// מזהי המניפסט המותרים בפלטפורמה [platform] (ערך `Platform.operatingSystem`).

@@ -17,6 +17,8 @@
 #define MyAppExeName "otzaria.exe"
 ; חייב להתאים ל-AppPaths.bundledPluginsFolderName.
 #define BundledPluginsDirName "bundled_plugins"
+; חנות התוספים — מועתקת רק כשיש רשת (bundled_plugins_network_check.iss).
+#define NetworkGatedPlugin "otzaria.plugins_directory.otzplugin"
 
 #ifdef IndexedSplitFull
   ; דרך משתנה סביבה: ‎/D‎ עם מרכאות מ-pwsh הגיע ל-ISPP עטוף בלוכסנים
@@ -144,6 +146,7 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; Value
 Name: "hebrew"; MessagesFile: "compiler:Languages\Hebrew.isl"
 
 [Code]
+#include "bundled_plugins_network_check.iss"
 
 const
   // קבועי פריסה לדף "תכונות עיקריות" - Inno Setup לא תומך ב-const מקומי בתוך פרוצדורה.
@@ -2430,7 +2433,8 @@ Source: "..\build\windows\{#AppArch}\runner\Release\*"; \
     DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; ארכיוני התוספים שנארזו במתקין (ראה docs/bundled_plugins.md). התיקייה נוצרת
 ; ע"י ה-workflow ואינה קיימת בבנייה מקומית — skipifsourcedoesntexist.
-Source: "bundled_plugins\*"; DestDir: "{app}\{#BundledPluginsDirName}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled_plugins\*"; Excludes: "{#NetworkGatedPlugin}"; DestDir: "{app}\{#BundledPluginsDirName}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled_plugins\{#NetworkGatedPlugin}"; DestDir: "{app}\{#BundledPluginsDirName}"; Flags: ignoreversion skipifsourcedoesntexist; Check: OtzariaSiteReachable
 
 ; Compressed library assets + extraction tools staged in the setup temp dir —
 ; {tmp} is always writable by the installer process (unlike {app} under Program Files)

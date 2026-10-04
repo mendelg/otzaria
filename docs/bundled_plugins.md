@@ -55,6 +55,10 @@ const bundledPlugins = <String, String>{
    - **Windows** — המתקין מעתיק ל-`{app}\bundled_plugins` (עם
      `skipifsourcedoesntexist`, כך שבנייה מקומית בלי התוספים עובדת כרגיל).
      שדרוג מוחק קודם את התיקייה הישנה (`[InstallDelete]`).
+     חנות התוספים (`NetworkGatedPlugin` בשני קובצי ה-iss) מועתקת רק אם
+     בקשה ל-`https://otzaria.org/` מחזירה 200
+     (`installer/bundled_plugins_network_check.iss`). בלי רשת היא לא מותקנת,
+     והבדיקה חוזרת בשדרוג הבא. לכן הרשומה שלה מוגבלת ל-`@windows`.
    - **לינוקס** — ה-workflow מעתיק אל שורש ה-bundle (ליד הבינארי) בכל ארבע
      החבילות: לעץ ה-deb וה-rpm לפני ה-repack, ול-bundle הראשי שממנו נגזרות
      raw ו-FULL.

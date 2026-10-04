@@ -18,6 +18,8 @@
 #define MyAppExeName "otzaria.exe"
 ; חייב להתאים ל-AppPaths.bundledPluginsFolderName.
 #define BundledPluginsDirName "bundled_plugins"
+; חנות התוספים — מועתקת רק כשיש רשת (bundled_plugins_network_check.iss).
+#define NetworkGatedPlugin "otzaria.plugins_directory.otzplugin"
 
 ; ארכיטקטורת היעד: "x64" (ברירת מחדל) או "arm64", נקבעת מבחוץ עם
 ; ‎ISCC /DAppArch=arm64‎. קובעת את תיקיית ה-build, את שם הקובץ ואת
@@ -148,7 +150,8 @@ Name: "hebrew"; MessagesFile: "compiler:Languages\Hebrew.isl"
 Source: "..\build\windows\{#AppArch}\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; ארכיוני התוספים שנארזו במתקין (ראה docs/bundled_plugins.md). התיקייה נוצרת
 ; ע"י ה-workflow ואינה קיימת בבנייה מקומית — skipifsourcedoesntexist.
-Source: "bundled_plugins\*"; DestDir: "{app}\{#BundledPluginsDirName}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled_plugins\*"; Excludes: "{#NetworkGatedPlugin}"; DestDir: "{app}\{#BundledPluginsDirName}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "bundled_plugins\{#NetworkGatedPlugin}"; DestDir: "{app}\{#BundledPluginsDirName}"; Flags: ignoreversion skipifsourcedoesntexist; Check: OtzariaSiteReachable
 ; קבצי הצגה לדף "תכונות עיקריות" - dontcopy = נארזים בתוך המתקין אבל לא מותקנים אצל המשתמש
 Source: "feature1.bmp"; Flags: dontcopy
 Source: "feature2.bmp"; Flags: dontcopy
@@ -159,6 +162,7 @@ Source: "feature4.bmp"; Flags: dontcopy
 Filename: "{app}\system_install.marker"; Section: "Install"; Key: "Mode"; String: "Admin"; Check: IsAdminInstallMode and not IsPortableInstall
 
 [Code]
+#include "bundled_plugins_network_check.iss"
 const
   FEATURES_GAP_X = 14;
   FEATURES_GAP_Y = 8;
