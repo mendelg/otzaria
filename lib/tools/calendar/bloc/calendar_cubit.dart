@@ -75,6 +75,10 @@ class CalendarCubit extends Cubit<CalendarState> {
   int _pluginRefreshGeneration = 0;
   int _calendarWidgetCount = 0;
 
+  // רשת חודש מכילה עד 42 ימים; אין להרחיב את כל ההיסטוריה לטווחי ימים.
+  List<CustomEvent>? _eventCacheSource;
+  final _eventsByDate = <DateTime, List<CustomEvent>>{};
+
   // Getter for accessing notification service from outside
   NotificationService get notificationService => _notificationService;
 
@@ -1279,9 +1283,24 @@ class CalendarCubit extends Cubit<CalendarState> {
     }
   }
 
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
   List<CustomEvent> eventsForDate(DateTime date) {
-    return state.events.where((e) => e.occursOn(date)).toList()
-      ..sort(compareCalendarEventsByTime);
+    if (!identical(_eventCacheSource, state.events)) {
+      _eventsByDate.clear();
+      _eventCacheSource = state.events;
+    }
+    final day = _dateOnly(date);
+    var matches = _eventsByDate[day];
+    if (matches == null) {
+      if (_eventsByDate.length == 42) {
+        _eventsByDate.remove(_eventsByDate.keys.first);
+      }
+      matches = state.events.where((e) => e.occursOn(date)).toList()
+        ..sort(compareCalendarEventsByTime);
+      _eventsByDate[day] = matches;
+    }
+    return List<CustomEvent>.of(matches);
   }
 
   List<CustomEvent> getFilteredEvents(String query) {
