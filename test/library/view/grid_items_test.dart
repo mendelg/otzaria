@@ -8,12 +8,14 @@ import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/library/view/grid_items.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/text_book/utils/book_versions_action.dart';
 
 class _FakeFileSystemData extends FileSystemData {
   _FakeFileSystemData({this.canDelete = false});
 
   /// האם מחיקה מהספרייה מותרת (מדמה ספר "עותק עצמאי" כשהוא true).
-  final bool canDelete;
+  bool canDelete;
+  int canDeleteCalls = 0;
 
   @override
   Future<bool> canDeleteUserBookFromLibrary({
@@ -22,6 +24,7 @@ class _FakeFileSystemData extends FileSystemData {
     String fileType = 'txt',
     required BookSource source,
   }) async {
+    canDeleteCalls++;
     return canDelete;
   }
 }
@@ -693,6 +696,98 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byIcon(FluentIcons.more_vertical_24_regular), findsNothing);
+    });
+
+    group('שאילתות הפעולות', () {
+      late _FakeFileSystemData fake;
+      late List<Book> probedBooks;
+      late Book book;
+      late StateSetter rebuild;
+
+      setUp(() {
+        fake = _FakeFileSystemData(canDelete: false);
+        FileSystemData.instance = fake;
+        probedBooks = [];
+        bookVersionsProbeForTesting = (probed) async {
+          probedBooks.add(probed);
+          return probed.title == 'עם גרסאות';
+        };
+      });
+
+      tearDown(() => bookVersionsProbeForTesting = null);
+
+      Widget buildRebuildable(Book initial) {
+        book = initial;
+        return MaterialApp(
+          home: Material(
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                rebuild = setState;
+                return BookActionsMenuButton(book: book, onBookDeleted: () {});
+              },
+            ),
+          ),
+        );
+      }
+
+      testWidgets('בנייה מחדש של ההורה אינה מריצה את השאילתות שוב', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildRebuildable(TextBook(title: 'עם גרסאות', categoryId: 1)),
+        );
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 10; i++) {
+          rebuild(() {});
+          await tester.pump();
+        }
+        await tester.pumpAndSettle();
+
+        expect(fake.canDeleteCalls, 1);
+        expect(probedBooks, hasLength(1));
+        expect(
+          find.byIcon(FluentIcons.more_vertical_24_regular),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('ספר אחר באותו מקום מריץ את השאילתות מחדש', (tester) async {
+        await tester.pumpWidget(
+          buildRebuildable(TextBook(title: 'עם גרסאות', categoryId: 1)),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.byIcon(FluentIcons.more_vertical_24_regular),
+          findsOneWidget,
+        );
+
+        rebuild(() => book = TextBook(title: 'בלי גרסאות', categoryId: 2));
+        await tester.pumpAndSettle();
+
+        expect(fake.canDeleteCalls, 2);
+        expect(probedBooks.map((b) => b.title), ['עם גרסאות', 'בלי גרסאות']);
+        expect(find.byIcon(FluentIcons.more_vertical_24_regular), findsNothing);
+      });
+
+      testWidgets('מופע ספר חדש עם אותם שדות מריץ את השאילתות מחדש', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          buildRebuildable(TextBook(title: 'בלי גרסאות', categoryId: 1)),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byIcon(FluentIcons.more_vertical_24_regular), findsNothing);
+
+        fake.canDelete = true;
+        rebuild(() => book = TextBook(title: 'בלי גרסאות', categoryId: 1));
+        await tester.pumpAndSettle();
+
+        expect(fake.canDeleteCalls, 2);
+        expect(
+          find.byIcon(FluentIcons.more_vertical_24_regular),
+          findsOneWidget,
+        );
+      });
     });
   });
 }
