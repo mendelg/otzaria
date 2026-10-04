@@ -147,6 +147,42 @@ void main() {
       },
     );
 
+    test('קטגוריה ו-TOC יחד: אותו דירוג בכל סדר ספרייה', () async {
+      const kiryatSeferEruvin = (
+        id: 5043,
+        title: 'קרית ספר על משנה תורה, הלכות עירובין',
+        acronyms: ['קרית ספר על רמבם הלכות עירובין'],
+      );
+      for (final books in [
+        [_hilchotShabbat, _kiryatSeferShabbat, kiryatSeferEruvin],
+        [_hilchotShabbat, kiryatSeferEruvin, _kiryatSeferShabbat],
+        [_kiryatSeferShabbat, _hilchotShabbat, kiryatSeferEruvin],
+        [_kiryatSeferShabbat, kiryatSeferEruvin, _hilchotShabbat],
+        [kiryatSeferEruvin, _hilchotShabbat, _kiryatSeferShabbat],
+        [kiryatSeferEruvin, _kiryatSeferShabbat, _hilchotShabbat],
+      ]) {
+        seedLibrary(
+          books,
+          categoryPaths: {
+            ..._categoryPaths,
+            5043: 'הלכה, משנה תורה, מפרשים, קרית ספר, ספר זמנים',
+          },
+        );
+        final refs = await buildFindRefRepo(
+          tocEntries: {
+            5043: [
+              {'reference': 'ספר זמנים', 'segment': 7, 'level': 2},
+            ],
+          },
+        ).findRefs('רמבם ספר זמנים');
+
+        expect(refs.map((r) => r.bookId), [308, 5042, 5043]);
+        expect(refs.map((r) => r.isCategoryMatch), [true, true, false]);
+        expect(refs.last.segment, 7);
+        resetSeededLibrary();
+      }
+    });
+
     test('segment אב ("הלכה") אינו מחזיר כלום', () async {
       // "הלכה" משותף לאלפי ספרים; רק העלה — הקטגוריה הישירה — נבדק.
       seedLibrary(const [
