@@ -285,6 +285,14 @@ class CommentaryListBaseState extends State<CommentaryListBase>
   Timer? _searchComputeDebounce;
   int _searchComputeGen = 0;
   int _lastLinksSignature = 0;
+  ({
+    List<Link> links,
+    List<int> indexes,
+    List<String> commentators,
+    Set<String> types,
+    Future<List<Link>> future,
+  })?
+  _cachedLinks;
   // מפה: link key → path2 (לצורך קיבוץ תוצאות לפי מפרש)
   final Map<String, String> _linkKeyToPath = {};
   // מפה: link key → קטעי טקסט (snippets) לתוצאות החיפוש
@@ -379,6 +387,38 @@ class CommentaryListBaseState extends State<CommentaryListBase>
               '${link.index1}|${link.path2}|${link.index2}|${link.connectionType}',
         )
         .join('||');
+  }
+
+  // getLinksforIndexs סורק את כל קישורי הספר; future חדש גם גורם לבנייה נוספת
+  // כשהוא נפתר, ולכן נוצר מחדש רק כשהקלטים משתנים.
+  Future<List<Link>> _getCachedLinks(
+    List<int> indexes,
+    List<Link> links,
+    List<String> commentators,
+    Set<String> types,
+  ) {
+    final cached = _cachedLinks;
+    if (cached != null &&
+        identical(cached.links, links) &&
+        listEquals(cached.indexes, indexes) &&
+        listEquals(cached.commentators, commentators) &&
+        setEquals(cached.types, types)) {
+      return cached.future;
+    }
+    final future = getLinksforIndexs(
+      indexes: indexes,
+      links: links,
+      commentatorsToShow: commentators,
+      typesToShow: types,
+    );
+    _cachedLinks = (
+      links: links,
+      indexes: indexes,
+      commentators: commentators,
+      types: types,
+      future: future,
+    );
+    return future;
   }
 
   Future<List<CommentaryGroup>> _getCachedGroups(List<Link> links) {
@@ -2022,11 +2062,11 @@ class CommentaryListBaseState extends State<CommentaryListBase>
               }
 
               final commentaryWidget = FutureBuilder<List<Link>>(
-                future: getLinksforIndexs(
-                  indexes: currentIndexes,
-                  links: state.links,
-                  commentatorsToShow: selectedCommentators,
-                  typesToShow: effectiveTypes,
+                future: _getCachedLinks(
+                  currentIndexes,
+                  state.links,
+                  selectedCommentators,
+                  effectiveTypes,
                 ),
                 builder: (context, thisLinksSnapshot) {
                   if (!thisLinksSnapshot.hasData) {
