@@ -69,6 +69,11 @@ class AppPaths {
     _cachedDataRootPath = path;
   }
 
+  /// מחליף את תיקיית הפרופיל (APPDATA וכו') כשאין דריסה: בלעדיו בדיקה
+  /// שמאפסת את הדריסה כותבת לנתוני המשתמש האמיתיים.
+  @visibleForTesting
+  static String? debugProfileDataRootPath;
+
   /// דורס את זיהוי Android לצורכי בדיקה של כללי מיקום האינדקס.
   @visibleForTesting
   static bool? debugIsAndroidOverride;
@@ -130,6 +135,8 @@ class AppPaths {
         p.dirname(_resolvedExecutable),
         _portableDataFolderName,
       );
+    } else if (debugProfileDataRootPath != null) {
+      rootPath = debugProfileDataRootPath!;
     } else if (Platform.isWindows) {
       final appData = Platform.environment['APPDATA'] ?? '';
       rootPath = p.join(appData, 'otzaria');
@@ -146,7 +153,8 @@ class AppPaths {
     return _cachedDataRootPath!;
   }
 
-  static String? get cachedDataRootPath => _cachedDataRootPath;
+  static String? get cachedDataRootPath =>
+      _cachedDataRootPath ?? debugProfileDataRootPath;
 
   /// שורש הספרייה שבחר המשתמש ב-Android (כרטיס SD), אם קיים ונגיש כרגע.
   /// משפיע רק על מיקום הספרייה (ספרים/אינדקס/מסדי נתונים) — לא על שורש הנתונים
