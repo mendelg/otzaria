@@ -24,9 +24,14 @@ import 'package:otzaria/utils/file/save_file_with_extension.dart';
 /// Reports sent to plugin developers through the Otzaria site: the saved
 /// queue and the sent history.
 class PluginReportsPanel extends StatefulWidget {
-  const PluginReportsPanel({super.key, required this.isOfflineMode});
+  const PluginReportsPanel({
+    super.key,
+    required this.isOfflineMode,
+    this.onPendingReportsChanged,
+  });
 
   final bool isOfflineMode;
+  final VoidCallback? onPendingReportsChanged;
 
   @override
   State<PluginReportsPanel> createState() => _PluginReportsPanelState();
@@ -250,6 +255,7 @@ class _PluginReportsPanelState extends State<PluginReportsPanel> {
     final pendingAfter = await reportService.getPendingReportsCount();
 
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() {
       _isFlushingPluginReports = false;
     });
@@ -282,6 +288,7 @@ class _PluginReportsPanelState extends State<PluginReportsPanel> {
         setState(() {
           _sendingPluginReportId = null;
         });
+        widget.onPendingReportsChanged?.call();
       }
     }
 
@@ -343,6 +350,7 @@ class _PluginReportsPanelState extends State<PluginReportsPanel> {
     await PluginReportService().deletePendingReport(record.reportId);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.removedFromQueue);
   }
 
@@ -373,6 +381,7 @@ class _PluginReportsPanelState extends State<PluginReportsPanel> {
     await PluginReportService().clearPendingReports();
 
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() {
       _isClearingPluginPendingReports = false;
     });

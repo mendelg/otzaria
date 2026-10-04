@@ -142,7 +142,7 @@ class SystemSettingsTab extends StatefulWidget {
       subtitle: 'היסטוריית דיווחים שנשלחו',
       tab: SettingsTab.system,
       cardId: 'system.reports',
-      expandSection: 'manage',
+      expandSection: 'books',
       keywords: ['דיווח', 'היסטוריה'],
     ),
     SettingsSearchEntry(

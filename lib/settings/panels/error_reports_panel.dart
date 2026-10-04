@@ -27,9 +27,14 @@ import 'package:otzaria/utils/file/save_file_with_extension.dart';
 /// Direct error reports on books: identification email, offline queueing,
 /// the saved queue and the sent history.
 class ErrorReportsPanel extends StatefulWidget {
-  const ErrorReportsPanel({super.key, required this.isOfflineMode});
+  const ErrorReportsPanel({
+    super.key,
+    required this.isOfflineMode,
+    this.onPendingReportsChanged,
+  });
 
   final bool isOfflineMode;
+  final VoidCallback? onPendingReportsChanged;
 
   @override
   State<ErrorReportsPanel> createState() => _ErrorReportsPanelState();
@@ -302,6 +307,7 @@ class _ErrorReportsPanelState extends State<ErrorReportsPanel> {
     final pendingAfter = await reportService.getPendingReportsCount();
 
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() {
       _isFlushingPendingReports = false;
     });
@@ -334,6 +340,7 @@ class _ErrorReportsPanelState extends State<ErrorReportsPanel> {
         setState(() {
           _sendingPendingReportId = null;
         });
+        widget.onPendingReportsChanged?.call();
       }
     }
 
@@ -375,6 +382,7 @@ class _ErrorReportsPanelState extends State<ErrorReportsPanel> {
     await DirectErrorReportService().markPendingReportAsSent(report);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.markedAsSent);
   }
 
@@ -454,6 +462,7 @@ class _ErrorReportsPanelState extends State<ErrorReportsPanel> {
     await DirectErrorReportService().deletePendingReport(report.id);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.removedFromQueue);
   }
 
@@ -514,15 +523,13 @@ class _ErrorReportsPanelState extends State<ErrorReportsPanel> {
     await DirectErrorReportService().clearPendingReports();
 
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() {
       _isClearingPendingReports = false;
     });
     UiSnack.show(ReportMessages.pendingCleared);
   }
 
-  /// קובע לאיזו מערכת הפעלה יותאם סקריפט השליחה. בוינדוס מחזיר מיד Windows;
-  /// ב-Linux/macOS שואל את המשתמש; בשאר (נייד) מחזיר Windows אחרי הבהרה
-  /// שהקובץ מיועד למחשב Windows מחובר. מחזיר null אם המשתמש ביטל.
   Future<void> _exportPendingReportsScript() async {
     final verified = await verifySaferModePassword(context);
     if (!verified) {

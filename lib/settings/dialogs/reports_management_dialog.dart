@@ -105,7 +105,7 @@ class _ReportsManagementDialogState extends State<ReportsManagementDialog>
     initialIndex: widget.initialTab.index,
     vsync: this,
   );
-  ReportCounts _counts = const ReportCounts();
+  final _counts = ValueNotifier(const ReportCounts());
 
   @override
   void initState() {
@@ -119,12 +119,13 @@ class _ReportsManagementDialogState extends State<ReportsManagementDialog>
   @override
   void dispose() {
     _tabController.dispose();
+    _counts.dispose();
     super.dispose();
   }
 
   Future<void> _loadCounts() async {
     final counts = await ReportCounts.load();
-    if (mounted) setState(() => _counts = counts);
+    if (mounted) _counts.value = counts;
   }
 
   AppCrashReportMode get _crashReportMode => AppCrashReportMode.parse(
@@ -139,13 +140,13 @@ class _ReportsManagementDialogState extends State<ReportsManagementDialog>
     if (mounted) setState(() {});
   }
 
-  String _tabLabel(BuildContext context, ReportsTab tab) {
+  String _tabLabel(BuildContext context, ReportsTab tab, ReportCounts counts) {
     final label = context.settingsText(switch (tab) {
       ReportsTab.books => 'טעויות בספרים',
       ReportsTab.app => 'התוכנה',
       ReportsTab.plugins => 'תוספים',
     });
-    final pending = _counts.pendingOf(tab);
+    final pending = counts.pendingOf(tab);
     return pending == 0 ? label : '$label ($pending)';
   }
 
@@ -176,13 +177,16 @@ class _ReportsManagementDialogState extends State<ReportsManagementDialog>
         selector: (state) => state.isOfflineMode,
         builder: (context, isOfflineMode) => Column(
           children: [
-            TabBar(
-              controller: _tabController,
-              splashBorderRadius: AppTokens.borderRadiusAll,
-              tabs: [
-                for (final tab in ReportsTab.values)
-                  Tab(text: _tabLabel(context, tab)),
-              ],
+            ValueListenableBuilder<ReportCounts>(
+              valueListenable: _counts,
+              builder: (context, counts, _) => TabBar(
+                controller: _tabController,
+                splashBorderRadius: AppTokens.borderRadiusAll,
+                tabs: [
+                  for (final tab in ReportsTab.values)
+                    Tab(text: _tabLabel(context, tab, counts)),
+                ],
+              ),
             ),
             Expanded(
               child: TabBarView(
@@ -192,7 +196,10 @@ class _ReportsManagementDialogState extends State<ReportsManagementDialog>
                     context.settingsText(
                       'שליחה ישירה לצוות אוצריא, כולל תור אוטומטי במצב אופליין.',
                     ),
-                    ErrorReportsPanel(isOfflineMode: isOfflineMode),
+                    ErrorReportsPanel(
+                      isOfflineMode: isOfflineMode,
+                      onPendingReportsChanged: _loadCounts,
+                    ),
                   ),
                   _tabBody(
                     context.settingsText(
@@ -202,13 +209,17 @@ class _ReportsManagementDialogState extends State<ReportsManagementDialog>
                       isOfflineMode: isOfflineMode,
                       crashReportMode: _crashReportMode,
                       onCrashReportModeChanged: _setCrashReportMode,
+                      onPendingReportsChanged: _loadCounts,
                     ),
                   ),
                   _tabBody(
                     context.settingsText(
                       'דיווחים ששלחתם למפתחי תוספים דרך אתר אוצריא, כולל תור אוטומטי במצב אופליין.',
                     ),
-                    PluginReportsPanel(isOfflineMode: isOfflineMode),
+                    PluginReportsPanel(
+                      isOfflineMode: isOfflineMode,
+                      onPendingReportsChanged: _loadCounts,
+                    ),
                   ),
                 ],
               ),

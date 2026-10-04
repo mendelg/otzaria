@@ -34,9 +34,11 @@ class AppReportsPanel extends StatefulWidget {
     required this.crashReportMode,
     required this.onCrashReportModeChanged,
     this.service,
+    this.onPendingReportsChanged,
   });
 
   final bool isOfflineMode;
+  final VoidCallback? onPendingReportsChanged;
   final AppCrashReportMode crashReportMode;
   final ValueChanged<AppCrashReportMode> onCrashReportModeChanged;
   final AppReportService? service;
@@ -73,7 +75,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               onPressed: () => showAppReportDialog(
                 context,
                 dialogBuilder: settingsDialogBuilder,
-              ).then((_) => _refresh()),
+              ).then(_refresh),
             ),
           ],
         ),
@@ -362,8 +364,10 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     AppReportType.suggestion => context.settingsText('הצעה'),
   };
 
-  void _refresh() {
-    if (mounted) setState(() {});
+  void _refresh(AppReportDeliveryResult? result) {
+    if (!mounted) return;
+    setState(() {});
+    if (result != null) widget.onPendingReportsChanged?.call();
   }
 
   Future<void> _showDetails(AppReport report, {required bool sent}) async {
@@ -409,6 +413,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     final sentCount = await _service.flushPendingReports();
     final pendingAfter = await _service.getPendingReportsCount();
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() => _isFlushing = false);
     if (sentCount > 0) {
       UiSnack.showSuccess(ReportMessages.pendingFlushed(sentCount));
@@ -427,7 +432,10 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     } catch (e) {
       if (mounted) UiSnack.showError(ReportMessages.sendError(e));
     } finally {
-      if (mounted) setState(() => _sendingReportId = null);
+      if (mounted) {
+        setState(() => _sendingReportId = null);
+        widget.onPendingReportsChanged?.call();
+      }
     }
     if (result != null) showAppReportResultSnack(result);
   }
@@ -486,6 +494,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     await _service.deletePendingReport(report.reportId);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.removedFromQueue);
   }
 
@@ -505,6 +514,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     await _service.markPendingReportAsSent(report);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.markedAsSent);
   }
 
@@ -528,6 +538,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     setState(() => _isClearingPending = true);
     await _service.clearPendingReports();
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() => _isClearingPending = false);
     UiSnack.show(ReportMessages.pendingCleared);
   }
