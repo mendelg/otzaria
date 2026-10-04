@@ -1539,13 +1539,9 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   ) async {
     final current = state.currentTab;
     if (current is! CombinedTab) return;
-
-    current.splitRatio = event.ratio;
-
-    final tabsToSave = state.tabs;
-    final indexToSave = state.currentTabIndex;
-    emit(state.copyWith(forceUpdate: true));
-    _scheduleSave(tabsToSave, indexToSave);
+    // SplitPaneView כבר כתב את היחס ל-node הנכון; forceUpdate כאן בונה מחדש את
+    // תוכן כל הכרטיסיות, וכתיבה ל-currentTab דורסת טאב מפוצל אחר.
+    _scheduleSave(state.tabs, state.currentTabIndex);
   }
 
   /// אינדקס הטאב שאירוע חלונית פועל עליו, או `null` אם אינו קיים.

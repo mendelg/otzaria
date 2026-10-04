@@ -144,7 +144,7 @@ class _ReadingScreenState extends State<ReadingScreen>
   }
 
   void _pruneTabViewCache(TabsState state) {
-    // updateCounter marks tabs mutated in place (pin, split ratio); their
+    // updateCounter marks tabs mutated in place (e.g. pin); their
     // content must be rebuilt.
     if (_tabViewCacheCounter != state.updateCounter) {
       _tabViewCacheCounter = state.updateCounter;
