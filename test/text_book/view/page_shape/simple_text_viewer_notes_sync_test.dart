@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
@@ -12,6 +14,9 @@ import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
 import 'package:otzaria/personal_notes/storage/personal_notes_changes.dart';
+import 'package:otzaria/personal_notes/storage/personal_notes_database.dart';
+import 'package:otzaria/personal_notes/services/personal_notes_service.dart';
+import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
@@ -62,7 +67,7 @@ void main() {
 
   Future<void> pumpCommentary(
     WidgetTester tester,
-    _NotesRepository repository, {
+    PersonalNotesRepository repository, {
     TextBook? reportBook,
   }) async {
     await tester.pumpWidget(
@@ -200,6 +205,67 @@ void main() {
     expect(repository.loadCalls, callsBefore);
   });
 
+  testWidgets('טור מפרש מסתנכרן עם SQLite ומיישב מיקום מיובא', (tester) async {
+    final database = PersonalNotesDatabase.instance;
+    final repository = _SqliteRepository();
+    final root = (await tester.runAsync(() async {
+      await database.close();
+      final root = await Directory.systemTemp.createTemp('commentary_notes_');
+      AppPaths.debugOverrideDataRootPath(root.path);
+      await Settings.setValue(
+        SettingsRepository.keyDatabasesPath,
+        '${root.path}/databases',
+      );
+      return root;
+    }))!;
+    try {
+      await pumpCommentary(tester, repository);
+      expect(isMarked(tester), isFalse);
+
+      await tester.runAsync(() async {
+        await repository.service.addNote(
+          bookId: 'רש"י',
+          bookContent: _SqliteRepository.content,
+          lineNumber: 1,
+          content: 'תוכן',
+          contentPlain: 'תוכן',
+          contentFormat: PersonalNoteContentFormat.plain,
+        );
+        await pumpEventQueue();
+      });
+      await tester.pumpAndSettle();
+      expect(isMarked(tester), isTrue);
+
+      await tester.runAsync(() async {
+        await database.deleteBookNotes('רש"י');
+        await pumpEventQueue();
+      });
+      await tester.pumpAndSettle();
+      expect(isMarked(tester), isFalse);
+
+      await tester.runAsync(() async {
+        await database.batchInsertNotes([
+          _note(line: 2).copyWith(displayTitle: 'שורת מפרש'),
+        ]);
+        await pumpEventQueue();
+      });
+      await tester.pumpAndSettle();
+      expect(isMarked(tester), isTrue);
+      expect(
+        await tester.runAsync(() => database.getNote('1')),
+        isA<PersonalNote>().having((note) => note.lineNumber, 'lineNumber', 1),
+      );
+    } finally {
+      await tester.pumpWidget(harness(const SizedBox()));
+      await tester.runAsync(() async {
+        await database.close();
+        AppPaths.debugOverrideDataRootPath(null);
+        await Settings.setValue(SettingsRepository.keyDatabasesPath, '');
+        await root.delete(recursive: true);
+      });
+    }
+  });
+
   testWidgets('הטקסט הראשי מסיר את ההדגשה כשה-bloc מוחק את ההערה', (
     tester,
   ) async {
@@ -226,6 +292,15 @@ void main() {
 
     expect(mainLine, findsNothing);
   });
+}
+
+class _SqliteRepository extends PersonalNotesRepository {
+  static const content = 'שורת מפרש\nשורה אחרת';
+  final service = PersonalNotesService();
+
+  @override
+  Future<List<PersonalNote>> loadNotes(String bookId, {int? categoryId}) =>
+      service.loadNotes(bookId: bookId, bookContent: content);
 }
 
 class _NotesRepository extends PersonalNotesRepository {

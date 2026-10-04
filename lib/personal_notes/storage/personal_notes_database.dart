@@ -6,11 +6,7 @@ import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/storage/personal_notes_changes.dart';
 import 'package:otzaria/migration/database/sqlite3_utils.dart';
 
-/// SQLite database for storing personal notes.
-///
-/// Schema:
-/// - personal_notes table: stores all note metadata and content
-/// - Indexed by book_id and line_number for fast queries
+/// מסד SQLite להערות אישיות, עם אינדקסים לפי ספר ושורה.
 class PersonalNotesDatabase {
   static const _tableNotes = 'personal_notes';
 
@@ -201,10 +197,7 @@ class PersonalNotesDatabase {
     if (db.updatedRows > 0) _notifyChanges([bookId]);
   }
 
-  /// Batch update multiple notes (for reconciliation)
-  ///
-  /// אינו מודיע ל-[PersonalNotesChanges]: הוא רץ מתוך טעינה, ומאזין שטוען
-  /// מחדש בתגובה היה נכנס ללולאה.
+  /// יישוב מיקומים בזמן טעינה אינו מודיע למאזינים, כדי למנוע לולאת טעינות.
   Future<void> batchUpdateNotes(List<PersonalNote> notes) async {
     final db = await database;
     withTransaction(db, () {

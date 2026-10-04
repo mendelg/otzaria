@@ -68,6 +68,7 @@ class PersonalNotesBloc extends Bloc<PersonalNotesEvent, PersonalNotesState> {
     Emitter<PersonalNotesState> emit,
   ) async {
     try {
+      if (event.bookId != state.bookId || _deferWhileLoading()) return;
       final stored = await _repository.loadStoredNotes(event.bookId);
       if (event.bookId != state.bookId || _matchesState(stored)) return;
       if (_deferWhileLoading()) return;

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/app_paths.dart';
+import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
 import 'package:otzaria/personal_notes/storage/personal_notes_changes.dart';
 import 'package:otzaria/personal_notes/storage/personal_notes_database.dart';
@@ -29,6 +30,10 @@ void main() {
     dataRoot = await Directory.systemTemp.createTemp('notes_changes_test_');
     AppPaths.debugOverrideDataRootPath(dataRoot.path);
     await db.close();
+    await Settings.setValue(
+      SettingsRepository.keyDatabasesPath,
+      '${dataRoot.path}/databases',
+    );
     changes = [];
     initialRevision = db.revision.value;
     subscription = PersonalNotesChanges.stream.listen(changes.add);
@@ -38,6 +43,7 @@ void main() {
     await subscription.cancel();
     await db.close();
     AppPaths.debugOverrideDataRootPath(null);
+    await Settings.setValue(SettingsRepository.keyDatabasesPath, '');
     try {
       await dataRoot.delete(recursive: true);
     } catch (_) {}

@@ -7,6 +7,7 @@ import 'package:otzaria/models/links.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_event.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
+import 'package:otzaria/personal_notes/widgets/personal_notes_sidebar.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
@@ -37,6 +38,8 @@ void main() {
     _RecordingTabsBloc? tabsBloc,
     List<String> activeCommentators = const [],
     _TestTextBookBloc? textBookBlocOverride,
+    Widget? notesFooter,
+    String? notesBookIdOverride,
   }) {
     final textBookBloc =
         textBookBlocOverride ??
@@ -65,11 +68,47 @@ void main() {
             onTabChanged: onTabChanged,
             showSplitView: showSplitView,
             tab: tab,
+            notesFooter: notesFooter,
+            notesBookIdOverride: notesBookIdOverride,
           ),
         ),
       ),
     );
   }
+
+  testWidgets('ה-footer נשמר בספר הראשי ומוסתר בהערות מפרש שנפתח', (
+    tester,
+  ) async {
+    const footer = Text('הערות המפרשים');
+    await tester.pumpWidget(
+      buildPanel(
+        initialTabIndex: kNotesTabIndex,
+        notesFooter: footer,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PersonalNotesSidebar>(find.byType(PersonalNotesSidebar))
+          .footer,
+      same(footer),
+    );
+
+    await tester.pumpWidget(
+      buildPanel(
+        initialTabIndex: kNotesTabIndex,
+        notesFooter: footer,
+        notesBookIdOverride: 'רש"י',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<PersonalNotesSidebar>(find.byType(PersonalNotesSidebar))
+          .footer,
+      isNull,
+    );
+  });
 
   testWidgets('סימון טקסט בטקסט הראשי אינו בונה מחדש את חלונית המפרשים', (
     tester,
