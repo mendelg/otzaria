@@ -96,4 +96,54 @@ void main() {
     expect(keys, isA<Set<String>>());
     expect(keys, {'top', 'shared', personalNotesBookKey(attached)});
   });
+
+  group('personalNotesCategoryCounts', () {
+    Category cat(String title, List<Category> subs, List<Book> books) =>
+        Category(
+          title: title,
+          description: '',
+          shortDescription: '',
+          order: 0,
+          subCategories: subs,
+          books: books,
+          parent: null,
+        );
+
+    test('counts each category once, deduping books within a category', () {
+      final leaf = cat('leaf', [], [
+        TextBook(title: 'a'),
+        PdfBook(title: 'a', path: '/a.pdf'),
+        TextBook(title: 'b'),
+      ]);
+      final mid = cat('mid', [leaf], [TextBook(title: 'a')]);
+      final empty = cat('empty', [], [TextBook(title: 'none')]);
+      final root = cat('root', [mid, empty], [TextBook(title: 'c')]);
+      final perBook = {'a': 2, 'b': 1, 'c': 4};
+
+      final counts = personalNotesCategoryCounts(
+        root,
+        (key) => perBook[key] ?? 0,
+      );
+
+      expect(counts[leaf], 3);
+      expect(counts[mid], 5);
+      expect(counts[empty], 0);
+      expect(counts[root], 9);
+    });
+
+    test('looks up each category book once regardless of depth', () {
+      final deep = cat('d', [], [TextBook(title: 'x')]);
+      final c = cat('c', [deep], [TextBook(title: 'y')]);
+      final b = cat('b', [c], []);
+      final root = cat('root', [b], []);
+      final lookups = <String>[];
+
+      personalNotesCategoryCounts(root, (key) {
+        lookups.add(key);
+        return 1;
+      });
+
+      expect(lookups..sort(), ['x', 'y']);
+    });
+  });
 }
