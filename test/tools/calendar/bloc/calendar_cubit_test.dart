@@ -906,6 +906,136 @@ void main() {
     });
   });
 
+  group(
+    'eventsForDate (issue: סריקה מלאה של כל האירועים בכל תא בתצוגת חודש)',
+    () {
+      // מדמה חודש תצוגה: 42 ימים (6 שבועות), כמו רשת לוח שנה אמיתית.
+      // מוגדר לפני buildManyEvents כדי שתאריכי האירועים הלא-חוזרים ייפלו
+      // בפועל בתוך הרשת הנבדקת — אחרת בדיקת השקילות הייתה עוברת באופן
+      // ריק (ה-lookup באינדקס תמיד מוחזר null, ולא נבדק בכלל). הטווח חוצה
+      // במכוון את מעבר שעון הקיץ (סוף מרץ) כדי לבדוק גם את התנהגות הגבול.
+      List<DateTime> monthGridDays() {
+        final days = <DateTime>[];
+        var d = DateTime(2026, 3, 1);
+        for (var i = 0; i < 42; i++) {
+          days.add(d.add(Duration(days: i)));
+        }
+        return days;
+      }
+
+      // בונה מאגר אירועים ריאליסטי: רובם לא-חוזרים עם תאריכים שונים
+      // (כמו רשומות יומן או ICS רגילות), ומיעוטם חוזרים. תאריכי האירועים
+      // הלא-חוזרים נופלים בתוך רשת החודש הנבדקת (monthGridDays), כדי
+      // שבדיקת השקילות תממש בפועל את ה-lookup באינדקס ולא תעבור באופן ריק.
+      List<CustomEvent> buildManyEvents(
+        int count, {
+        required double recurringFraction,
+      }) {
+        final gridStart = monthGridDays().first;
+        final events = <CustomEvent>[];
+        final recurringCount = (count * recurringFraction).round();
+        for (var i = 0; i < count; i++) {
+          final isRecurring = i < recurringCount;
+          events.add(
+            CustomEvent(
+              id: 'evt-$i',
+              title: 'אירוע מספר $i',
+              description: 'תיאור $i',
+              createdAt: DateTime(2026, 1, 1),
+              baseGregorianDate: gridStart.add(Duration(days: i % 42)),
+              baseJewishYear: 5786,
+              baseJewishMonth: 1 + (i % 12),
+              baseJewishDay: 1 + (i % 28),
+              recurrenceType: isRecurring
+                  ? RecurrenceType
+                        .values[1 + (i % (RecurrenceType.values.length - 1))]
+                  : RecurrenceType.none,
+            ),
+          );
+        }
+        return events;
+      }
+
+      // מימוש הלוגיקה הישנה: סריקה מלאה של כל האירועים לכל יום בנפרד,
+      // בלי שום אינדקס או קאשינג.
+      List<CustomEvent> eventsForDateLegacy(
+        List<CustomEvent> all,
+        DateTime date,
+      ) {
+        return all.where((e) => e.occursOn(date)).toList()
+          ..sort(compareCalendarEventsByTime);
+      }
+
+      Future<CalendarCubit> cubitWithEvents(List<CustomEvent> events) async {
+        final settings = _InMemorySettingsRepository();
+        settings.storedEventsJson = jsonEncode(
+          events.map((e) => e.toJson()).toList(),
+        );
+        final cubit = CalendarCubit(
+          settingsRepository: settings,
+          notificationService: _FakeNotificationService(),
+        );
+        await Future.delayed(const Duration(milliseconds: 100));
+        return cubit;
+      }
+
+      test('תוצאת eventsForDate זהה למימוש הישן על כל ימי החודש', () async {
+        final events = buildManyEvents(300, recurringFraction: 0.1);
+        final cubit = await cubitWithEvents(events);
+
+        for (final day in monthGridDays()) {
+          final current = cubit.eventsForDate(day).map((e) => e.id).toList();
+          final legacy = eventsForDateLegacy(
+            events,
+            day,
+          ).map((e) => e.id).toList();
+          expect(current, legacy, reason: 'יום $day');
+        }
+
+        await cubit.close();
+      });
+
+      test(
+        'רינדור רשת חודש שלמה מהיר משמעותית מסריקה מלאה בכל יום',
+        () async {
+          final events = buildManyEvents(300, recurringFraction: 0.1);
+          final cubit = await cubitWithEvents(events);
+          final days = monthGridDays();
+
+          // חימום
+          for (final d in days) {
+            cubit.eventsForDate(d);
+            eventsForDateLegacy(events, d);
+          }
+
+          final legacySw = Stopwatch()..start();
+          for (final d in days) {
+            eventsForDateLegacy(events, d);
+          }
+          legacySw.stop();
+
+          final currentSw = Stopwatch()..start();
+          for (final d in days) {
+            cubit.eventsForDate(d);
+          }
+          currentSw.stop();
+
+          final legacyMicros = legacySw.elapsedMicroseconds;
+          final currentMicros = currentSw.elapsedMicroseconds;
+
+          // סף שמרני כדי לא להיות תלוי-רעש ב-CI.
+          expect(
+            currentMicros * 2,
+            lessThan(legacyMicros),
+            reason: 'legacy=$legacyMicros µs, current=$currentMicros µs',
+          );
+
+          await cubit.close();
+        },
+      );
+    },
+  );
+
   group('הגירת JSON ישן — endGregorianDate ששימש כסוף חזרה', () {
     test('טווח ארוך מהמחזור נודד ל-recurrenceEndDate', () {
       final json =
