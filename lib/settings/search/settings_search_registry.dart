@@ -31,6 +31,7 @@ class SettingsSearchRegistry extends ChangeNotifier {
 
   final Map<String, GlobalKey> _anchors = {};
   final Map<String, ValueNotifier<bool>> _flashNotifiers = {};
+  final Map<String, ValueChanged<String>> _sectionOpeners = {};
 
   SettingsSearchNavigationRequest? _pendingRequest;
   SettingsSearchNavigationRequest? get pendingRequest => _pendingRequest;
@@ -49,6 +50,16 @@ class SettingsSearchRegistry extends ChangeNotifier {
     if (_anchors[cardId] == key) {
       _anchors.remove(cardId);
     }
+  }
+
+  /// Lets the card [cardId] open the part of it that a result's
+  /// `expandSection` names, when that part is not on the page itself.
+  void registerSectionOpener(String cardId, ValueChanged<String> open) {
+    _sectionOpeners[cardId] = open;
+  }
+
+  void unregisterSectionOpener(String cardId, ValueChanged<String> open) {
+    if (_sectionOpeners[cardId] == open) _sectionOpeners.remove(cardId);
   }
 
   /// מציין שזה הזמן להבזיק על cardId נתון (מאזינים ב-SettingsAnchor).
@@ -81,7 +92,7 @@ class SettingsSearchRegistry extends ChangeNotifier {
   /// כשהטאב עוד לא נבנה, ה-context לא זמין מיד — לכן ננסה כמה פעמים
   /// (עד ~720ms) לפני ויתור, כדי לכסות build איטי או anchors שעוד
   /// לא נכנסו לעץ.
-  Future<void> scrollAndHighlight(String cardId) async {
+  Future<void> scrollAndHighlight(String cardId, {String? section}) async {
     BuildContext? ctx;
     for (var attempt = 0; attempt < 12; attempt++) {
       ctx = _anchors[cardId]?.currentContext;
@@ -96,6 +107,12 @@ class SettingsSearchRegistry extends ChangeNotifier {
       curve: Curves.easeOutCubic,
       alignment: 0.05,
     );
+
+    final openSection = _sectionOpeners[cardId];
+    if (section != null && openSection != null) {
+      openSection(section);
+      return;
+    }
 
     _highlightedCardId = cardId;
     final notifier = _flashNotifiers[cardId];
