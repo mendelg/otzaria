@@ -51,6 +51,7 @@ import 'package:otzaria/utils/ui/context_menu_utils.dart' show ContextMenuUtils;
 import 'package:otzaria/core/messages/text_book_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/personal_notes/personal_notes_system.dart';
+import 'package:otzaria/personal_notes/storage/personal_notes_changes.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/text_book/view/widgets/book_source_banner.dart';
@@ -510,6 +511,8 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
   Map<String, int> _anchorStyleCache = const {};
   Timer? _previewHoverTimer;
   List<PersonalNote> _commentaryNotes = const [];
+  int _commentaryNotesLoadGeneration = 0;
+  StreamSubscription<String>? _notesChangesSubscription;
 
   /// מזהה הריחוף הממתין. טעינה אסינכרונית שהתחילה בודקת אותו לאחר ה-await —
   /// ביטול ה-Timer לבדו אינו עוצר טעינה שכבר יצאה לדרך.
@@ -980,6 +983,9 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     if (!widget.isMainText) {
       HardwareKeyboard.instance.addHandler(_handleCommentaryKeyEvent);
       _loadCommentaryNotes();
+      _notesChangesSubscription = PersonalNotesChanges.stream.listen(
+        _handleNotesChanged,
+      );
     }
 
     // גלילה למיקום הנוכחי אחרי בניית הווידג'ט (רק לטקסט המרכזי)
@@ -1151,6 +1157,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     if (!widget.isMainText) {
       HardwareKeyboard.instance.removeHandler(_handleCommentaryKeyEvent);
       if (_lastActiveCommentary == this) _lastActiveCommentary = null;
+      _notesChangesSubscription?.cancel();
     }
     _selectionFocusNode.dispose();
     _keyboardFocusNode?.dispose();
@@ -1207,6 +1214,8 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
   }
 
   Future<void> _loadCommentaryNotes() async {
+    // טעינה ישנה שמסתיימת אחרי חדשה הייתה מחזירה הערה שכבר נמחקה.
+    final generation = ++_commentaryNotesLoadGeneration;
     final bookTitle = widget.bookTitle;
     if (widget.isMainText || bookTitle == null || bookTitle.isEmpty) return;
     final notes = await (widget.notesRepository ?? PersonalNotesRepository())
@@ -1214,8 +1223,15 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
           _commentaryNotesKey(bookTitle),
           categoryId: widget.reportBook?.categoryId,
         );
-    if (!mounted || widget.bookTitle != bookTitle) return;
+    if (!mounted || generation != _commentaryNotesLoadGeneration) return;
     setState(() => _commentaryNotes = notes);
+  }
+
+  void _handleNotesChanged(String bookId) {
+    final bookTitle = widget.bookTitle;
+    if (bookTitle != null && bookId == _commentaryNotesKey(bookTitle)) {
+      _loadCommentaryNotes();
+    }
   }
 
   void _handleExternalSelectionChange() {
@@ -2307,7 +2323,6 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         punctuationHidden: punctuationHidden,
         categoryId: categoryId,
       );
-      await _loadCommentaryNotes();
       if (mounted) UiSnack.showSuccess(TextBookMessages.noteSaved);
     } catch (e) {
       if (mounted) UiSnack.showError(TextBookMessages.noteSaveError(e));
