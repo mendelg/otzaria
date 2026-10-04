@@ -56,6 +56,21 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
   final availableSet = availableCommentators.toSet();
   final allActive = activeSet.containsAll(availableCommentators);
 
+  AppContextMenuEntry buildItem(String title) {
+    final isActive = activeSet.contains(title);
+    return AppContextMenuEntry(
+      label: title,
+      isSelected: isActive,
+      onTap: () {
+        // מפרש פעיל אינו מוסר מכאן — לחיצה עליו רק פותחת את החלונית.
+        // הסרה שקטה גרמה ללולאת הוסף/הסר בכל ניסיון חוזר (issue #904).
+        final updated = List<String>.from(activeCommentators);
+        if (!isActive) updated.add(title);
+        onCommentatorsChanged(updated, isAdding: true);
+      },
+    );
+  }
+
   List<AppContextMenuEntry> buildGroup(CommentatorGroup group) {
     final commentators = group.commentators.where(availableSet.contains);
     if (commentators.isEmpty) return const <AppContextMenuEntry>[];
@@ -76,20 +91,7 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
           onCommentatorsChanged(updated, isAdding: !groupActive);
         },
       ),
-      ...commentators.map((title) {
-        final isActive = activeSet.contains(title);
-        return AppContextMenuEntry(
-          label: title,
-          isSelected: isActive,
-          onTap: () {
-            // מפרש פעיל אינו מוסר מכאן — לחיצה עליו רק פותחת את החלונית.
-            // הסרה שקטה גרמה ללולאת הוסף/הסר בכל ניסיון חוזר (issue #904).
-            final updated = List<String>.from(activeCommentators);
-            if (!isActive) updated.add(title);
-            onCommentatorsChanged(updated, isAdding: true);
-          },
-        );
-      }),
+      ...commentators.map(buildItem),
     ];
   }
 
@@ -142,6 +144,17 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
     if (items.isEmpty) continue;
     entries.add(const AppContextMenuEntry.divider());
     entries.addAll(items);
+  }
+
+  // Commentators outside every group, or all of them while the groups are
+  // not loaded yet, come last so that none is left out of the menu.
+  final grouped = {
+    for (final group in commentatorGroups) ...group.commentators,
+  };
+  final ungrouped = availableCommentators.where((c) => !grouped.contains(c));
+  if (ungrouped.isNotEmpty) {
+    entries.add(const AppContextMenuEntry.divider());
+    entries.addAll(ungrouped.map(buildItem));
   }
 
   return entries;
