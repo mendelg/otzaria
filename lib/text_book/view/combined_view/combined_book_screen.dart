@@ -206,11 +206,14 @@ bool hasCommentariesForLine({
   });
 }
 
-/// חלון הבחירה נבנה מחדש בכל תזוזת עכבר בגרירה; שורה מרונדרת תלויה רק
-/// בנתונים ובהגדרות. נדרשת רק לאורך גרירה אחת, ואינה מחזיקה את תוכן הספר.
+/// מטמון מוגבל לרינדור שורות חלון הבחירה לאורך גרירה אחת.
+/// אינו מחזיק את רשימת שורות המקור.
 @visibleForTesting
 class SelectionLineCache {
   static const _maxLines = 2000;
+  // עד 256 KiB של תוכן UTF-16, בנוסף לתקורת המפה והמחרוזות.
+  static const _maxCharacters = 128 * 1024;
+  int _characters = 0;
   final Map<int, String> _lines = {};
   WeakReference<List<String>>? _data;
   RenderSettings? _settings;
@@ -226,13 +229,22 @@ class SelectionLineCache {
     }
     String render(int i) =>
         renderSelectionLine(rawText: data[i], settings: settings);
-    return (i) =>
-        _lines[i] ??
-        (_lines.length < _maxLines ? _lines[i] = render(i) : render(i));
+    return (i) {
+      final cached = _lines[i];
+      if (cached != null) return cached;
+      final line = render(i);
+      if (_lines.length < _maxLines &&
+          _characters + line.length <= _maxCharacters) {
+        _lines[i] = line;
+        _characters += line.length;
+      }
+      return line;
+    };
   }
 
   void clear() {
     _lines.clear();
+    _characters = 0;
     _data = null;
     _settings = null;
   }
@@ -1773,15 +1785,20 @@ class _CombinedViewState extends State<CombinedView> {
     int selectionLength,
   ) {
     final renderSettings = _selectionRenderSettings(state, settingsState);
-    return buildSelectionWindow(
+    final window = buildSelectionWindow(
       visibleIndices: state.visibleIndices,
       totalLines: widget.data.length,
       selectionLength: selectionLength,
       renderLine: _selectionLineCache.renderer(widget.data, renderSettings),
     );
+    if (!_isSelectionPointerDown) _selectionLineCache.clear();
+    return window;
   }
 
   final _selectionLineCache = SelectionLineCache();
+
+  @visibleForTesting
+  int get debugSelectionCachedLineCount => _selectionLineCache._lines.length;
 
   Widget buildKeyboardListener() {
     return BlocBuilder<TextBookBloc, TextBookState>(
