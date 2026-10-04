@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/book_common/view/commentary_search_pane.dart';
 import 'package:otzaria/book_common/view/commentators_side_pane.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
 import 'package:flutter/services.dart';
@@ -27,7 +28,6 @@ import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_book/view/commentary_list_base.dart';
-import 'package:otzaria/widgets/commentary/commentary_search_results_list.dart';
 // מיוצא כדי שטסטי הכרטיסייה יייבאו אותו מנקודה אחת.
 export 'package:otzaria/widgets/commentary/commentary_search_results_list.dart'
     show resolveSelectedSnippetGlobalIndex;
@@ -45,8 +45,6 @@ import 'package:otzaria/widgets/navigation/nav_side_panel.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
-import 'package:otzaria/widgets/navigation/search_pane_base.dart';
-import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/navigation/reader_nav_center.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -1251,73 +1249,15 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
   // ── פאנל חיפוש ────────────────────────────────────────────────────────────
 
   Widget _buildCommentarySearchPanel(BuildContext context) {
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: _commentarySearchController,
-      builder: (_, val, _) {
-        final hasQuery = val.text.isNotEmpty;
-        return ValueListenableBuilder<int>(
-          valueListenable: _externalTotalResults,
-          builder: (_, total, _) => ValueListenableBuilder<int>(
-            valueListenable: _externalCurrentIndex,
-            builder: (_, current, _) =>
-                ValueListenableBuilder<List<CommentarySearchSnippet>>(
-                  valueListenable: _externalSearchSnippets,
-                  builder: (context, snippets, _) {
-                    return SearchPaneBase(
-                      searchController: _commentarySearchController,
-                      focusNode: _searchFocusNode,
-                      hintText: 'חפש בתוך המפרשים המוצגים...',
-                      isNoResults: hasQuery && total == 0,
-                      resetSearchCallback: _commentarySearchController.clear,
-                      resultCountString: hasQuery && total > 0
-                          ? 'תוצאה ${current + 1} מתוך $total'
-                          : null,
-                      resultToolbar: hasQuery && total > 0
-                          ? Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                OtzariaSearchAction.prevResult(
-                                  onPressed: current > 0
-                                      ? () => _commentaryKey.currentState
-                                            ?.navigateSearchPrev()
-                                      : null,
-                                ),
-                                OtzariaSearchAction.nextResult(
-                                  onPressed: current < total - 1
-                                      ? () => _commentaryKey.currentState
-                                            ?.navigateSearchNext()
-                                      : null,
-                                ),
-                              ],
-                            )
-                          : null,
-                      resultsWidget: _buildSearchResultsList(
-                        context,
-                        query: val.text,
-                        snippets: snippets,
-                        total: total,
-                        currentIdx: current,
-                      ),
-                    );
-                  },
-                ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildSearchResultsList(
-    BuildContext context, {
-    required String query,
-    required List<CommentarySearchSnippet> snippets,
-    required int total,
-    required int currentIdx,
-  }) {
-    return CommentarySearchResultsList(
-      query: query,
-      snippets: snippets,
-      currentIdx: currentIdx,
+    return CommentarySearchPane(
+      controller: _commentarySearchController,
+      focusNode: _searchFocusNode,
+      hintText: 'חפש בתוך המפרשים המוצגים...',
+      totalResults: _externalTotalResults,
+      currentResult: _externalCurrentIndex,
+      snippets: _externalSearchSnippets,
+      onPrevious: () => _commentaryKey.currentState?.navigateSearchPrev(),
+      onNext: () => _commentaryKey.currentState?.navigateSearchNext(),
       onSnippetTap: (globalIndex) =>
           _commentaryKey.currentState?.navigateToGlobalIndex(globalIndex),
     );

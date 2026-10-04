@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:otzaria/book_common/view/commentary_search_pane.dart';
 import 'package:otzaria/book_common/view/commentators_side_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -22,7 +23,6 @@ import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/pdf_book/view/pdf_commentary_panel.dart';
 import 'package:otzaria/book_common/utils/commentary_search_utils.dart';
 import 'package:otzaria/book_common/utils/commentary_type_filter.dart';
-import 'package:otzaria/widgets/commentary/commentary_search_results_list.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
@@ -46,8 +46,6 @@ import 'package:otzaria/widgets/navigation/nav_side_panel.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
-import 'package:otzaria/widgets/navigation/search_pane_base.dart';
-import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/widgets/navigation/reader_nav_center.dart';
 import 'package:otzaria/widgets/layout/reading_area_width.dart';
 
@@ -1327,58 +1325,17 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   }
 
   Widget _buildSearchPanel() {
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: _searchController,
-      builder: (context, val, _) {
-        final hasQuery = val.text.isNotEmpty;
-        return ValueListenableBuilder<int>(
-          valueListenable: _totalResultsNotifier,
-          builder: (context, total, _) => ValueListenableBuilder<int>(
-            valueListenable: _currentIdxNotifier,
-            builder: (context, currentIdx, _) => SearchPaneBase(
-              searchController: _searchController,
-              focusNode: _searchFocusNode,
-              hintText: 'חיפוש במפרשים...',
-              isNoResults: hasQuery && total == 0,
-              resetSearchCallback: _searchController.clear,
-              resultCountString: hasQuery && total > 0
-                  ? 'תוצאה ${currentIdx + 1} מתוך $total'
-                  : null,
-              resultToolbar: hasQuery && total > 0
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OtzariaSearchAction.prevResult(
-                          onPressed: currentIdx > 0
-                              ? () =>
-                                    _panelKey.currentState?.navigateSearchPrev()
-                              : null,
-                        ),
-                        OtzariaSearchAction.nextResult(
-                          onPressed: currentIdx < total - 1
-                              ? () =>
-                                    _panelKey.currentState?.navigateSearchNext()
-                              : null,
-                        ),
-                      ],
-                    )
-                  : null,
-              resultsWidget:
-                  ValueListenableBuilder<List<CommentarySearchSnippet>>(
-                    valueListenable: _searchSnippetsNotifier,
-                    builder: (context, snippets, _) =>
-                        CommentarySearchResultsList(
-                          query: val.text,
-                          snippets: snippets,
-                          currentIdx: currentIdx,
-                          onSnippetTap: (globalIndex) => _panelKey.currentState
-                              ?.navigateToGlobalIndex(globalIndex),
-                        ),
-                  ),
-            ),
-          ),
-        );
-      },
+    return CommentarySearchPane(
+      controller: _searchController,
+      focusNode: _searchFocusNode,
+      hintText: 'חיפוש במפרשים...',
+      totalResults: _totalResultsNotifier,
+      currentResult: _currentIdxNotifier,
+      snippets: _searchSnippetsNotifier,
+      onPrevious: () => _panelKey.currentState?.navigateSearchPrev(),
+      onNext: () => _panelKey.currentState?.navigateSearchNext(),
+      onSnippetTap: (globalIndex) =>
+          _panelKey.currentState?.navigateToGlobalIndex(globalIndex),
     );
   }
 }
