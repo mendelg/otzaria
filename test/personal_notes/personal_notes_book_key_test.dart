@@ -63,4 +63,37 @@ void main() {
     expect(findBookForPersonalNotesKey(library, key), same(pdf));
     expect(findTextBookForPersonalNotesKey(library, key), isNull);
   });
+
+  test('category keys cover nested books as a set for O(1) lookup', () {
+    final attached = TextBook(id: 3, title: 'deep', source: attachedSource);
+    final child = Category(
+      title: 'child',
+      description: '',
+      shortDescription: '',
+      order: 0,
+      subCategories: [],
+      books: [
+        attached,
+        TextBook(id: 4, title: 'shared'),
+      ],
+      parent: null,
+    );
+    final root = Category(
+      title: 'root',
+      description: '',
+      shortDescription: '',
+      order: 0,
+      subCategories: [child],
+      books: [
+        TextBook(id: 5, title: 'top'),
+        PdfBook(title: 'shared', path: '/s.pdf'),
+      ],
+      parent: null,
+    );
+
+    final keys = personalNotesBookKeysInCategory(root);
+
+    expect(keys, isA<Set<String>>());
+    expect(keys, {'top', 'shared', personalNotesBookKey(attached)});
+  });
 }
