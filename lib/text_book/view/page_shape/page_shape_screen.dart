@@ -57,6 +57,7 @@ import 'package:otzaria/data/data_providers/library_provider_manager.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
+import 'package:otzaria/personal_notes/widgets/commentary_notes_section.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
 import 'package:otzaria/text_book/utils/reading_segment_navigation.dart';
@@ -530,6 +531,19 @@ class _PageShapeScreenState extends State<PageShapeScreen> {
       commentedBookTitle: state.book.title,
     );
   }
+
+  List<String> _displayedCommentators(TextBookLoaded state) => [
+    for (final (column, commentator) in [
+      ('left', _leftCommentator),
+      ('bottom', _bottomCommentator),
+      ('bottomRight', _bottomRightCommentator),
+    ])
+      if (commentator != null && _isCommentatorVisible(column, commentator))
+        commentator,
+    ..._selectedRightPaneCommentators(
+      state,
+    ).where((commentator) => _isCommentatorVisible('right', commentator)),
+  ];
 
   bool _isCommentatorVisible(String column, String? commentator) {
     if (commentator == null) return _columnVisibility[column] == true;
@@ -1202,6 +1216,15 @@ class _PageShapeScreenState extends State<PageShapeScreen> {
                           notesBookIdOverride: _notesBookIdOverride,
                           notesCategoryIdOverride: _notesCategoryIdOverride,
                           notesFocusLineNumber: _notesFocusLineNumber,
+                          notesFooter: CommentaryNotesSection(
+                            bookIds: _displayedCommentators(state),
+                            onOpenNote: (bookId, lineNumber) =>
+                                _openCommentaryPersonalNote(
+                                  bookId,
+                                  null,
+                                  lineNumber,
+                                ),
+                          ),
                           onNavigateToLine: (lineNumber) =>
                               _navigateToLine(state, lineNumber),
                           onClosePane: _toggleLeftSidebar,

@@ -44,6 +44,9 @@ class PersonalNotesSidebar extends StatefulWidget {
   /// מועבר כ-listenable כי ה-outline עשוי להיטען אחרי בניית הפאנל.
   final ValueListenable<List<PdfOutlineNode>?>? pdfOutline;
 
+  /// מוצג בסוף הרשימה, אחרי הערות הספר (למשל הערות המפרשים בצורת הדף).
+  final Widget? footer;
+
   const PersonalNotesSidebar({
     super.key,
     required this.bookId,
@@ -53,6 +56,7 @@ class PersonalNotesSidebar extends StatefulWidget {
     this.visibleLineIndices,
     this.focusLineNumber,
     this.pdfOutline,
+    this.footer,
   });
 
   @override
@@ -524,6 +528,8 @@ class PersonalNotesSidebarState extends State<PersonalNotesSidebar>
         ),
       );
     }
+
+    if (widget.footer case final footer?) items.add(footer);
 
     if (state.isLoading) {
       items.add(
