@@ -1131,17 +1131,14 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
         .where((link) => LinkTypes.isDependentTextLink(link.connectionType))
         .map((link) => utils.getTitleFromPath(link.path2))
         .toSet();
-    final selected = widget.tab.sourceTab.activeCommentators.isEmpty
-        ? allLinks
-              .map((link) => utils.getTitleFromPath(link.path2))
-              .toList(growable: false)
-        : widget.tab.sourceTab.activeCommentators
-              .where(availableTitles.contains)
-              .toList(growable: false);
-    final chipKeys = CommentaryTypeFilter.chipKeysForCommentators(
-      links: allLinks,
-      selectedCommentators: selected,
-    );
+    final chipKeys = widget.tab.sourceTab.activeCommentators.isEmpty
+        ? CommentaryTypeFilter.chipKeys(allLinks)
+        : CommentaryTypeFilter.chipKeysForCommentators(
+            links: allLinks,
+            selectedCommentators: widget.tab.sourceTab.activeCommentators
+                .where(availableTitles.contains)
+                .toList(growable: false),
+          );
     return ValueListenableBuilder<Set<String>>(
       valueListenable: _typeSelection,
       builder: (context, selectedTypes, _) {
