@@ -1288,16 +1288,19 @@ class FindRefRepository {
     return bookMatchRanks;
   }
 
-  static DbReferenceResult _bookResult(ReferenceBookHit hit) =>
-      DbReferenceResult(
-        title: hit.title,
-        reference: hit.title,
-        segment: 0,
-        isPdf: hit.fileType == 'pdf',
-        filePath: hit.filePath,
-        orderIndex: hit.orderIndex,
-        bookId: hit.bookId,
-      );
+  static DbReferenceResult _bookResult(
+    ReferenceBookHit hit, {
+    bool isCategoryMatch = false,
+  }) => DbReferenceResult(
+    title: hit.title,
+    reference: hit.title,
+    segment: 0,
+    isPdf: hit.fileType == 'pdf',
+    filePath: hit.filePath,
+    orderIndex: hit.orderIndex,
+    bookId: hit.bookId,
+    isCategoryMatch: isCategoryMatch,
+  );
 
   static Iterable<DbReferenceResult> _dibburResults(
     ReferenceBookHit hit,
@@ -1422,6 +1425,7 @@ class FindRefRepository {
           dibburim: search.dibburim,
           exactLines: exactLines[hit.bookId] ?? const <_ExactLine>[],
           toc: requestIndex == null ? null : tocResponses[requestIndex],
+          isOverCap: plan.isOverCap,
         ),
       );
     }
@@ -1589,6 +1593,7 @@ class FindRefRepository {
     required Map<int, List<_Dibbur>> dibburim,
     required List<_ExactLine> exactLines,
     required TocBatchResult? toc,
+    bool isOverCap = false,
   }) {
     final title = hit.title;
     final bookId = hit.bookId;
@@ -1613,7 +1618,19 @@ class FindRefRepository {
 
     // הוקלדה רק כותרת הספר — הספר בלבד, בלי ערכי TOC.
     if (remainingTokens.isEmpty) return results..add(_bookResult(hit));
-    if (toc == null) return results;
+    if (toc == null) {
+      // בדיקת הקטגוריה אינה שאילתה, ולכן אינה כפופה לתקרת ה-TOC: "רמבם זמנים"
+      // תופס עשרות ספרי "רמבם על משנה" שקודמים לספרי משנה תורה.
+      // כשה-TOC דולג כי הזנב הוא שם ספר ("רמבם שופטים"), נדרש שם התיקייה כולו.
+      if (_remainingTokensAreLeafCategory(
+        bookId,
+        remainingTokens,
+        wholeName: !isOverCap,
+      )) {
+        results.add(_bookResult(hit, isCategoryMatch: true));
+      }
+      return results;
+    }
 
     final resultsBeforeToc = results.length;
     for (final entry in toc.toc) {
@@ -1663,7 +1680,7 @@ class FindRefRepository {
     // כשה-TOC לא החזיר כלום, כדי שכותרת פנימית תמיד תגבר.
     if (results.length == resultsBeforeToc &&
         _remainingTokensAreLeafCategory(bookId, remainingTokens)) {
-      results.add(_bookResult(hit));
+      results.add(_bookResult(hit, isCategoryMatch: true));
     }
     return results;
   }
@@ -2843,28 +2860,64 @@ class FindRefRepository {
   /// האם כל [remainingTokens] הם מילים בשם הקטגוריה *הישירה* של הספר. רק
   /// העלה נבדק — segment אב ("הלכה", "מפרשים") משותף לאלפי ספרים והיה מחזיר
   /// כל אחד מהם. טוקן בן אות-שתיים הוא טוקן מיקום ולא שם קטגוריה.
+  /// [wholeName] — הזנב חייב לכסות גם את כל מילות השם, מלבד "ספר".
   bool _remainingTokensAreLeafCategory(
     int bookId,
-    List<String> remainingTokens,
-  ) {
+    List<String> remainingTokens, {
+    bool wholeName = false,
+  }) {
+    final leaf = _leafCategory(bookId);
+    if (leaf == null) return false;
+    return _tokensNameLeafCategory(
+      leaf,
+      remainingTokens,
+      wholeName: wholeName,
+    );
+  }
+
+  String? _leafCategory(int bookId) {
     final resolver =
         getCategoryPathSync ??
         ReferenceBooksCache.instance.getCategoryPathForBookSync;
     final path = resolver(bookId);
-    if (path == null || path.isEmpty) return false;
-    return _tokensNameLeafCategory(path.split(', ').last, remainingTokens);
+    if (path == null || path.isEmpty) return null;
+    return path.split(', ').last;
+  }
+
+  Set<String> _leafCategoryTokens(int bookId) {
+    final leaf = _leafCategory(bookId);
+    if (leaf == null) return const {};
+    return titleMatchTokens(_normalizeForMatch(leaf));
   }
 
   /// האם כל [remainingTokens] הם מילים בשם הקטגוריה [leaf].
-  bool _tokensNameLeafCategory(String leaf, List<String> remainingTokens) {
+  bool _tokensNameLeafCategory(
+    String leaf,
+    List<String> remainingTokens, {
+    bool wholeName = false,
+  }) {
     if (remainingTokens.isEmpty) return false;
     if (remainingTokens.any((t) => t.length < 3)) return false;
-    final leafTokens = titleMatchTokens(_normalizeForMatch(leaf));
-    return remainingTokens.every((qt) {
-      if (leafTokens.contains(qt)) return true;
+    final leafWords = _normalizeForMatch(leaf).split(' ');
+    final leafTokens = titleMatchTokensOf(leafWords);
+    final matched = <String>{};
+    for (final qt in remainingTokens) {
+      if (leafTokens.contains(qt)) {
+        matched.add(qt);
+        continue;
+      }
       final bare = titleTokenWithoutConjunction(qt, allowVav: true);
-      return bare != null && leafTokens.contains(bare);
-    });
+      if (bare == null || !leafTokens.contains(bare)) return false;
+      matched.add(bare);
+    }
+    if (!wholeName) return true;
+    for (var i = 0; i < leafWords.length; i++) {
+      final word = leafWords[i];
+      if (word.isEmpty || word == 'ספר' || matched.contains(word)) continue;
+      final bare = titleTokenWithoutConjunction(word, allowVav: i > 0);
+      if (bare == null || !matched.contains(bare)) return false;
+    }
+    return true;
   }
 
   List<String> _getRemainingTokens(
@@ -3050,6 +3103,9 @@ class FindRefRepository {
           reference: r.reference,
           segment: r.segment,
           bookId: r.bookId,
+          categoryTokens: r.isCategoryMatch
+              ? _leafCategoryTokens(r.bookId)
+              : const {},
         );
       },
     );

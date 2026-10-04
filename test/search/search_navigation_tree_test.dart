@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/search/view/search_navigation_tree.dart';
+import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 
 void main() {
@@ -58,9 +59,12 @@ void main() {
     VoidCallback? onClearAll,
     List<SearchTreeExtraCategory> extraRootCategories = const [],
     bool extraCategoriesFirst = false,
+    SettingsLanguage language = SettingsLanguage.hebrew,
   }) {
     return tester.pumpWidget(
       MaterialApp(
+        builder: (_, child) =>
+            SettingsTextScope(language: language, child: child!),
         home: Scaffold(
           body: SizedBox(
             width: 320,
@@ -605,6 +609,58 @@ void main() {
       );
 
       expect(find.text('נקה סינון'), findsOneWidget);
+    });
+
+    testWidgets('כשאין ענף פתוח אין כפתור "כווץ הכל"', (tester) async {
+      await pumpTree(
+        tester,
+        library: nestedLibrary(),
+        facetCounts: nestedCounts,
+      );
+
+      expect(find.byTooltip('כווץ הכל'), findsNothing);
+    });
+
+    for (final (language, tooltip) in [
+      (SettingsLanguage.hebrew, 'כווץ הכל'),
+      (SettingsLanguage.english, 'Collapse all'),
+    ]) {
+      testWidgets('תיאור כפתור הכיווץ בשפת הממשק: ${language.code}', (
+        tester,
+      ) async {
+        await pumpTree(
+          tester,
+          library: nestedLibrary(),
+          facetCounts: nestedCounts,
+          expansion: const {'/תנ"ך': true},
+          language: language,
+        );
+
+        expect(find.byTooltip(tooltip), findsOneWidget);
+      });
+    }
+
+    testWidgets('"כווץ הכל" סוגר גם ענפים שנפתחו אוטומטית וגם מוסתרים', (
+      tester,
+    ) async {
+      final toggles = <(String, bool)>[];
+      await pumpTree(
+        tester,
+        library: nestedLibrary(),
+        facetCounts: nestedCounts,
+        selectedFacets: {'/תנ"ך/כתובים/id:7'},
+        expansion: const {'/משנה': true},
+        onToggleExpand: (path, isExpanded) => toggles.add((path, isExpanded)),
+      );
+
+      await tester.tap(find.byTooltip('כווץ הכל'));
+      await tester.pump();
+
+      expect(toggles.toSet(), {
+        ('/תנ"ך', true),
+        ('/תנ"ך/כתובים', true),
+        ('/משנה', true),
+      });
     });
   });
 

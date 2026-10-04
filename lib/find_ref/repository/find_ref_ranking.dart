@@ -126,6 +126,7 @@ class FindRefRankKey<T> {
     required this.reference,
     required this.segment,
     required this.bookId,
+    this.categoryTokens = const {},
   });
 
   final T item;
@@ -148,6 +149,9 @@ class FindRefRankKey<T> {
 
   /// אינו מפתח דירוג; מכריע בין שורות שקולות כשבוחרים חלק מהרשימה.
   final int bookId;
+
+  /// מילות שם התיקייה, לתוצאה שנמצאה לפיו (ריק לכל השאר).
+  final Set<String> categoryTokens;
 
   /// התאמת תת-מחרוזת בשם הספר, שהזנב של שאילתת מילה-אחת שומר לה מקום.
   bool isSubstringMatch(String query) =>
@@ -180,10 +184,14 @@ int compareFindRefRelevance(
     for (int i = 1; i < queryTokens.length; i++) {
       final queryToken = queryTokens[i];
       if (queryToken.length == 1) continue;
+      // התאמת תיקייה מספקת את המילה גם ללא כותרת; המפתח חייב להיות עצמאי
+      // לכל תוצאה, אחרת שילוב עם התאמות TOC יוצר מעגל בהשוואה.
       final aHasMatch =
-          i < a.titleTokens.length && a.titleTokens[i].startsWith(queryToken);
+          a.categoryTokens.contains(queryToken) ||
+          (i < a.titleTokens.length && a.titleTokens[i].startsWith(queryToken));
       final bHasMatch =
-          i < b.titleTokens.length && b.titleTokens[i].startsWith(queryToken);
+          b.categoryTokens.contains(queryToken) ||
+          (i < b.titleTokens.length && b.titleTokens[i].startsWith(queryToken));
       if (aHasMatch != bHasMatch) return aHasMatch ? -1 : 1;
     }
   }
