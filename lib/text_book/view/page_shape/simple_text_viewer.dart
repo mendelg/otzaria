@@ -1859,16 +1859,16 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
               ? 'חפש "${menuSelection.quote(10)}" בספר זה'
               : 'חיפוש',
           icon: OtzariaIcons.book_search_24_regular,
-          enabled: menuSelection.hasText,
-          onTap: menuSelection.hasText
-              ? () {
-                  if (widget.onOpenSearch != null) {
-                    widget.onOpenSearch!(menuSelection.cleaned);
-                  } else {
-                    UiSnack.show(TextBookMessages.searchUnavailableInThisView);
-                  }
-                }
-              : null,
+          // Without a selection the search opens empty, as in the combined
+          // view.
+          onTap: () {
+            final openSearch = widget.onOpenSearch;
+            if (openSearch == null) {
+              UiSnack.show(TextBookMessages.searchUnavailableInThisView);
+              return;
+            }
+            openSearch(menuSelection.hasText ? menuSelection.cleaned : null);
+          },
         ),
       );
     }
@@ -1878,7 +1878,9 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       entries.addAll(commentatorItems);
     }
 
-    if (entries.isNotEmpty) entries.add(const AppContextMenuEntry.divider());
+    if (!widget.isMainText && entries.isNotEmpty) {
+      entries.add(const AppContextMenuEntry.divider());
+    }
     if (widget.isMainText) {
       entries.add(
         AppContextMenuEntry(
