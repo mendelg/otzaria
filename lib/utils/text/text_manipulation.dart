@@ -931,6 +931,148 @@ List<_HighlightMatch> _findPerWordHighlightMatches(
   return result;
 }
 
+bool _isCrossLineMarkerChar(int code) =>
+    (code >= 0x05D0 && code <= 0x05EA) ||
+    (code >= 0x30 && code <= 0x39) ||
+    code == 0x27 ||
+    code == 0x22 ||
+    code == 0x05F3 ||
+    code == 0x05F4 ||
+    code == 0x2A;
+
+const _crossLineBrackets = {0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D};
+
+/// גבולות התוכן של שורה לביטוי שנמשך לשורה הסמוכה: בלי סימון ממוספר כמו
+/// `(ג)` בתחילתה או `{פ}` בסופה — אותו כלל כמו במנוע.
+@visibleForTesting
+({int start, int end}) crossLineContentRange(String html) {
+  int skipTagsAndSpaces(int i) {
+    while (i < html.length) {
+      if (html.codeUnitAt(i) == 0x3C) {
+        final close = html.indexOf('>', i);
+        if (close < 0) return i;
+        i = close + 1;
+      } else if (html[i].trim().isEmpty) {
+        i++;
+      } else {
+        return i;
+      }
+    }
+    return i;
+  }
+
+  var start = 0;
+  final open = skipTagsAndSpaces(0);
+  final closeCode = open < html.length
+      ? _crossLineBrackets[html.codeUnitAt(open)]
+      : null;
+  if (closeCode != null) {
+    var i = open + 1;
+    while (i < html.length && _isCrossLineMarkerChar(html.codeUnitAt(i))) {
+      i++;
+    }
+    final count = i - open - 1;
+    if (i < html.length &&
+        html.codeUnitAt(i) == closeCode &&
+        count >= 1 &&
+        count <= 5) {
+      start = skipTagsAndSpaces(i + 1);
+    }
+  }
+
+  var end = html.length;
+  while (end > start) {
+    final last = html.codeUnitAt(end - 1);
+    if (last == 0x3E) {
+      final tag = html.lastIndexOf('<', end - 1);
+      if (tag < start) break;
+      end = tag;
+    } else if (html[end - 1].trim().isEmpty || ':.,׃'.contains(html[end - 1])) {
+      end--;
+    } else {
+      break;
+    }
+  }
+  var contentEnd = html.length;
+  final openCode = end > start
+      ? _crossLineBrackets.entries
+            .where((e) => e.value == html.codeUnitAt(end - 1))
+            .map((e) => e.key)
+            .firstOrNull
+      : null;
+  if (openCode != null) {
+    var i = end - 2;
+    while (i >= start && _isCrossLineMarkerChar(html.codeUnitAt(i))) {
+      i--;
+    }
+    final count = end - 2 - i;
+    if (i >= start &&
+        html.codeUnitAt(i) == openCode &&
+        count >= 1 &&
+        count <= 5) {
+      contentEnd = html.substring(0, i).trimRight().length;
+    }
+  }
+  return (start: start, end: contentEnd.clamp(start, html.length));
+}
+
+/// התאמות ביטוי שמתחיל בסוף שורה ונמשך בתחילת השורה הבאה (או להפך), מוגבלות
+/// למילים שבשורה [line] עצמה. [lineFirst]: [line] היא השורה הראשונה מהשתיים.
+List<_HighlightMatch> _crossLineMatches(
+  String line,
+  String neighbour, {
+  required bool lineFirst,
+  required _CompiledHighlightPattern compiled,
+  required List<bool> requireTokenBoundaries,
+}) {
+  final matcher = compiled.matcher;
+  if (matcher == null) return const [];
+  final left = lineFirst ? line : neighbour;
+  final right = lineFirst ? neighbour : line;
+  final leftEnd = crossLineContentRange(left).end;
+  final rightStart = crossLineContentRange(right).start;
+  final joined = '${left.substring(0, leftEnd)} ${right.substring(rightStart)}';
+  final rightOffset = leftEnd + 1 - rightStart;
+  final result = <_HighlightMatch>[];
+  for (final match in matcher.findMatches(
+    data: joined,
+    requireTokenBoundaries: requireTokenBoundaries,
+  )) {
+    if (match.start >= leftEnd || match.end <= leftEnd + 1) continue;
+    final words = <(int, int)>[
+      for (final range in match.wordRanges)
+        if (lineFirst && match.start + range.end <= leftEnd)
+          (match.start + range.start, match.start + range.end)
+        else if (!lineFirst && match.start + range.start > leftEnd)
+          (
+            match.start + range.start - rightOffset,
+            match.start + range.end - rightOffset,
+          ),
+    ];
+    if (words.isEmpty) continue;
+    final start = words.first.$1;
+    result.add(
+      _HighlightMatch(start, words.last.$2, [
+        for (final (s, e) in words) _HighlightRange(s - start, e - start),
+      ]),
+    );
+  }
+  return result;
+}
+
+/// ממיין ומשמיט התאמות חופפות — [highLight] משכתב את הטקסט לפי סדר ההתאמות.
+List<_HighlightMatch> _withoutOverlaps(List<_HighlightMatch> matches) {
+  matches.sort((a, b) => a.start.compareTo(b.start));
+  final result = <_HighlightMatch>[];
+  var lastEnd = -1;
+  for (final match in matches) {
+    if (match.start < lastEnd) continue;
+    result.add(match);
+    lastEnd = match.end;
+  }
+  return result;
+}
+
 String highLight(
   String data,
   String searchQuery, {
@@ -944,6 +1086,8 @@ String highLight(
   bool isSearchResultLine = false,
   bool yellowBackground = false,
   bool partialWordMatch = false,
+  String? previousLine,
+  String? nextLine,
 }) {
   if (searchQuery.isEmpty) return data;
 
@@ -967,7 +1111,7 @@ String highLight(
       eligible && !yellowBackground && !partialWordMatch,
   ];
 
-  final matches = _findHighlightMatches(
+  var matches = _findHighlightMatches(
     data,
     compiled,
     requireTokenBoundaries,
@@ -975,6 +1119,29 @@ String highLight(
     isSearchResultLine: isSearchResultLine,
     isFuzzy: isFuzzy,
   );
+  if (currentIndex == -1 && !yellowBackground && matchPolicy.isStandard) {
+    final crossing = [
+      if (nextLine != null)
+        ..._crossLineMatches(
+          data,
+          nextLine,
+          lineFirst: true,
+          compiled: compiled,
+          requireTokenBoundaries: requireTokenBoundaries,
+        ),
+      if (previousLine != null)
+        ..._crossLineMatches(
+          data,
+          previousLine,
+          lineFirst: false,
+          compiled: compiled,
+          requireTokenBoundaries: requireTokenBoundaries,
+        ),
+    ];
+    if (crossing.isNotEmpty) {
+      matches = _withoutOverlaps([...matches, ...crossing]);
+    }
+  }
 
   if (matches.isEmpty) return data;
 

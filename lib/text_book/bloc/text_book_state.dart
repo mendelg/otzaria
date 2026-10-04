@@ -401,6 +401,19 @@ class TextBookLoaded extends TextBookState {
   bool lineParticipatesInSearchHighlight(int lineIndex) =>
       searchResultLines?.contains(lineIndex) ?? false;
 
+  /// השורה הסמוכה כשגם היא וגם [lineIndex] שורות תוצאה — ביטוי שנמשך משורה
+  /// לשורה מודגש בשתיהן. [next]: השורה הבאה, אחרת הקודמת.
+  String? searchResultNeighbour(int lineIndex, {required bool next}) {
+    final neighbour = next ? lineIndex + 1 : lineIndex - 1;
+    if (neighbour < 0 ||
+        neighbour >= content.length ||
+        !lineParticipatesInSearchHighlight(lineIndex) ||
+        !lineParticipatesInSearchHighlight(neighbour)) {
+      return null;
+    }
+    return content[neighbour];
+  }
+
   /// מצב התצוגה הפעיל — קובע מאיזה חריץ נפתרות ההגדרות.
   TextView get activeView =>
       showPageShapeView ? TextView.pageShape : TextView.regular;

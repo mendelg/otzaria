@@ -17,6 +17,7 @@ import 'package:otzaria/search/bloc/search_event.dart';
 import 'package:otzaria/search/bloc/search_state.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/utils/in_book_search_routing.dart';
+import 'package:otzaria/search/utils/cross_line_result.dart';
 import 'package:otzaria/search/utils/result_text_status.dart';
 import 'package:otzaria/search/utils/index_freshness_warner.dart';
 import 'package:otzaria/search/models/external_search_status.dart';
@@ -237,6 +238,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
       segment: next.segment.toInt(),
       isPdf: next.isPdf,
       filePath: next.filePath,
+      continuesToNextLine: next.continuesToNextLine,
     );
     _ensureResultVisible(nextIndex, forward: isDown);
     return KeyEventResult.handled;
@@ -305,6 +307,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
     required bool isPdf,
     required String filePath,
     required Map<String, Map<String, bool>> effectiveOptions,
+    bool continuesToNextLine = false,
   }) {
     if (previewEnabled) {
       _togglePreview(
@@ -313,6 +316,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
         segment: segment,
         isPdf: isPdf,
         filePath: filePath,
+        continuesToNextLine: continuesToNextLine,
       );
       return;
     }
@@ -323,6 +327,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
       isPdf: isPdf,
       filePath: filePath,
       effectiveOptions: effectiveOptions,
+      continuesToNextLine: continuesToNextLine,
     );
   }
 
@@ -332,6 +337,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
     required int segment,
     required bool isPdf,
     required String filePath,
+    bool continuesToNextLine = false,
   }) async {
     final requestId = ++_previewRequestId;
     final current = widget.tab.previewTarget.value;
@@ -372,6 +378,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
       segment: segment,
       isPdf: isPdf,
       filePath: filePath,
+      continuesToNextLine: continuesToNextLine,
     );
     // לחיצה אינה מעבירה פוקוס ב-Flutter — בלי זה החיצים לא מגיעים לאזור.
     _arrowNavFocusNode.requestFocus();
@@ -387,6 +394,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
     required String filePath,
     required Map<String, Map<String, bool>> effectiveOptions,
     bool inBackground = false,
+    bool continuesToNextLine = false,
   }) async {
     // המפתח משמר את זהות הספר (ספר אישי מול רשמי בעל אותה כותרת), והכותרת
     // מאמתת אותו: אינדקס שאינו מסונכרן ממפה את המפתח לספר אחר לגמרי.
@@ -435,6 +443,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
       spacingValues: widget.tab.spacingValues,
       inBook: inBookParameters,
       inBackground: inBackground,
+      continuesToNextLine: continuesToNextLine,
     );
   }
 
@@ -496,6 +505,8 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                 initialTextIndex: target != null && !target.isPdf
                     ? target.segment
                     : null,
+                initialTextContinuesToNextLine:
+                    target?.continuesToNextLine ?? false,
                 initialPdfPage: target != null && target.isPdf
                     ? target.segment + 1
                     : null,
@@ -523,6 +534,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                     effectiveOptions: widget.tab.effectiveSearchOptions(
                       query: widget.tab.searchBloc.state.searchQuery,
                     ),
+                    continuesToNextLine: openTarget.continuesToNextLine,
                   );
                 },
               ),
@@ -954,6 +966,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                     filePath: result.filePath,
                     effectiveOptions: effectiveOptions,
                     inBackground: true,
+                    continuesToNextLine: result.continuesToNextLine,
                   ),
                   child: InkWell(
                     onTap: () => _handleResultTap(
@@ -964,6 +977,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                       isPdf: result.isPdf,
                       filePath: result.filePath,
                       effectiveOptions: effectiveOptions,
+                      continuesToNextLine: result.continuesToNextLine,
                     ),
                     onDoubleTap: previewEnabled
                         ? () => _openResultLocation(
@@ -973,6 +987,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                             isPdf: result.isPdf,
                             filePath: result.filePath,
                             effectiveOptions: effectiveOptions,
+                            continuesToNextLine: result.continuesToNextLine,
                           )
                         : null,
                     borderRadius: AppTokens.borderRadiusAll,
@@ -1151,6 +1166,15 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                         height: 1.5,
                                       ),
                                       children: snippetSpans,
+                                    ),
+                                  ),
+                                if (result.continuesToNextLine &&
+                                    !isResultTextUnavailable(result))
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      crossLineResultNote,
+                                      style: secondaryLineStyle,
                                     ),
                                   ),
                                 // תוצאות שאוחדו לכרטיס זה (במצב איחוד תוצאות)

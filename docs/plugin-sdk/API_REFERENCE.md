@@ -1352,6 +1352,7 @@ const { data } = await Otzaria.call('search.fullText', {
 - `book` — שם הספר
 - `text` — קטע הטקסט
 - `textStatus` — מצב הטקסט (ראו `search.query` להלן)
+- `continuesToNextLine` — הביטוי נמשך לשורה הבאה (ראו `search.query` להלן)
 - `index` — אינדקס השורה/עמוד בספר
 
 > **הערה:** `search.fullText` אינו מחזיר `id` כי מנוע החיפוש (Tantivy) אינו שומר את מזהה הספר מה-DB. כדי לקבל את `id` — יש לקרוא ל-`library.getBookMetadata({ bookId, type })` עם התוצאה. `search.query` (להלן) כן מחזיר זהות מלאה.
@@ -1438,6 +1439,7 @@ for await (const chunk of chunks) {
     reference: 'ויקרא, פרק יט',
     text: 'ואהבת לרעך כמוך...',
     textStatus: 'ok',     // 'ok' | 'stale' | 'unavailable' — ראו להלן
+    continuesToNextLine: false, // הביטוי נמשך מסוף השורה לשורה הבאה — ראו להלן
     index: 1234,          // אינדקס השורה/עמוד לפתיחה עם reader.openBook
     mergedCount: 1,       // מספר התוצאות שאוחדו לכרטיס (במצב grouping)
     merged: [{ id, type, bookId, source, book, categoryPath, reference, index }]
@@ -1459,6 +1461,11 @@ for await (const chunk of chunks) {
 - `'unavailable'` — הטקסט אינו זמין כעת (למשל בזמן עדכון ספרייה); `text` ריק.
 
 בגרסאות קודמות השדה חסר; יש להתייחס להיעדרו כ-`'ok'`.
+
+**`continuesToNextLine`** — `true` כשהביטוי מתחיל בסוף השורה `index` ונמשך
+בתחילת השורה הבאה (`index + 1`). `text` מחבר אז את סוף השורה ואת תחילת הבאה
+בסימן ` ¶ `, והמילים מודגשות בשתיהן. התוצאה נספרת פעם אחת, לשורה `index`.
+בגרסאות קודמות השדה חסר; יש להתייחס להיעדרו כ-`false`.
 
 אין לצבור את כל התוצאות לפני ציור המסך: יש להוסיף כל `results` מיד עם הגעת
 ה־chunk. אם החיפוש נכשל, האיטרטור זורק שגיאה; chunks שכבר התקבלו נשארים בידי

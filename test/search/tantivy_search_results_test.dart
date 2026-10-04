@@ -103,6 +103,7 @@ void main() {
           mergedCount: 1,
           merged: const [],
           textStatus: TextStatus.ok,
+          continuesToNextLine: false,
         ),
         SearchResult(
           id: BigInt.from(2),
@@ -115,6 +116,7 @@ void main() {
           mergedCount: 1,
           merged: const [],
           textStatus: TextStatus.ok,
+          continuesToNextLine: false,
         ),
         SearchResult(
           id: BigInt.from(3),
@@ -127,6 +129,7 @@ void main() {
           mergedCount: 1,
           merged: const [],
           textStatus: TextStatus.ok,
+          continuesToNextLine: false,
         ),
         ...List.generate(
           97,
@@ -141,6 +144,7 @@ void main() {
             mergedCount: 1,
             merged: const [],
             textStatus: TextStatus.ok,
+            continuesToNextLine: false,
           ),
         ),
       ];
@@ -278,6 +282,7 @@ void main() {
           mergedCount: 1,
           merged: const [],
           textStatus: TextStatus.ok,
+          continuesToNextLine: false,
         ),
       ];
       searchBloc.emitState(searchBloc.state.copyWith(results: moreResults));
@@ -395,6 +400,7 @@ void main() {
             mergedCount: 1,
             merged: const [],
             textStatus: status,
+            continuesToNextLine: false,
           );
       searchBloc.emitState(
         searchBloc.state.copyWith(
@@ -429,6 +435,7 @@ void main() {
             mergedCount: 1,
             merged: const [],
             textStatus: status,
+            continuesToNextLine: false,
           );
 
       Finder copyButtons() => find.ancestor(
@@ -540,6 +547,7 @@ void main() {
               mergedCount: 1,
               merged: const [],
               textStatus: TextStatus.ok,
+              continuesToNextLine: false,
             ),
           ),
         ),
@@ -637,6 +645,7 @@ void main() {
                 mergedCount: 1,
                 merged: const [],
                 textStatus: TextStatus.ok,
+                continuesToNextLine: false,
               ),
             ],
           ),

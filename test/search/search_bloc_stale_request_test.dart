@@ -121,6 +121,7 @@ SearchResult _result(String text) => SearchResult(
   mergedCount: 1,
   merged: const [],
   textStatus: TextStatus.ok,
+  continuesToNextLine: false,
 );
 
 class _ControlledSearchRepository extends SearchRepository {

@@ -383,6 +383,7 @@ Future<void> main() async {
               mergedCount: 1,
               merged: const [],
               textStatus: TextStatus.ok,
+              continuesToNextLine: false,
             ),
           ],
         ),
@@ -461,6 +462,7 @@ SearchResult _result({
     mergedCount: 1,
     merged: const [],
     textStatus: TextStatus.ok,
+    continuesToNextLine: false,
   );
 }
 
@@ -480,6 +482,7 @@ class _RecordingSearchRepository extends SearchRepository {
     mergedCount: 1,
     merged: const [],
     textStatus: TextStatus.ok,
+    continuesToNextLine: false,
   );
 
   @override

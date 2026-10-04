@@ -577,6 +577,7 @@ SearchResult _searchResult({required int id, required String text}) {
     mergedCount: 1,
     merged: const [],
     textStatus: TextStatus.ok,
+    continuesToNextLine: false,
   );
 }
 

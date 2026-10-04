@@ -496,6 +496,7 @@ SearchResult _result({
     mergedCount: 1,
     merged: const [],
     textStatus: textStatus,
+    continuesToNextLine: false,
   );
 }
 

@@ -2799,6 +2799,14 @@ class _CombinedViewState extends State<CombinedView> {
                                   .lineParticipatesInSearchHighlight(
                                     primaryLineIndex,
                                   ),
+                              previousLineText: state.searchResultNeighbour(
+                                primaryLineIndex,
+                                next: false,
+                              ),
+                              nextLineText: state.searchResultNeighbour(
+                                primaryLineIndex,
+                                next: true,
+                              ),
                               fontSize: widget.textSize,
                               fontFamily: settingsState.fontFamily,
                               fontWeight: settingsState.fontBold
@@ -3125,6 +3133,8 @@ class _CombinedViewState extends State<CombinedView> {
       matchPolicy: effectiveMatchPolicy,
       partialWordHighlight: !hasPinpoint && !state.searchWholeWord,
       isSearchResultLine: state.lineParticipatesInSearchHighlight(lineIndex),
+      previousLineText: state.searchResultNeighbour(lineIndex, next: false),
+      nextLineText: state.searchResultNeighbour(lineIndex, next: true),
       fontSize: widget.textSize,
       fontFamily: settingsState.fontFamily,
       fontWeight: settingsState.fontBold ? FontWeight.bold : null,
