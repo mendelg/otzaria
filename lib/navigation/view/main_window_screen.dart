@@ -45,6 +45,8 @@ import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/search_defaults.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
+import 'package:otzaria/semantic_search/repository/semantic_search_repository.dart';
+import 'package:otzaria/semantic_search/semantic_work_status.dart';
 import 'package:otzaria/library/view/library_browser.dart';
 import 'package:otzaria/tabs/reading_screen.dart';
 import 'package:otzaria/text_book/view/text_book_screen.dart';
@@ -624,10 +626,33 @@ class MainWindowScreenState extends State<MainWindowScreen>
   bool get _skipsEagerLibraryLoad =>
       WindowRole.isSecondary && WindowRole.openedWithTab;
 
+  StreamSubscription<Object?>? _semanticWorkStatusSub;
+  SemanticWorkStatusReporter? _semanticWorkStatus;
+
+  SemanticWorkStatusReporter _createSemanticWorkStatus() {
+    final cubit = context.read<WorkStatusCubit>();
+    return SemanticWorkStatusReporter(
+      upsert: cubit.upsert,
+      remove: cubit.remove,
+      onCancel: () =>
+          unawaited(SemanticSearchRepository.instance.cancelDownload()),
+      onRetry: () =>
+          unawaited(SemanticSearchRepository.instance.enableAndDownload()),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     StartupTimeline.instance.markOnce('mainScreenInit');
+    // מאזין לזרם סטטי בלבד: המאגר הסמנטי לא נוצר עד שמשתמשים בו.
+    _semanticWorkStatusSub = SemanticSearchRepository.sharedAvailabilityChanges
+        .listen((availability) {
+          if (!mounted) return;
+          (_semanticWorkStatus ??= _createSemanticWorkStatus()).update(
+            availability,
+          );
+        });
     _calendarCubit = CalendarCubit();
     _settingsScreenController = SettingsScreenController();
     _tourCubit = TourCubit();
@@ -1794,6 +1819,7 @@ class MainWindowScreenState extends State<MainWindowScreen>
     _removeTourOverlay();
     _tourCubit.close();
     _readerLocationTracker?.dispose();
+    _semanticWorkStatusSub?.cancel();
     pageController.dispose();
     super.dispose();
   }
