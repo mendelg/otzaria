@@ -20,6 +20,9 @@ public let portablePackageFormat = "portable"
 /// ההצעה המסומנת מראש: במחשב עם אינטרנט הספרייה יורדת מתוך התוכנה.
 public let defaultPresetId = "basic"
 
+/// נתונים שהתוכנה המותקנת קוראת מתיקיית הפלט: חלק מ"מלאה" בלבד.
+public let offlineDataTypes: Set<String> = ["semantic-model", "semantic-vectors"]
+
 /// מחשב היעד. ארכיטקטורה ריקה כשלפלטפורמה אין רכיבים תלויי ארכיטקטורה; פורמט ריק מחוץ ל-Linux.
 public struct AssistantTarget: Equatable {
     public var platform: String
@@ -223,11 +226,11 @@ public func buildPresets(_ manifest: ReleaseManifest, _ target: AssistantTarget)
     if let bundle = bundle {
         full = [bundle.id] + components.filter {
             $0.installedBy.contains(bundle.id) && componentIsOffered(manifest, $0, target)
-        }.map { $0.id }
+        }.map { $0.id } + collect(manifest, target, types: offlineDataTypes)
     } else {
         let collected = collect(manifest, target, types: ["application", "library", "dependency"])
         let hasLibrary = components.contains { collected.contains($0.id) && $0.type == "library" }
-        full = hasLibrary ? collected : []
+        full = hasLibrary ? collected + collect(manifest, target, types: offlineDataTypes) : []
     }
 
     let candidates: [(id: String, caption: String, description: String, members: [String])] = [
@@ -281,22 +284,35 @@ public func outputSubfolderName(_ targetPlatform: String) -> String {
     "אוצריא להתקנה ל-\(platformDisplayNames[targetPlatform] ?? targetPlatform)"
 }
 
-/// הקבצים שייווצרו בתיקיית היעד, בסדר המניפסט.
+/// הקבצים שייווצרו בתיקיית היעד, בסדר המניפסט; קובץ של רכיב עם outputFolder — '<folder>/<name>'.
 public func plannedOutputFiles(
     _ manifest: ReleaseManifest, _ selectedIds: [String], _ target: AssistantTarget
 ) -> [String] {
     let selected = Set(selectedIds)
     var files: [String] = []
     for component in manifest.components where selected.contains(component.id) {
+        let prefix = component.outputFolder.isEmpty ? "" : component.outputFolder + "/"
         for asset in component.assets {
             if asset.isSplit && !shouldAssembleSplitAsset(asset, target.platform) {
-                files.append(contentsOf: asset.parts.map { $0.name })
+                files.append(contentsOf: asset.parts.map { prefix + $0.name })
             } else {
-                files.append(asset.name)
+                files.append(prefix + asset.name)
             }
         }
     }
     return files
+}
+
+/// ה-outputNote של הרכיבים שנבחרו, בסדר המניפסט ובלי כפולים.
+public func plannedOutputNotes(_ manifest: ReleaseManifest, _ selectedIds: [String]) -> [String] {
+    let selected = Set(selectedIds)
+    var notes: [String] = []
+    for component in manifest.components
+    where selected.contains(component.id) && !component.outputNote.isEmpty
+        && !notes.contains(component.outputNote) {
+        notes.append(component.outputNote)
+    }
+    return notes
 }
 
 /// '' לקובץ יחיד, אחרת תת-התיקייה.

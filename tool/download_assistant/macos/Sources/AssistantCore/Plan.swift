@@ -10,11 +10,23 @@ public struct DownloadItem: Equatable {
     public let caption: String
 }
 
+/// `folder` — outputFolder של הרכיב, יחסית לתיקיית היעד ('' — ישירות בה).
 public enum OutputAction: Equatable {
     /// קובץ מהמטמון לתיקיית היעד, באותו שם (קישור קשיח, ובכישלון העתקה).
-    case place(DownloadItem)
+    case place(DownloadItem, folder: String = "")
     /// חלקים שמחוברים לקובץ אחד ישר בתיקיית היעד.
-    case assemble(name: String, size: Int64, sha256: String, caption: String, parts: [DownloadItem])
+    case assemble(
+        name: String, size: Int64, sha256: String, caption: String, parts: [DownloadItem],
+        folder: String = ""
+    )
+
+    /// הנתיב היחסי בתיקיית היעד, כמו ב-plannedOutputFiles.
+    public var outputPath: String {
+        switch self {
+        case .place(let item, let folder): return folder.isEmpty ? item.name : folder + "/" + item.name
+        case .assemble(let name, _, _, _, _, let folder): return folder.isEmpty ? name : folder + "/" + name
+        }
+    }
 }
 
 /// כל מה שהריצה עושה, מחושב מראש מהמניפסט ומהבחירה.
@@ -25,6 +37,8 @@ public struct PreparationPlan: Equatable {
     public let outputSubfolder: String
     /// נכסים שנשארו חלקים ביעד שאינו Windows — עמוד הסיום מציג להם פקודת חיבור.
     public let keptSplitAssets: [String]
+    /// ההסברים לעמוד הסיום (plannedOutputNotes).
+    public var outputNotes: [String] = []
 
     public var totalDownloadSize: Int64 { downloads.reduce(0) { $0 + $1.size } }
 
@@ -50,6 +64,7 @@ public struct PreparationPlan: Equatable {
         }
 
         for component in manifest.components where selected.contains(component.id) {
+            let folder = component.outputFolder
             for asset in component.assets {
                 if asset.isSplit {
                     let parts = try asset.parts.map {
@@ -59,16 +74,16 @@ public struct PreparationPlan: Equatable {
                     if shouldAssembleSplitAsset(asset, target.platform) {
                         actions.append(.assemble(
                             name: asset.name, size: asset.size, sha256: asset.sha256,
-                            caption: component.name, parts: parts
+                            caption: component.name, parts: parts, folder: folder
                         ))
                     } else {
-                        actions.append(contentsOf: parts.map { OutputAction.place($0) })
+                        actions.append(contentsOf: parts.map { OutputAction.place($0, folder: folder) })
                         if target.platform != "windows" { kept.append(asset.name) }
                     }
                 } else {
                     let single = try item(asset.name, asset.size, asset.sha256, asset, component.name)
                     add(single)
-                    actions.append(.place(single))
+                    actions.append(.place(single, folder: folder))
                 }
             }
         }
@@ -79,7 +94,8 @@ public struct PreparationPlan: Equatable {
             actions: actions,
             outputFiles: files,
             outputSubfolder: plannedOutputSubfolder(files, target.platform),
-            keptSplitAssets: kept
+            keptSplitAssets: kept,
+            outputNotes: plannedOutputNotes(manifest, selectedIds)
         )
     }
 }
@@ -120,9 +136,9 @@ public func spaceNeeded(
     var outputBytes: Int64 = 0
     for action in plan.actions {
         switch action {
-        case .place(let item):
+        case .place(let item, _):
             if !sameVolume { outputBytes += item.size }
-        case .assemble(_, let size, _, _, let parts):
+        case .assemble(_, let size, _, _, let parts, _):
             outputBytes += sameVolume ? (parts.map { $0.size }.max() ?? 0) : size
         }
     }

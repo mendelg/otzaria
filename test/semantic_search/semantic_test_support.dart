@@ -280,6 +280,7 @@ SemanticSearchRepository buildRepository({
   int? libraryVersion = 30,
   bool platformSupported = true,
   int freeBytes = -1,
+  Future<DiskSpaceInfo> Function(String path)? diskSpace,
   Map<SemanticQuantization, SemanticModelRelease?>? modelReleases,
   bool secondaryWindow = false,
   Duration busyRetryDelay = const Duration(milliseconds: 20),
@@ -295,7 +296,9 @@ SemanticSearchRepository buildRepository({
     libraryVersion: () async => libraryVersion,
     onnxRuntimePath: () => '/app/onnxruntime/onnxruntime.dll',
     isPlatformSupported: () => platformSupported,
-    diskSpace: (_) async => DiskSpaceInfo(volumeId: 'C', freeBytes: freeBytes),
+    diskSpace:
+        diskSpace ??
+        (_) async => DiskSpaceInfo(volumeId: 'C', freeBytes: freeBytes),
     modelReleases: modelReleases ?? testModelReleases,
     isSecondaryWindow: () => secondaryWindow,
     busyRetryDelay: busyRetryDelay,

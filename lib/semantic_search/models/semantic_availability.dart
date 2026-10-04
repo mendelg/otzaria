@@ -66,23 +66,44 @@ class SemanticDownloadProgress extends Equatable {
   final int step;
   final int stepCount;
 
+  /// בודק קובץ שהוכן מראש בשלב [item] (hash ארוך בלי מדידה).
+  final bool checking;
+
   const SemanticDownloadProgress({
     required this.item,
     required this.receivedBytes,
     this.totalBytes,
     this.step = 1,
     this.stepCount = 1,
+    this.checking = false,
   });
 
-  /// בין 0 ל-1, או `null` כשהגודל אינו ידוע.
+  /// אותה התקדמות, בבדיקת קובץ מוכן או אחריה.
+  SemanticDownloadProgress withChecking(bool value) => SemanticDownloadProgress(
+    item: item,
+    receivedBytes: receivedBytes,
+    totalBytes: totalBytes,
+    step: step,
+    stepCount: stepCount,
+    checking: value,
+  );
+
+  /// בין 0 ל-1, או `null` כשהגודל אינו ידוע או בבדיקה.
   double? get fraction {
     final total = totalBytes;
-    if (total == null || total <= 0) return null;
+    if (checking || total == null || total <= 0) return null;
     return (receivedBytes / total).clamp(0.0, 1.0);
   }
 
   @override
-  List<Object?> get props => [item, receivedBytes, totalBytes, step, stepCount];
+  List<Object?> get props => [
+    item,
+    receivedBytes,
+    totalBytes,
+    step,
+    stepCount,
+    checking,
+  ];
 }
 
 /// מצב הזמינות של החיפוש הסמנטי, כפי שהממשק צריך אותו.

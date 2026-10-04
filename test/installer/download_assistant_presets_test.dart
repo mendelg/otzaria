@@ -105,6 +105,19 @@ void main() {
         r"AddPreset\('([a-z]+)'",
       ).allMatches(body).map((m) => m.group(1)).toList();
       expect(ids, ['full', 'basic', 'update']);
+
+      // נתוני החיפוש החכם נכנסים ל"מלאה" בשני הענפים, כמו ב-kOfflineDataTypes.
+      expect(
+        'CollectByTypes(OfflineDataTypes, False)'.allMatches(body),
+        hasLength(2),
+      );
+      final declared = RegExp(
+        r"OfflineDataTypes = '([^']*)';",
+      ).firstMatch(_script())!.group(1)!;
+      expect(
+        declared.split(',').where((t) => t.isNotEmpty).toSet(),
+        kOfflineDataTypes,
+      );
     });
 
     test('שלושת המסייעים: אותם טקסטים ואותה הצעה מסומנת מראש', () {

@@ -29,6 +29,8 @@ public struct PreparationResult: Equatable {
     /// הקובץ היחיד, או התיקייה כשנוצר יותר מקובץ אחד.
     public let revealTarget: URL
     public let keptSplitAssets: [String]
+    /// ההסברים של הרכיבים שהוכנו, לעמוד הסיום.
+    public var outputNotes: [String] = []
 }
 
 /// הכנת ההתקנה מקצה לקצה: מטמון ← הורדה ← הרכבה/העתקה לתיקיית היעד.
@@ -150,8 +152,9 @@ public final class PreparationRunner {
     private func alreadyAssembledParts() -> Set<String> {
         var names = Set<String>()
         for action in plan.actions {
-            guard case let .assemble(name, _, sha256, _, parts) = action else { continue }
-            let working = outputDirectory.appendingPathComponent(assemblyPartialName(name: name, sha256: sha256))
+            guard case let .assemble(name, _, sha256, _, parts, folder) = action else { continue }
+            let working = directory(for: folder)
+                .appendingPathComponent(assemblyPartialName(name: name, sha256: sha256))
             let resume = assemblyResumePoint(partialSize: fileSize(working) ?? 0, partSizes: parts.map { $0.size })
             parts.prefix(resume.parts).forEach { names.insert($0.name) }
         }
@@ -202,21 +205,26 @@ public final class PreparationRunner {
 
     // MARK: - תיקיית היעד
 
+    private func directory(for folder: String) -> URL {
+        folder.isEmpty ? outputDirectory : outputDirectory.appendingPathComponent(folder, isDirectory: true)
+    }
+
     private func produceOutput() throws -> PreparationResult {
         let directory = outputDirectory
         var produced: [URL] = []
         let total = plan.actions.reduce(Int64(0)) { sum, action in
             switch action {
-            case .place(let item): return sum + item.size
-            case .assemble(_, let size, _, _, _): return sum + size
+            case .place(let item, _): return sum + item.size
+            case .assemble(_, let size, _, _, _, _): return sum + size
             }
         }
         var done: Int64 = 0
         for action in plan.actions {
             if isCancelled { throw OperationCancelled() }
             switch action {
-            case .place(let item):
-                let destination = directory.appendingPathComponent(item.name)
+            case .place(let item, let folder):
+                try FileManager.default.createDirectory(at: self.directory(for: folder), withIntermediateDirectories: true)
+                let destination = self.directory(for: folder).appendingPathComponent(item.name)
                 let base = done
                 post(PreparationStatus(
                     phase: .copying, title: "מעתיק לתיקייה שנבחרה", detail: item.name,
@@ -230,8 +238,9 @@ public final class PreparationRunner {
                 }
                 done += item.size
                 produced.append(destination)
-            case .assemble(let name, let size, let sha256, let caption, let parts):
-                let destination = directory.appendingPathComponent(name)
+            case .assemble(let name, let size, let sha256, let caption, let parts, let folder):
+                try FileManager.default.createDirectory(at: self.directory(for: folder), withIntermediateDirectories: true)
+                let destination = self.directory(for: folder).appendingPathComponent(name)
                 let base = done
                 var lastPost: Int64 = -1
                 do {
@@ -275,7 +284,8 @@ public final class PreparationRunner {
             outputDirectory: directory,
             producedFiles: produced,
             revealTarget: produced.count == 1 ? produced[0] : directory,
-            keptSplitAssets: plan.keptSplitAssets
+            keptSplitAssets: plan.keptSplitAssets,
+            outputNotes: plan.outputNotes
         )
     }
 

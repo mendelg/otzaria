@@ -376,6 +376,40 @@ void main() {
       expect(harness.repository.cancels, 1);
     });
 
+    testWidgets('בדיקת קבצים שהוכנו מראש — שלב בלי אחוז ופס בלי ערך', (
+      tester,
+    ) async {
+      await pumpDialog(
+        tester,
+        _availability(
+          SemanticAvailabilityPhase.downloading,
+          progress: const SemanticDownloadProgress(
+            item: SemanticDownloadItem.vectors,
+            receivedBytes: 25,
+            totalBytes: 100,
+            step: 2,
+            stepCount: 3,
+            checking: true,
+          ),
+        ),
+      );
+      await tester.tap(_semanticSegment);
+      await tester.pump();
+
+      expect(
+        find.text('שלב 2 מתוך 3 — בודק את הקבצים שהוכנו מראש'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
+        isNull,
+      );
+    });
+
     testWidgets('כשל — ההודעה העברית וניסיון חוזר', (tester) async {
       final harness = await pumpDialog(
         tester,

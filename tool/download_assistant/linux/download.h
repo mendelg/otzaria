@@ -69,6 +69,8 @@ OtzFailure otz_job_failure(OtzJob *job);
 const char *otz_job_output_dir(OtzJob *job);
 /* Names of the files produced in the output dir, manifest order. */
 GPtrArray *otz_job_output_files(OtzJob *job);
+/* outputNote texts of the selection, for the finish page. */
+GPtrArray *otz_job_output_notes(OtzJob *job);
 /* Split assets left as parts for a non-Windows target (4 GiB and up). */
 GPtrArray *otz_job_unjoined_assets(OtzJob *job);
 /* Bytes this run fed into SHA-256 and bytes it downloaded — equal when every

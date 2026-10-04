@@ -35,6 +35,8 @@ typedef struct {
   gint64 download_size;
   GPtrArray *depends_on;   /* char* */
   GPtrArray *installed_by; /* char*: components that install this one */
+  char *output_folder;     /* "" when absent: relative folder in the output */
+  char *output_note;       /* "" when absent: said on the finish page */
   GPtrArray *assets;       /* OtzAsset* */
 } OtzComponent;
 
@@ -57,6 +59,8 @@ const OtzComponent *otz_manifest_find(const OtzManifest *manifest,
 
 /* ^[A-Za-z0-9._+-]+$ and not "." or ".." — safe as a URL segment and file name. */
 gboolean otz_is_safe_token(const char *text);
+/* Segments of [A-Za-z0-9._-] joined by '/', none empty or dots only. */
+gboolean otz_is_safe_output_folder(const char *folder);
 /* ^<owner>/[A-Za-z0-9._-]+$ with the allowed owner. */
 gboolean otz_is_allowed_repository(const char *repository);
 

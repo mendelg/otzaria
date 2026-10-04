@@ -9,9 +9,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:otzaria/semantic_search/models/semantic_model_release.dart';
+import 'package:otzaria/semantic_search/models/semantic_vectors_release.dart';
 
 import '../../release/download_assistant_selection.dart';
 import '../../release/generate_release_manifest.dart';
+import '../../release/semantic_release_components.dart';
 
 const String kFixtureTag = '0.10.3+143';
 const String kFixtureVersion = '0.10.3';
@@ -143,6 +146,48 @@ void writeFixtureRelease(Directory dir) {
   });
 }
 
+String _fakeSha(String name) => sha256.convert(utf8.encode(name)).toString();
+
+SemanticModelFile _fakeModelFile(String name, int size) =>
+    SemanticModelFile(name: name, size: size, sha256: _fakeSha(name));
+
+/// רכיבי החיפוש הסמנטי, בקנה המידה המוקטן של שאר הקבצים — כפי ש-
+/// semantic_release_components.dart בונה אותם ב-CI.
+List<Map<String, Object?>> buildFixtureSemanticComponents() {
+  const segment = 'otzaria-vectors-0c3f95be-v30-base.oxv.zst';
+  const manifest = '{"kind":"base"}';
+  return buildSemanticComponents(
+    model: SemanticModelRelease(
+      baseUrl:
+          'https://github.com/Otzaria/otzaria-semantic-search/releases/download/model-meivin-round2-int8-v1',
+      graph: _fakeModelFile('seforim-embed-round2-int8.onnx', 42),
+      tokenizer: _fakeModelFile('tokenizer.json', 2),
+      identity: _fakeModelFile('model.json', 1),
+      license: _fakeModelFile('LICENSE', 1),
+    ),
+    modelFamilyId: 'ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68',
+    vectors: SemanticVectorsRelease(
+      libraryTag: 'v30-20260930165019',
+      releaseTag: 'vectors-v30-20260930165019',
+      toLibraryVersion: 30,
+      kind: 'base',
+      manifestJson: manifest,
+      publishedManifestSha256: _fakeSha(manifest),
+      files: [
+        SemanticVectorsFile(
+          name: segment,
+          downloadUrl: '',
+          size: 1642,
+          sha256: _fakeSha(segment),
+          assetId: '1',
+        ),
+      ],
+      segmentUncompressedSize: 1779,
+    ),
+    vectorsManifestName: 'otzaria-vectors-0c3f95be-v30-base.manifest.json',
+  );
+}
+
 Map<String, Object?> buildFixtureManifest() {
   final dir = Directory.systemTemp.createTempSync('otzaria-assistant-fixture');
   try {
@@ -151,6 +196,7 @@ Map<String, Object?> buildFixtureManifest() {
       releaseTag: kFixtureTag,
       releaseVersion: kFixtureVersion,
       directory: dir,
+      externalComponents: buildFixtureSemanticComponents(),
     );
   } finally {
     dir.deleteSync(recursive: true);
@@ -238,6 +284,7 @@ Map<String, Object?> buildExpectedSelections(
                 return {
                   ...preset.toJson(),
                   'outputFiles': files,
+                  'outputNotes': plannedOutputNotes(manifest, preset.members),
                   'outputSubfolder': plannedOutputSubfolder(
                     files,
                     target.platform,

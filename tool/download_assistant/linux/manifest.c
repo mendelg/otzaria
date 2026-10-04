@@ -33,6 +33,8 @@ static void free_component(gpointer data) {
   g_free(component->package_format);
   g_ptr_array_unref(component->depends_on);
   g_ptr_array_unref(component->installed_by);
+  g_free(component->output_folder);
+  g_free(component->output_note);
   g_ptr_array_unref(component->assets);
   g_free(component);
 }
@@ -52,6 +54,17 @@ gboolean otz_is_safe_token(const char *text) {
     if (!g_ascii_isalnum(*p) && *p != '.' && *p != '_' && *p != '+' &&
         *p != '-')
       return FALSE;
+  }
+  return TRUE;
+}
+
+gboolean otz_is_safe_output_folder(const char *folder) {
+  if (folder == NULL || *folder == '\0' || strchr(folder, '+') != NULL)
+    return FALSE;
+  g_auto(GStrv) segments = g_strsplit(folder, "/", -1);
+  for (char **segment = segments; *segment != NULL; segment++) {
+    if (!otz_is_safe_token(*segment)) return FALSE;
+    if (strspn(*segment, ".") == strlen(*segment)) return FALSE;
   }
   return TRUE;
 }
@@ -161,6 +174,8 @@ static gboolean parse_component(const OtzJson *json, OtzComponent **out,
   component->platform = dup_optional(json, "platform");
   component->architecture = dup_optional(json, "architecture");
   component->package_format = dup_optional(json, "packageFormat");
+  component->output_folder = dup_optional(json, "outputFolder");
+  component->output_note = dup_optional(json, "outputNote");
   const OtzJson *required = otz_json_get(json, "required");
   component->required =
       required != NULL && required->type == OTZ_JSON_BOOL && required->boolean;
@@ -168,6 +183,9 @@ static gboolean parse_component(const OtzJson *json, OtzComponent **out,
     component->download_size = 0;
   if (*component->id == '\0' || *component->name == '\0')
     return invalid(error, component->id, "missing id or name");
+  if (*component->output_folder != '\0' &&
+      !otz_is_safe_output_folder(component->output_folder))
+    return invalid(error, component->id, "unsafe outputFolder");
 
   const OtzJson *depends = otz_json_get(json, "dependsOn");
   for (guint i = 0; i < otz_json_array_length(depends); i++) {

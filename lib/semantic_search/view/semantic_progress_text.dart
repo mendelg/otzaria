@@ -10,7 +10,7 @@ String semanticProgressText(
   SemanticDownloadProgress progress,
 ) {
   final action = context.settingsText(
-    SemanticSearchMessages.stepAction(progress.item),
+    SemanticSearchMessages.progressAction(progress),
   );
   final label = progress.stepCount > 1
       ? context.settingsText(

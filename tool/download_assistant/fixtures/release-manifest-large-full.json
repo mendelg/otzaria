@@ -492,6 +492,279 @@
           ]
         }
       ]
+    },
+    {
+      "id": "semantic-model-linux",
+      "name": "חיפוש חכם — מודל השאילתות",
+      "description": "הרכיב שמבין את מילות החיפוש במצב \"חיפוש חכם\".",
+      "type": "semantic-model",
+      "required": false,
+      "origin": "imported",
+      "platform": "linux",
+      "installOrder": 40,
+      "dependsOn": [],
+      "downloadSize": 46,
+      "outputFolder": "semantic-import/meivin-round2-onnx",
+      "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "compatibility": {
+        "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
+      },
+      "assets": [
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "seforim-embed-round2-int8.onnx",
+          "size": 42,
+          "sha256": "3011f299e96326b68575e12e65bf1beab9431efbd0f2122dc98b9b4431f277ea"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "tokenizer.json",
+          "size": 2,
+          "sha256": "224931eb13f8d2471acd38a4a0d7417d20e8ea340160a467ceaa359d25197b87"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "model.json",
+          "size": 1,
+          "sha256": "08449dfe8b6c265b9ec864ad13b8d86e7503428f935b9f3d01edab200f0eabd6"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "LICENSE",
+          "size": 1,
+          "sha256": "c693279643b8cd5d248172d9c22cb7cf4ed163a3c98c8a3f69c2717edd3eacb7"
+        }
+      ]
+    },
+    {
+      "id": "semantic-model-macos",
+      "name": "חיפוש חכם — מודל השאילתות",
+      "description": "הרכיב שמבין את מילות החיפוש במצב \"חיפוש חכם\". ב-macOS: רק במחשב עם מעבד Apple Silicon ו-macOS 14 ומעלה.",
+      "type": "semantic-model",
+      "required": false,
+      "origin": "imported",
+      "platform": "macos",
+      "installOrder": 40,
+      "dependsOn": [],
+      "downloadSize": 46,
+      "outputFolder": "semantic-import/meivin-round2-onnx",
+      "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "compatibility": {
+        "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
+      },
+      "assets": [
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "seforim-embed-round2-int8.onnx",
+          "size": 42,
+          "sha256": "3011f299e96326b68575e12e65bf1beab9431efbd0f2122dc98b9b4431f277ea"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "tokenizer.json",
+          "size": 2,
+          "sha256": "224931eb13f8d2471acd38a4a0d7417d20e8ea340160a467ceaa359d25197b87"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "model.json",
+          "size": 1,
+          "sha256": "08449dfe8b6c265b9ec864ad13b8d86e7503428f935b9f3d01edab200f0eabd6"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "LICENSE",
+          "size": 1,
+          "sha256": "c693279643b8cd5d248172d9c22cb7cf4ed163a3c98c8a3f69c2717edd3eacb7"
+        }
+      ]
+    },
+    {
+      "id": "semantic-model-windows",
+      "name": "חיפוש חכם — מודל השאילתות",
+      "description": "הרכיב שמבין את מילות החיפוש במצב \"חיפוש חכם\".",
+      "type": "semantic-model",
+      "required": false,
+      "origin": "imported",
+      "platform": "windows",
+      "installOrder": 40,
+      "dependsOn": [],
+      "downloadSize": 46,
+      "outputFolder": "semantic-import/meivin-round2-onnx",
+      "outputNote": "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
+      "compatibility": {
+        "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
+      },
+      "assets": [
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "seforim-embed-round2-int8.onnx",
+          "size": 42,
+          "sha256": "3011f299e96326b68575e12e65bf1beab9431efbd0f2122dc98b9b4431f277ea"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "tokenizer.json",
+          "size": 2,
+          "sha256": "224931eb13f8d2471acd38a4a0d7417d20e8ea340160a467ceaa359d25197b87"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "model.json",
+          "size": 1,
+          "sha256": "08449dfe8b6c265b9ec864ad13b8d86e7503428f935b9f3d01edab200f0eabd6"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/otzaria-semantic-search",
+          "releaseTag": "model-meivin-round2-int8-v1",
+          "name": "LICENSE",
+          "size": 1,
+          "sha256": "c693279643b8cd5d248172d9c22cb7cf4ed163a3c98c8a3f69c2717edd3eacb7"
+        }
+      ]
+    },
+    {
+      "id": "semantic-vectors-linux",
+      "name": "חיפוש חכם — נתוני החיפוש לספרייה",
+      "description": "הנתונים של מצב \"חיפוש חכם\" לגרסת הספרייה 30, זו שבהתקנה המלאה.",
+      "type": "semantic-vectors",
+      "required": false,
+      "origin": "imported",
+      "platform": "linux",
+      "installOrder": 41,
+      "dependsOn": [
+        "semantic-model-linux"
+      ],
+      "downloadSize": 1657,
+      "outputFolder": "semantic-import/vectors",
+      "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "compatibility": {
+        "libraryReleaseTag": "v30-20260930165019",
+        "libraryVersion": 30,
+        "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68",
+        "vectorsManifestSha256": "f1c16509298a2ebab66abea50d7d47f73724def5ba2a8042fefa938b3c0e3be3"
+      },
+      "assets": [
+        {
+          "kind": "single",
+          "repository": "Otzaria/SeforimLibrary",
+          "releaseTag": "vectors-v30-20260930165019",
+          "name": "otzaria-vectors-0c3f95be-v30-base.oxv.zst",
+          "size": 1642,
+          "sha256": "ebc8456896e4f08c5f7ecf9e10da44181f02f934123f6ec2357e644f39533dc2"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/SeforimLibrary",
+          "releaseTag": "vectors-v30-20260930165019",
+          "name": "otzaria-vectors-0c3f95be-v30-base.manifest.json",
+          "size": 15,
+          "sha256": "f1c16509298a2ebab66abea50d7d47f73724def5ba2a8042fefa938b3c0e3be3"
+        }
+      ]
+    },
+    {
+      "id": "semantic-vectors-macos",
+      "name": "חיפוש חכם — נתוני החיפוש לספרייה",
+      "description": "הנתונים של מצב \"חיפוש חכם\" לגרסת הספרייה 30, זו שבהתקנה המלאה. ב-macOS: רק במחשב עם מעבד Apple Silicon ו-macOS 14 ומעלה.",
+      "type": "semantic-vectors",
+      "required": false,
+      "origin": "imported",
+      "platform": "macos",
+      "installOrder": 41,
+      "dependsOn": [
+        "semantic-model-macos"
+      ],
+      "downloadSize": 1657,
+      "outputFolder": "semantic-import/vectors",
+      "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "compatibility": {
+        "libraryReleaseTag": "v30-20260930165019",
+        "libraryVersion": 30,
+        "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68",
+        "vectorsManifestSha256": "f1c16509298a2ebab66abea50d7d47f73724def5ba2a8042fefa938b3c0e3be3"
+      },
+      "assets": [
+        {
+          "kind": "single",
+          "repository": "Otzaria/SeforimLibrary",
+          "releaseTag": "vectors-v30-20260930165019",
+          "name": "otzaria-vectors-0c3f95be-v30-base.oxv.zst",
+          "size": 1642,
+          "sha256": "ebc8456896e4f08c5f7ecf9e10da44181f02f934123f6ec2357e644f39533dc2"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/SeforimLibrary",
+          "releaseTag": "vectors-v30-20260930165019",
+          "name": "otzaria-vectors-0c3f95be-v30-base.manifest.json",
+          "size": 15,
+          "sha256": "f1c16509298a2ebab66abea50d7d47f73724def5ba2a8042fefa938b3c0e3be3"
+        }
+      ]
+    },
+    {
+      "id": "semantic-vectors-windows",
+      "name": "חיפוש חכם — נתוני החיפוש לספרייה",
+      "description": "הנתונים של מצב \"חיפוש חכם\" לגרסת הספרייה 30, זו שבהתקנה המלאה.",
+      "type": "semantic-vectors",
+      "required": false,
+      "origin": "imported",
+      "platform": "windows",
+      "installOrder": 41,
+      "dependsOn": [
+        "semantic-model-windows"
+      ],
+      "downloadSize": 1657,
+      "outputFolder": "semantic-import/vectors",
+      "outputNote": "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
+      "compatibility": {
+        "libraryReleaseTag": "v30-20260930165019",
+        "libraryVersion": 30,
+        "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68",
+        "vectorsManifestSha256": "f1c16509298a2ebab66abea50d7d47f73724def5ba2a8042fefa938b3c0e3be3"
+      },
+      "assets": [
+        {
+          "kind": "single",
+          "repository": "Otzaria/SeforimLibrary",
+          "releaseTag": "vectors-v30-20260930165019",
+          "name": "otzaria-vectors-0c3f95be-v30-base.oxv.zst",
+          "size": 1642,
+          "sha256": "ebc8456896e4f08c5f7ecf9e10da44181f02f934123f6ec2357e644f39533dc2"
+        },
+        {
+          "kind": "single",
+          "repository": "Otzaria/SeforimLibrary",
+          "releaseTag": "vectors-v30-20260930165019",
+          "name": "otzaria-vectors-0c3f95be-v30-base.manifest.json",
+          "size": 15,
+          "sha256": "f1c16509298a2ebab66abea50d7d47f73724def5ba2a8042fefa938b3c0e3be3"
+        }
+      ]
     }
   ]
 }

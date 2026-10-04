@@ -131,6 +131,9 @@ const
   { השם שה-workflow כותב (--out). משמש לתג המוטבע בלי API: מגבלת הקצב של
     api.github.com (403/429) משותפת לכל מי שיוצא מאותה כתובת, למשל בנטפרי. }
   ReleaseManifestAsset = 'otzaria-release-manifest.json';
+  { נתונים שהתוכנה המותקנת קוראת מתיקיית הפלט: חלק מ"מלאה" ולא מוצעים
+    ב"במחשב הזה", שבו הפלט הוא המטמון ואיש אינו קורא אותם משם. }
+  OfflineDataTypes = 'semantic-model,semantic-vectors,';
 
 type
   TInt64Array = array of Int64;
@@ -144,14 +147,15 @@ var
   LoadErrorTech: String;
 
   CompId, CompName, CompDesc, CompType, CompPlatform, CompArch, CompFormat,
-    CompDependsOn, CompInstalledBy: TArrayOfString;
+    CompDependsOn, CompInstalledBy, CompOutputFolder,
+    CompOutputNote: TArrayOfString;
   CompRequired, CompSelected: array of Boolean;
   CompDownloadSize: TInt64Array;
   CompAssetStart, CompAssetCount: array of Integer;
 
   AssetKind, AssetRepo, AssetTag, AssetName, AssetSha: TArrayOfString;
   AssetSize: TInt64Array;
-  AssetPartStart, AssetPartCount: array of Integer;
+  AssetPartStart, AssetPartCount, AssetComp: array of Integer;
 
   PartName, PartSha: TArrayOfString;
   PartSize: TInt64Array;
@@ -485,6 +489,23 @@ begin
   Result := not OnlyDots;
 end;
 
+{ outputFolder: שמות ‎[A-Za-z0-9._-]‎ מופרדים ב-'/', בלי מקטע ריק או של
+  נקודות בלבד — הוא הופך לנתיב כתיבה בתוך תיקיית הפלט. }
+function IsSafeOutputFolder(const Folder: String): Boolean;
+var
+  Parts: TArrayOfString;
+  I: Integer;
+begin
+  Result := False;
+  if (Folder = '') or (Pos('+', Folder) > 0) then
+    exit;
+  Parts := StringSplitEx(Folder, ['/'], #0, stAll);
+  for I := 0 to GetArrayLength(Parts) - 1 do
+    if not IsSafeName(Parts[I]) then
+      exit;
+  Result := True;
+end;
+
 function AssetUrl(const Repository, Tag, Name: String): String;
 begin
   Result := '';
@@ -795,6 +816,8 @@ begin
     SetArrayLength(CompFormat, NC + 1);
     SetArrayLength(CompDependsOn, NC + 1);
     SetArrayLength(CompInstalledBy, NC + 1);
+    SetArrayLength(CompOutputFolder, NC + 1);
+    SetArrayLength(CompOutputNote, NC + 1);
     SetArrayLength(CompRequired, NC + 1);
     SetArrayLength(CompSelected, NC + 1);
     SetArrayLength(CompDownloadSize, NC + 1);
@@ -814,6 +837,14 @@ begin
 
     CompDependsOn[NC] := JIdList(Raw, CompPos, 'dependsOn');
     CompInstalledBy[NC] := JIdList(Raw, CompPos, 'installedBy');
+    CompOutputFolder[NC] := JStr(Raw, CompPos, 'outputFolder');
+    CompOutputNote[NC] := JStr(Raw, CompPos, 'outputNote');
+    if (CompOutputFolder[NC] <> '') and
+       not IsSafeOutputFolder(CompOutputFolder[NC]) then
+    begin
+      LoadErrorTech := 'bad outputFolder in component ' + CompId[NC];
+      exit;
+    end;
 
     CompAssetStart[NC] := NA;
     AssetPos := JArrFirst(Raw, JFind(Raw, CompPos, 'assets'));
@@ -827,6 +858,7 @@ begin
       SetArrayLength(AssetSize, NA + 1);
       SetArrayLength(AssetPartStart, NA + 1);
       SetArrayLength(AssetPartCount, NA + 1);
+      SetArrayLength(AssetComp, NA + 1);
 
       AssetKind[NA] := JStr(Raw, AssetPos, 'kind');
       AssetRepo[NA] := JStr(Raw, AssetPos, 'repository');
@@ -835,6 +867,7 @@ begin
       AssetSha[NA] := JStr(Raw, AssetPos, 'sha256');
       AssetSize[NA] := JInt(Raw, AssetPos, 'size');
       AssetPartStart[NA] := NP;
+      AssetComp[NA] := NC;
 
       PartPos := JArrFirst(Raw, JFind(Raw, AssetPos, 'parts'));
       while PartPos > 0 do
@@ -1162,7 +1195,9 @@ end;
 
 function IsThisComputerMode(): Boolean;
 begin
-  Result := ModePage.SelectedValueIndex = ModeThisComputer;
+  Result := False;
+  if Assigned(ModePage) then
+    Result := ModePage.SelectedValueIndex = ModeThisComputer;
 end;
 
 procedure FillOptions(Page: TInputOptionWizardPage; const Values: TArrayOfString;
@@ -1297,6 +1332,9 @@ function ComponentIsOffered(Index: Integer): Boolean;
 begin
   Result := ComponentFitsTarget(Index) and ComponentIsRunnable(Index) and
     ((CompInstalledBy[Index] = '') or (InstallerFor(Index) >= 0));
+  if Result and IsThisComputerMode() and
+     MembersContain(OfflineDataTypes, CompType[Index]) then
+    Result := False;
 end;
 
 function AnyMember(const Members, Ids: String): Boolean;
@@ -1440,12 +1478,15 @@ begin
       if MembersContain(CompInstalledBy[I], CompId[Bundle]) and
          ComponentIsOffered(I) then
         Members := Members + CompId[I] + ',';
+    Members := Members + CollectByTypes(OfflineDataTypes, False);
   end
   else
   begin
     Members := CollectByTypes('application,library,dependency,', False);
     if CollectByTypes('library,', False) = '' then
-      Members := '';
+      Members := ''
+    else
+      Members := Members + CollectByTypes(OfflineDataTypes, False);
   end;
   AddPreset('full', 'התקנה מלאה (למחשב בלי אינטרנט)',
     'התוכנה יחד עם כל ספריית הספרים — למחשב שאין בו אינטרנט.', Members);
@@ -1492,10 +1533,12 @@ begin
   Result := 'אוצריא להתקנה ל-' + PlatformDisplayName(TargetPlatform);
 end;
 
-{ הקבצים שייווצרו ביעד, בסדר המניפסט — לפי אותם כללים שמריץ PrepareOutput. }
+{ הקבצים שייווצרו ביעד, בסדר המניפסט — לפי אותם כללים שמריץ PrepareOutput.
+  קובץ של רכיב עם outputFolder נקרא '<folder>/<name>', כמו במימוש הייחוס. }
 function PlannedOutputNames(): TArrayOfString;
 var
   C, A, P, N: Integer;
+  Prefix: String;
 begin
   SetArrayLength(Result, 0);
   N := 0;
@@ -1503,6 +1546,9 @@ begin
   begin
     if not CompSelected[C] then
       Continue;
+    Prefix := '';
+    if CompOutputFolder[C] <> '' then
+      Prefix := CompOutputFolder[C] + '/';
     for A := CompAssetStart[C] to CompAssetStart[C] + CompAssetCount[C] - 1 do
     begin
       if (AssetKind[A] = 'split') and not ShouldAssembleSingleFile(A) then
@@ -1510,14 +1556,14 @@ begin
         for P := AssetPartStart[A] to AssetPartStart[A] + AssetPartCount[A] - 1 do
         begin
           SetArrayLength(Result, N + 1);
-          Result[N] := PartName[P];
+          Result[N] := Prefix + PartName[P];
           N := N + 1;
         end;
       end
       else
       begin
         SetArrayLength(Result, N + 1);
-        Result[N] := AssetName[A];
+        Result[N] := Prefix + AssetName[A];
         N := N + 1;
       end;
     end;
@@ -1527,6 +1573,23 @@ end;
 function ProducedFileCount(): Integer;
 begin
   Result := GetArrayLength(PlannedOutputNames());
+end;
+
+{ ההסברים (outputNote) של הרכיבים שנבחרו, בסדר המניפסט ובלי כפולים. }
+function PlannedOutputNotes(): TArrayOfString;
+var
+  C, N: Integer;
+begin
+  SetArrayLength(Result, 0);
+  N := 0;
+  for C := 0 to GetArrayLength(CompId) - 1 do
+    if CompSelected[C] and (CompOutputNote[C] <> '') and
+       (ListIndex(Result, CompOutputNote[C]) < 0) then
+    begin
+      SetArrayLength(Result, N + 1);
+      Result[N] := CompOutputNote[C];
+      N := N + 1;
+    end;
 end;
 
 #ifdef DevSelectionDump
@@ -1587,7 +1650,11 @@ begin
             PresetMembers[I] + ' files=' + Line + ' subfolder=';
           if GetArrayLength(Names) > 1 then
             Text := Text + OutputSubFolderName();
-          Text := Text + #10;
+          Names := PlannedOutputNotes();
+          Line := '';
+          for J := 0 to GetArrayLength(Names) - 1 do
+            Line := Line + Names[J] + '|';
+          Text := Text + ' notes=' + Line + #10;
         end;
       end;
     end;
@@ -1913,16 +1980,30 @@ begin
     Result := Result + '\' + OutputSubFolderName();
 end;
 
+{ התיקייה של קובצי הרכיב: OutputDir, ובתוכה outputFolder כשיש. }
+function AssetOutputDir(AssetIndex: Integer): String;
+var
+  Folder: String;
+begin
+  Result := OutputDir();
+  Folder := CompOutputFolder[AssetComp[AssetIndex]];
+  if Folder <> '' then
+  begin
+    StringChangeEx(Folder, '/', '\', True);
+    Result := Result + '\' + Folder;
+  end;
+end;
+
 { הקובץ שכבר מורכב ביעד: גודל תואם וחותם מהמטמון שנכתב אחרי ההרכבה. }
 function AssembledIsReady(AssetIndex: Integer): Boolean;
 begin
-  Result := FileMatchesMarker(OutputDir() + '\' + AssetName[AssetIndex],
+  Result := FileMatchesMarker(AssetOutputDir(AssetIndex) + '\' + AssetName[AssetIndex],
     AssetName[AssetIndex], AssetSize[AssetIndex], AssetSha[AssetIndex]);
 end;
 
 function AssemblyTmpPath(AssetIndex: Integer): String;
 begin
-  Result := OutputDir() + '\' + AssetName[AssetIndex] + '.tmp';
+  Result := AssetOutputDir(AssetIndex) + '\' + AssetName[AssetIndex] + '.tmp';
 end;
 
 { `<name>.tmp.sha256` נכתב לפני הבית הראשון. שם הנכס חוזר בין בניות של אותה
@@ -2183,8 +2264,9 @@ var
   Prefix, Actual, Done: Int64;
 begin
   Result := False;
-  FinalPath := OutputDir() + '\' + AssetName[AssetIndex];
+  FinalPath := AssetOutputDir(AssetIndex) + '\' + AssetName[AssetIndex];
   TmpPath := AssemblyTmpPath(AssetIndex);
+  ForceDirectories(AssetOutputDir(AssetIndex));
   First := AssetPartStart[AssetIndex];
   Consumed := ConsumedPartCount(AssetIndex, Prefix);
   if FileExists(TmpPath) then
@@ -2257,14 +2339,15 @@ end;
 
 { קישור קשיח חוסך העתקה של גיגה-בתים; נכשל בין כוננים ועל FAT32/exFAT, ואז
   מעתיקים. }
-function CopyToOutput(const Name: String): Boolean;
+function CopyToOutput(const Name, Dir: String): Boolean;
 var
   Dest: String;
 begin
   Result := True;
-  if CompareText(OutputDir(), CacheDir()) = 0 then
+  if CompareText(Dir, CacheDir()) = 0 then
     exit;
-  Dest := OutputDir() + '\' + Name;
+  ForceDirectories(Dir);
+  Dest := Dir + '\' + Name;
   DeleteFile(Dest);
   if CreateHardLink(Dest, CachePath(Name), 0) then
   begin
@@ -2321,8 +2404,9 @@ end;
 function PrepareOutput(): Boolean;
 var
   C, A, P, Total: Integer;
-  Notes, PartsNote, SingleName, JoinNote, FirstExe: String;
+  Notes, PartsNote, SingleName, JoinNote, FirstExe, Folder: String;
   Produced: Integer;
+  OutputNotes: TArrayOfString;
 begin
   Result := False;
   ForceDirectories(OutputDir());
@@ -2341,6 +2425,12 @@ begin
     begin
       if not CompSelected[C] then
         Continue;
+      Folder := '';
+      if CompOutputFolder[C] <> '' then
+      begin
+        Folder := CompOutputFolder[C] + '\';
+        StringChangeEx(Folder, '/', '\', True);
+      end;
       for A := CompAssetStart[C] to CompAssetStart[C] + CompAssetCount[C] - 1 do
       begin
         if AssetKind[A] = 'split' then
@@ -2350,8 +2440,8 @@ begin
             if not AssembledIsReady(A) then
               if not AssembleAsset(A, CompName[C]) then
                 exit;
-            Notes := Notes + '• ' + AssetName[A] + #13#10;
-            SingleName := AssetName[A];
+            Notes := Notes + '• ' + Folder + AssetName[A] + #13#10;
+            SingleName := Folder + AssetName[A];
             Produced := Produced + 1;
           end
           else
@@ -2363,13 +2453,13 @@ begin
             begin
               WorkPage.SetText('מעתיק לתיקייה שנבחרה: ' + CompName[C], PartName[P]);
               WorkPage.SetProgress(Produced, Total);
-              if not CopyToOutput(PartName[P]) then
+              if not CopyToOutput(PartName[P], AssetOutputDir(A)) then
               begin
                 LoadErrorHeb := 'לא ניתן היה להעתיק את הקבצים לתיקייה שנבחרה.';
                 exit;
               end;
-              PartsNote := PartsNote + '• ' + PartName[P] + #13#10;
-              SingleName := PartName[P];
+              PartsNote := PartsNote + '• ' + Folder + PartName[P] + #13#10;
+              SingleName := Folder + PartName[P];
               Produced := Produced + 1;
             end;
             Notes := Notes + PartsNote;
@@ -2381,13 +2471,13 @@ begin
         begin
           WorkPage.SetText('מעתיק לתיקייה שנבחרה: ' + CompName[C], AssetName[A]);
           WorkPage.SetProgress(Produced, Total);
-          if not CopyToOutput(AssetName[A]) then
+          if not CopyToOutput(AssetName[A], AssetOutputDir(A)) then
           begin
             LoadErrorHeb := 'לא ניתן היה להעתיק את הקבצים לתיקייה שנבחרה.';
             exit;
           end;
-          Notes := Notes + '• ' + AssetName[A] + #13#10;
-          SingleName := AssetName[A];
+          Notes := Notes + '• ' + Folder + AssetName[A] + #13#10;
+          SingleName := Folder + AssetName[A];
           Produced := Produced + 1;
         end;
         if IsExecutableName(AssetName[A]) and (FirstExe = '') and
@@ -2395,7 +2485,7 @@ begin
           FirstExe := AssetName[A];
         if IsThisComputerMode() and IsExecutableName(AssetName[A]) and
            (RunAfterExe = '') then
-          RunAfterExe := OutputDir() + '\' + AssetName[A];
+          RunAfterExe := AssetOutputDir(A) + '\' + AssetName[A];
       end;
     end;
   finally
@@ -2432,6 +2522,9 @@ begin
         '(טרמינל), מתוך התיקייה, בפקודה:' + #13#10 + JoinNote;
     ResultText := ResultText + #13#10#13#10 + 'הקבצים שהוכנו:' + #13#10 + Notes;
   end;
+  OutputNotes := PlannedOutputNotes();
+  for C := 0 to GetArrayLength(OutputNotes) - 1 do
+    ResultText := ResultText + #13#10 + OutputNotes[C];
   Result := True;
 end;
 

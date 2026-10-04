@@ -29,6 +29,7 @@ import 'package:otzaria/semantic_search/repository/semantic_data_ownership.dart'
 import 'package:otzaria/semantic_search/repository/semantic_platform_support.dart';
 import 'package:otzaria/semantic_search/repository/semantic_release_locator.dart';
 import 'package:otzaria/semantic_search/repository/semantic_settings_store.dart';
+import 'package:otzaria/semantic_search/repository/semantic_staged_import.dart';
 import 'package:otzaria/services/data_collection_service.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/utils/file/disk_free_space.dart';
@@ -129,6 +130,14 @@ class SemanticSearchRepository {
   SemanticAvailability _availability = SemanticAvailability.initial;
 
   late final SearchFeedbackConsentStore _consent = _consentFactory();
+
+  /// נתונים שמסייע ההורדה הכין מחליפים הורדה, רק בתוך עבודה שעברה את ההסכמה.
+  late final SemanticStagedImport _staged = SemanticStagedImport(_paths);
+  late final SemanticFileDownloader _fetch = _staged.wrap(
+    _download,
+    isOffline: () => _settings.isOfflineMode,
+    onChecking: _showChecking,
+  );
   StreamSubscription<SearchFeedbackConsent>? _consentSubscription;
   SemanticModelIdentity? _identity;
   SemanticVectorsSummary? _vectors;
@@ -668,6 +677,7 @@ class SemanticSearchRepository {
           !_moveInProgress &&
           _isConsentGranted());
     } finally {
+      _staged.clearVerification();
       _jobPhase = null;
       _jobProgress = null;
       _jobSteps = const [];
@@ -696,7 +706,8 @@ class SemanticSearchRepository {
     if (!_isConsentGranted()) {
       return _skipOrThrow(SemanticFailureKind.consentRequired);
     }
-    if (_settings.isOfflineMode) {
+    final offline = _settings.isOfflineMode;
+    if (offline && !await _staged.hasData()) {
       return _skipOrThrow(SemanticFailureKind.offline);
     }
     if (_moveInProgress) return _skipOrThrow(SemanticFailureKind.libraryMoving);
@@ -725,9 +736,13 @@ class SemanticSearchRepository {
         installed.libraryVersion == version &&
         !_needsRepair;
     if (!upToDate) {
-      release = await _locator.findForLibraryVersion(
+      release = await _staged.locate(
         version,
-        libraryTag: _libraryTagHint,
+        offline: offline,
+        online: () => _locator.findForLibraryVersion(
+          version,
+          libraryTag: _libraryTagHint,
+        ),
       );
       if (release == null) {
         _unpublishedVersion = version;
@@ -876,7 +891,7 @@ class SemanticSearchRepository {
       final partial = '${target.dest}.part';
       final before = done;
       _reportProgress(SemanticDownloadItem.model, before, force: true);
-      await _download(
+      await _fetch(
         url: release.urlOf(target.file),
         destPath: partial,
         resumeIdentity: target.file.sha256,
@@ -928,7 +943,7 @@ class SemanticSearchRepository {
     for (final file in release.files) {
       final dest = p.join(downloadDir, file.name);
       final before = done;
-      await _download(
+      await _fetch(
         url: file.downloadUrl,
         destPath: dest,
         resumeIdentity:
@@ -981,8 +996,25 @@ class SemanticSearchRepository {
   ) async {
     final info = await _diskSpace(downloadDir);
     if (info.freeBytes < 0) return;
+    _reportProgress(SemanticDownloadItem.vectors, _jobModelBytes, force: true);
     var remaining = 0;
     for (final file in release.files) {
+      // קובץ מוכן באותו כונן עובר ב-rename ואינו תופס מקום נוסף.
+      final staged = await _staged.stagedFile(file.name);
+      if (staged != null &&
+          info.volumeId != null &&
+          (await _diskSpace(p.dirname(staged.path))).volumeId ==
+              info.volumeId &&
+          await _staged.verifiedStagedFile(
+                file.name,
+                file.size,
+                file.sha256,
+                onChecking: _showChecking,
+                isCancelled: () => _jobCancel.isCancelled,
+              ) !=
+              null) {
+        continue;
+      }
       final partial = File(p.join(downloadDir, file.name));
       final have = await partial.exists() ? await partial.length() : 0;
       remaining += (file.size - have).clamp(0, file.size);
@@ -1009,6 +1041,16 @@ class SemanticSearchRepository {
         progress: progress,
         unpublishedLibraryVersion: _unpublishedVersion,
       ),
+    );
+  }
+
+  /// בדיקת קובץ מוכן: אותו שלב, בלי מדידה.
+  void _showChecking(bool checking) {
+    final progress = _jobProgress;
+    if (progress == null) return;
+    _setJob(
+      SemanticAvailabilityPhase.downloading,
+      progress.withChecking(checking),
     );
   }
 

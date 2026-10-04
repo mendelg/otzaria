@@ -387,6 +387,13 @@ begin
     Result := GetDataDir('') + '\books';
 end;
 
+// נתוני החיפוש החכם שמסייע ההורדה הכין: ההורה של תיקיית הספרייה הוא
+// SemanticPaths.root באפליקציה, ושם היא מחפשת את semantic-import.
+function GetSemanticImportDir(Param: String): String;
+begin
+  Result := ExtractFileDir(GetSelectedBooksPath('')) + '\semantic-import';
+end;
+
 // חותך רכיב מספרי מתחילת S ומקדם אותה הלאה. תו שאינו ספרה או '.'
 // (כמו '+' של מספר build) מסיים את הפירוק.
 function NextVersionComponent(var S: String): Integer;
@@ -2447,6 +2454,10 @@ Source: "library_db\lexical.db.zst"; DestDir: "{tmp}"; Flags: deleteafterinstall
 #endif
 Source: "zstd.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "7za.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; התיקייה שמסייע ההורדה מכין לצד המתקין (semantic-import), ליד תיקיית הספרייה.
+; האפליקציה מעבירה ממנה את הקבצים כשהחיפוש החכם מופעל, אחרי ההסכמה.
+Source: "{src}\semantic-import\*"; DestDir: "{code:GetSemanticImportDir}"; \
+  Flags: external recursesubdirs createallsubdirs skipifsourcedoesntexist ignoreversion uninsneveruninstall
 #ifdef IndexedSplitFull
 Source: "read_indexed_library_manifest.ps1"; Flags: dontcopy
 Source: "..\tool\release\assemble_split_asset.ps1"; Flags: dontcopy
