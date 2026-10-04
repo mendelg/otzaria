@@ -43,19 +43,17 @@ class CategoryPreviewPanel extends StatelessWidget {
     );
 
     final itemCount = subCategories.length + books.length;
-    // NavTreeGroupCard מוסיף kNavTreeSideInset משני צדי הכרטיס, ולכן הכותרת
-    // מקבלת את ההשלמה ל-24 כדי שתתיישר עם הכרטיס.
     const headerInset = EdgeInsets.symmetric(
-      horizontal: 24 - kNavTreeSideInset,
+      horizontal: kNavTreeSideInset,
     );
 
     return GestureDetector(
       onDoubleTap: onOpen,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(
-          kNavTreeSideInset,
+          24 - kNavTreeSideInset,
           20,
-          kNavTreeSideInset,
+          24 - kNavTreeSideInset,
           12,
         ),
         child: Column(
@@ -122,51 +120,72 @@ class CategoryPreviewPanel extends StatelessWidget {
   }
 
   Widget _header(ThemeData theme, ColorScheme cs) {
-    return Row(
-      children: [
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: cs.secondaryContainer,
-            borderRadius: AppTokens.borderRadiusAll,
-          ),
-          child: Icon(
-            FluentIcons.folder_24_regular,
-            size: 24,
-            color: cs.onSecondaryContainer,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                category.title,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              if (parentPath.isNotEmpty)
-                Text(
-                  parentPath,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: cs.secondary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stackAction =
+            constraints.maxWidth < MediaQuery.textScalerOf(context).scale(300);
+        final action = onOpen == null
+            ? null
+            : ActionButton.recommended(
+                text: 'פתח תיקייה',
+                icon: FluentIcons.folder_open_24_regular,
+                onPressed: onOpen,
+              );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: cs.secondaryContainer,
+                    borderRadius: AppTokens.borderRadiusAll,
+                  ),
+                  child: Icon(
+                    FluentIcons.folder_24_regular,
+                    size: 24,
+                    color: cs.onSecondaryContainer,
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        category.title,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (parentPath.isNotEmpty)
+                        Text(
+                          parentPath,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.secondary,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (action != null && !stackAction) ...[
+                  const SizedBox(width: 12),
+                  action,
+                ],
+              ],
+            ),
+            if (action != null && stackAction) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: action,
+              ),
             ],
-          ),
-        ),
-        if (onOpen case final open?) ...[
-          const SizedBox(width: 12),
-          ActionButton.recommended(
-            text: 'פתח תיקייה',
-            icon: FluentIcons.folder_open_24_regular,
-            onPressed: open,
-          ),
-        ],
-      ],
+          ],
+        );
+      },
     );
   }
 }
