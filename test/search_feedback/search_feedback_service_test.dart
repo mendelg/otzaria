@@ -382,11 +382,11 @@ void main() {
       });
     }
 
-    test('too_large splits the batch and sends the halves', () async {
+    test('plain 413 splits the batch and sends the halves', () async {
       final service = await grantedService();
       var calls = 0;
       eventsHandler = (request) => calls++ == 0
-          ? json(413, {'error': 'too_large'})
+          ? http.Response('<html>request too large</html>', 413)
           : json(200, {'accepted': 1, 'duplicates': 0});
       online = false;
       for (var i = 0; i < 4; i++) {
@@ -395,6 +395,7 @@ void main() {
       online = true;
       await service.flush();
       expect(service.queue.eventCount, 4);
+      expect(service.networkBlockStatus, isNull);
       await service.flush();
       expect(service.queue.isEmpty, isTrue);
       final sizes = eventRequests()
@@ -485,7 +486,7 @@ void main() {
     });
 
     test('non-protocol answers never delete a batch', () async {
-      for (final status in [200, 400, 413, 422]) {
+      for (final status in [200, 400, 422]) {
         final service = await grantedService();
         await service.revoke();
         await service.grant();

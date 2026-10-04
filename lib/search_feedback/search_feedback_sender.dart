@@ -204,6 +204,13 @@ class SearchFeedbackSender {
         strike: strike,
       );
     }
+    if (status == 413) {
+      return SearchFeedbackOutcome(
+        SearchFeedbackOutcomeKind.tooLarge,
+        retryAfter: retryAfter,
+        strike: strike,
+      );
+    }
     // בלי קוד פרוטוקול (גם 200 של דף HTML): ספק או מסנן חוסם — אסור למחוק נתונים.
     final transient = status >= 500 || status == 408 || status == 429;
     return SearchFeedbackOutcome(
