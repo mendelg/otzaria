@@ -726,13 +726,17 @@ class _PersonalNotesManagerScreenState
         }
 
         final rootCategory = libraryState.library!;
+        final categoryCounts = personalNotesCategoryCounts(
+          rootCategory,
+          _getNotesCountForBook,
+        );
         final totalNotesCount =
-            _getNotesCountForCategory(rootCategory) + _getMissingNotesCount();
+            categoryCounts[rootCategory]! + _getMissingNotesCount();
 
         // שיטוח לרשימת שורות + ListView.builder (בנייה עצלה) — ספריית ההערות
         // דינמית ועלולה להיות ארוכה; בנייה מוקדמת של כל העץ הכבידה.
         final rows = <_NotesNavRow>[_NotesNavRow.root(totalNotesCount)];
-        _flattenNotes(rootCategory, 0, rows);
+        _flattenNotes(rootCategory, 0, rows, categoryCounts);
         rows.add(_NotesNavRow.missing());
         // כל הקטגוריות/הספרים הם כרטיס אחד רציף (מעוגל בקצוות, מפריד בין
         // כל השורות). השורש וה"הערות ללא מיקום" נשארים מחוץ לכרטיס.
@@ -762,14 +766,19 @@ class _PersonalNotesManagerScreenState
     );
   }
 
-  void _flattenNotes(Category category, int level, List<_NotesNavRow> rows) {
+  void _flattenNotes(
+    Category category,
+    int level,
+    List<_NotesNavRow> rows,
+    Map<Category, int> categoryCounts,
+  ) {
     for (final sub in category.subCategories) {
-      final count = _getNotesCountForCategory(sub);
+      final count = categoryCounts[sub]!;
       if (count <= 0) continue;
       final childLevel = level + 1;
       final isExpanded = _expansionState[sub.path] ?? childLevel <= 1;
       rows.add(_NotesNavRow.category(sub, childLevel, count, isExpanded));
-      if (isExpanded) _flattenNotes(sub, childLevel, rows);
+      if (isExpanded) _flattenNotes(sub, childLevel, rows, categoryCounts);
     }
 
     // איחוד ספרים כפולים לפי כותרת (טקסט + PDF של אותו ספר).
@@ -855,26 +864,6 @@ class _PersonalNotesManagerScreenState
       return state.locatedNotes.length + state.missingNotes.length;
     }
     return 0;
-  }
-
-  int _getNotesCountForCategory(Category category) {
-    int count = 0;
-
-    // Deduplicate books by title to avoid counting notes twice
-    // when the same book exists in both PDF and text formats
-    final seenTitles = <String>{};
-    for (final book in category.books) {
-      final key = personalNotesBookKey(book);
-      if (!seenTitles.contains(key)) {
-        count += _getNotesCountForBook(key);
-        seenTitles.add(key);
-      }
-    }
-
-    for (final subCat in category.subCategories) {
-      count += _getNotesCountForCategory(subCat);
-    }
-    return count;
   }
 
   Widget _buildMissingNotesTile() {
