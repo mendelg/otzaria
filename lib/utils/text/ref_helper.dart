@@ -81,37 +81,97 @@ final _tocRefLookups = Expando<_TocRefLookup>();
 /// כותרת נסרקת כשהמפתח שלה (מקסימום האינדקסים של אחיה הקודמים ואבותיה) <= השורה.
 class _TocRefLookup {
   final _entries = <TocEntry>[];
-  final _keys = <int>[];
-  final _prevShallower = <int>[];
+  final _ranks = <int>[];
   final _sortedKeys = <int>[];
-  final _lastPosUpTo = <int>[];
+  final _roots = <int>[];
+  final _left = <int>[0];
+  final _right = <int>[0];
+  final _lastPos = <int>[-1];
+  late final int _levelCount;
 
   _TocRefLookup(List<TocEntry> toc) {
-    final stack = <int>[];
-    void visit(List<TocEntry> entries, int key) {
-      for (final entry in entries) {
-        key = max(key, entry.index);
-        final level = entry.level > 0 ? entry.level : 1 << 30;
-        while (stack.isNotEmpty && _entries[stack.last].level >= level) {
-          stack.removeLast();
-        }
-        _prevShallower.add(stack.isEmpty ? -1 : stack.last);
-        if (entry.level > 0) stack.add(_entries.length);
+    final keys = <int>[];
+    final pending = <({Iterator<TocEntry> entries, int? key})>[
+      (entries: toc.iterator, key: null),
+    ];
+    while (pending.isNotEmpty) {
+      final frame = pending.removeLast();
+      if (!frame.entries.moveNext()) continue;
+      final entry = frame.entries.current;
+      final key = frame.key == null
+          ? entry.index
+          : max(frame.key!, entry.index);
+      pending.add((entries: frame.entries, key: key));
+      if (entry.level > 0) {
         _entries.add(entry);
-        _keys.add(key);
-        visit(entry.children, key);
+        keys.add(key);
+      }
+      if (entry.children.isNotEmpty) {
+        pending.add((entries: entry.children.iterator, key: key));
       }
     }
 
-    visit(toc, -1 << 62);
-    final titled = [
-      for (var i = 0; i < _entries.length; i++)
-        if (_entries[i].level > 0) i,
-    ]..sort((a, b) => _keys[a].compareTo(_keys[b]));
-    for (final pos in titled) {
-      _sortedKeys.add(_keys[pos]);
-      _lastPosUpTo.add(max(pos, _lastPosUpTo.lastOrNull ?? -1));
+    final levels = _entries.map((entry) => entry.level).toSet().toList()
+      ..sort();
+    _levelCount = levels.length;
+    final ranks = {for (var i = 0; i < levels.length; i++) levels[i]: i};
+    _ranks.addAll(_entries.map((entry) => ranks[entry.level]!));
+    final positions = List.generate(_entries.length, (i) => i)
+      ..sort((a, b) => keys[a].compareTo(keys[b]));
+    var root = 0, firstNewNode = 1;
+    for (final pos in positions) {
+      if (_sortedKeys.isEmpty || _sortedKeys.last != keys[pos]) {
+        firstNewNode = _lastPos.length;
+      }
+      root = _insert(root, 0, _levelCount, _ranks[pos], pos, firstNewNode);
+      if (_sortedKeys.isNotEmpty && _sortedKeys.last == keys[pos]) {
+        _roots[_roots.length - 1] = root;
+      } else {
+        _sortedKeys.add(keys[pos]);
+        _roots.add(root);
+      }
     }
+  }
+
+  // כל גרסה שומרת את הכותרת האחרונה בכל רמה עבור סף שורה אחד.
+  int _insert(int node, int lo, int hi, int rank, int pos, int firstNewNode) {
+    if (hi - lo == 1 && _lastPos[node] >= pos) return node;
+    var left = _left[node], right = _right[node];
+    if (hi - lo > 1) {
+      final mid = (lo + hi) >> 1;
+      if (rank < mid) {
+        left = _insert(left, lo, mid, rank, pos, firstNewNode);
+      } else {
+        right = _insert(right, mid, hi, rank, pos, firstNewNode);
+      }
+      if (left == _left[node] &&
+          right == _right[node] &&
+          _lastPos[node] == max(_lastPos[left], _lastPos[right])) {
+        return node;
+      }
+    }
+    final lastPos = hi - lo == 1 ? pos : max(_lastPos[left], _lastPos[right]);
+    // עד לפרסום גרסה חדשה אפשר לעדכן את צמתיה בלי להעתיק שוב את אותו מסלול.
+    if (node >= firstNewNode) {
+      _left[node] = left;
+      _right[node] = right;
+      _lastPos[node] = lastPos;
+      return node;
+    }
+    _left.add(left);
+    _right.add(right);
+    _lastPos.add(lastPos);
+    return _lastPos.length - 1;
+  }
+
+  int _lastBelow(int node, int lo, int hi, int bound) {
+    if (node == 0 || lo >= bound) return -1;
+    if (hi <= bound) return _lastPos[node];
+    final mid = (lo + hi) >> 1;
+    return max(
+      _lastBelow(_left[node], lo, mid, bound),
+      _lastBelow(_right[node], mid, hi, bound),
+    );
   }
 
   String refAt(int index) {
@@ -120,24 +180,15 @@ class _TocRefLookup {
       final mid = (lo + hi) >> 1;
       _sortedKeys[mid] <= index ? lo = mid + 1 : hi = mid;
     }
+    if (lo == 0) return '';
+    final root = _roots[lo - 1];
     final parts = <String>[];
-    var bound = 1 << 30;
-    var pos = lo == 0 ? -1 : _lastPosUpTo[lo - 1];
+    var pos = _lastPos[root];
     while (pos >= 0) {
-      final entry = _entries[pos];
-      final candidate = entry.level > 0 && entry.level < bound;
-      // כותרת שלא נסרקה אינה מדלגת על קודמותיה כמו כותרת עמוקה — בודקים אחת-אחת.
-      if (candidate && _keys[pos] > index) {
-        pos--;
-        continue;
-      }
-      if (candidate) {
-        parts.add(entry.text.trim());
-        bound = entry.level;
-      }
-      pos = _prevShallower[pos];
+      parts.add(_entries[pos].text.trim());
+      pos = _lastBelow(root, 0, _levelCount, _ranks[pos]);
     }
-    return parts.reversed.where((e) => e.isNotEmpty).join(', ');
+    return parts.reversed.where((part) => part.isNotEmpty).join(', ');
   }
 }
 
