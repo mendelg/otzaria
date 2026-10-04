@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/search/in_book_search_settings.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
+import 'package:otzaria/search/search_repository.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
+import 'package:otzaria_search_engine/otzaria_search_engine.dart';
 
 void main() {
   group('InBookSearchSettings', () {
@@ -81,4 +83,85 @@ void main() {
       expect(searchableInBookQuery('   '), isNull);
     });
   });
+
+  group('searchBookWithEngine', () {
+    test('searches the book with the settings, in book order', () async {
+      final repository = _RecordingSearchRepository();
+      await searchBookWithEngine(
+        repository,
+        query: 'שלום',
+        bookPath: '/תנך/בראשית',
+        limit: 500,
+        settings: const InBookSearchSettings(
+          searchMode: SearchMode.fuzzy,
+          distance: 2,
+          alternativeWords: {
+            0: ['שלם'],
+          },
+        ),
+      );
+
+      final call = repository.calls.single;
+      expect(call.query, 'שלום');
+      expect(call.facets, ['/תנך/בראשית']);
+      expect(call.limit, 500);
+      expect(call.fuzzy, isTrue);
+      expect(call.distance, 2);
+      expect(call.searchMode, SearchMode.fuzzy);
+      expect(call.order, ResultsOrder.catalogue);
+    });
+  });
+}
+
+class _RecordingSearchRepository extends SearchRepository {
+  final calls =
+      <
+        ({
+          String query,
+          List<String> facets,
+          int limit,
+          bool fuzzy,
+          int distance,
+          SearchMode searchMode,
+          ResultsOrder order,
+        })
+      >[];
+
+  @override
+  Future<List<SearchResult>> searchTexts(
+    String query,
+    List<String> facets,
+    int limit, {
+    int offset = 0,
+    ResultsOrder order = ResultsOrder.relevance,
+    bool fuzzy = false,
+    int distance = 0,
+    String negativeQuery = '',
+    int? negativeDistance,
+    SearchScope scope = SearchScope.wordDistance,
+    SearchScope? negativeScope,
+    SearchMode searchMode = SearchMode.exact,
+    Map<String, String>? customSpacing,
+    Map<String, String>? negativeCustomSpacing,
+    Map<int, List<String>>? alternativeWords,
+    Map<int, List<String>>? negativeAlternativeWords,
+    Map<String, Map<String, bool>>? searchOptions,
+    Map<String, Map<String, bool>>? negativeSearchOptions,
+    bool matchNikud = false,
+    bool matchTaamim = false,
+    ResultGrouping? grouping,
+    WordMatchMode wordMatchMode = WordMatchMode.all,
+    int? wordMatchCount,
+  }) async {
+    calls.add((
+      query: query,
+      facets: facets,
+      limit: limit,
+      fuzzy: fuzzy,
+      distance: distance,
+      searchMode: searchMode,
+      order: order,
+    ));
+    return const [];
+  }
 }

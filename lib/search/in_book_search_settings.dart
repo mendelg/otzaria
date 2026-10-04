@@ -1,9 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/search_query_builder.dart';
+import 'package:otzaria/search/search_repository.dart';
 import 'package:otzaria/search/utils/in_book_search_routing.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
+import 'package:otzaria_search_engine/otzaria_search_engine.dart';
 
 /// The settings of an in-book search besides the query, shared by the text
 /// and PDF search panes: the mode, the distance, the match policy and the
@@ -77,4 +79,32 @@ String? searchableInBookQuery(String raw) {
     query = utils.removeVolwels(query);
   }
   return query.isEmpty ? null : query;
+}
+
+/// Searches the book whose facet is [bookPath] for [query] through the
+/// search engine, with [settings], in the book's order.
+Future<List<SearchResult>> searchBookWithEngine(
+  SearchRepository repository, {
+  required String query,
+  required String bookPath,
+  required int limit,
+  required InBookSearchSettings settings,
+}) {
+  final parameters = settings.activeParameters;
+  final policy = settings.matchPolicy;
+  return repository.searchTexts(
+    query,
+    [bookPath],
+    limit,
+    searchOptions: parameters.searchOptions,
+    alternativeWords: parameters.alternativeWords,
+    customSpacing: parameters.customSpacing,
+    fuzzy: settings.searchMode == SearchMode.fuzzy,
+    distance: settings.distance,
+    searchMode: settings.searchMode,
+    scope: policy.proximityScope,
+    wordMatchMode: policy.wordMatchMode,
+    wordMatchCount: policy.wordMatchCount,
+    order: ResultsOrder.catalogue,
+  );
 }

@@ -475,21 +475,12 @@ class TextBookSearchViewState extends State<TextBookSearchView>
       const displayLimit = 1000;
 
       final List<SearchResult> rawResults;
-      final activeParameters = _activeSearchParameters;
-      rawResults = await widget.searchRepository.searchTexts(
-        query,
-        [_bookPath!],
-        rawLimit,
-        searchOptions: activeParameters.searchOptions,
-        alternativeWords: activeParameters.alternativeWords,
-        customSpacing: activeParameters.customSpacing,
-        fuzzy: _searchMode == SearchMode.fuzzy,
-        distance: _searchDistance,
-        searchMode: _searchMode,
-        scope: _matchPolicy.proximityScope,
-        wordMatchMode: _matchPolicy.wordMatchMode,
-        wordMatchCount: _matchPolicy.wordMatchCount,
-        order: ResultsOrder.catalogue,
+      rawResults = await searchBookWithEngine(
+        widget.searchRepository,
+        query: query,
+        bookPath: _bookPath!,
+        limit: rawLimit,
+        settings: _settings,
       );
 
       final expectedTitle = _bookTitle!.trim();

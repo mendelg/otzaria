@@ -19,7 +19,6 @@ import 'package:otzaria/search/book_facet.dart';
 import 'package:otzaria/search/in_book_search_preferences.dart';
 import 'package:otzaria/search/view/whole_word_search_action.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
-import 'package:otzaria/search/search_query_builder.dart';
 import 'package:otzaria/search/search_repository.dart';
 import 'package:otzaria/search/utils/literal_search_pattern.dart';
 import 'package:otzaria/search/utils/snippet_builder.dart';
@@ -332,9 +331,6 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     unawaited(InBookSearchPreferences.saveWholeWord(_wholeWord));
     _searchTextUpdated();
   }
-
-  SearchModeScopedParameters get _activeSearchParameters =>
-      _settings.activeParameters;
 
   int _getPdfPageNumber(SearchResult result) => result.segment.toInt() + 1;
 
@@ -810,21 +806,12 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     }
 
     try {
-      final activeParameters = _activeSearchParameters;
-      final rawResults = await widget.searchRepository.searchTexts(
-        query,
-        [_bookPath!],
-        1000,
-        searchOptions: activeParameters.searchOptions,
-        alternativeWords: activeParameters.alternativeWords,
-        customSpacing: activeParameters.customSpacing,
-        fuzzy: _searchMode == SearchMode.fuzzy,
-        distance: _searchDistance,
-        searchMode: _searchMode,
-        scope: _matchPolicy.proximityScope,
-        wordMatchMode: _matchPolicy.wordMatchMode,
-        wordMatchCount: _matchPolicy.wordMatchCount,
-        order: ResultsOrder.catalogue,
+      final rawResults = await searchBookWithEngine(
+        widget.searchRepository,
+        query: query,
+        bookPath: _bookPath!,
+        limit: 1000,
+        settings: _settings,
       );
 
       final indexedFilePath = _indexedFilePath;
