@@ -16,6 +16,7 @@ import 'package:otzaria/tabs/models/tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/utils/navigation/talmud_bavli_open_format.dart';
 import 'package:otzaria/personal_notes/personal_notes_system.dart';
+import 'package:otzaria/personal_notes/storage/personal_notes_changes.dart';
 import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_book/widgets/text_book_state_builder.dart';
@@ -276,6 +277,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
   Map<String, int> _linkFlatIndex = const {};
   // הערות אישיות פר ספר-מפרש, משותפות לכל הקטעים של אותו מפרש.
   final Map<String, Future<List<PersonalNote>>> _personalNotesByGroup = {};
+  StreamSubscription<String>? _notesChangesSubscription;
 
   // Anti-jitter search stats
   Timer? _searchUpdateDebounce;
@@ -482,8 +484,11 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     });
   }
 
-  void _refreshGroupPersonalNotes(String groupTitle) {
-    setState(() => _personalNotesByGroup.remove(groupTitle));
+  void _handleNotesChanged(String bookId) {
+    if (!mounted || !_personalNotesByGroup.containsKey(bookId)) return;
+    setState(() {
+      _personalNotesByGroup.remove(bookId);
+    });
   }
 
   List<CommentatorGroup> _commentatorGroups(TextBookLoaded state) {
@@ -897,6 +902,9 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     widget.closeFilterNotifier?.addListener(_onCloseFilterRequest);
     _searchFocusNode.addListener(_handleSearchFocusChange);
     widget.typeSelection?.addListener(_onTypeSelectionChanged);
+    _notesChangesSubscription = PersonalNotesChanges.stream.listen(
+      _handleNotesChanged,
+    );
     // חיפוש חיצוני
     widget.externalSearchController?.addListener(_onExternalSearchChanged);
     widget.highlightQueryListenable?.addListener(_onHighlightQueryChanged);
@@ -1359,6 +1367,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
   void dispose() {
     _searchUpdateDebounce?.cancel();
     _searchComputeDebounce?.cancel();
+    _notesChangesSubscription?.cancel();
     _itemPositionsListener.itemPositions.removeListener(_updateLastScrollIndex);
     widget.selectionSyncController?.clear(_selectionOwner);
     widget.selectionSyncController?.removeListener(
@@ -1766,7 +1775,6 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       onOpenPersonalNote: widget.onOpenPersonalNote,
       shouldShowItemTitle: (title) => _shouldShowItemTitle(group, state, title),
       personalNotes: _personalNotesForGroup(group),
-      onNoteSaved: () => _refreshGroupPersonalNotes(group.bookTitle),
       restoreLineBreaks: _restoreLineBreaks,
     );
   }
@@ -2644,9 +2652,6 @@ class _CommentaryLinkItem extends StatefulWidget {
   /// הערות ספר המפרש. אותו Future משותף לכל קטעי המפרש בקבוצה.
   final Future<List<PersonalNote>> personalNotes;
 
-  /// נקרא אחרי שמירת הערה — ההורה מרענן את ה-Future המשותף של הקבוצה.
-  final VoidCallback onNoteSaved;
-
   /// נקרא בלחיצת עכבר על פריט מפרש — לסימון המפרש הנבחר לייחוס העתקה.
   final void Function(Link link)? onLinkPointerDown;
 
@@ -2686,7 +2691,6 @@ class _CommentaryLinkItem extends StatefulWidget {
     required this.savedSelectedTextListenable,
     required this.lastSelectedLinkListenable,
     required this.personalNotes,
-    required this.onNoteSaved,
     this.onLinkPointerDown,
     this.onLinkRendered,
     this.onLinkTitleRendered,
@@ -2842,7 +2846,6 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                       copyDisplayProfile: widget.copyDisplayProfile,
                       savedSelectedText: savedTextAtBuild,
                       onNavigateToLink: _navigateToLink,
-                      onNoteSaved: widget.onNoteSaved,
                       onCopySelected: () => ContextMenuUtils.copyFormattedText(
                         context: menuCtx,
                         savedSelectedText:

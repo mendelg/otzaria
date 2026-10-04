@@ -109,7 +109,6 @@ class ContextMenuUtils {
     required VoidCallback onCopySelected,
     VoidCallback? onCopySelectedWithoutNikud,
     void Function(Link link)? onNavigateToLink,
-    VoidCallback? onNoteSaved,
   }) {
     final profile =
         displayProfile ??
@@ -128,7 +127,6 @@ class ContextMenuUtils {
           context: context,
           link: link,
           savedSelectedText: savedSelectedText,
-          onNoteSaved: onNoteSaved,
         ),
       ),
       if (link.targetSource.isOfficial)
@@ -254,7 +252,6 @@ class ContextMenuUtils {
     required BuildContext context,
     required Link link,
     String? savedSelectedText,
-    VoidCallback? onNoteSaved,
   }) async {
     final bookTitle = utils.getTitleFromPath(link.path2);
     final selectedText = savedSelectedText?.trim();
@@ -299,7 +296,6 @@ class ContextMenuUtils {
         selectedText: selectedText,
         categoryId: link.targetCategoryId,
       );
-      onNoteSaved?.call();
       if (context.mounted) UiSnack.showSuccess(TextBookMessages.noteSaved);
     } catch (e) {
       if (context.mounted) {

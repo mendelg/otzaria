@@ -3,6 +3,7 @@ import 'package:otzaria/data/sqlite/sqlite3_api.dart';
 
 import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/personal_notes/models/personal_note.dart';
+import 'package:otzaria/personal_notes/storage/personal_notes_changes.dart';
 import 'package:otzaria/migration/database/sqlite3_utils.dart';
 
 /// SQLite database for storing personal notes.
@@ -135,7 +136,7 @@ class PersonalNotesDatabase {
       'INSERT OR REPLACE INTO $_tableNotes ($cols) VALUES ($placeholders)',
       m.values.toList(),
     );
-    revision.value++;
+    if (db.updatedRows > 0) _notifyChanges([note.bookId]);
   }
 
   /// Update an existing note
@@ -143,18 +144,22 @@ class PersonalNotesDatabase {
     final db = await database;
     final m = _noteToMap(note);
     final setClause = m.keys.map((k) => '$k = ?').join(', ');
-    db.execute(
-      'UPDATE $_tableNotes SET $setClause WHERE $_columnId = ?',
-      [...m.values, note.id],
-    );
-    revision.value++;
+    db.execute('UPDATE $_tableNotes SET $setClause WHERE $_columnId = ?', [
+      ...m.values,
+      note.id,
+    ]);
+    if (db.updatedRows > 0) _notifyChanges([note.bookId]);
   }
 
   /// Delete a note
   Future<void> deleteNote(String noteId) async {
     final db = await database;
+    final rows = db.select(
+      'SELECT $_columnBookId FROM $_tableNotes WHERE $_columnId = ?',
+      [noteId],
+    ).toMapList();
     db.execute('DELETE FROM $_tableNotes WHERE $_columnId = ?', [noteId]);
-    revision.value++;
+    _notifyChanges(rows.map((row) => row[_columnBookId] as String));
   }
 
   /// Get a single note by ID
@@ -193,19 +198,23 @@ class PersonalNotesDatabase {
   Future<void> deleteBookNotes(String bookId) async {
     final db = await database;
     db.execute('DELETE FROM $_tableNotes WHERE $_columnBookId = ?', [bookId]);
+    if (db.updatedRows > 0) _notifyChanges([bookId]);
   }
 
   /// Batch update multiple notes (for reconciliation)
+  ///
+  /// אינו מודיע ל-[PersonalNotesChanges]: הוא רץ מתוך טעינה, ומאזין שטוען
+  /// מחדש בתגובה היה נכנס ללולאה.
   Future<void> batchUpdateNotes(List<PersonalNote> notes) async {
     final db = await database;
     withTransaction(db, () {
       for (final note in notes) {
         final m = _noteToMap(note);
         final setClause = m.keys.map((k) => '$k = ?').join(', ');
-        db.execute(
-          'UPDATE $_tableNotes SET $setClause WHERE $_columnId = ?',
-          [...m.values, note.id],
-        );
+        db.execute('UPDATE $_tableNotes SET $setClause WHERE $_columnId = ?', [
+          ...m.values,
+          note.id,
+        ]);
       }
     });
   }
@@ -216,6 +225,7 @@ class PersonalNotesDatabase {
     if (notes.isEmpty) return 0;
     final db = await database;
     int count = 0;
+    final changedBooks = <String>{};
     withTransaction(db, () {
       for (final note in notes) {
         final m = _noteToMap(note);
@@ -225,10 +235,21 @@ class PersonalNotesDatabase {
           'INSERT OR IGNORE INTO $_tableNotes ($cols) VALUES ($placeholders)',
           m.values.toList(),
         );
-        count++;
+        if (db.updatedRows > 0) {
+          count++;
+          changedBooks.add(note.bookId);
+        }
       }
     });
+    _notifyChanges(changedBooks);
     return count;
+  }
+
+  void _notifyChanges(Iterable<String> bookIds) {
+    final changedBooks = bookIds.toSet();
+    if (changedBooks.isEmpty) return;
+    revision.value++;
+    changedBooks.forEach(PersonalNotesChanges.notify);
   }
 
   /// Convert PersonalNote to database map
