@@ -152,6 +152,7 @@ SearchResult _result({
     mergedCount: 1,
     merged: const [],
     textStatus: TextStatus.ok,
+    continuesToNextLine: false,
   );
 }
 

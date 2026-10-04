@@ -531,6 +531,67 @@ void main() {
     });
   });
 
+  group('searchInContent - ביטוי שנמשך לשורה הבאה (issue #1703)', () {
+    const content = [
+      '<h2>פרק א</h2>',
+      'ויבדל בין המים אשר מתחת לרקיע ובין המים',
+      '(ג) ויאמר אלהים יקוו המים',
+      '<h2>פרק ב</h2>',
+      'ויאמר אלהים יהי מאורת',
+    ];
+
+    test('נמצא פעם אחת, בשורה שבה הוא מתחיל, עם שתי השורות בקטע', () async {
+      final results = await searchInContent(
+        content: content,
+        query: 'ובין המים ויאמר אלהים',
+        patternSource: literalPatternSource('ובין המים ויאמר אלהים'),
+      );
+      expect(results, hasLength(1));
+      final result = results.single;
+      expect(result.index, 1);
+      expect(result.continuesToNextLine, isTrue);
+      expect(result.snippet, contains('ובין המים\nויאמר אלהים'));
+      expect(result.snippet, isNot(contains('(ג)')));
+      expect(result.matchOffset, content[1].indexOf('ובין'));
+    });
+
+    test('הופעה בתוך שורה אינה מסומנת כנמשכת', () async {
+      final results = await searchInContent(
+        content: content,
+        query: 'יקוו המים',
+        patternSource: literalPatternSource('יקוו המים'),
+      );
+      expect(results.map((r) => (r.index, r.continuesToNextLine)), [
+        (2, false),
+      ]);
+    });
+
+    test('כותרת עוצרת ביטוי', () async {
+      final results = await searchInContent(
+        content: content,
+        query: 'המים פרק',
+        patternSource: literalPatternSource('המים פרק'),
+      );
+      expect(results, isEmpty);
+      final across = await searchInContent(
+        content: content,
+        query: 'יקוו המים ויאמר',
+        patternSource: literalPatternSource('יקוו המים ויאמר'),
+      );
+      expect(across, isEmpty);
+    });
+
+    test('ביטוי שנמשך אל מחוץ לטווח אינו נספר', () async {
+      final results = await searchInContent(
+        content: content,
+        query: 'ובין המים ויאמר',
+        patternSource: literalPatternSource('ובין המים ויאמר'),
+        range: (start: 0, end: 2),
+      );
+      expect(results, isEmpty);
+    });
+  });
+
   group('matchFractionInLine', () {
     test('מילה בתחילת השורה — שבר 0', () {
       expect(

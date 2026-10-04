@@ -2116,6 +2116,7 @@ class PluginBridgeAdapter {
                 'book': r.title,
                 'text': r.text,
                 'textStatus': r.textStatus.name,
+                'continuesToNextLine': r.continuesToNextLine,
                 'index': r.segment.toInt(),
               },
             )

@@ -57,6 +57,28 @@ Future<void> main() async {
       expect(_allText(spans), contains('כותרת'));
       expect(_allText(spans), contains('טקסט רגיל'));
     });
+
+    test('<br> של ביטוי שנמשך לשורה הבאה הופך למעבר שורה אמיתי', () {
+      final spans = SnippetBuilder.fromHighlightedHtml(
+        html:
+            'ובין <font color=red>המים</font><br><font color=red>ויאמר</font> אלהים',
+        defaultStyle: _defaultStyle,
+        highlightStyle: _highlightStyle,
+      );
+
+      expect(_allText(spans), 'ובין המים\nויאמר אלהים');
+      expect(_highlighted(spans), 'המיםויאמר');
+    });
+
+    test('מעבר שורה בתוך הטקסט עצמו עדיין מתכווץ לרווח', () {
+      final spans = SnippetBuilder.fromHighlightedHtml(
+        html: 'שורה\nאחת',
+        defaultStyle: _defaultStyle,
+        highlightStyle: _highlightStyle,
+      );
+
+      expect(_allText(spans), 'שורה אחת');
+    });
   });
 
   group('extractHighlightedTerms - חילוץ מונחי התאמה להדגשת PDF', () {
@@ -170,6 +192,17 @@ Future<void> main() async {
   );
 
   group('buildExcerptText', () {
+    test('קטע של שתי שורות שומר את מעבר השורה', () {
+      expect(
+        SnippetBuilder.buildExcerptText(
+          fullText: 'סוף השורה  \nתחילת הבאה',
+          query: 'השורה',
+          maxChars: 220,
+        ),
+        'סוף השורה\nתחילת הבאה',
+      );
+    });
+
     test('טקסט קצר מהמגבלה מוחזר כמות שהוא', () {
       expect(
         SnippetBuilder.buildExcerptText(
@@ -221,6 +254,13 @@ Future<void> main() async {
         'בראשית <font color="red">ברא</font>   אלהים',
       );
       expect(plain, 'בראשית ברא אלהים');
+    });
+
+    test('שומר את מעבר השורה של קטע חוצה-שורות', () {
+      final plain = SnippetBuilder.htmlToPlainText(
+        'תהו <font color=red>ובהו</font><br> ויאמר אלהים',
+      );
+      expect(plain, 'תהו ובהו\nויאמר אלהים');
     });
   });
 

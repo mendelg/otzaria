@@ -4223,6 +4223,7 @@ Future<void> main() async {
                   mergedCount: 1,
                   merged: const <MergedSibling>[],
                   textStatus: TextStatus.ok,
+                  continuesToNextLine: false,
                 ),
               ],
               truncated: false,
@@ -4775,6 +4776,7 @@ Future<void> main() async {
         mergedCount: 1,
         merged: const <MergedSibling>[],
         textStatus: status,
+        continuesToNextLine: false,
       );
       final stub = _StubSearchRepository()
         ..fullTextResults = [

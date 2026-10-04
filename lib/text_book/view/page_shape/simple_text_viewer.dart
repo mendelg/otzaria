@@ -3265,6 +3265,18 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
                         state.lineParticipatesInSearchHighlight(
                           primaryLineIndex,
                         ),
+                    previousLineText: widget.isMainText
+                        ? state.searchResultNeighbour(
+                            primaryLineIndex,
+                            next: false,
+                          )
+                        : null,
+                    nextLineText: widget.isMainText
+                        ? state.searchResultNeighbour(
+                            primaryLineIndex,
+                            next: true,
+                          )
+                        : null,
                     fontSize: widget.fontSize,
                     fontFamily: widget.fontFamily ?? settingsState.fontFamily,
                     fontWeight:
@@ -3548,6 +3560,12 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       isSearchResultLine:
           useStateSearchSettings &&
           state.lineParticipatesInSearchHighlight(lineIndex),
+      previousLineText: useStateSearchSettings
+          ? state.searchResultNeighbour(lineIndex, next: false)
+          : null,
+      nextLineText: useStateSearchSettings
+          ? state.searchResultNeighbour(lineIndex, next: true)
+          : null,
       fontSize: widget.fontSize,
       fontFamily: widget.fontFamily ?? settingsState.fontFamily,
       fontWeight:

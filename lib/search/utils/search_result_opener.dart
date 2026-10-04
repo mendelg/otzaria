@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/search/utils/cross_line_result.dart';
 import 'package:otzaria/search/utils/in_book_search_routing.dart';
 import 'package:otzaria/search/utils/index_freshness_warner.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
@@ -17,6 +18,7 @@ import 'package:otzaria/utils/navigation/talmud_bavli_open_format.dart';
 /// פותח תוצאת חיפוש שכבר אומתה מול האינדקס בכרטיסיית עיון.
 ///
 /// [resolvedBook] הוא הספר שפוענח מהמפתח; מחזיר את הכרטיסייה שנשלחה לפתיחה.
+/// [continuesToNextLine] מסמן גם את השורה הבאה כשורת תוצאה.
 Future<OpenedTab?> openSearchResultInReader(
   BuildContext context, {
   required Book? resolvedBook,
@@ -31,6 +33,7 @@ Future<OpenedTab?> openSearchResultInReader(
   required Map<String, String> spacingValues,
   required InBookSearchParameters inBook,
   bool inBackground = false,
+  bool continuesToNextLine = false,
 }) async {
   final tabsBloc = context.read<TabsBloc>();
   final openLeftPane =
@@ -86,7 +89,10 @@ Future<OpenedTab?> openSearchResultInReader(
     searchMode: inBook.searchMode,
     searchDistance: inBook.distance,
     matchPolicy: inBook.matchPolicy,
-    initialSearchResultLines: {segment},
+    initialSearchResultLines: searchResultLinesFor(
+      segment,
+      continuesToNextLine: continuesToNextLine,
+    ),
     showPageShapeView: PageShapeSettingsManager.getViewModePreference(title),
     openLeftPane: openLeftPane,
   );

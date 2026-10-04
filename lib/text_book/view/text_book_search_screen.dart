@@ -595,7 +595,12 @@ class TextBookSearchViewState extends State<TextBookSearchView>
     // השורות שהתקבלו הן מקור האמת להדגשה במדיניות התאמה שאינה ברירת המחדל:
     // האפליקציה אינה מנחשת מה המנוע היה מחזיר (ראו TextBookLoaded).
     context.read<TextBookBloc>().add(
-      UpdateSearchResultLines({for (final result in results) result.index}),
+      UpdateSearchResultLines({
+        for (final result in results) ...[
+          result.index,
+          if (result.continuesToNextLine) result.index + 1,
+        ],
+      }),
     );
 
     // שמירת בחירה לפי זהות (שורה בספר), לא לפי אינדקס סידורי.
@@ -747,7 +752,11 @@ class TextBookSearchViewState extends State<TextBookSearchView>
     }
     final lineText = _lineTextAt(result.index, loadedState);
     final activeParameters = _activeSearchParameters;
-    final intraLineFraction = lineText == null
+    // תוצאת מנוע שנמשכת לשורה הבאה מתחילה בסוף השורה, ולשורה לבדה אין התאמה.
+    final intraLineFraction =
+        result.continuesToNextLine && result.matchOffset == null
+        ? 1.0
+        : lineText == null
         ? matchFractionFromLineLength(
             matchOffset: result.matchOffset,
             lineLength: result.lineLength,
@@ -882,6 +891,7 @@ class TextBookSearchViewState extends State<TextBookSearchView>
                   : result.text,
               address: result.reference,
               query: searchTextController.text,
+              continuesToNextLine: result.continuesToNextLine,
             ),
           );
         }

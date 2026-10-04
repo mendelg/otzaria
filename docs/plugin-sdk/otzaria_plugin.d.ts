@@ -259,6 +259,8 @@ export interface SearchResult {
   text: string;
   /** ראה `SearchTextStatus`. */
   textStatus?: SearchTextStatus;
+  /** הביטוי נמשך מסוף השורה `index` אל השורה הבאה; `text` מחבר את שתיהן ב-`<br>`. */
+  continuesToNextLine?: boolean;
   index: number;
 }
 
@@ -355,6 +357,8 @@ export interface SearchQueryHit extends BookIdentity {
   text: string;
   /** ראה `SearchTextStatus`. */
   textStatus?: SearchTextStatus;
+  /** הביטוי נמשך מסוף השורה `index` אל השורה הבאה; `text` מחבר את שתיהן ב-`<br>`. */
+  continuesToNextLine?: boolean;
   index: number;
   mergedCount: number;
   merged?: Array<
