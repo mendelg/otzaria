@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -456,8 +456,7 @@ List<AppContextMenuEntry> buildGroupedCommentatorEntries({
     return AppContextMenuEntry(
       label: commentator,
       isSelected: isActive,
-      // An active commentator is not removed here; the tap only opens the
-      // pane. Removing it silently made every retry flip it (issue #904).
+      // ביטול בחירה נעשה בסינון; לחיצה על מפרש פעיל פותחת את החלונית.
       onTap: () => onCommentatorsChanged({...activeCommentators, commentator}),
     );
   }
@@ -502,6 +501,23 @@ List<AppContextMenuEntry> buildGroupedCommentatorEntries({
   }
 
   return items;
+}
+
+/// מעדכן ושומר בחירה שהשתנתה, ופותח את חלונית המפרשים בכל לחיצה.
+@visibleForTesting
+void applyPdfCommentatorSelection({
+  required Set<String> activeCommentators,
+  required Set<String> updated,
+  required VoidCallback onChanged,
+  required VoidCallback onOpenPane,
+}) {
+  if (!setEquals(activeCommentators, updated)) {
+    activeCommentators
+      ..clear()
+      ..addAll(updated);
+    onChanged();
+  }
+  onOpenPane();
 }
 
 /// מרכיב את פריטי תפריט ההקשר של עמוד ה-PDF.
@@ -1511,11 +1527,12 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   }
 
   void _setActiveCommentators(Set<String> updated) {
-    widget.tab.activeCommentators
-      ..clear()
-      ..addAll(updated);
-    _saveActiveCommentators();
-    _openCommentaryPane();
+    applyPdfCommentatorSelection(
+      activeCommentators: widget.tab.activeCommentators,
+      updated: updated,
+      onChanged: _saveActiveCommentators,
+      onOpenPane: _openCommentaryPane,
+    );
   }
 
   void _toggleAllCommentators(List<String> commentators) {
