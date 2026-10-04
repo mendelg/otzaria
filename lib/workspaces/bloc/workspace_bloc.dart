@@ -68,6 +68,7 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
       transformer: sequential(),
     );
     on<MoveTabToWorkspace>(_onMoveTabToWorkspace, transformer: sequential());
+    on<SetWorkspacePinned>(_onSetWorkspacePinned, transformer: sequential());
   }
 
   /// שולחן שחלון אחר עומד עליו: שני חלונות דורסים זה לזה את ה-stash, ולכן
@@ -198,7 +199,7 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     // 1. Save current tabs to the currently active workspace
     final currentId = state.activeWorkspaceId;
     List<Workspace> stash(List<Workspace> current) => current.map((w) {
-      if (w.id == currentId) {
+      if (w.id == currentId && !w.isPinned) {
         return w.withTabs(
           tabs: _cloneTabs(event.currentTabsToSave),
           activeTabIndex: event.currentTabIndexToSave,
@@ -353,6 +354,32 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
     }
   }
 
+  Future<void> _onSetWorkspacePinned(
+    SetWorkspacePinned event,
+    Emitter<WorkspaceState> emit,
+  ) async {
+    try {
+      final saved = await _repository.mutateWorkspaces(
+        (current) => current.map((w) {
+          if (w.id != event.workspaceId) return w;
+          final tabs = event.tabsToSave;
+          final updated = tabs == null
+              ? w
+              : w.withTabs(
+                  tabs: _cloneTabs(tabs),
+                  activeTabIndex: event.tabIndexToSave,
+                  activePane: event.activePaneToSave,
+                );
+          return updated.copyWith(isPinned: event.isPinned);
+        }).toList(),
+      );
+      emit(state.copyWith(workspaces: saved, clearError: true));
+    } catch (e) {
+      UiSnack.showError(NotesMessages.workspaceSaveFailed);
+      emit(state.copyWith(error: 'Failed to pin workspace: $e'));
+    }
+  }
+
   Future<void> _onMoveTabToWorkspace(
     MoveTabToWorkspace event,
     Emitter<WorkspaceState> emit,
@@ -366,7 +393,7 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
       // 2. מוסיף את הטאב לשולחן העבודה היעד
       final saved = await _repository.mutateWorkspaces(
         (current) => current.map((w) {
-          if (w.id == currentId) {
+          if (w.id == currentId && !w.isPinned) {
             // מסיר את הטאב משולחן העבודה הנוכחי
             return w.withTabs(
               tabs: _cloneTabs(event.currentTabs),

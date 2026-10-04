@@ -26,12 +26,17 @@ class Workspace extends Equatable {
   /// בדיוק כמו [activeTabIndex].
   final String? activePane;
 
+  /// שולחן מקובע: מעבר לשולחן אחר אינו דורס את הכרטיסיות השמורות בו, והן
+  /// מתעדכנות רק בשמירה מפורשת.
+  final bool isPinned;
+
   Workspace({
     String? id,
     required this.name,
     required this.tabs,
     this.activeTabIndex = 0,
     this.activePane,
+    this.isPinned = false,
   }) : id = id ?? _generateId();
 
   static int _idCounter = 0;
@@ -51,6 +56,7 @@ class Workspace extends Equatable {
     String? name,
     List<OpenedTab>? tabs,
     int? activeTabIndex,
+    bool? isPinned,
   }) {
     return Workspace(
       id: id, // ID remains the same
@@ -58,6 +64,7 @@ class Workspace extends Equatable {
       tabs: tabs ?? this.tabs,
       activeTabIndex: activeTabIndex ?? this.activeTabIndex,
       activePane: activePane,
+      isPinned: isPinned ?? this.isPinned,
     );
   }
 
@@ -75,6 +82,7 @@ class Workspace extends Equatable {
       tabs: tabs,
       activeTabIndex: activeTabIndex,
       activePane: activePane,
+      isPinned: isPinned,
     );
   }
 
@@ -133,6 +141,7 @@ class Workspace extends Equatable {
           ? 0
           : restored.currentIndex.clamp(0, tabs.length - 1),
       activePane: side,
+      isPinned: json['isPinned'] == true,
     );
   }
 
@@ -161,9 +170,17 @@ class Workspace extends Equatable {
       'tabs': persistedTabs.map((tab) => tab.toJson()).toList(),
       'currentTab': safeIndex,
       'activePane': ?persistedSide,
+      if (isPinned) 'isPinned': true,
     };
   }
 
   @override
-  List<Object?> get props => [id, name, tabs, activeTabIndex, activePane];
+  List<Object?> get props => [
+    id,
+    name,
+    tabs,
+    activeTabIndex,
+    activePane,
+    isPinned,
+  ];
 }

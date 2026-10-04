@@ -153,3 +153,31 @@ class MoveTabToWorkspace extends WorkspaceEvent {
     currentActivePane,
   ];
 }
+
+/// מקבע או משחרר שולחן עבודה — ראו [Workspace.isPinned].
+///
+/// בקיבוע השולחן הפעיל, [tabsToSave] הם הכרטיסיות החיות שיהפכו לתמונה הקבועה.
+class SetWorkspacePinned extends WorkspaceEvent {
+  final String workspaceId;
+  final bool isPinned;
+  final List<OpenedTab>? tabsToSave;
+  final int tabIndexToSave;
+  final String? activePaneToSave;
+
+  const SetWorkspacePinned({
+    required this.workspaceId,
+    required this.isPinned,
+    this.tabsToSave,
+    this.tabIndexToSave = 0,
+    this.activePaneToSave,
+  });
+
+  @override
+  List<Object?> get props => [
+    workspaceId,
+    isPinned,
+    tabsToSave,
+    tabIndexToSave,
+    activePaneToSave,
+  ];
+}

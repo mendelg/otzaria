@@ -267,9 +267,66 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
               },
             ),
           ),
+          Positioned(
+            top: 4,
+            left: 4,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isActive && workspace.isPinned)
+                  IconButton(
+                    tooltip: 'שמור את הספרים הפתוחים כעת בשולחן המקובע',
+                    icon: const Icon(FluentIcons.save_24_regular, size: 16),
+                    onPressed: () => _saveSnapshot(context),
+                  ),
+                IconButton(
+                  tooltip: workspace.isPinned
+                      ? 'בטל קיבוע'
+                      : 'קבע: בכל כניסה ייפתחו רק הספרים שנשמרו',
+                  isSelected: workspace.isPinned,
+                  icon: const Icon(FluentIcons.pin_24_regular, size: 16),
+                  selectedIcon: const Icon(
+                    FluentIcons.pin_24_filled,
+                    size: 16,
+                  ),
+                  onPressed: () => _togglePinned(context, workspace, isActive),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  void _togglePinned(BuildContext context, Workspace workspace, bool isActive) {
+    final pin = !workspace.isPinned;
+    // בקיבוע השולחן הפעיל, התמונה הקבועה היא מה שפתוח כעת ולא השמירה הקודמת.
+    final tabsState = pin && isActive ? context.read<TabsBloc>().state : null;
+    context.read<WorkspaceBloc>().add(
+      SetWorkspacePinned(
+        workspaceId: workspace.id,
+        isPinned: pin,
+        tabsToSave: tabsState?.tabs,
+        tabIndexToSave: tabsState?.currentTabIndex ?? 0,
+        activePaneToSave: tabsState?.activePaneSide,
+      ),
+    );
+    UiSnack.show(
+      pin ? NotesMessages.workspacePinned : NotesMessages.workspaceUnpinned,
+    );
+  }
+
+  void _saveSnapshot(BuildContext context) {
+    final tabsState = context.read<TabsBloc>().state;
+    context.read<WorkspaceBloc>().add(
+      UpdateCurrentWorkspaceTabs(
+        tabs: tabsState.tabs,
+        activeTabIndex: tabsState.currentTabIndex,
+        activePane: tabsState.activePaneSide,
+      ),
+    );
+    UiSnack.show(NotesMessages.workspaceSnapshotSaved);
   }
 
   Widget _buildWorkspacePreview(Workspace workspace) {
