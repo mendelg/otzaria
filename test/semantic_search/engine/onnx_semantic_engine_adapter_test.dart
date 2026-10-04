@@ -132,6 +132,32 @@ class _FakeEngine implements SearchEngine {
     );
   }
 
+  String? highlightQuery;
+  List<SemanticHighlightTarget>? highlightTargets;
+  SemanticCancellationToken? highlightToken;
+
+  @override
+  Future<List<SemanticPassageHighlight>> semanticPassageHighlights({
+    required String query,
+    required List<SemanticHighlightTarget> targets,
+    required SemanticCancellationToken cancellation,
+  }) async {
+    highlightQuery = query;
+    highlightTargets = targets;
+    highlightToken = cancellation;
+    final error = failure;
+    if (error != null) throw error;
+    return [
+      for (final target in targets)
+        SemanticPassageHighlight(
+          filePath: target.filePath,
+          id: target.id,
+          snippetHtml: '',
+          isHighlighted: false,
+        ),
+    ];
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -274,6 +300,43 @@ void main() {
     );
     // ברירות המחדל של האפליקציה זהות לאלה של המנוע.
     expect(defaults, const SemanticRankingOptions());
+  });
+
+  test('passageHighlights מעביר שאילתה ויעדים, ומשחרר את ה-token', () async {
+    final targets = [
+      SemanticHighlightTarget(filePath: 'id:1', id: BigInt.one),
+      SemanticHighlightTarget(filePath: 'id:2', id: BigInt.two),
+    ];
+    final marked = await adapter.passageHighlights(
+      'כבוד אב',
+      targets,
+      cancel: SemanticCancelHandle(),
+    );
+
+    expect(engine.highlightQuery, 'כבוד אב');
+    expect(engine.highlightTargets, targets);
+    expect(identical(engine.highlightToken, tokens.single), isTrue);
+    expect(tokens.single.isDisposed, isTrue);
+    expect(marked.map((h) => h.id), [BigInt.one, BigInt.two]);
+
+    engine.failure = const SemanticError(
+      kind: SemanticErrorKind.cancelled,
+      message: 'cancelled',
+    );
+    await expectLater(
+      adapter.passageHighlights(
+        'כבוד אב',
+        targets,
+        cancel: SemanticCancelHandle(),
+      ),
+      throwsA(
+        isA<SemanticFailure>().having(
+          (f) => f.kind,
+          'kind',
+          SemanticFailureKind.cancelled,
+        ),
+      ),
+    );
   });
 
   test('ביטול בזמן חיפוש נשלח למנוע ומשחרר את ה-token בסיום', () async {

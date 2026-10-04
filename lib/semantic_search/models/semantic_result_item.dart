@@ -93,6 +93,12 @@ class SemanticResultItem extends Equatable {
   /// האם נמצאה רק לפי עניין, בלי מילה תואמת בשורה.
   bool get isSemanticOnly => source == SemanticResultSource.semantic;
 
+  /// האם לבקש מהמנוע לסמן בה את הקטע הקרוב לשאילתה.
+  bool get wantsPassageHighlight =>
+      isSemanticOnly &&
+      snippetHtml.isNotEmpty &&
+      snippetHtml != unavailableResultText;
+
   /// תוצאה מאוחדת שבכרטיס: מיקום ה-sibling, עם המקור והציונים של הכרטיס.
   SemanticResultItem forSibling(MergedSibling sibling) => SemanticResultItem(
     title: sibling.title,

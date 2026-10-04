@@ -34,6 +34,7 @@ import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/models/semantic_search_tab.dart';
 import 'package:otzaria/tabs/models/tab.dart';
+import 'package:otzaria/theme/app_surfaces.dart';
 import 'package:otzaria/utils/text/copy_utils.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/controls/action_buttons.dart';
@@ -370,8 +371,13 @@ class _SemanticSearchResultsScreenState
     );
   }
 
-  void _copy(SemanticResultItem item, SettingsState settings, String ref) {
-    final plainText = utils.stripHtmlIfNeeded(item.snippetHtml);
+  void _copy(
+    SemanticResultItem item,
+    String snippetHtml,
+    SettingsState settings,
+    String ref,
+  ) {
+    final plainText = utils.stripHtmlIfNeeded(snippetHtml);
     final bookName = settings.replaceHolyNames
         ? utils.replaceHolyNames(item.title, style: settings.holyNameStyle)
         : item.title;
@@ -667,7 +673,8 @@ class _SemanticSearchResultsScreenState
     final item = state.items[index];
     final colorScheme = Theme.of(context).colorScheme;
     var reference = item.reference;
-    var html = item.snippetHtml;
+    final shownHtml = state.passageHighlights[index] ?? item.snippetHtml;
+    var html = shownHtml;
     if (settings.replaceHolyNames) {
       reference = utils.replaceHolyNames(
         reference,
@@ -685,19 +692,23 @@ class _SemanticSearchResultsScreenState
     ].join('|');
     final spans = _snippetCache.putIfAbsent(cacheKey, () {
       if (_snippetCache.length > 300) _snippetCache.clear();
+      final defaultStyle = TextStyle(
+        fontSize: settings.fontSize,
+        fontFamily: settings.fontFamily,
+        color: colorScheme.onSurface,
+        height: 1.5,
+      );
       return SnippetBuilder.fromHighlightedHtml(
         html: html,
-        defaultStyle: TextStyle(
-          fontSize: settings.fontSize,
-          fontFamily: settings.fontFamily,
-          color: colorScheme.onSurface,
-          height: 1.5,
-        ),
+        defaultStyle: defaultStyle,
         highlightStyle: TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: settings.fontSize + 2,
           fontFamily: settings.fontFamily,
           color: colorScheme.error,
+        ),
+        markStyle: defaultStyle.copyWith(
+          backgroundColor: AppSurfaces.semanticPassageHighlight(colorScheme),
         ),
       );
     });
@@ -731,7 +742,7 @@ class _SemanticSearchResultsScreenState
         inBackground: true,
       ),
       onVote: (vote) => _bloc.add(SemanticVoteToggled(index, vote)),
-      onCopy: () => _copy(item, settings, reference),
+      onCopy: () => _copy(item, shownHtml, settings, reference),
       onOpenSibling: (sibling) =>
           _openItem(index, SearchFeedbackOpenVia.click, sibling: sibling),
       onOpenSiblingInBackground: (sibling) => _openItem(

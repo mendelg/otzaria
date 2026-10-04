@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
+import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/repository/semantic_results_source.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart';
@@ -106,5 +108,36 @@ void main() {
     expect(last!.hasMore, isFalse);
     expect(last.totalCount, 500);
     expect(last.groupCount, 400);
+  });
+
+  test('סימון הקטע: יעד לכל פריט, בסדרם, והביטול מגיע למנוע', () async {
+    await source.fetch(
+      const SemanticQueryOptions(query: 'כבוד אב'),
+      offset: 0,
+      limit: 30,
+    );
+    final items = [
+      for (final n in [4, 2]) SemanticResultItem.fromEngine(_result(n)),
+    ];
+    final cancel = SemanticCancelHandle();
+
+    final marked = await source.passageHighlights('כבוד אב', items, cancel);
+
+    expect(backend.calls.last, 'highlight:כבוד אב:2');
+    expect(identical(backend.highlightHandles.single, cancel), isTrue);
+    expect(marked.map((h) => h.id), [BigInt.from(4), BigInt.from(2)]);
+    expect(marked.map((h) => h.filePath), ['id:4', 'id:2']);
+
+    cancel.cancel();
+    await expectLater(
+      source.passageHighlights('כבוד אב', items, cancel),
+      throwsA(
+        isA<SemanticFailure>().having(
+          (f) => f.kind,
+          'kind',
+          SemanticFailureKind.cancelled,
+        ),
+      ),
+    );
   });
 }

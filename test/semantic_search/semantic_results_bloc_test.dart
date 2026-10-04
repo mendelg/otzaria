@@ -1,15 +1,18 @@
 import 'dart:async';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/messages/semantic_search_messages.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
+import 'package:otzaria/search/utils/result_text_status.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_results_bloc.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
+import 'package:otzaria/semantic_search/models/semantic_feedback_snapshots.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show MergedSibling, SemanticResultSource;
+    show MergedSibling, SemanticPassageHighlight, SemanticResultSource;
 
 import 'semantic_ui_test_support.dart';
 
@@ -519,6 +522,261 @@ void main() {
       expect(bloc.state.items, hasLength(3));
       expect(bloc.state.hasMore, isFalse);
       expect(source.fetches.map((f) => f.offset), [0, 3]);
+    });
+  });
+
+  group('סימון הקטע לפי עניין', () {
+    final mixed = [
+      resultItem(1),
+      resultItem(2, source: SemanticResultSource.semantic),
+      resultItem(3, source: SemanticResultSource.lexical),
+      resultItem(
+        4,
+        source: SemanticResultSource.semantic,
+        html: unavailableResultText,
+      ),
+      resultItem(5, source: SemanticResultSource.semantic),
+    ];
+
+    blocTest<SemanticResultsBloc, SemanticResultsState>(
+      'רק תוצאות לפי עניין עם טקסט; העמוד מוצג לפני הסימון',
+      build: () => buildResultsBloc(
+        source: FakeResultsSource(items: mixed)
+          ..highlighter = (items, _) async => markAll(items),
+        recorder: RecordingRecorder(),
+      ),
+      act: (bloc) => bloc.add(const SemanticSearchSubmitted(_options)),
+      wait: const Duration(milliseconds: 20),
+      expect: () => [
+        isA<SemanticResultsState>().having(
+          (s) => s.status,
+          'status',
+          SemanticResultsStatus.loading,
+        ),
+        isA<SemanticResultsState>()
+            .having((s) => s.status, 'status', SemanticResultsStatus.loaded)
+            .having((s) => s.items, 'items', mixed)
+            .having((s) => s.passageHighlights, 'highlights', isEmpty),
+        isA<SemanticResultsState>()
+            .having((s) => s.items, 'items', mixed)
+            .having((s) => s.passageHighlights, 'highlights', {
+              1: 'לפני <mark>הקטע הקרוב 2</mark> אחרי',
+              4: 'לפני <mark>הקטע הקרוב 5</mark> אחרי',
+            }),
+      ],
+    );
+
+    test('באצוות של 6 לפי סדר התצוגה, גם בעמוד הבא', () async {
+      final source = FakeResultsSource(
+        items: [
+          for (var i = 1; i <= 40; i++)
+            resultItem(i, source: SemanticResultSource.semantic),
+        ],
+      )..highlighter = (items, _) async => markAll(items);
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      expect(source.highlightCalls.map((c) => c.items.length), [
+        6,
+        6,
+        6,
+        6,
+        6,
+      ]);
+      expect(source.highlightCalls.first.query, _options.query);
+
+      bloc.add(const SemanticMoreResultsRequested());
+      await _settle(bloc);
+      expect(source.highlightCalls.map((c) => c.items.length), [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        4,
+      ]);
+      expect(
+        [
+          for (final call in source.highlightCalls)
+            for (final item in call.items) item.id.toInt(),
+        ],
+        [for (var i = 1; i <= 40; i++) i],
+      );
+      expect(bloc.state.passageHighlights.keys, [
+        for (var i = 0; i < 40; i++) i,
+      ]);
+      expect(bloc.state.passageHighlights[39], contains('הקטע הקרוב 40'));
+    });
+
+    test('חיפוש חדש מבטל את הסימון הרץ, ותשובתו המאוחרת נזרקת', () async {
+      final gate = Completer<void>();
+      final source = FakeResultsSource(
+        items: [
+          for (var i = 1; i <= 8; i++)
+            resultItem(i, source: SemanticResultSource.semantic),
+        ],
+      );
+      source.highlighter = (items, cancel) async {
+        if (source.highlightCalls.length == 1) await gate.future;
+        return markAll(items, clause: 'ישן');
+      };
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      final first = source.highlightHandles.single;
+      expect(first.isCancelled, isFalse);
+
+      source.highlighter = (items, _) async => markAll(items, clause: 'חדש');
+      bloc.add(const SemanticSearchSubmitted(SemanticQueryOptions(query: 'ב')));
+      await _settle(bloc);
+      expect(first.isCancelled, isTrue);
+
+      // התשובה הישנה מגיעה אחרי הביטול, ורק אז רץ הסימון של החיפוש החדש.
+      gate.complete();
+      await _settle(bloc);
+      expect(identical(source.highlightHandles.last, first), isFalse);
+      expect(bloc.state.options?.query, 'ב');
+      expect(bloc.state.passageHighlights, hasLength(8));
+      expect(
+        bloc.state.passageHighlights.values.where((h) => h.contains('ישן')),
+        isEmpty,
+      );
+    });
+
+    test('סגירה מבטלת את הסימון הרץ', () async {
+      final source = FakeResultsSource(
+        items: [resultItem(1, source: SemanticResultSource.semantic)],
+      );
+      // כמו המנוע: ביטול מסיים את הקריאה בכשל cancelled.
+      source.highlighter = (items, cancel) {
+        final done = Completer<List<SemanticPassageHighlight>>();
+        cancel.onCancel(
+          () => done.completeError(
+            const SemanticFailure(SemanticFailureKind.cancelled),
+          ),
+        );
+        return done.future;
+      };
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      expect(source.highlightHandles.single.isCancelled, isFalse);
+      await bloc.close();
+      expect(source.highlightHandles.single.isCancelled, isTrue);
+      expect(bloc.state.passageHighlights, isEmpty);
+    });
+
+    test('כשל משאיר את הקטע המקורי ועוצר את שאר האצוות', () async {
+      final items = [
+        for (var i = 1; i <= 12; i++)
+          resultItem(i, source: SemanticResultSource.semantic),
+      ];
+      final source = FakeResultsSource(items: items)
+        ..highlighter = (_, _) async =>
+            throw const SemanticFailure(SemanticFailureKind.queryFailed);
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+
+      expect(source.highlightCalls, hasLength(1));
+      expect(bloc.state.status, SemanticResultsStatus.loaded);
+      expect(bloc.state.message, isNull);
+      expect(bloc.state.items, items);
+      expect(bloc.state.passageHighlights, isEmpty);
+    });
+
+    test('תשובה שלא סומנה או שאינה של הפריט — הקטע המקורי נשאר', () async {
+      final source = FakeResultsSource(
+        items: [
+          for (var i = 1; i <= 3; i++)
+            resultItem(i, source: SemanticResultSource.semantic),
+        ],
+      );
+      source.highlighter = (items, _) async => [
+        SemanticPassageHighlight(
+          filePath: items[0].filePath,
+          id: items[0].id,
+          snippetHtml: '',
+          isHighlighted: false,
+        ),
+        SemanticPassageHighlight(
+          filePath: 'id:99',
+          id: BigInt.from(99),
+          snippetHtml: '<mark>זר</mark>',
+          isHighlighted: true,
+        ),
+        ...markAll([items[2]]),
+      ];
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+
+      expect(bloc.state.passageHighlights.keys, [2]);
+    });
+
+    test('R4: הסימון אינו משנה את תמונת התוצאה שנשלחת לשרת', () async {
+      final items = [
+        resultItem(
+          1,
+          source: SemanticResultSource.semantic,
+          html: 'כבד את אביך',
+        ),
+        resultItem(2),
+      ];
+      final recorder = RecordingRecorder();
+      final source = FakeResultsSource(items: items)
+        ..highlighter = (items, _) async => markAll(items, clause: 'כבד');
+      final bloc = buildResultsBloc(source: source, recorder: recorder);
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      expect(bloc.state.passageHighlights.keys, [0]);
+      final shown = recorder.shown.single.results.first;
+
+      await bloc.recordOpen(0, SearchFeedbackOpenVia.click);
+      bloc.add(const SemanticVoteToggled(0, SearchFeedbackVote.like));
+      await _settle(bloc);
+
+      final original = semanticSnippetText('כבד את אביך');
+      for (final snapshot in [
+        shown,
+        recorder.opens.single.result,
+        recorder.votes.single.result,
+      ]) {
+        expect(snapshot.snippetText, original.plain);
+        expect(snapshot.matchedText, isEmpty);
+        expect(snapshot.source, 'semantic');
+        expect(snapshot.semanticScore, items.first.semanticScore);
+        expect(snapshot.fusedScore, items.first.fusedScore);
+      }
+      expect(recorder.opens.single.result.passageText, 'הפסקה המלאה של ספר 1');
+      expect(identical(bloc.state.items.first, items.first), isTrue);
     });
   });
 }

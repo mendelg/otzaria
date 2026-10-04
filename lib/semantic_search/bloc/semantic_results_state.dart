@@ -36,6 +36,10 @@ class SemanticResultsState extends Equatable {
   /// מזהה החיפוש, לאיפוס הגלילה בחיפוש חדש.
   final int searchId;
 
+  /// קטע מסומן לפי עניין, לפי מיקום ברשימה — לתצוגה בלבד. נשמר בנפרד מ-[items]
+  /// כדי שהטלמטריה תיבנה תמיד מהקטע המקורי של המנוע.
+  final Map<int, String> passageHighlights;
+
   const SemanticResultsState({
     this.status = SemanticResultsStatus.initial,
     this.options,
@@ -46,6 +50,7 @@ class SemanticResultsState extends Equatable {
     this.isDebugPreview = false,
     this.votes = const {},
     this.searchId = 0,
+    this.passageHighlights = const {},
   });
 
   bool get hasMore => status == SemanticResultsStatus.loaded && morePages;
@@ -61,6 +66,7 @@ class SemanticResultsState extends Equatable {
     bool? isDebugPreview,
     Map<int, SearchFeedbackVote>? votes,
     int? searchId,
+    Map<int, String>? passageHighlights,
   }) => SemanticResultsState(
     status: status ?? this.status,
     options: options ?? this.options,
@@ -71,6 +77,7 @@ class SemanticResultsState extends Equatable {
     isDebugPreview: isDebugPreview ?? this.isDebugPreview,
     votes: votes ?? this.votes,
     searchId: searchId ?? this.searchId,
+    passageHighlights: passageHighlights ?? this.passageHighlights,
   );
 
   @override
@@ -84,5 +91,6 @@ class SemanticResultsState extends Equatable {
     isDebugPreview,
     votes,
     searchId,
+    passageHighlights,
   ];
 }

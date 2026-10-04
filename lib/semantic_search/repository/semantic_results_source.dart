@@ -11,7 +11,12 @@ import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/repository/semantic_search_repository.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show ResultGrouping, SemanticGroupingMode, SemanticRetrievalMode;
+    show
+        ResultGrouping,
+        SemanticGroupingMode,
+        SemanticHighlightTarget,
+        SemanticPassageHighlight,
+        SemanticRetrievalMode;
 
 /// מקור עמודי התוצאות של מסך החיפוש הסמנטי.
 abstract interface class SemanticResultsSource {
@@ -29,6 +34,13 @@ abstract interface class SemanticResultsSource {
   });
 
   void cancel();
+
+  /// הקטע הקרוב ל-[query] בשורה של כל אחד מ-[items], בסדרם; זורק בכשל.
+  Future<List<SemanticPassageHighlight>> passageHighlights(
+    String query,
+    List<SemanticResultItem> items,
+    SemanticCancelHandle cancel,
+  );
 
   Future<SemanticEngineSnapshot> engineSnapshot();
 }
@@ -115,6 +127,16 @@ class EngineSemanticResultsSource implements SemanticResultsSource {
   void cancel() => _repository.cancelSearch(session: _session);
 
   @override
+  Future<List<SemanticPassageHighlight>> passageHighlights(
+    String query,
+    List<SemanticResultItem> items,
+    SemanticCancelHandle cancel,
+  ) => _repository.passageHighlights(query, [
+    for (final item in items)
+      SemanticHighlightTarget(filePath: item.filePath, id: item.id),
+  ], cancel);
+
+  @override
   Future<SemanticEngineSnapshot> engineSnapshot() =>
       _repository.engineSnapshot();
 }
@@ -176,6 +198,14 @@ class DebugLexicalPreviewSource implements SemanticResultsSource {
 
   @override
   void cancel() => _generation++;
+
+  /// בתצוגה המקדימה אין מודל, ולכן אין מה לסמן.
+  @override
+  Future<List<SemanticPassageHighlight>> passageHighlights(
+    String query,
+    List<SemanticResultItem> items,
+    SemanticCancelHandle cancel,
+  ) async => const [];
 
   @override
   Future<SemanticEngineSnapshot> engineSnapshot() => _engineSnapshot();

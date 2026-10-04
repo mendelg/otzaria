@@ -6,7 +6,7 @@ import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/repository/semantic_results_source.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show SemanticResultSource;
+    show SemanticPassageHighlight, SemanticResultSource;
 
 import 'semantic_test_support.dart' show FakeConsentStore;
 
@@ -90,6 +90,20 @@ SemanticResultItem resultItem(
   semanticScore: source == SemanticResultSource.lexical ? null : 0.7,
 );
 
+/// סימון לפי עניין לכל פריט, כפי שהמנוע מחזיר אותו.
+List<SemanticPassageHighlight> markAll(
+  List<SemanticResultItem> items, {
+  String clause = 'הקטע הקרוב',
+}) => [
+  for (final item in items)
+    SemanticPassageHighlight(
+      filePath: item.filePath,
+      id: item.id,
+      snippetHtml: 'לפני <mark>$clause ${item.id}</mark> אחרי',
+      isHighlighted: true,
+    ),
+];
+
 /// מקור מזויף: כל עמוד הוא [pageSize] פריטים מתוך [total].
 class FakeResultsSource implements SemanticResultsSource {
   FakeResultsSource({
@@ -147,6 +161,27 @@ class FakeResultsSource implements SemanticResultsSource {
 
   @override
   void cancel() => cancels++;
+
+  /// הקריאות לסימון, לפי הסדר; [highlighter] `null` = אין סימון.
+  final List<({String query, List<SemanticResultItem> items})> highlightCalls =
+      [];
+  final List<SemanticCancelHandle> highlightHandles = [];
+  Future<List<SemanticPassageHighlight>> Function(
+    List<SemanticResultItem> items,
+    SemanticCancelHandle cancel,
+  )?
+  highlighter;
+
+  @override
+  Future<List<SemanticPassageHighlight>> passageHighlights(
+    String query,
+    List<SemanticResultItem> items,
+    SemanticCancelHandle cancel,
+  ) async {
+    highlightCalls.add((query: query, items: items));
+    highlightHandles.add(cancel);
+    return await highlighter?.call(items, cancel) ?? const [];
+  }
 
   @override
   Future<SemanticEngineSnapshot> engineSnapshot() async =>

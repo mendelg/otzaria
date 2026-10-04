@@ -30,6 +30,7 @@ import 'package:otzaria/tabs/bloc/tabs_event.dart';
 import 'package:otzaria/tabs/bloc/tabs_state.dart';
 import 'package:otzaria/tabs/models/semantic_search_tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/theme/app_surfaces.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
     show SemanticResultSource;
 
@@ -171,6 +172,35 @@ void main() {
     expect(find.text(kSemanticSourceBothLabel), findsWidgets);
     expect(find.text(kSemanticSourceSemanticLabel), findsOneWidget);
     expect(find.text(kSemanticSourceLexicalLabel), findsOneWidget);
+  });
+
+  testWidgets('קטע לפי עניין מסומן ברקע בהיר, בלי הדגשה מודגשת', (
+    tester,
+  ) async {
+    final items = [
+      resultItem(1),
+      resultItem(2, source: SemanticResultSource.semantic, html: 'בלי סימון'),
+    ];
+    final source = FakeResultsSource(items: items)
+      ..highlighter = (items, _) async => markAll(items);
+    await pumpScreen(tester, injectedSource: source);
+
+    final card = tester.widget<SemanticResultCard>(
+      find.byKey(const ValueKey('semantic-result-1')),
+    );
+    final spans = card.snippetSpans.whereType<TextSpan>().toList();
+    final mark = spans.singleWhere((s) => s.text == 'הקטע הקרוב 2');
+    final plain = spans.singleWhere((s) => s.text == 'לפני ');
+    final context = tester.element(find.byType(SemanticResultCard).first);
+    expect(
+      mark.style?.backgroundColor,
+      AppSurfaces.semanticPassageHighlight(Theme.of(context).colorScheme),
+    );
+    expect(mark.style?.fontWeight, plain.style?.fontWeight);
+    expect(mark.style?.fontSize, plain.style?.fontSize);
+    expect(mark.style?.color, plain.style?.color);
+    // התאמה מילולית אינה מסומנת לפי עניין.
+    expect(source.highlightCalls.single.items, [items[1]]);
   });
 
   testWidgets('אהבתי, לחיצה חוזרת מבטלת; לא אהבתי', (tester) async {

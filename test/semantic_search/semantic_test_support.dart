@@ -204,6 +204,32 @@ class FakeBackend implements SemanticEngineBackend {
     }
     return SemanticSearchOutcome(response: response ?? emptyResponse());
   }
+
+  final List<SemanticCancelHandle> highlightHandles = [];
+
+  @override
+  Future<List<SemanticPassageHighlight>> passageHighlights(
+    String query,
+    List<SemanticHighlightTarget> targets, {
+    required SemanticCancelHandle cancel,
+  }) async {
+    calls.add('highlight:$query:${targets.length}');
+    highlightHandles.add(cancel);
+    final gate = searchGate;
+    if (gate != null) await gate.future;
+    if (cancel.isCancelled) {
+      throw const SemanticFailure(SemanticFailureKind.cancelled);
+    }
+    return [
+      for (final target in targets)
+        SemanticPassageHighlight(
+          filePath: target.filePath,
+          id: target.id,
+          snippetHtml: '<mark>$query</mark>',
+          isHighlighted: true,
+        ),
+    ];
+  }
 }
 
 SemanticSearchResponse emptyResponse() => SemanticSearchResponse(

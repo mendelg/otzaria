@@ -46,6 +46,28 @@ Future<void> main() async {
       expect(_highlighted(spans), 'עולם');
     });
 
+    test('markStyle חל על mark בלבד; font נשאר בהדגשה הרגילה', () {
+      const markStyle = TextStyle(backgroundColor: Color(0x1F000000));
+      final spans = SnippetBuilder.fromHighlightedHtml(
+        html:
+            'א <font color=red>ב</font> <mark>ג <b>ד</b></mark> '
+            '<font color=red><mark>ה</mark></font>',
+        defaultStyle: _defaultStyle,
+        highlightStyle: _highlightStyle,
+        markStyle: markStyle,
+      );
+      String styled(TextStyle style) => spans
+          .whereType<TextSpan>()
+          .where((span) => identical(span.style, style))
+          .map((span) => span.text)
+          .join();
+
+      expect(styled(markStyle), 'ג ד');
+      // הדגשה חיצונית קובעת גם לתג שבתוכה.
+      expect(styled(_highlightStyle), 'בה');
+      expect(_allText(spans), 'א ב ג ד ה');
+    });
+
     test('תגי עיצוב של תוכן הספר (b) אינם נחשבים הדגשת חיפוש', () {
       final spans = SnippetBuilder.fromHighlightedHtml(
         html: '<b>כותרת</b> טקסט רגיל',

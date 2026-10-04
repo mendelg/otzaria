@@ -99,6 +99,11 @@ class AppSurfaces {
   static Color dragTargetHighlight(ColorScheme cs) =>
       cs.primary.withValues(alpha: 0.08);
 
+  /// רקע הקטע שהחיפוש החכם סימן לפי עניין: גוון הדגשת המילים בתוצאות,
+  /// שקוף מספיק כדי שלא יתחרה בהתאמה מילולית.
+  static Color semanticPassageHighlight(ColorScheme cs) =>
+      cs.error.withValues(alpha: 0.12);
+
   /// מילוי חיווי ההפלה של חלונית קריאה — המלבן שמסמן היכן תיפול החלונית.
   ///
   /// 16% primary — קריא מעל תוכן ספר, ועדיין שקוף מספיק כדי לראות
