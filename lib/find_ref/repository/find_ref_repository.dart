@@ -1422,6 +1422,7 @@ class FindRefRepository {
           dibburim: search.dibburim,
           exactLines: exactLines[hit.bookId] ?? const <_ExactLine>[],
           toc: requestIndex == null ? null : tocResponses[requestIndex],
+          isOverCap: plan.isOverCap,
         ),
       );
     }
@@ -1589,6 +1590,7 @@ class FindRefRepository {
     required Map<int, List<_Dibbur>> dibburim,
     required List<_ExactLine> exactLines,
     required TocBatchResult? toc,
+    bool isOverCap = false,
   }) {
     final title = hit.title;
     final bookId = hit.bookId;
@@ -1613,7 +1615,15 @@ class FindRefRepository {
 
     // הוקלדה רק כותרת הספר — הספר בלבד, בלי ערכי TOC.
     if (remainingTokens.isEmpty) return results..add(_bookResult(hit));
-    if (toc == null) return results;
+    if (toc == null) {
+      // בדיקת הקטגוריה אינה שאילתה, ולכן אינה כפופה לתקרת ה-TOC: "רמבם זמנים"
+      // תופס עשרות ספרי "רמבם על משנה" שקודמים לספרי משנה תורה.
+      if (isOverCap &&
+          _remainingTokensAreLeafCategory(bookId, remainingTokens)) {
+        results.add(_bookResult(hit));
+      }
+      return results;
+    }
 
     final resultsBeforeToc = results.length;
     for (final entry in toc.toc) {

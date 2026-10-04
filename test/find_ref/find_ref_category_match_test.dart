@@ -64,6 +64,28 @@ void main() {
       expect(titles, ['משנה תורה, הלכות שבת']);
     });
 
+    test(
+      'נמצא גם כשספרים שכותרתם "רמבם" גומרים את תקרת חיפושי ה-TOC',
+      () async {
+        // בספרייה האמיתית כ-60 ספרי "רמב"ם על משנה X" קודמים לספרי משנה תורה.
+        seedLibrary([
+          for (var i = 0; i < 60; i++)
+            (
+              id: 1000 + i,
+              title: 'רמבם על משנה $i',
+              acronyms: const <String>[],
+            ),
+          _hilchotShabbat,
+        ], categoryPaths: _categoryPaths);
+
+        final titles = (await buildFindRefRepo().findRefs(
+          'רמבם זמנים',
+        )).map((r) => r.title).toList();
+
+        expect(titles, ['משנה תורה, הלכות שבת']);
+      },
+    );
+
     test('segment אב ("הלכה") אינו מחזיר כלום', () async {
       // "הלכה" משותף לאלפי ספרים; רק העלה — הקטגוריה הישירה — נבדק.
       seedLibrary(const [
