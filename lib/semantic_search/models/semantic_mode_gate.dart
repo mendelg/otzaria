@@ -6,30 +6,46 @@ import 'package:otzaria/search/utils/facet_helper.dart';
 
 import 'semantic_availability.dart';
 
-/// האם להציג את המצב בבורר; בפיתוח הוא מוצג תמיד לתצוגה המקדימה.
+/// האם להציג את המצב בבורר; גם תצוגת הפיתוח מוגבלת למחשבים נתמכים.
 bool isSemanticModeVisible(
   SemanticAvailability availability, {
   bool debug = kDebugMode,
-}) => debug || availability.phase != SemanticAvailabilityPhase.hidden;
+}) =>
+    availability.hiddenReason != SemanticHiddenReason.unsupportedPlatform &&
+    (debug || availability.phase != SemanticAvailabilityPhase.hidden);
 
 /// תצוגה מקדימה בפיתוח: יש הסכמה, אבל חסרים מנוע או נתונים.
 bool isSemanticDebugPreview(
   SemanticAvailability availability, {
   bool debug = kDebugMode,
 }) =>
-    debug &&
-    availability.consentGranted &&
-    (availability.phase == SemanticAvailabilityPhase.hidden ||
-        availability.isMissingEngineOrData);
+    debug && availability.consentGranted && availability.isMissingEngineOrData;
 
 /// האם אפשר לחפש: מנוע מוכן עם הסכמה, או תצוגה מקדימה בפיתוח.
 bool canRunSemanticSearch(
   SemanticAvailability availability, {
   bool debug = kDebugMode,
 }) =>
-    availability.isUsable || isSemanticDebugPreview(availability, debug: debug);
+    isSemanticModeVisible(availability, debug: debug) &&
+    (availability.isUsable ||
+        isSemanticDebugPreview(availability, debug: debug));
 
 final RegExp _bookKeySegment = RegExp(r'^(id|uid|ext|db):|\|');
+
+/// בחירה שלא ניתן לבצע בשלמותה חייבת תיקון לפני החיפוש, בלי הרחבת ההיקף.
+bool semanticScopeIsSupported(
+  Iterable<String> selection, {
+  bool Function(String facet)? isOfficialCategory,
+}) {
+  final selected = selection.toSet();
+  final categories = FacetHelper.categoryFacetsOf(selected).toSet();
+  return categories.length == selected.length &&
+      categories.every(
+        (facet) =>
+            _isLibraryCategory(facet) &&
+            (facet == '/' || (isOfficialCategory?.call(facet) ?? true)),
+      );
+}
 
 /// רק קטגוריות של הספרייה: בלי ממדים, בלי ספרים בודדים ובלי ספרים אישיים.
 /// [isOfficialCategory] מסנן גם קטגוריות שמקורן במסדים מצורפים שמוזגו לעץ.
@@ -66,7 +82,10 @@ bool Function(String facet)? officialCategoryFilter(Library? library) {
           .where((child) => child.title == title)
           .firstOrNull;
     }
-    return category != null &&
-        category.getAllBooks().any((book) => book.source.isOfficial);
+    return category != null && _hasOfficialBook(category);
   };
 }
+
+bool _hasOfficialBook(Category category) =>
+    category.books.any((book) => book.source.isOfficial) ||
+    category.subCategories.any(_hasOfficialBook);

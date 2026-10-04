@@ -132,8 +132,6 @@ class SemanticResultCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            SemanticSourceLabel(source: item.source),
-            const SizedBox(width: 4),
             _VoteButton(
               key: ValueKey('semantic-like-$rank'),
               vote: SearchFeedbackVote.like,
@@ -159,6 +157,10 @@ class SemanticResultCard extends StatelessWidget {
               onPressed: onCopy,
             ),
           ],
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: SemanticSourceLabel(source: item.source),
         ),
         if (titleText.isNotEmpty)
           Padding(

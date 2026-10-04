@@ -20,6 +20,10 @@ import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
+import 'package:otzaria/search/view/search_scope_menu.dart';
+import 'package:otzaria/search/utils/facet_helper.dart';
+import 'package:otzaria/models/books.dart';
+import 'package:otzaria/semantic_search/bloc/semantic_search_bloc.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
@@ -105,6 +109,16 @@ final _statusCard = find.byKey(const ValueKey('semantic-status-card'));
 final _queryField = find.byKey(const ValueKey('semantic-query-field'));
 final _debugBanner = find.byKey(const ValueKey('semantic-debug-banner'));
 
+class _DelayedConsent extends FakeConsentStore {
+  _DelayedConsent() : super(SearchFeedbackConsent.unknown);
+  final pending = Completer<void>();
+  @override
+  Future<void> grant() async {
+    await pending.future;
+    set(SearchFeedbackConsent.granted);
+  }
+}
+
 void main() {
   setUpAll(() {
     registerFallbackValue(_FakeTabsEvent());
@@ -129,13 +143,16 @@ void main() {
     bool debug = false,
     SearchMode? initialMode = SearchMode.exact,
     SearchingTab? existingTab,
+    FakeConsentStore? injectedConsent,
   }) async {
     final repository = _FakeRepository(availability);
-    final consent = FakeConsentStore(
-      availability.consentGranted
-          ? SearchFeedbackConsent.granted
-          : SearchFeedbackConsent.unknown,
-    );
+    final consent =
+        injectedConsent ??
+        FakeConsentStore(
+          availability.consentGranted
+              ? SearchFeedbackConsent.granted
+              : SearchFeedbackConsent.unknown,
+        );
     final history = _MockHistoryBloc();
     final indexing = _MockIndexingBloc();
     final navigation = _MockNavigationBloc();
@@ -439,6 +456,128 @@ void main() {
     ).captured.whereType<AddTab>().single;
     addTearDown(added.tab.dispose);
     expect(existing.searchBloc.isClosed, isTrue);
+  });
+  testWidgets('סגירת הדיאלוג בזמן שמירת ההסכמה אינה שולחת אירוע מאוחר', (
+    tester,
+  ) async {
+    final consent = _DelayedConsent();
+    await pumpDialog(
+      tester,
+      _availability(SemanticAvailabilityPhase.consentRequired, consent: false),
+      injectedConsent: consent,
+    );
+    await tester.tap(_semanticSegment);
+    await tester.pumpAndSettle();
+    final dialogState = tester.state(find.byType(SearchDialog));
+    final capturedBloc = tester
+        .widgetList<BlocBuilder<SemanticSearchBloc, SemanticSearchState>>(
+          find.byType(BlocBuilder<SemanticSearchBloc, SemanticSearchState>),
+        )
+        .first
+        .bloc!;
+    final callback = tester
+        .widget<ActionButton>(
+          find.byKey(const ValueKey('semantic-consent-grant')),
+        )
+        .onPressed!;
+    final pendingGrant = (callback as dynamic)() as Future<void>;
+    await tester.pump();
+    Navigator.of(tester.element(find.byType(SearchDialog))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(SearchDialog), findsNothing);
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.runAsync(() async {
+      for (var i = 0; i < 20 && !capturedBloc.isClosed; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+    });
+    await tester.pump();
+
+    expect(dialogState.mounted, isFalse);
+    expect(capturedBloc.isClosed, isTrue);
+    final completionCheck = expectLater(pendingGrant, completes);
+    consent.pending.complete();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump();
+    await completionCheck;
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('ספר יחיד וממד אינם מורחבים לכל הספרייה; תיקון ההיקף מאפשר חיפוש', (
+    tester,
+  ) async {
+    final harness = await pumpDialog(
+      tester,
+      _availability(SemanticAvailabilityPhase.ready),
+    );
+    await tester.tap(_semanticSegment);
+    await tester.pumpAndSettle();
+    final facet = FacetHelper.buildBookFacet(
+      '/הלכה',
+      TextBook(id: 1, title: 'ספר 1'),
+    );
+    final unsupported = [
+      {facet},
+      {'/author/רש״י'},
+      {'/הלכה', facet},
+    ];
+    for (final selection in unsupported) {
+      tester
+          .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+          .onChanged(selection);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+            .selected,
+        selection,
+      );
+      expect(
+        find.text(
+          'במצב זה החיפוש מוגבל לקטגוריות של הספרייה; ספרים בודדים וספרים אישיים אינם נכללים.',
+        ),
+        findsOneWidget,
+      );
+      expect(submitButton(tester).onPressed, isNull);
+      await tester.enterText(_queryField, 'מצוות');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      verifyNever(() => harness.tabs.add(any()));
+    }
+    tester
+        .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+        .onChanged({'/'});
+    await tester.pumpAndSettle();
+    expect(submitButton(tester).onPressed, isNotNull);
+    const rawQuery = '  כָּבוֹד אב  ';
+    await tester.enterText(_queryField, rawQuery);
+    await tester.tap(find.byKey(const ValueKey('search-dialog-submit')));
+    await tester.pumpAndSettle();
+    final tab =
+        verify(
+              () => harness.tabs.add(captureAny()),
+            ).captured.whereType<AddTab>().single.tab
+            as SemanticSearchTab;
+    addTearDown(tab.dispose);
+    expect(tab.options.facets, ['/']);
+    expect(tab.options.query, rawQuery);
+  });
+  testWidgets('גם בדיבאג פלטפורמה לא נתמכת אינה מציגה מצב או הסכמה', (
+    tester,
+  ) async {
+    await pumpDialog(
+      tester,
+      _availability(
+        SemanticAvailabilityPhase.hidden,
+        consent: false,
+        hiddenReason: SemanticHiddenReason.unsupportedPlatform,
+      ),
+      debug: true,
+    );
+    expect(_semanticSegment, findsNothing);
+    expect(_consentCard, findsNothing);
+    expect(_debugBanner, findsNothing);
   });
 }
 

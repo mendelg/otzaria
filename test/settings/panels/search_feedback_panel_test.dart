@@ -43,7 +43,9 @@ void main() {
       MaterialApp(
         locale: const Locale('he', 'IL'),
         home: Scaffold(
-          body: SingleChildScrollView(child: SearchFeedbackPanel(store: store)),
+          body: SingleChildScrollView(
+            child: SearchFeedbackPanel(store: store, platformSupported: true),
+          ),
         ),
       ),
     );
@@ -58,5 +60,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.calls, ['grant', 'revoke']);
+  });
+  testWidgets('פלטפורמה לא נתמכת אינה מציגה מתג או נוסח הסכמה', (tester) async {
+    final store = _FakeStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SearchFeedbackPanel(store: store, platformSupported: false),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('שיפור המנגנון'), findsNothing);
+    expect(find.text(semanticSearchConsentText), findsNothing);
+    expect(store.calls, isEmpty);
   });
 }

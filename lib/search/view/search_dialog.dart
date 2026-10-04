@@ -1046,6 +1046,7 @@ class _SearchDialogState extends State<SearchDialog> {
   void _performSemanticSearch() {
     final availability = _semanticBloc?.state.availability;
     if (_semanticSubmitted ||
+        !_semanticScopeSupported ||
         availability == null ||
         !canRunSemanticSearch(
           availability,
@@ -1053,9 +1054,8 @@ class _SearchDialogState extends State<SearchDialog> {
         )) {
       return;
     }
-    var query = _searchTab.queryController.text.trim();
-    if (utils.hasNikud(query)) query = utils.removeVolwels(query).trim();
-    if (query.isEmpty) {
+    final query = _searchTab.queryController.text;
+    if (query.trim().isEmpty) {
       UiSnack.show(LibraryMessages.emptySearchQuery);
       return;
     }
@@ -1088,6 +1088,7 @@ class _SearchDialogState extends State<SearchDialog> {
 
   Future<void> _grantSemanticConsent() async {
     await _semanticConsentStore.grant();
+    if (!mounted) return;
     _semanticBloc?.add(const SemanticSearchStarted());
   }
 
@@ -1116,6 +1117,7 @@ class _SearchDialogState extends State<SearchDialog> {
       queryController: _searchTab.queryController,
       queryFocusNode: _searchTab.searchFieldFocusNode,
       scopeSelection: _scopeSelection,
+      scopeSupported: _semanticScopeSupported,
       onScopeChanged: _onScopeChanged,
       includeLexical: _semanticIncludeLexical,
       onIncludeLexicalChanged: (value) =>
@@ -1131,6 +1133,13 @@ class _SearchDialogState extends State<SearchDialog> {
           _semanticBloc?.add(const SemanticDownloadCancelRequested()),
     );
   }
+
+  bool get _semanticScopeSupported => semanticScopeIsSupported(
+    _scopeSelection,
+    isOfficialCategory: officialCategoryFilter(
+      context.read<LibraryBloc>().state.library,
+    ),
+  );
 
   bool _openSelectedPluginSearchTargets({
     required String query,
@@ -1822,10 +1831,11 @@ class _SearchDialogState extends State<SearchDialog> {
                   semanticBlocked:
                       _semanticSelected &&
                       _semanticVisible(semanticAvailability) &&
-                      !canRunSemanticSearch(
-                        semanticAvailability!,
-                        debug: widget.semanticDebugPreview,
-                      ),
+                      (!_semanticScopeSupported ||
+                          !canRunSemanticSearch(
+                            semanticAvailability!,
+                            debug: widget.semanticDebugPreview,
+                          )),
                 ),
               );
             },

@@ -195,7 +195,7 @@ class SemanticResultsBloc
     }
     final generation = _generation;
     final offset = state.items.length;
-    emit(state.copyWith(isLoadingMore: true));
+    emit(state.copyWith(isLoadingMore: true, clearMessage: true));
     final page = await _fetch(source, options, offset, generation, emit);
     if (generation != _generation) return;
     if (page == null) {
@@ -208,6 +208,7 @@ class SemanticResultsBloc
     emit(
       state.copyWith(
         isLoadingMore: false,
+        clearMessage: true,
         items: [...state.items, ...page.items],
         // עמוד ריק אומר שאין עוד, גם כשהספירה מקורבת.
         pageableTotal: page.items.isEmpty
@@ -273,15 +274,19 @@ class SemanticResultsBloc
     int index,
     SearchFeedbackOpenVia via, {
     MergedSibling? sibling,
+    SemanticSearchContext? expectedContext,
+    SemanticResultItem? expectedItem,
   }) async {
     final context = _context;
     if (context == null ||
+        (expectedContext != null && !identical(expectedContext, context)) ||
         index < 0 ||
         index >= state.items.length ||
         !_isCollecting) {
       return null;
     }
     final parent = state.items[index];
+    if (expectedItem != null && parent != expectedItem) return null;
     final item = sibling == null ? parent : parent.forSibling(sibling);
     final isUserBook = sibling == null
         ? isUserBookAt(index)

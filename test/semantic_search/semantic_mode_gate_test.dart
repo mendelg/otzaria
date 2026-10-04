@@ -106,6 +106,57 @@ void main() {
     });
   });
 
+  test('פלטפורמה לא נתמכת חסומה גם בדיבאג וגם בלי הסכמה', () {
+    for (final debug in [false, true]) {
+      for (final consent in [false, true]) {
+        final unsupported = _availability(
+          SemanticAvailabilityPhase.hidden,
+          consent: consent,
+          hiddenReason: SemanticHiddenReason.unsupportedPlatform,
+        );
+        expect(isSemanticModeVisible(unsupported, debug: debug), isFalse);
+        expect(isSemanticDebugPreview(unsupported, debug: debug), isFalse);
+        expect(canRunSemanticSearch(unsupported, debug: debug), isFalse);
+      }
+    }
+  });
+  test('היקף נתמך חייב לשמר את כל הבחירה, גם בשילוב עם קטגוריה תקינה', () {
+    expect(semanticScopeIsSupported(const {}), isTrue);
+    expect(semanticScopeIsSupported({'/'}), isTrue);
+    expect(semanticScopeIsSupported({'/הלכה', '/תנ״ך'}), isTrue);
+    for (final unsupported in [
+      '/הלכה/id:1',
+      '/uid:2',
+      '/db:user:1',
+      '/author/רש״י',
+      '/era/ראשונים',
+      '/ספרים אישיים/שלי',
+    ]) {
+      expect(
+        semanticScopeIsSupported({unsupported}),
+        isFalse,
+        reason: unsupported,
+      );
+      expect(
+        semanticScopeIsSupported({'/הלכה', unsupported}),
+        isFalse,
+        reason: unsupported,
+      );
+      expect(
+        semanticScopeIsSupported({'/', unsupported}),
+        isFalse,
+        reason: unsupported,
+      );
+    }
+    expect(
+      semanticScopeIsSupported({'/הלכה'}, isOfficialCategory: (_) => false),
+      isFalse,
+    );
+    expect(
+      semanticScopeIsSupported({'/'}, isOfficialCategory: (_) => false),
+      isTrue,
+    );
+  });
   group('תמונות הטלמטריה', () {
     test('הדירוג מתחיל ב-1 ונספר על פני כל הרשימה', () {
       expect(semanticResultRank(0, 0), 1);

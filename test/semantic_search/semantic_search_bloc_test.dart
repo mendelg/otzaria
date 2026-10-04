@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_search_bloc.dart';
@@ -54,11 +55,29 @@ void main() {
     testWidgets('מוסתר כשהפלטפורמה אינה נתמכת', (tester) async {
       final repository = buildRepository(root: root, platformSupported: false);
       await tester.runAsync(() async {
-        await tester.pumpWidget(app(SemanticDataPanel(repository: repository)));
+        await tester.pumpWidget(
+          app(
+            SemanticDataPanel(repository: repository, platformSupported: true),
+          ),
+        );
         await repository.refresh();
       });
       await tester.pump();
 
+      expect(find.text('נתוני $kSemanticSearchModeName'), findsNothing);
+    });
+
+    testWidgets('במכשיר לא נתמך לא נוצרת אפילו בדיקת זמינות', (tester) async {
+      final repository = buildRepository(root: root);
+      final initialAvailability = repository.availability;
+      await tester.pumpWidget(
+        app(
+          SemanticDataPanel(repository: repository, platformSupported: false),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(BlocProvider<SemanticSearchBloc>), findsNothing);
+      expect(repository.availability, same(initialAvailability));
       expect(find.text('נתוני $kSemanticSearchModeName'), findsNothing);
     });
 
@@ -68,7 +87,11 @@ void main() {
       final consent = FakeConsentStore();
       final repository = buildRepository(root: root, consent: consent);
       await tester.runAsync(() async {
-        await tester.pumpWidget(app(SemanticDataPanel(repository: repository)));
+        await tester.pumpWidget(
+          app(
+            SemanticDataPanel(repository: repository, platformSupported: true),
+          ),
+        );
         await waitFor(
           () =>
               repository.availability.phase ==

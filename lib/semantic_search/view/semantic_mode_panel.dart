@@ -21,6 +21,7 @@ class SemanticModePanel extends StatelessWidget {
     required this.queryController,
     required this.queryFocusNode,
     required this.scopeSelection,
+    this.scopeSupported = true,
     required this.onScopeChanged,
     required this.includeLexical,
     required this.onIncludeLexicalChanged,
@@ -38,6 +39,7 @@ class SemanticModePanel extends StatelessWidget {
   final TextEditingController queryController;
   final FocusNode queryFocusNode;
   final Set<String> scopeSelection;
+  final bool scopeSupported;
   final ValueChanged<Set<String>> onScopeChanged;
   final bool includeLexical;
   final ValueChanged<bool> onIncludeLexicalChanged;
@@ -62,6 +64,9 @@ class SemanticModePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!isSemanticModeVisible(availability, debug: debug)) {
+      return const SizedBox.shrink();
+    }
     if (!availability.consentGranted) return _buildConsentCard(context);
     final preview = isSemanticDebugPreview(availability, debug: debug);
     return Column(
@@ -258,9 +263,7 @@ class SemanticModePanel extends StatelessWidget {
   Widget _buildSearchForm(BuildContext context) {
     final theme = Theme.of(context);
     final droppedScope =
-        scopeSelection.isNotEmpty &&
-        !scopeSelection.contains('/') &&
-        semanticScopeFacets(scopeSelection).length != scopeSelection.length;
+        !scopeSupported || !semanticScopeIsSupported(scopeSelection);
     return Column(
       key: const ValueKey('semantic-search-form'),
       crossAxisAlignment: CrossAxisAlignment.stretch,

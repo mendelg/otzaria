@@ -20,6 +20,7 @@ import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_results_bloc.dart';
 import 'package:otzaria/semantic_search/models/semantic_mode_gate.dart';
+import 'package:otzaria/semantic_search/repository/semantic_platform_support.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/services/semantic_dwell_binding.dart';
 import 'package:otzaria/semantic_search/view/semantic_mode_panel.dart';
@@ -42,9 +43,14 @@ import 'package:otzaria_search_engine/otzaria_search_engine.dart'
 
 /// מסך כרטיסיית התוצאות של החיפוש הסמנטי.
 class SemanticSearchResultsScreen extends StatefulWidget {
-  const SemanticSearchResultsScreen({super.key, required this.tab});
+  const SemanticSearchResultsScreen({
+    super.key,
+    required this.tab,
+    this.platformSupported,
+  });
 
   final SemanticSearchTab tab;
+  final bool? platformSupported;
 
   @override
   State<SemanticSearchResultsScreen> createState() =>
@@ -70,6 +76,9 @@ class _SemanticSearchResultsScreenState
 
   SemanticResultsBloc get _bloc => widget.tab.resultsBloc;
 
+  bool get _platformSupported =>
+      widget.platformSupported ?? isSemanticSearchPlatformSupported();
+
   @override
   bool get wantKeepAlive => true;
 
@@ -82,6 +91,8 @@ class _SemanticSearchResultsScreenState
     _groupIdentical = options.groupIdenticalText;
     _scrollController.addListener(_handleScroll);
     if (widget.tab.runOnFirstShow &&
+        _platformSupported &&
+        _scopeSupported &&
         _bloc.state.status == SemanticResultsStatus.initial &&
         options.query.trim().isNotEmpty) {
       _bloc.add(SemanticSearchSubmitted(options));
@@ -100,19 +111,19 @@ class _SemanticSearchResultsScreenState
       return;
     }
     final state = _bloc.state;
-    if (state.hasMore && !state.isLoadingMore) {
+    if (state.hasMore && !state.isLoadingMore && state.message == null) {
       _bloc.add(const SemanticMoreResultsRequested());
     }
   }
 
   void _submit() {
-    var query = widget.tab.queryController.text.trim();
-    if (utils.hasNikud(query)) query = utils.removeVolwels(query).trim();
-    if (query.isEmpty) {
+    if (!_scopeSupported) return;
+    final query = widget.tab.queryController.text;
+    if (query.trim().isEmpty) {
       UiSnack.show(LibraryMessages.emptySearchQuery);
       return;
     }
-    widget.tab.previewTarget.value = null;
+    _clearPreview();
     widget.tab.submit(
       SemanticQueryOptions(
         query: query,
@@ -126,6 +137,19 @@ class _SemanticSearchResultsScreenState
         groupIdenticalText: _groupIdentical,
       ),
     );
+  }
+
+  bool get _scopeSupported => semanticScopeIsSupported(
+    _scope,
+    isOfficialCategory: officialCategoryFilter(
+      context.read<LibraryBloc>().state.library,
+    ),
+  );
+
+  void _clearPreview() {
+    _previewRequestId++;
+    _previewItem = null;
+    widget.tab.previewTarget.value = null;
   }
 
   InBookSearchParameters get _inBookParameters =>
@@ -148,6 +172,8 @@ class _SemanticSearchResultsScreenState
     final state = _bloc.state;
     if (index < 0 || index >= state.items.length) return;
     final parent = state.items[index];
+    final searchContext = _bloc.searchContext;
+    final searchId = state.searchId;
     final item = sibling == null ? parent : parent.forSibling(sibling);
     final opened = await _openLocation(
       title: item.title,
@@ -158,14 +184,24 @@ class _SemanticSearchResultsScreenState
       searchText: _searchTextFor(item),
       inBackground: inBackground,
     );
-    if (opened == null || !mounted) return;
-    final searchContext = _bloc.searchContext;
+    if (opened == null ||
+        !mounted ||
+        searchId != _bloc.state.searchId ||
+        !identical(searchContext, _bloc.searchContext)) {
+      return;
+    }
     if (searchContext == null ||
         (sibling == null && _bloc.isUserBookAt(index))) {
       return;
     }
     final bloc = _bloc;
-    final openId = bloc.recordOpen(index, via, sibling: sibling);
+    final openId = bloc.recordOpen(
+      index,
+      via,
+      sibling: sibling,
+      expectedContext: searchContext,
+      expectedItem: parent,
+    );
     SemanticDwellBinding.of(
       context.read<TabsBloc>(),
       context.read<NavigationBloc>(),
@@ -227,6 +263,8 @@ class _SemanticSearchResultsScreenState
     MergedSibling? recordSibling,
   }) async {
     final requestId = ++_previewRequestId;
+    final searchId = _bloc.state.searchId;
+    final searchContext = _bloc.searchContext;
     final current = widget.tab.previewTarget.value;
     if (current != null &&
         current.matchesResult(
@@ -234,14 +272,18 @@ class _SemanticSearchResultsScreenState
           segment: segment,
           isPdf: isPdf,
         )) {
-      widget.tab.previewTarget.value = null;
+      _clearPreview();
       return;
     }
     final resolution = await widget.tab.searchBloc.resolveBookForIndexedPath(
       filePath,
       indexedTitle: title,
     );
-    if (!mounted || requestId != _previewRequestId) return;
+    if (!mounted ||
+        requestId != _previewRequestId ||
+        searchId != _bloc.state.searchId) {
+      return;
+    }
     if (resolution.isStale) {
       UiSnack.showError(LibraryMessages.searchResultIndexOutOfDate);
       return;
@@ -271,12 +313,15 @@ class _SemanticSearchResultsScreenState
           recordIndex,
           SearchFeedbackOpenVia.preview,
           sibling: recordSibling,
+          expectedContext: searchContext,
+          expectedItem: item,
         ),
       );
     }
   }
 
   void _togglePreviewOf(int index) {
+    if (index < 0 || index >= _bloc.state.items.length) return;
     final item = _bloc.state.items[index];
     unawaited(
       _togglePreview(
@@ -316,6 +361,14 @@ class _SemanticSearchResultsScreenState
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    if (!_platformSupported) {
+      return Scaffold(
+        body: _emptyState(
+          icon: FluentIcons.info_24_regular,
+          title: context.settingsText('החיפוש אינו זמין כרגע'),
+        ),
+      );
+    }
     return Scaffold(
       body: BlocProvider.value(
         value: _bloc,
@@ -323,7 +376,7 @@ class _SemanticSearchResultsScreenState
           listenWhen: (previous, current) =>
               previous.searchId != current.searchId,
           listener: (context, state) {
-            widget.tab.previewTarget.value = null;
+            _clearPreview();
             if (_scrollController.hasClients) _scrollController.jumpTo(0);
           },
           child: LayoutBuilder(
@@ -350,9 +403,13 @@ class _SemanticSearchResultsScreenState
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: BlocBuilder<SemanticResultsBloc, SemanticResultsState>(
         buildWhen: (p, c) =>
-            p.status != c.status || p.isDebugPreview != c.isDebugPreview,
+            p.status != c.status ||
+            p.isLoadingMore != c.isLoadingMore ||
+            p.isDebugPreview != c.isDebugPreview,
         builder: (context, state) {
-          final loading = state.status == SemanticResultsStatus.loading;
+          final loading =
+              state.status == SemanticResultsStatus.loading ||
+              state.isLoadingMore;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -389,7 +446,7 @@ class _SemanticSearchResultsScreenState
                       key: const ValueKey('semantic-results-search'),
                       text: context.settingsText('חפש'),
                       icon: FluentIcons.search_24_regular,
-                      onPressed: _submit,
+                      onPressed: _scopeSupported ? _submit : null,
                     ),
                 ],
               ),
@@ -422,6 +479,14 @@ class _SemanticSearchResultsScreenState
                   ),
                 ],
               ),
+              if (!_scopeSupported) ...[
+                const SizedBox(height: 8),
+                Text(
+                  context.settingsText(
+                    'במצב זה החיפוש מוגבל לקטגוריות של הספרייה; ספרים בודדים וספרים אישיים אינם נכללים.',
+                  ),
+                ),
+              ],
               if (state.isDebugPreview) ...[
                 const SizedBox(height: 8),
                 const SemanticDebugPreviewBanner(),
@@ -563,16 +628,30 @@ class _SemanticSearchResultsScreenState
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 260),
-          child: ActionButton.neutral(
-            key: const ValueKey('semantic-results-more'),
-            text: state.isLoadingMore
-                ? context.settingsText('טוען...')
-                : context.settingsText('טען תוצאות נוספות'),
-            isLoading: state.isLoadingMore,
-            icon: state.isLoadingMore
-                ? null
-                : FluentIcons.arrow_download_24_regular,
-            onPressed: () => _bloc.add(const SemanticMoreResultsRequested()),
+          child: Column(
+            children: [
+              if (state.message != null) ...[
+                Text(
+                  _message(state.message)!,
+                  key: const ValueKey('semantic-results-page-error'),
+                ),
+                const SizedBox(height: 8),
+              ],
+              ActionButton.neutral(
+                key: const ValueKey('semantic-results-more'),
+                text: state.message != null
+                    ? context.settingsText('נסה שוב')
+                    : state.isLoadingMore
+                    ? context.settingsText('טוען...')
+                    : context.settingsText('טען תוצאות נוספות'),
+                isLoading: state.isLoadingMore,
+                icon: state.isLoadingMore
+                    ? null
+                    : FluentIcons.arrow_download_24_regular,
+                onPressed: () =>
+                    _bloc.add(const SemanticMoreResultsRequested()),
+              ),
+            ],
           ),
         ),
       ),
@@ -730,7 +809,7 @@ class _SemanticSearchResultsScreenState
               isResizable: true,
               autoHandleResponsiveVisibility: false,
               onPaneWidthChanged: (w) => _previewPaneWidthOverride = w,
-              onClose: () => widget.tab.previewTarget.value = null,
+              onClose: _clearPreview,
             );
           },
         );

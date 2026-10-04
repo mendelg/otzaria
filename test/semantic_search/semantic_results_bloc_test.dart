@@ -361,4 +361,123 @@ void main() {
       expect(recorder.total, 0);
     });
   });
+  test('חיפוש חדש מתעלם מהשלמת חיפוש ישן', () async {
+    final first = FakeResultsSource(items: [resultItem(1)])
+      ..gate = Completer<void>();
+    final second = FakeResultsSource(items: [resultItem(3)]);
+    FakeResultsSource current = first;
+    final recorder = RecordingRecorder();
+    final bloc = SemanticResultsBloc(
+      resolveSource: () async => current,
+      feedback: SemanticFeedbackPorts(
+        recorder: () => recorder,
+        consent: () => FakeConsentStore(),
+        newId: () => 'id',
+        whenQueued: () async {},
+      ),
+      isUserBook: (_) async => false,
+    );
+    addTearDown(bloc.close);
+    bloc.add(
+      const SemanticSearchSubmitted(SemanticQueryOptions(query: 'first')),
+    );
+    await _settle(bloc);
+    current = second;
+    bloc.add(
+      const SemanticSearchSubmitted(SemanticQueryOptions(query: 'second')),
+    );
+    await _settle(bloc);
+    first.gate!.complete();
+    await _settle(bloc);
+    expect(bloc.state.items.single.id, BigInt.from(3));
+    expect(bloc.searchContext!.query, 'second');
+    expect(recorder.searches, hasLength(1));
+  });
+  test(
+    'ביטול דפדוף מתעלם מהשלמה מאוחרת ומבקשות כפולות',
+    () async {
+      final source = FakeResultsSource(total: 100);
+      final recorder = RecordingRecorder();
+      final bloc = buildResultsBloc(source: source, recorder: recorder);
+      addTearDown(bloc.close);
+      bloc.add(
+        const SemanticSearchSubmitted(SemanticQueryOptions(query: 'query')),
+      );
+      await _settle(bloc);
+      source.gate = Completer<void>();
+      for (var i = 0; i < 50; i++) {
+        bloc.add(const SemanticMoreResultsRequested());
+      }
+      await _settle(bloc);
+      expect(source.fetches, hasLength(2));
+      bloc.add(const SemanticSearchCancelRequested());
+      await _settle(bloc);
+      expect(bloc.state.isLoadingMore, isFalse);
+      source.gate!.complete();
+      await _settle(bloc);
+      expect(bloc.state.items, hasLength(30));
+      expect(recorder.shown, hasLength(1));
+    },
+  );
+  test('סגירה בזמן חיפוש מונעת רישום מאוחר', () async {
+    final source = FakeResultsSource()..gate = Completer<void>();
+    final recorder = RecordingRecorder();
+    final bloc = buildResultsBloc(source: source, recorder: recorder);
+    bloc.add(
+      const SemanticSearchSubmitted(SemanticQueryOptions(query: 'query')),
+    );
+    await _settle(bloc);
+    await bloc.close();
+    source.gate!.complete();
+    await _settle(bloc);
+    expect(bloc.isClosed, isTrue);
+    expect(source.cancels, greaterThan(0));
+    expect(recorder.total, 0);
+  });
+  test('פתיחה מושהית דורשת את ההקשר ואת התוצאה של הלחיצה המקורית', () async {
+    final recorder = RecordingRecorder();
+    final bloc = buildResultsBloc(
+      source: FakeResultsSource(total: 3),
+      recorder: recorder,
+    );
+    addTearDown(bloc.close);
+    bloc.add(const SemanticSearchSubmitted(_options));
+    await _settle(bloc);
+    final firstContext = bloc.searchContext!;
+    final firstItem = bloc.state.items.first;
+    expect(
+      await bloc.recordOpen(
+        0,
+        SearchFeedbackOpenVia.click,
+        expectedContext: firstContext,
+        expectedItem: resultItem(3),
+      ),
+      isNull,
+    );
+    bloc.add(
+      const SemanticSearchSubmitted(SemanticQueryOptions(query: 'חיפוש אחר')),
+    );
+    await _settle(bloc);
+    expect(
+      await bloc.recordOpen(
+        0,
+        SearchFeedbackOpenVia.click,
+        expectedContext: firstContext,
+        expectedItem: firstItem,
+      ),
+      isNull,
+    );
+    expect(recorder.opens, isEmpty);
+    expect(
+      await bloc.recordOpen(
+        0,
+        SearchFeedbackOpenVia.click,
+        expectedContext: bloc.searchContext,
+        expectedItem: firstItem,
+      ),
+      isNotNull,
+    );
+    expect(recorder.opens.single.result.rank, 1);
+    expect(recorder.opens.single.result.title, firstItem.title);
+  });
 }

@@ -8,6 +8,7 @@ import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria/semantic_search/models/semantic_model_identity.dart';
 import 'package:otzaria/semantic_search/repository/semantic_search_repository.dart';
+import 'package:otzaria/semantic_search/repository/semantic_platform_support.dart';
 import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 import 'package:otzaria/settings/widgets/settings_widgets_exports.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
@@ -15,13 +16,17 @@ import 'package:otzaria/widgets/widgets_exports.dart';
 /// כרטיס נתוני החיפוש הסמנטי: מצב ההורדה, בחירת המודל ומחיקת הנתונים.
 /// מוסתר כשהפלטפורמה או המנוע אינם תומכים בחיפוש סמנטי.
 class SemanticDataPanel extends StatelessWidget {
-  const SemanticDataPanel({super.key, this.repository});
+  const SemanticDataPanel({super.key, this.repository, this.platformSupported});
 
   /// ברירת המחדל: [SemanticSearchRepository.instance].
   final SemanticSearchRepository? repository;
+  final bool? platformSupported;
 
   @override
   Widget build(BuildContext context) {
+    if (!(platformSupported ?? isSemanticSearchPlatformSupported())) {
+      return const SizedBox.shrink();
+    }
     return BlocProvider(
       create: (_) => SemanticSearchBloc(
         repository: repository ?? SemanticSearchRepository.instance,
