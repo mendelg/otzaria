@@ -606,6 +606,39 @@ void main() {
 
       expect(find.text('נקה סינון'), findsOneWidget);
     });
+
+    testWidgets('כשאין ענף פתוח אין כפתור "כווץ הכל"', (tester) async {
+      await pumpTree(
+        tester,
+        library: nestedLibrary(),
+        facetCounts: nestedCounts,
+      );
+
+      expect(find.byTooltip('כווץ הכל'), findsNothing);
+    });
+
+    testWidgets('"כווץ הכל" סוגר גם ענפים שנפתחו אוטומטית וגם מוסתרים', (
+      tester,
+    ) async {
+      final toggles = <(String, bool)>[];
+      await pumpTree(
+        tester,
+        library: nestedLibrary(),
+        facetCounts: nestedCounts,
+        selectedFacets: {'/תנ"ך/כתובים/id:7'},
+        expansion: const {'/משנה': true},
+        onToggleExpand: (path, isExpanded) => toggles.add((path, isExpanded)),
+      );
+
+      await tester.tap(find.byTooltip('כווץ הכל'));
+      await tester.pump();
+
+      expect(toggles.toSet(), {
+        ('/תנ"ך', true),
+        ('/תנ"ך/כתובים', true),
+        ('/משנה', true),
+      });
+    });
   });
 
   group('קטגוריה עם ספירה חיצונית בלבד — בלי חץ הרחבה', () {
