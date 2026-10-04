@@ -1,14 +1,14 @@
-// לא פעיל עד מעבר ה-pin ל-78ff9f5: אז לשנות את השם ל-..._test.dart, ולהחליף
-// ב-test/search/semantic_search_gateway_test.dart את config/_status ב-onnxConfig/onnxStatus.
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/search/search_engine_gateway.dart';
 import 'package:otzaria/semantic_search/engine/onnx_semantic_engine_adapter.dart';
+import 'package:otzaria/semantic_search/engine/semantic_engine_backend.dart';
+import 'package:otzaria/semantic_search/repository/semantic_platform_support.dart';
 import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart';
 
-/// הערכים שבמסירה במקום ה-GGUF של הבדיקה הישנה (`/model.gguf`, `llama.cpp`).
 const onnxConfig = SemanticConfigInput(
   rootDir: '/semantic',
   modelPath: '/model.onnx',
@@ -62,6 +62,7 @@ class _FakeEngine implements SearchEngine {
   SemanticRankingOptions? ranking;
   SemanticCancellationToken? searchToken;
   Object? failure;
+  Completer<void>? searchPause;
   SemanticStatus status = onnxStatus;
 
   @override
@@ -115,6 +116,7 @@ class _FakeEngine implements SearchEngine {
   }) async {
     this.ranking = ranking;
     searchToken = cancellation;
+    await searchPause?.future;
     return SemanticSearchResponse(
       results: const [],
       totalCount: 0,
@@ -149,6 +151,15 @@ void main() {
         tokens.add(token);
         return token;
       },
+    );
+  });
+
+  test('factory בוחר ONNX בפלטפורמה נתמכת', () {
+    expect(
+      createSemanticEngineBackend(),
+      isSemanticSearchPlatformSupported()
+          ? isA<OnnxSemanticEngineAdapter>()
+          : isA<UnavailableSemanticEngineBackend>(),
     );
   });
 
@@ -247,6 +258,22 @@ void main() {
       cancel: early,
     );
     expect(tokens.last.isCancelled, isTrue);
+  });
+
+  test('ביטול בזמן חיפוש נשלח למנוע ומשחרר את ה-token בסיום', () async {
+    engine.searchPause = Completer<void>();
+    final cancel = SemanticCancelHandle();
+    final pending = adapter.search(
+      const SemanticSearchRequest(query: 'אמת', facets: ['/']),
+      cancel: cancel,
+    );
+    await Future<void>.delayed(Duration.zero);
+    cancel.cancel();
+    expect(engine.searchToken?.isCancelled, isTrue);
+    expect(tokens.single.isDisposed, isFalse);
+    engine.searchPause!.complete();
+    await pending;
+    expect(tokens.single.isDisposed, isTrue);
   });
 
   test('open מעביר את ONNX Runtime המצורף', () async {

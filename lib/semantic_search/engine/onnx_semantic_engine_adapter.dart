@@ -1,6 +1,3 @@
-// המתאם היחיד ל-API של otzaria_search_engine ב-78ff9f5 (ענף onnx-backend).
-// אין לייבא אותו לפני מעבר ה-pin; ההחלפה ב-createSemanticEngineBackend.
-
 import 'package:otzaria/data/data_providers/tantivy_data_provider.dart';
 import 'package:otzaria/search/search_engine_gateway.dart'
     show SemanticSearchRequest;

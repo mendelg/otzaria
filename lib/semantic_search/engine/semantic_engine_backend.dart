@@ -1,3 +1,5 @@
+import 'package:otzaria/semantic_search/engine/onnx_semantic_engine_adapter.dart';
+import 'package:otzaria/semantic_search/repository/semantic_platform_support.dart';
 import 'package:otzaria/search/search_engine_gateway.dart'
     show SemanticSearchRequest;
 import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
@@ -59,7 +61,7 @@ class UnavailableSemanticEngineBackend implements SemanticEngineBackend {
 
   static const SemanticFailure _unavailable = SemanticFailure(
     SemanticFailureKind.featureNotInBuild,
-    'The pinned search engine has no installed-vectors API',
+    'Semantic search is not supported on this platform',
   );
 
   @override
@@ -110,9 +112,8 @@ class UnavailableSemanticEngineBackend implements SemanticEngineBackend {
   }) => Future.error(_unavailable);
 }
 
-/// נקודת ההחלפה היחידה בין המנוע הנוכחי למתאם ה-ONNX.
-///
-/// TODO(engine-pin): כשה-pin של otzaria_search_engine עובר ל-78ff9f5, להחזיר
-/// כאן `OnnxSemanticEngineAdapter()` מ-`onnx_semantic_engine_adapter.dart`.
+/// בוחר את מתאם ONNX רק בפלטפורמות הנתמכות.
 SemanticEngineBackend createSemanticEngineBackend() =>
-    const UnavailableSemanticEngineBackend();
+    isSemanticSearchPlatformSupported()
+    ? OnnxSemanticEngineAdapter()
+    : const UnavailableSemanticEngineBackend();

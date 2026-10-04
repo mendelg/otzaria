@@ -403,18 +403,22 @@ class RustSearchEngineOperations
 
   @override
   Future<SemanticSearchResponse> searchSemantic(SemanticSearchRequest request) {
-    return _engine.searchSemantic(
-      query: request.query,
-      facets: request.facets,
-      limit: request.limit,
-      offset: request.offset,
-      lexicalMode: request.lexicalMode,
-      fuzzyMaxDistance: request.effectiveFuzzyMaxDistance,
-      retrievalMode: request.retrievalMode,
-      grouping: request.grouping,
-      matchNikud: request.matchNikud,
-      matchTaamim: request.matchTaamim,
-    );
+    final token = SemanticCancellationToken();
+    return _engine
+        .searchSemantic(
+          query: request.query,
+          facets: request.facets,
+          limit: request.limit,
+          offset: request.offset,
+          lexicalMode: request.lexicalMode,
+          fuzzyMaxDistance: request.effectiveFuzzyMaxDistance,
+          retrievalMode: request.retrievalMode,
+          grouping: request.grouping,
+          matchNikud: request.matchNikud,
+          matchTaamim: request.matchTaamim,
+          cancellation: token,
+        )
+        .whenComplete(token.dispose);
   }
 
   @override
