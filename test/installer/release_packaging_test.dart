@@ -197,10 +197,11 @@ void main() {
     );
     expect(packedTalmud.exitCode, 0, reason: '${packedTalmud.stderr}');
 
-    // בדיוק הצינור ששני הצדדים מריצים על אותו ארכיון.
+    // השמות כבתים גולמיים, כמו שהצד הבונה מאמת מול הדיסק — לא דרך tar, שבלי
+    // locale של UTF-8 מחזיר שמות עבריים כ-escapes אוקטליים.
     final volumesDigest = await sh(
-      'zstd -d -c "${talmud.path}" | tar -tf - | sed "s#.*/##" '
-      r"| grep -i '\.pdf$' | LC_ALL=C sort -u | sha256sum | awk '{print $1}'",
+      'find "${talmudSource.path}" -maxdepth 1 -name "*.pdf" -printf "%f\\n" '
+      r"| LC_ALL=C sort -u | sha256sum | awk '{print $1}'",
     );
     expect(volumesDigest.exitCode, 0, reason: '${volumesDigest.stderr}');
     final talmudVolumesDigest = (volumesDigest.stdout as String).trim();
@@ -268,6 +269,8 @@ packages:
       ], environment: {
         'PREBUILT_LIBRARY_INDEX_BASE_URL': 'file://${dist.path}',
         'PREBUILT_INDEX_REBUILD_TAG_FILE': rebuildTagFile.path,
+        // כמו קונטיינר debian:bookworm-slim של ה-job, שאין בו locale.
+        'LC_ALL': 'C',
       });
     }
 
