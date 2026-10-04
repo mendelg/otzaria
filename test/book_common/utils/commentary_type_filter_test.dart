@@ -79,6 +79,33 @@ void main() {
 
       expect(keys, [LinkTypes.midrash]);
     });
+    test('אותה רשימת קישורים משתמשת בתוצאה מחושבת', () {
+      final links = [_link(path2: 'אונקלוס.txt', type: LinkTypes.targum)];
+
+      expect(
+        identical(
+          CommentaryTypeFilter.chipKeys(links),
+          CommentaryTypeFilter.chipKeys(links),
+        ),
+        isTrue,
+      );
+    });
+
+    test('כל המפרשים נבחרים = אותם צ׳יפים כמו לפי מפרשים', () {
+      final links = [
+        _link(path2: 'אונקלוס.txt', type: LinkTypes.targum),
+        _link(path2: 'מדרש רבה.txt', type: LinkTypes.midrash),
+        _link(path2: 'רש"י.txt', type: LinkTypes.commentary),
+      ];
+
+      expect(
+        CommentaryTypeFilter.chipKeys(links),
+        CommentaryTypeFilter.chipKeysForCommentators(
+          links: links,
+          selectedCommentators: const ['אונקלוס', 'מדרש רבה', 'רש"י'],
+        ),
+      );
+    });
   });
 
   group('chipKeysForCommentators', () {
