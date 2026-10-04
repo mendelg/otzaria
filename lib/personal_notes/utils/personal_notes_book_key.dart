@@ -22,6 +22,30 @@ Set<String> personalNotesBookKeysInCategory(Category category) {
   return keys;
 }
 
+/// מספר ההערות של כל קטגוריה בעץ [root], במעבר אחד. ספר כפול (טקסט + PDF)
+/// נספר פעם אחת בתוך הקטגוריה שלו.
+Map<Category, int> personalNotesCategoryCounts(
+  Category root,
+  int Function(String bookKey) countForBook,
+) {
+  final counts = <Category, int>{};
+  int visit(Category category) {
+    var count = 0;
+    final seenKeys = <String>{};
+    for (final book in category.books) {
+      final key = personalNotesBookKey(book);
+      if (seenKeys.add(key)) count += countForBook(key);
+    }
+    for (final sub in category.subCategories) {
+      count += visit(sub);
+    }
+    return counts[category] = count;
+  }
+
+  visit(root);
+  return counts;
+}
+
 /// כמו [personalNotesBookKey], מכותרת ומקור.
 String personalNotesBookKeyFor(String title, BookSource source) =>
     switch (source) {
