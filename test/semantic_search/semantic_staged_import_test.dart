@@ -17,6 +17,8 @@ import 'package:otzaria/semantic_search/repository/semantic_staged_import.dart';
 import 'package:otzaria/semantic_search/semantic_work_status.dart';
 import 'package:otzaria/utils/file/disk_free_space.dart';
 import 'package:path/path.dart' as p;
+import 'package:seforim_library_updater/seforim_library_updater.dart'
+    show PatchDownloadCancelled;
 
 import 'semantic_test_support.dart';
 
@@ -75,6 +77,57 @@ class _UnreachableLocator extends SemanticVectorsReleaseLocator {
   }
 }
 
+class _TransferFile extends Fake implements File {
+  _TransferFile(
+    this.file, {
+    required this.crossVolume,
+    required this.onTransfer,
+    this.unreadable = false,
+  });
+
+  final File file;
+  final bool unreadable;
+  final bool crossVolume;
+  final void Function() onTransfer;
+
+  @override
+  String get path => file.path;
+
+  @override
+  Future<FileStat> stat() async {
+    if (unreadable) throw const FileSystemException('permission denied');
+    return file.stat();
+  }
+
+  @override
+  Future<File> rename(String newPath) async {
+    if (crossVolume) throw const FileSystemException('cross-volume rename');
+    final moved = await file.rename(newPath);
+    onTransfer();
+    return moved;
+  }
+
+  @override
+  Future<File> copy(String newPath) async {
+    final copied = await file.copy(newPath);
+    onTransfer();
+    return copied;
+  }
+
+  @override
+  Future<FileSystemEntity> delete({bool recursive = false}) =>
+      file.delete(recursive: recursive);
+}
+
+class _TransferImport extends SemanticStagedImport {
+  _TransferImport(SemanticPaths paths, this.file) : super(() async => paths);
+
+  final File file;
+
+  @override
+  Future<File?> stagedFile(String name) async => file;
+}
+
 void main() {
   late Directory root;
 
@@ -116,6 +169,126 @@ void main() {
     write(staged(kSemanticImportVectorsFolderName, _manifestName), manifest);
     return manifest;
   }
+
+  for (final crossVolume in [false, true]) {
+    test('ביטול בזמן העברה משמר מקור (כונן אחר: $crossVolume)', () async {
+      final source = File(
+        staged(kSemanticImportVectorsFolderName, _segmentName),
+      );
+      write(source.path, 'segment');
+      var cancelled = false;
+      final importer = _TransferImport(
+        paths(),
+        _TransferFile(
+          source,
+          crossVolume: crossVolume,
+          onTransfer: () => cancelled = true,
+        ),
+      );
+      final downloads = FakeDownloads();
+      final wrapped = importer.wrap(downloads.call, isOffline: () => false);
+      final dest = p.join(paths().vectorsDownloadDirectory, _segmentName);
+      await expectLater(
+        wrapped(
+          url: semanticVectorsAssetUrl(_tag, _segmentName),
+          destPath: dest,
+          resumeIdentity: 'test',
+          expectedSize: 7,
+          expectedSha256: _sha(utf8.encode('segment')),
+          isCancelled: () => cancelled,
+        ),
+        throwsA(isA<PatchDownloadCancelled>()),
+      );
+      expect(source.readAsStringSync(), 'segment');
+      expect(
+        File(dest).existsSync(),
+        crossVolume,
+        reason: 'עותק שלם נשמר להמשך; rename מבוטל מוחזר למקור',
+      );
+      expect(downloads.urls, isEmpty);
+    });
+  }
+
+  for (final afterHash in [false, true]) {
+    test('ביטול לפני העברה משמר מקור ויעד (אחרי hash: $afterHash)', () async {
+      final source = File(
+        staged(kSemanticImportVectorsFolderName, _segmentName),
+      );
+      write(source.path, 'segment');
+      final dest = p.join(paths().vectorsDownloadDirectory, _segmentName);
+      write(dest, 'existing partial');
+      var cancelled = !afterHash;
+      final downloads = FakeDownloads();
+      final importer = SemanticStagedImport(() async => paths());
+      await expectLater(
+        importer.wrap(
+          downloads.call,
+          isOffline: () => false,
+          onChecking: (checking) {
+            if (!checking) cancelled = true;
+          },
+        )(
+          url: semanticVectorsAssetUrl(_tag, _segmentName),
+          destPath: dest,
+          resumeIdentity: 'test',
+          expectedSize: 7,
+          expectedSha256: _sha(utf8.encode('segment')),
+          isCancelled: () => cancelled,
+        ),
+        throwsA(isA<PatchDownloadCancelled>()),
+      );
+      expect(source.readAsStringSync(), 'segment');
+      expect(File(dest).readAsStringSync(), 'existing partial');
+      expect(downloads.urls, isEmpty);
+    });
+  }
+
+  test('אימות קודם אינו מאשר קובץ ששונה באותו גודל', () async {
+    final source = File(staged(kSemanticImportVectorsFolderName, _segmentName));
+    write(source.path, 'segment');
+    final importer = SemanticStagedImport(() async => paths());
+    final digest = _sha(utf8.encode('segment'));
+    expect(
+      await importer.verifiedStagedFile(_segmentName, 7, digest),
+      isNotNull,
+    );
+    write(source.path, 'damaged');
+    // הפרדה מפורשת של timestamp כדי שהבדיקה לא תלויה ברזולוציית מערכת הקבצים.
+    source.setLastModifiedSync(DateTime(2000));
+    expect(await importer.verifiedStagedFile(_segmentName, 7, digest), isNull);
+    final downloads = FakeDownloads();
+    await importer.wrap(downloads.call, isOffline: () => false)(
+      url: semanticVectorsAssetUrl(_tag, _segmentName),
+      destPath: p.join(paths().vectorsDownloadDirectory, _segmentName),
+      resumeIdentity: 'test',
+      expectedSize: 7,
+      expectedSha256: digest,
+    );
+    expect(downloads.urls, hasLength(1));
+    expect(source.readAsStringSync(), 'damaged');
+  });
+
+  test('קובץ שאינו קריא אינו מאומץ', () async {
+    final source = File(staged(kSemanticImportVectorsFolderName, _segmentName));
+    write(source.path, 'segment');
+    final importer = _TransferImport(
+      paths(),
+      _TransferFile(
+        source,
+        crossVolume: false,
+        onTransfer: () {},
+        unreadable: true,
+      ),
+    );
+    expect(
+      await importer.verifiedStagedFile(
+        _segmentName,
+        7,
+        _sha(utf8.encode('segment')),
+      ),
+      isNull,
+    );
+  });
 
   test('נתונים מוכנים ותקינים מותקנים בלי רשת', () async {
     final manifest = stageAll();
@@ -232,6 +405,50 @@ void main() {
     );
   });
 
+  for (final remove in [false, true]) {
+    test('ביטול במהלך בדיקה משמר את המקור (מחיקה: $remove)', () async {
+      stageAll();
+      final downloads = FakeDownloads();
+      final backend = FakeBackend();
+      final repository = buildRepository(
+        root: root,
+        backend: backend,
+        locator: _UnreachableLocator(),
+        download: downloads.call,
+        modelReleases: _smallModel,
+      );
+      Future<void>? cancellation;
+      final subscription = repository.availabilityChanges.listen((a) {
+        if (a.progress?.checking == true && cancellation == null) {
+          cancellation = remove
+              ? repository.removeData()
+              : repository.cancelDownload();
+        }
+      });
+      await repository.enableAndDownload();
+      await cancellation;
+      await subscription.cancel();
+
+      expect(cancellation, isNotNull);
+      for (final file in [
+        _smallModel[SemanticQuantization.int8]!.graph,
+        _smallModel[SemanticQuantization.int8]!.tokenizer,
+        _smallModel[SemanticQuantization.int8]!.identity,
+        _smallModel[SemanticQuantization.int8]!.license,
+      ]) {
+        expect(
+          File(staged(kSemanticModelFolderName, file.name)).existsSync(),
+          isTrue,
+          reason: file.name,
+        );
+      }
+      expect(downloads.urls, isEmpty);
+      expect(backend.installRequests, isEmpty);
+      expect(File(paths().tokenizerFile).existsSync(), isFalse);
+      expect(repository.availability.failure, isNull);
+    });
+  }
+
   test('מניפסט מוכן של גרסת ספרייה אחרת אינו משמש', () {
     expect(
       SemanticStagedImport.parseStagedManifest(
@@ -341,6 +558,77 @@ void main() {
       await repository.enableAndDownload();
       return repository.availability.failure?.kind;
     }
+
+    test('קובץ פגום באותו גודל ובאותו כונן נספר לפני הורדה', () async {
+      stageAll(segment: 'damaged');
+      final downloads = FakeDownloads();
+      final backend = FakeBackend();
+      final repository = buildRepository(
+        root: root,
+        backend: backend,
+        locator: _UnreachableLocator(),
+        download: downloads.call,
+        modelReleases: _smallModel,
+        diskSpace: (_) async =>
+            const DiskSpaceInfo(volumeId: 'C', freeBytes: 100),
+      );
+      await repository.enableAndDownload();
+      expect(
+        repository.availability.failure?.kind,
+        SemanticFailureKind.insufficientDiskSpace,
+      );
+      expect(downloads.urls, isEmpty);
+      expect(backend.installRequests, isEmpty);
+      expect(
+        File(
+          staged(kSemanticImportVectorsFolderName, _segmentName),
+        ).readAsStringSync(),
+        'damaged',
+      );
+    });
+
+    test('קובץ חסר נספר לפני הורדה', () async {
+      stageAll();
+      File(staged(kSemanticImportVectorsFolderName, _segmentName)).deleteSync();
+      final downloads = FakeDownloads();
+      final repository = buildRepository(
+        root: root,
+        locator: _UnreachableLocator(),
+        download: downloads.call,
+        modelReleases: _smallModel,
+        diskSpace: (_) async =>
+            const DiskSpaceInfo(volumeId: 'C', freeBytes: 100),
+      );
+      await repository.enableAndDownload();
+      expect(
+        repository.availability.failure?.kind,
+        SemanticFailureKind.insufficientDiskSpace,
+      );
+      expect(downloads.urls, isEmpty);
+    });
+
+    test('מקור פגום במצב לא מקוון נשאר ללא הורדה', () async {
+      stageAll(segment: 'damaged');
+      final downloads = FakeDownloads();
+      final repository = buildRepository(
+        root: root,
+        settings: FakeSettingsStore()..isOfflineMode = true,
+        download: downloads.call,
+        modelReleases: _smallModel,
+      );
+      await repository.enableAndDownload();
+      expect(
+        repository.availability.failure?.kind,
+        SemanticFailureKind.offline,
+      );
+      expect(downloads.urls, isEmpty);
+      expect(
+        File(
+          staged(kSemanticImportVectorsFolderName, _segmentName),
+        ).readAsStringSync(),
+        'damaged',
+      );
+    });
 
     test('קובץ מוכן באותו כונן אינו נספר', () async {
       expect(await run('C'), isNull);

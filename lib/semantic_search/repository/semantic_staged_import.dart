@@ -16,6 +16,8 @@ import 'package:otzaria/semantic_search/repository/semantic_release_locator.dart
 import 'package:otzaria/semantic_search/repository/semantic_search_repository.dart'
     show SemanticFileDownloader;
 import 'package:path/path.dart' as p;
+import 'package:seforim_library_updater/seforim_library_updater.dart'
+    show PatchDownloadCancelled;
 
 /// נתוני החיפוש הסמנטי שמסייע ההורדה הכין ב-`<root>/semantic-import`.
 ///
@@ -25,6 +27,15 @@ class SemanticStagedImport {
   SemanticStagedImport(this._paths);
 
   final Future<SemanticPaths> Function() _paths;
+  final _verified =
+      <String, ({int size, String sha, DateTime modified, DateTime changed})>{};
+
+  /// אימותים משותפים לתכנון המקום ולהעברה, למשך העבודה הנוכחית בלבד.
+  void clearVerification() => _verified.clear();
+
+  static void _checkCancelled(bool Function()? isCancelled) {
+    if (isCancelled?.call() ?? false) throw const PatchDownloadCancelled();
+  }
 
   /// תיקיית הנתונים המוכנים של [paths].
   static String directoryOf(SemanticPaths paths) =>
@@ -58,6 +69,7 @@ class SemanticStagedImport {
         void Function(int received, int? total)? onProgress,
         bool Function()? isCancelled,
       }) async {
+        _checkCancelled(isCancelled);
         if (expectedSize != null &&
             expectedSha256 != null &&
             await _adopt(
@@ -66,10 +78,12 @@ class SemanticStagedImport {
               expectedSize,
               expectedSha256,
               onChecking,
+              isCancelled,
             )) {
           onProgress?.call(expectedSize, expectedSize);
           return;
         }
+        _checkCancelled(isCancelled);
         if (isOffline()) {
           throw const SemanticFailure(SemanticFailureKind.offline);
         }
@@ -190,6 +204,54 @@ class SemanticStagedImport {
     );
   }
 
+  /// קובץ מוכן שתואם בגודל וב-SHA; האימות חוזר אם מטא־נתוני הקובץ השתנו.
+  Future<File?> verifiedStagedFile(
+    String name,
+    int size,
+    String sha, {
+    void Function(bool checking)? onChecking,
+    bool Function()? isCancelled,
+  }) async {
+    _checkCancelled(isCancelled);
+    final staged = await stagedFile(name);
+    if (staged == null) return null;
+    final path = staged.path;
+    try {
+      final stat = await staged.stat();
+      _checkCancelled(isCancelled);
+      final signature = (
+        size: size,
+        sha: sha.toLowerCase(),
+        modified: stat.modified,
+        changed: stat.changed,
+      );
+      if (stat.size != size) return null;
+      if (_verified[path] != signature) {
+        onChecking?.call(true);
+        final bool matches;
+        try {
+          _checkCancelled(isCancelled);
+          matches = await Isolate.run(() => _fileMatches(path, size, sha));
+        } finally {
+          onChecking?.call(false);
+        }
+        _checkCancelled(isCancelled);
+        if (!matches) return null;
+        final after = await staged.stat();
+        if (after.size != stat.size ||
+            after.modified != stat.modified ||
+            after.changed != stat.changed) {
+          return null;
+        }
+        _verified[path] = signature;
+      }
+      _checkCancelled(isCancelled);
+      return staged;
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// מעביר קובץ מוכן תואם ל-[destPath]. קובץ שאינו תואם נשאר במקומו.
   Future<bool> _adopt(
     String url,
@@ -197,33 +259,35 @@ class SemanticStagedImport {
     int size,
     String sha,
     void Function(bool checking)? onChecking,
+    bool Function()? isCancelled,
   ) async {
-    final staged = await stagedFile(
+    final staged = await verifiedStagedFile(
       Uri.tryParse(url)?.pathSegments.lastOrNull ?? '',
+      size,
+      sha,
+      onChecking: onChecking,
+      isCancelled: isCancelled,
     );
     if (staged == null) return false;
-    final name = p.basename(staged.path);
-    final path = staged.path;
-    onChecking?.call(true);
-    final bool matches;
-    try {
-      matches = await Isolate.run(() => _fileMatches(path, size, sha));
-    } finally {
-      onChecking?.call(false);
-    }
-    if (!matches) {
-      debugPrint('[SemanticSearch] staged $name does not match; downloading');
-      return false;
-    }
-    // שאריות הורדה קודמת (קובץ חלקי וקובצי resume) אינן שייכות לקובץ הזה.
+    _verified.remove(staged.path);
+    _checkCancelled(isCancelled);
     await CompanionAssetsService.discardDownload(destPath);
+    _checkCancelled(isCancelled);
     await Directory(p.dirname(destPath)).create(recursive: true);
+    _checkCancelled(isCancelled);
     try {
       await staged.rename(destPath);
     } on FileSystemException {
-      // כונן אחר: rename אינו אפשרי.
+      // בכונן אחר המקור נשמר עד שההעתקה הושלמה ללא ביטול.
+      _checkCancelled(isCancelled);
       await staged.copy(destPath);
+      _checkCancelled(isCancelled);
       await staged.delete();
+      return true;
+    }
+    if (isCancelled?.call() ?? false) {
+      await File(destPath).rename(staged.path);
+      throw const PatchDownloadCancelled();
     }
     return true;
   }

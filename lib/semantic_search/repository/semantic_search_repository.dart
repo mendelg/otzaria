@@ -677,6 +677,7 @@ class SemanticSearchRepository {
           !_moveInProgress &&
           _isConsentGranted());
     } finally {
+      _staged.clearVerification();
       _jobPhase = null;
       _jobProgress = null;
       _jobSteps = const [];
@@ -995,6 +996,7 @@ class SemanticSearchRepository {
   ) async {
     final info = await _diskSpace(downloadDir);
     if (info.freeBytes < 0) return;
+    _reportProgress(SemanticDownloadItem.vectors, _jobModelBytes, force: true);
     var remaining = 0;
     for (final file in release.files) {
       // קובץ מוכן באותו כונן עובר ב-rename ואינו תופס מקום נוסף.
@@ -1002,7 +1004,15 @@ class SemanticSearchRepository {
       if (staged != null &&
           info.volumeId != null &&
           (await _diskSpace(p.dirname(staged.path))).volumeId ==
-              info.volumeId) {
+              info.volumeId &&
+          await _staged.verifiedStagedFile(
+                file.name,
+                file.size,
+                file.sha256,
+                onChecking: _showChecking,
+                isCancelled: () => _jobCancel.isCancelled,
+              ) !=
+              null) {
         continue;
       }
       final partial = File(p.join(downloadDir, file.name));
