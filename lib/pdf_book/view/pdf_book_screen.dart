@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:otzaria/book_common/utils/commentators_menu.dart';
 import 'dart:math';
 import 'dart:async';
 import 'dart:ui' as ui;
@@ -327,32 +328,6 @@ class PdfBookScreen extends StatefulWidget {
 
   @override
   State<PdfBookScreen> createState() => _PdfBookScreenState();
-}
-
-@visibleForTesting
-bool shouldShowOpenPdfCommentaryPaneEntry({
-  required bool hasSelectedCommentators,
-  required bool isCommentatorsTabActive,
-}) {
-  return hasSelectedCommentators && !isCommentatorsTabActive;
-}
-
-/// פריט "פתח בחירת מפרשים" יוצג כל עוד טאב המפרשים אינו פעיל בחלונית הצד.
-/// בניגוד ל-[shouldShowOpenPdfCommentaryPaneEntry], הוא לא תלוי
-/// ב-`hasSelectedCommentators` — מטרתו לאפשר בחירה גם כשהבחירה ריקה.
-@visibleForTesting
-bool shouldShowSelectPdfCommentatorsEntry({
-  required bool isCommentatorsTabActive,
-}) {
-  return !isCommentatorsTabActive;
-}
-
-@visibleForTesting
-bool shouldShowOpenPdfLinksPaneEntry({
-  required bool hasRelevantLinks,
-  required bool isLinksTabActive,
-}) {
-  return hasRelevantLinks && !isLinksTabActive;
 }
 
 /// האם יש לחשב מחדש את טווח השורות (currentTextLineNumber/End) בעקבות
@@ -1577,12 +1552,15 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         !isRightPaneClosed && _currentRightPaneTabIndex == _kCommentaryTabIndex;
     final isLinksTabActive =
         !isRightPaneClosed && _currentRightPaneTabIndex == _kLinksTabIndex;
-    final shouldShowOpenPaneEntry = shouldShowOpenPdfCommentaryPaneEntry(
+    // The PDF shows commentaries only in the side pane, never inline.
+    final shouldShowOpenPaneEntry = shouldShowOpenCommentatorsPaneEntry(
       hasSelectedCommentators: widget.tab.activeCommentators.isNotEmpty,
+      showCommentaryAsExpansionTiles: false,
       isCommentatorsTabActive: isCommentatorsTabActive,
     );
 
-    final shouldShowSelectEntry = shouldShowSelectPdfCommentatorsEntry(
+    final shouldShowSelectEntry = shouldShowSelectCommentatorsEntry(
+      hasOpenCommentatorsPaneWithFilterCallback: true,
       isCommentatorsTabActive: isCommentatorsTabActive,
     );
 
@@ -1619,8 +1597,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       ..._buildGroupedCommentatorEntries(relevantCommentators),
     ];
 
-    final showOpenLinksPaneEntry = shouldShowOpenPdfLinksPaneEntry(
-      hasRelevantLinks: relevantLinks.isNotEmpty,
+    final showOpenLinksPaneEntry = shouldShowOpenLinksPaneEntry(
+      hasLinks: relevantLinks.isNotEmpty,
       isLinksTabActive: isLinksTabActive,
     );
 

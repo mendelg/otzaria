@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/book_common/utils/commentators_menu.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/links.dart';
@@ -9,6 +10,32 @@ import 'package:otzaria/book_common/models/commentator_group.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 
 import '../helpers/memory_settings_cache.dart';
+
+// The PDF page menu decides its pane entries by the shared rules, called
+// with these arguments; the tests below pin that combination.
+bool shouldShowOpenPdfCommentaryPaneEntry({
+  required bool hasSelectedCommentators,
+  required bool isCommentatorsTabActive,
+}) => shouldShowOpenCommentatorsPaneEntry(
+  hasSelectedCommentators: hasSelectedCommentators,
+  showCommentaryAsExpansionTiles: false,
+  isCommentatorsTabActive: isCommentatorsTabActive,
+);
+
+bool shouldShowSelectPdfCommentatorsEntry({
+  required bool isCommentatorsTabActive,
+}) => shouldShowSelectCommentatorsEntry(
+  hasOpenCommentatorsPaneWithFilterCallback: true,
+  isCommentatorsTabActive: isCommentatorsTabActive,
+);
+
+bool shouldShowOpenPdfLinksPaneEntry({
+  required bool hasRelevantLinks,
+  required bool isLinksTabActive,
+}) => shouldShowOpenLinksPaneEntry(
+  hasLinks: hasRelevantLinks,
+  isLinksTabActive: isLinksTabActive,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
