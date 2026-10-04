@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/core/messages/plugin_messages.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/plugins/declarative/models/declarative_program.dart';
 import 'package:otzaria/plugins/declarative/services/declarative_host_action_executor.dart';
@@ -14,6 +15,69 @@ import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
 import 'package:otzaria/tabs/models/external_book_matches.dart';
 
 void main() {
+  test('ביטול הרשאת קריאה מונע קריאת ערכים והצגתם', () async {
+    final fixture = _Fixture(
+      declaredPermissions: const [
+        'app.startup_contributions',
+        'notifications.send',
+        'plugin.storage.read',
+      ],
+    );
+    addTearDown(fixture.dispose);
+    fixture.permissions.add('notifications.send');
+    fixture.storageValues['secret'] = 'stored value';
+    await fixture.host.dispatchSelectionAction(fixture.plugin.pluginId, {
+      'type': 'ui.showSnack',
+      'args': {
+        'message': {r'$storage': 'secret'},
+      },
+    }, const {});
+    expect(fixture.storageReads, isEmpty);
+    expect(fixture.snacks.shown, isEmpty);
+    expect(
+      fixture.errors.single,
+      isA<DeclarativeProgramException>().having(
+        (e) => e.code,
+        'code',
+        'declarative.permission_denied',
+      ),
+    );
+  });
+
+  test('ספר ספק עם הרשאת קריאה שבוטלה אינו קורא אחסון', () async {
+    final fixture = _Fixture(
+      declaredPermissions: const [
+        'app.startup_contributions',
+        'network.localhost',
+        'plugin.storage.read',
+      ],
+    );
+    addTearDown(fixture.dispose);
+    fixture.permissions.add('network.localhost');
+    fixture.storageValues['port'] = 39700;
+    await fixture.host.dispatchLibraryBookAction(
+      fixture.plugin.pluginId,
+      {
+        'type': 'localService.post',
+        'args': {
+          'port': {r'$storage': 'port'},
+          'path': '/open',
+        },
+      },
+      const {'id': 7},
+    );
+    expect(fixture.storageReads, isEmpty);
+    expect(fixture.localService.requests, isEmpty);
+    expect(
+      fixture.errors.single,
+      isA<DeclarativeProgramException>().having(
+        (e) => e.code,
+        'code',
+        'declarative.permission_denied',
+      ),
+    );
+  });
+
   test('מסנכרן, מחשב ומפרסם שני פקדים ללא מנוע תוסף', () async {
     final fixture = _Fixture();
     addTearDown(fixture.dispose);
@@ -355,10 +419,11 @@ void main() {
           'app.startup_contributions',
           'reader.context_menu',
           'network.localhost',
+          'plugin.storage.read',
         ],
       );
       addTearDown(fixture.dispose);
-      fixture.permissions.add('network.localhost');
+      fixture.permissions.addAll({'network.localhost', 'plugin.storage.read'});
       fixture.storageValues['servicePort'] = 39701;
 
       await fixture.host.dispatchSelectionAction(fixture.plugin.pluginId, {
@@ -405,9 +470,10 @@ void main() {
           'app.startup_contributions',
           'library.books.provide',
           'network.localhost',
+          'plugin.storage.read',
         ],
       );
-      fixture.permissions.add('network.localhost');
+      fixture.permissions.addAll({'network.localhost', 'plugin.storage.read'});
       fixture.storageValues['servicePort'] = 39700;
       return fixture;
     }
@@ -491,7 +557,11 @@ void main() {
       );
 
       expect(fixture.localService.requests, isEmpty);
-      expect(fixture.errors, hasLength(1));
+      expect(fixture.errors, isEmpty);
+      expect(
+        fixture.snacks.shown.single.message,
+        PluginMessages.localServiceBlocked,
+      );
     });
   });
 }
@@ -587,10 +657,8 @@ class _SnackPresenter implements DeclarativeSnackPresenter {
   }
 
   @override
-  void showPending(String message, {required String pluginName}) {}
-
-  @override
-  void hidePending() {}
+  void Function() showPending(String message, {required String pluginName}) =>
+      () {};
 }
 
 class _StorageWriter implements DeclarativeStorageWriter {

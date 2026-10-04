@@ -928,6 +928,11 @@ void main() {
       expect(await first, isTrue);
       expect(client.requests, hasLength(1));
       expect(
+        presenter.shown.where((s) => s.severity == 'pending'),
+        hasLength(1),
+      );
+      expect(presenter.hides, 1);
+      expect(
         await _executeLocal(_compileLocal(), client: client),
         isTrue,
         reason: 'אחרי שהבקשה הסתיימה אפשר לשלוח שוב',
@@ -1010,11 +1015,21 @@ void main() {
     test('בלי הרשאה מוענקת הפעולה נחסמת', () async {
       final client = _LocalServiceClient();
 
-      await expectLater(
-        _executeLocal(_compileLocal(), client: client, granted: const {}),
-        _throwsProgramError('declarative.permission_denied'),
+      final presenter = _SnackPresenter();
+      expect(
+        await _executeLocal(
+          _compileLocal(),
+          client: client,
+          presenter: presenter,
+          granted: const {},
+        ),
+        isFalse,
       );
       expect(client.requests, isEmpty);
+      expect(
+        presenter.shown.single.message,
+        PluginMessages.localServiceBlocked,
+      );
     });
 
     group('PluginLocalServiceClient מול שרת אמיתי', () {
@@ -1199,12 +1214,10 @@ class _SnackPresenter implements DeclarativeSnackPresenter {
 
   /// נרשמת כ-severity `pending`, כדי לבדוק את סדר ההודעות במקום אחד.
   @override
-  void showPending(String message, {required String pluginName}) {
+  void Function() showPending(String message, {required String pluginName}) {
     shown.add((message: message, severity: 'pending', pluginName: pluginName));
+    return () => hides++;
   }
-
-  @override
-  void hidePending() => hides++;
 }
 
 class _ReaderScroller implements DeclarativeReaderScroller {

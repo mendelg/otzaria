@@ -352,11 +352,16 @@ class DeclarativePluginHostService implements DeclarativePluginHost {
         declaredPermissions: declaredPermissions,
         source: source,
       );
+      final keys = DeclarativeSelectionAction.storageKeys(actionTemplate);
+      if (keys.isNotEmpty &&
+          !(await _loadPermissions(pluginId)).contains('plugin.storage.read')) {
+        throw const DeclarativeProgramException(
+          'declarative.permission_denied',
+          r'$storage requires granted permission "plugin.storage.read"',
+        );
+      }
       final storage = <String, Object?>{
-        for (final key in DeclarativeSelectionAction.storageKeys(
-          actionTemplate,
-        ))
-          key: await _storageReader.get(pluginId, key),
+        for (final key in keys) key: await _storageReader.get(pluginId, key),
       };
       final action =
           DeclarativeActionCompiler(

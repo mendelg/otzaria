@@ -82,6 +82,14 @@ class DeclarativeSelectionAction {
     }
     final budget = _Budget();
     _validateExpression(args, budget, source: source, depth: 0);
+    if (declaredPermissions != null &&
+        storageKeys(json).isNotEmpty &&
+        !declaredPermissions.contains('plugin.storage.read')) {
+      throw const DeclarativeProgramException(
+        'declarative.permission_not_declared',
+        r'$storage requires permission "plugin.storage.read"',
+      );
+    }
     if (type == 'localService.post') {
       DeclarativeActionCompiler.validateLocalServiceArgs(args, template: true);
     }
@@ -124,9 +132,8 @@ class DeclarativeSelectionAction {
 
   static final RegExp _controlCharRuns = RegExp(r'[\u0000-\u001F\u007F]+');
 
-  /// טקסט מנתוני הלחיצה מותאם לבדיקת הפעולה, שפוסלת תווי בקרה ומחרוזת
-  /// ארוכה: מעבר שורה (סימון של כמה שורות) הופך לרווח, וסימון של עמוד שלם
-  /// נחתך — בלי לפצל זוג surrogate. אחרת הלחיצה הייתה נפסלת בשקט.
+  /// מסיר תווי בקרה ומגביל טקסט בלי לפצל זוג surrogate,
+  /// כדי שסימון של כמה שורות יתאים לארגומנטים של הפעולה.
   static String _clickText(String text) {
     final flat = text.replaceAll(_controlCharRuns, ' ');
     const max = DeclarativeActionCompiler.maxJsonStringLength;

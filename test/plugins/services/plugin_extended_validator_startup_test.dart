@@ -247,6 +247,19 @@ void main() {
       final missing = _run(tempDir, booksManifest(items: items()));
       expect(missing.errors, contains(contains('network.localhost')));
 
+      final missingStorage = _run(
+        tempDir,
+        booksManifest(
+          permissions: const [
+            'app.startup_contributions',
+            'library.books.provide',
+            'network.localhost',
+          ],
+          items: items(),
+        ),
+      );
+      expect(missingStorage.errors, contains(contains('plugin.storage.read')));
+
       final valid = _run(
         tempDir,
         booksManifest(
@@ -254,6 +267,7 @@ void main() {
             'app.startup_contributions',
             'library.books.provide',
             'network.localhost',
+            'plugin.storage.read',
           ],
           items: items(),
         ),
@@ -607,7 +621,20 @@ void main() {
       'app.startup_contributions',
       'reader.context_menu',
       'plugin.storage.write',
+      'plugin.storage.read',
     ];
+
+    final missingStorage = _run(
+      tempDir,
+      _manifest(
+        permissions: permissions
+            .where((p) => p != 'plugin.storage.read')
+            .toList(),
+        minAppVersion: '0.9.98',
+        startup: startup,
+      ),
+    );
+    expect(missingStorage.errors, contains(contains('plugin.storage.read')));
 
     final oldVersion = _run(
       tempDir,

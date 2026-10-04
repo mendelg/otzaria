@@ -39,11 +39,8 @@ abstract interface class DeclarativeSearchOpener {
 abstract interface class DeclarativeSnackPresenter {
   void show(String message, String severity, {required String pluginName});
 
-  /// הודעת המתנה שנשארת עד ההודעה הבאה או עד [hidePending].
-  void showPending(String message, {required String pluginName});
-
-  /// מסתיר את ההודעה הנוכחית.
-  void hidePending();
+  /// מציג הודעת המתנה ומחזיר פעולה שמסתירה רק את ההודעה הזאת.
+  void Function() showPending(String message, {required String pluginName});
 }
 
 class UiSnackPresenter implements DeclarativeSnackPresenter {
@@ -63,13 +60,14 @@ class UiSnackPresenter implements DeclarativeSnackPresenter {
   }
 
   @override
-  void showPending(String message, {required String pluginName}) =>
-      UiSnack.showChecking(
-        PluginMessages.declarativeSnack(message, pluginName),
-      );
-
-  @override
-  void hidePending() => UiSnack.hide();
+  void Function() showPending(String message, {required String pluginName}) {
+    final owner = Object();
+    UiSnack.showChecking(
+      PluginMessages.declarativeSnack(message, pluginName),
+      owner: owner,
+    );
+    return () => UiSnack.hide(owner: owner);
+  }
 }
 
 /// כתיבה לאחסון ה-KV של תוסף מפעולה דקלרטיבית — בלי מנוע JS.
@@ -213,8 +211,7 @@ class PluginLocalServiceClient implements DeclarativeLocalServiceClient {
   }
 }
 
-/// לקוח אחד לכל התהליך: כל לחיצה הייתה פותחת `http.Client` חדש שאינו
-/// נסגר לעולם.
+/// לקוח HTTP משותף לכל הלחיצות, הרשום לסגירה בסיום התהליך.
 final DeclarativeLocalServiceClient _sharedLocalServiceClient =
     PluginLocalServiceClient();
 
@@ -270,6 +267,14 @@ class DeclarativeHostActionExecutor {
       );
     }
     if (!grantedPermissions.contains(action.requiredPermission)) {
+      if (action.type == 'localService.post') {
+        snackPresenter.show(
+          PluginMessages.localServiceBlocked,
+          'error',
+          pluginName: plugin.name,
+        );
+        return false;
+      }
       throw const DeclarativeProgramException(
         'declarative.permission_denied',
         'The action permission is no longer granted',
@@ -357,9 +362,7 @@ class DeclarativeHostActionExecutor {
     }
   }
 
-  /// שולח את הבקשה ומציג למשתמש את התוצאה. הלחיצה היא של המשתמש, ולכן כל
-  /// סוף מסתיים בהודעה: שירות שאינו עונה, פורט שעוד לא נשמר או גישה חסומה
-  /// אינם תקלה של התוכנה — מוצגת הודעה ומוחזר `false`, בלי חריגה.
+  /// שולח בקשה ומציג תשובה או כשל. הצלחה ללא הודעה נשארת שקטה.
   Future<bool> _postToLocalService(
     CompiledDeclarativeAction action,
     InstalledPlugin plugin,
@@ -395,13 +398,14 @@ class DeclarativeHostActionExecutor {
       return false;
     }
     final pending = args['pendingMessage'] as String?;
-    if (pending != null) {
-      snackPresenter.showPending(pending, pluginName: plugin.name);
-    }
     final body = jsonEncode(args['body'] ?? const <String, Object?>{});
     final requestKey = '${plugin.pluginId} $uri $body';
     if (!_localServiceInFlight.add(requestKey)) return false;
+    void Function()? hidePending;
     try {
+      hidePending = pending == null
+          ? null
+          : snackPresenter.showPending(pending, pluginName: plugin.name);
       final DeclarativeLocalServiceResponse response;
       try {
         response = await (localServiceClient ?? _sharedLocalServiceClient).post(
@@ -436,7 +440,7 @@ class DeclarativeHostActionExecutor {
     } finally {
       _localServiceInFlight.remove(requestKey);
       // הודעת ההמתנה אינה נשארת אחרי תשובה שקטה או חריגה לא צפויה.
-      if (pending != null && !settled) snackPresenter.hidePending();
+      if (!settled) hidePending?.call();
     }
   }
 }

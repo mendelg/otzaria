@@ -122,6 +122,35 @@ void main() {
       );
     });
 
+    test(r'$storage דורש הצהרת קריאה בשני מקורות הלחיצה', () {
+      for (final source in DeclarativeClickSource.values) {
+        final action = template({r'$storage': 'saved'});
+        expect(
+          () => DeclarativeSelectionAction.validateTemplate(
+            action,
+            source: source,
+            declaredPermissions: const {'plugin.storage.write'},
+          ),
+          _throwsProgramError('declarative.permission_not_declared'),
+        );
+        DeclarativeSelectionAction.validateTemplate(
+          action,
+          source: source,
+          declaredPermissions: const {
+            'plugin.storage.write',
+            'plugin.storage.read',
+          },
+        );
+        DeclarativeSelectionAction.validateTemplate(
+          template({
+            r'$literal': {r'$storage': 'notRead'},
+          }),
+          source: source,
+          declaredPermissions: const {'plugin.storage.write'},
+        );
+      }
+    });
+
     test(r'$storage מותר בשני המקורות, עם מפתח תקין בלבד', () {
       for (final source in DeclarativeClickSource.values) {
         DeclarativeSelectionAction.validateTemplate(
