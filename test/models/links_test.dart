@@ -1,7 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/models/links.dart';
+import 'package:otzaria/utils/text/text_manipulation.dart';
 
 Link _link({
   required String heRef,
@@ -122,6 +125,39 @@ void main() {
     expect(result, hasLength(2));
     expect(result.first.path2, 'רש"י על בראשית');
     expect(result.first.index2, 5);
+  });
+
+  test('מיון לפי דרגה מחושבת מראש זהה למיון עם indexOf בכל השוואה', () {
+    final rnd = Random(7);
+    // שם כפול ברשימה: indexOf מחזיר את המופע הראשון.
+    final commentators = [
+      for (var i = 0; i < 40; i++) 'מפרש $i',
+      'מפרש 3',
+    ];
+    final links = [
+      for (var i = 0; i < 500; i++)
+        _link(
+          heRef: 'קישור $i',
+          path2: 'ספרים/מפרשים/${commentators[rnd.nextInt(41)]}.txt',
+          // טווח צר של index2 יוצר הרבה שוויונות, כדי לבדוק את סדר השווים.
+          index2: 1 + rnd.nextInt(5),
+        ),
+    ];
+    final expected = List.of(links)
+      ..sort((a, b) {
+        final byCommentator = commentators
+            .indexOf(getTitleFromPath(a.path2))
+            .compareTo(commentators.indexOf(getTitleFromPath(b.path2)));
+        if (byCommentator != 0) return byCommentator;
+        return a.index2.compareTo(b.index2);
+      });
+
+    final actual = sortLinksByCommentatorOrder(links, commentators);
+
+    expect(actual.length, expected.length);
+    for (var i = 0; i < expected.length; i++) {
+      expect(identical(actual[i], expected[i]), isTrue, reason: 'מיקום $i');
+    }
   });
 
   group('מיון בתוך אותו מפרש — ס"ק כרכיב האחרון ב-heRef', () {
