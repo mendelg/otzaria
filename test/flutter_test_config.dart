@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/core/app_paths.dart';
 
 import 'support/search_engine_test_init.dart';
 
@@ -10,5 +14,16 @@ import 'support/search_engine_test_init.dart';
 /// שתלויים במנוע ידווחו על כך.
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   await tryInitSearchEngine();
+  // שורש נתונים זמני לכל קובץ בדיקה — אחרת לוג השגיאות והאינדקס נכתבים
+  // לפרופיל האמיתי של המפתח.
+  final profileRoot = Directory.systemTemp.createTempSync('otzaria_test_data_');
+  AppPaths.debugProfileDataRootPath = profileRoot.path;
+  tearDownAll(() async {
+    try {
+      await profileRoot.delete(recursive: true);
+    } on FileSystemException {
+      // קובץ שנשאר פתוח בסוף הריצה — תיקייה זמנית, לא חוסמים עליה.
+    }
+  });
   await testMain();
 }
