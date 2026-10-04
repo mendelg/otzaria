@@ -475,6 +475,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
 
   Future<void> _editPending(AppReport report) async {
     var edited = report;
+    final hasChanges = ValueNotifier(false);
     final confirmed = await showTwoActionsDialog(
       context: context,
       title: context.settingsText('עריכת דיווח שמור'),
@@ -487,10 +488,20 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
         child: AppReportEditFields(
           report: report,
           typeLabel: (type) => _typeLabel(context, type),
-          onChanged: (value) => edited = value,
+          onChanged: (value) {
+            edited = value;
+            hasChanges.value =
+                value.type != report.type ||
+                value.title != report.title ||
+                value.description != report.description ||
+                value.stepsToReproduce != report.stepsToReproduce ||
+                value.reporterEmail != report.reporterEmail;
+          },
         ),
       ),
+      hasUnsavedChanges: hasChanges,
     );
+    hasChanges.dispose();
     if (confirmed != true) return;
 
     // טקסט שהוקלד בעריכה עובר אותה הסתרה כמו בטופס המקורי.
