@@ -113,9 +113,20 @@ String truncate(String text, int length) {
   return text.length > length ? '${text.substring(0, length)}...' : text;
 }
 
+/// מקף, פסק ו-| הופכים לרווח; ניקוד וטעמים (U+0591–U+05C7) נמחקים.
+/// מעבר יחיד על יחידות הקוד, בלי מחרוזות ביניים.
 String removeVolwels(String s) {
-  s = s.replaceAll('־', ' ').replaceAll('׀', ' ').replaceAll('|', ' ');
-  return s.replaceAll(_vowelsAndCantillation, '');
+  final units = Uint16List(s.length);
+  var n = 0;
+  for (var i = 0; i < s.length; i++) {
+    final c = s.codeUnitAt(i);
+    if (c == 0x05BE || c == 0x05C0 || c == 0x7C) {
+      units[n++] = 0x20;
+    } else if (c < 0x0591 || c > 0x05C7) {
+      units[n++] = c;
+    }
+  }
+  return String.fromCharCodes(units, 0, n);
 }
 
 /// סימני ניקוד בלבד, בלי טעמים: נקודות התנועה, דגש, רפה, נקודות שי"ן/שי"ן
