@@ -1399,7 +1399,10 @@ class _CombinedViewState extends State<CombinedView> {
         paragraphIndex: paragraphIndex,
         selectedText: selectedText,
         onCopy: () => _copyFormattedText(selectedText),
-        onAddNote: () => _showNoteEditor(selectedText, paragraphIndex),
+        onAddNote: () => _showNoteEditor(
+          selectedText,
+          _currentSelectedIndex.value ?? paragraphIndex,
+        ),
       ),
       _copyAsEntry(state, selectedText),
       const AppContextMenuEntry.divider(),
@@ -1701,9 +1704,8 @@ class _CombinedViewState extends State<CombinedView> {
     final selectedText = capturedText ?? _savedSelectedText.value;
     final hasSelection = selectedText?.trim().isNotEmpty == true;
 
-    // A selection keeps the note on its own paragraph. Without one the note
-    // goes to the clicked paragraph; the saved index may be left over from
-    // an earlier selection.
+    // בחירה פעילה מקבלת קדימות; בלעדיה משתמשים בשורת הלחיצה,
+    // כי האינדקס השמור עשוי להישאר מבחירה קודמת.
     final currentIndex =
         (hasSelection ? _savedSelectedIndex.value : null) ??
         clickedIndex ??
