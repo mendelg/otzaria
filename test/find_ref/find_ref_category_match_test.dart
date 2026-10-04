@@ -29,9 +29,19 @@ const _hilchotShabbat = (
   ],
 );
 
+const _hilchotSanhedrin = (
+  id: 375,
+  title: 'משנה תורה, הלכות סנהדרין והעונשין המסורין להם',
+  acronyms: ['הרמבם הלכות סנהדרין', 'הרמבם סנהדרין', 'רמבם סנהדרין'],
+);
+
 const _categoryPaths = {
   296: 'הלכה, משנה תורה, ספר מדע',
   308: 'הלכה, משנה תורה, ספר זמנים',
+  375: 'הלכה, משנה תורה, ספר שופטים',
+  7: 'תנ"ך, נביאים',
+  7286: 'תלמוד בבלי, אחרונים, שמות בארץ',
+  2: 'תנ"ך, תורה',
 };
 
 void main() {
@@ -85,6 +95,34 @@ void main() {
         expect(titles, ['משנה תורה, הלכות שבת']);
       },
     );
+
+    test('זנב שהוא גם שם ספר ("שופטים") מחזיר את הלכות ספר שופטים', () async {
+      // "שופטים" הוא ספר בתנ"ך, ולכן חיפוש ה-TOC מדולג.
+      seedLibrary(const [
+        _hilchotSanhedrin,
+        (id: 7, title: 'שופטים', acronyms: <String>[]),
+      ], categoryPaths: _categoryPaths);
+
+      final titles = (await buildFindRefRepo().findRefs(
+        'רמבם שופטים',
+      )).map((r) => r.title).toList();
+
+      expect(titles, contains(_hilchotSanhedrin.title));
+    });
+
+    test('זנב שהוא שם ספר אינו מתאים לחלק משם התיקייה', () async {
+      // "שמות" הוא מילה אחת מתוך "שמות בארץ", ולא שם התיקייה.
+      seedLibrary(const [
+        (id: 7286, title: 'יום תרועה', acronyms: <String>[]),
+        (id: 2, title: 'שמות', acronyms: <String>[]),
+      ], categoryPaths: _categoryPaths);
+
+      final titles = (await buildFindRefRepo().findRefs(
+        'יום שמות',
+      )).map((r) => r.title).toList();
+
+      expect(titles, isNot(contains('יום תרועה')));
+    });
 
     test('segment אב ("הלכה") אינו מחזיר כלום', () async {
       // "הלכה" משותף לאלפי ספרים; רק העלה — הקטגוריה הישירה — נבדק.
