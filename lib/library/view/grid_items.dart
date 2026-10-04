@@ -280,12 +280,16 @@ class CategoryGridItem extends StatelessWidget {
   final FocusNode? focusNode;
   final bool isSelected;
 
+  /// נתיב האב שמוצג מתחת לכותרת — בתוצאות חיפוש, כדי להבחין בין תיקיות באותו שם.
+  final String? parentPath;
+
   const CategoryGridItem({
     super.key,
     required this.category,
     required this.onCategoryClickCallback,
     this.focusNode,
     this.isSelected = false,
+    this.parentPath,
   });
 
   @override
@@ -311,6 +315,17 @@ class CategoryGridItem extends StatelessWidget {
                     text: category.title,
                     isFolder: true,
                   ),
+                  if (parentPath != null && parentPath!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    LibraryOverflowTooltipText(
+                      text: parentPath!,
+                      maxLines: 1,
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.secondary,
+                      ),
+                    ),
+                  ],
                   // זמני: התיאור הקצר הוסר מגוף הכרטיס.
                   // if (category.shortDescription.isNotEmpty) ...[
                   //   const SizedBox(height: 3),

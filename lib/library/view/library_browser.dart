@@ -1729,7 +1729,11 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     );
   }
 
-  Widget _buildCategoryGridItem(Category category, {FocusNode? focusNode}) {
+  Widget _buildCategoryGridItem(
+    Category category, {
+    FocusNode? focusNode,
+    String? parentPath,
+  }) {
     return _withCategorySelection(
       category,
       (isSelected, onTap, onDoubleTap) => GestureDetector(
@@ -1739,6 +1743,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
           isSelected: isSelected,
           onCategoryClickCallback: onTap,
           focusNode: focusNode,
+          parentPath: parentPath,
         ),
       ),
     );
@@ -1799,6 +1804,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
           _buildCategoryGridItem(
             category,
             focusNode: firstFocus && i == 0 ? _firstGridItemFocusNode : null,
+            parentPath: categoryParentPath(category),
           ),
       ],
     );
