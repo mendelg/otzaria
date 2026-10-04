@@ -1376,8 +1376,7 @@ class _CombinedViewState extends State<CombinedView> {
         removePunctuation: state.commentaryRemovePunctuation,
         maxFontSize: widget.textSize,
         openPaneEntry: showOpenLinksPaneEntry
-            ? AppContextMenuEntry(
-                label: 'פתח קישורים בחלונית צד',
+            ? buildOpenLinksPaneEntry(
                 onTap: () => widget.onOpenLinksPane?.call(),
               )
             : null,

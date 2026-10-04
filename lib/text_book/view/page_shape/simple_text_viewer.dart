@@ -1816,9 +1816,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
           removePunctuation: state.commentaryRemovePunctuation,
           maxFontSize: widget.fontSize,
           openPaneEntry: widget.onOpenSidebarTab != null
-              ? AppContextMenuEntry(
-                  label: 'פתח חלונית קישורים',
-                  icon: FluentIcons.panel_right_24_regular,
+              ? buildOpenLinksPaneEntry(
                   onTap: () => widget.onOpenSidebarTab!(kLinksTabIndex),
                 )
               : null,

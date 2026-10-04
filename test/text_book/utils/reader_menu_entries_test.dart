@@ -175,4 +175,13 @@ void main() {
       expect(await entries(tester, null), isEmpty);
     });
   });
+
+  test('the open links pane entry has its label and icon', () {
+    var opened = 0;
+    final entry = buildOpenLinksPaneEntry(onTap: () => opened++);
+    expect(entry.label, 'פתח קישורים בחלונית צד');
+    expect(entry.icon, isNotNull);
+    entry.onTap!();
+    expect(opened, 1);
+  });
 }
