@@ -151,7 +151,6 @@ try {
   Remove-Item -Path "installer\zstd_tmp" -Recurse -Force
   Remove-Item -Path "installer\7zip-extra.7z" -Force
   Remove-Item -Path "installer\7zip_tmp" -Recurse -Force
-  Remove-Item -Path "installer\7zr.exe" -Force
   Write-Host "zstd.exe and 7za.exe prepared successfully"
 
   # מילון המורפולוגיה (lexical.db) של החיפוש המקורב. ב-release הוא אינו
