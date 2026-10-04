@@ -176,4 +176,13 @@ void main() {
       expect(groupNamed(groups, 'שאר מפרשים'), ['הערות על חברותא על ברכות']);
     });
   });
+
+  test('groupCommentatorsByEra lists every commentator in a group', () async {
+    const commentators = ['מפרש בדיקה א', 'מפרש בדיקה ב'];
+    final groups = await groupCommentatorsByEra(commentators);
+    expect(
+      groups.expand((group) => group.commentators).toSet(),
+      containsAll(commentators),
+    );
+  });
 }

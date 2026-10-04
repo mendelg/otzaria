@@ -646,7 +646,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     }
 
     await eraPreload;
-    final eras = await utils.splitByEra(
+    final groups = await groupCommentatorsByEra(
       availableCommentators,
       source: widget.tab.book.source,
       sourceByTitle: {
@@ -661,7 +661,6 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           utils.getTitleFromPath(link.path2): link.targetSource,
       },
     );
-    final groups = buildCommentatorGroups(eras, availableCommentators);
     if (!mounted || generation != _visibilityLoadGeneration) return;
     setState(() {
       _visibility = visibility;

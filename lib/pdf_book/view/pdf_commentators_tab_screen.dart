@@ -508,7 +508,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
     final available = commentatorsSet.toList();
     await _applyDefaultCommentatorsIfNeeded(available);
     if (!mounted || generation != _visibilityLoadGeneration) return;
-    final eras = await utils.splitByEra(
+    final groups = await groupCommentatorsByEra(
       available,
       source: widget.tab.sourceTab.book.source,
       sourceByTitle: {
@@ -518,7 +518,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
           utils.getTitleFromPath(link.path2): link.targetSource,
       },
     );
-    final groups = buildCommentatorGroups(eras, available);
     if (!mounted || generation != _visibilityLoadGeneration) return;
     setState(() {
       _visibility = visibility;

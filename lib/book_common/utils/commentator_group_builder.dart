@@ -1,8 +1,9 @@
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/book_common/models/commentator_group.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart'
-    show getTitleFromPath, notesBookBaseTitle;
+    show getTitleFromPath, notesBookBaseTitle, splitByEra;
 
 /// ספרים גדולים (מעל [kRareCommentatorMinBookLines] שורות) מסתירים מרשימת
 /// בחירת המפרשים מפרשים "נדירים" — כאלה עם פחות מ-[kRareCommentatorMinLinks]
@@ -154,4 +155,25 @@ List<String> _promoteBase(List<String> commentators, List<String> base) {
   final baseSet = baseInGroup.toSet();
   final rest = commentators.where((c) => !baseSet.contains(c)).toList();
   return [...baseInGroup, ...rest];
+}
+
+/// Groups [commentators] by era, as [buildCommentatorGroups] does, after
+/// looking up each one's era. [source] and [sourceByTitle] tell where each
+/// commentator comes from, for books outside the official library.
+Future<List<CommentatorGroup>> groupCommentatorsByEra(
+  List<String> commentators, {
+  BookSource source = BookSource.official,
+  Map<String, BookSource> sourceByTitle = const {},
+  List<String> baseCommentators = const [],
+}) async {
+  final eras = await splitByEra(
+    commentators,
+    source: source,
+    sourceByTitle: sourceByTitle,
+  );
+  return buildCommentatorGroups(
+    eras,
+    commentators,
+    baseCommentators: baseCommentators,
+  );
 }
