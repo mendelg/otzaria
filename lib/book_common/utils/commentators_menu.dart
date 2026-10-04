@@ -137,3 +137,12 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
 
   return entries;
 }
+
+/// The entry that opens the links pane is shown when there are links and
+/// the links tab of the side pane is not already active.
+bool shouldShowOpenLinksPaneEntry({
+  required bool hasLinks,
+  required bool isLinksTabActive,
+}) {
+  return hasLinks && !isLinksTabActive;
+}

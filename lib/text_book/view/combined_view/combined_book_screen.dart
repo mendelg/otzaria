@@ -169,14 +169,6 @@ List<Link> buildCombinedViewContextMenuLinksForParagraph({
 );
 
 @visibleForTesting
-bool shouldShowOpenLinksPaneEntry({
-  required bool hasLinks,
-  required bool isLinksTabActive,
-}) {
-  return hasLinks && !isLinksTabActive;
-}
-
-@visibleForTesting
 bool shouldShowPersonalNotePreview({required bool isPersonalNotesTabActive}) =>
     !isPersonalNotesTabActive;
 
