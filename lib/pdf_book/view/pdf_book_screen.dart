@@ -411,73 +411,6 @@ AppContextMenuEntry buildPdfLinksContextMenuEntry({
   );
 }
 
-/// בונה את פריטי תפריט ההקשר של המפרשים, מקובצים לפי תקופה.
-///
-/// לכל קבוצה לא-ריקה מתווסף פריט "הצג את כל <תקופה>" שמסמן/מבטל את כל
-/// מפרשי הקבוצה (כמו בספרי טקסט), ואחריו המפרשים הבודדים. מפרשים שאינם
-/// משויכים לאף קבוצה מוצגים בסוף ללא כותרת.
-@visibleForTesting
-List<AppContextMenuEntry> buildGroupedCommentatorEntries({
-  required List<String> relevantCommentators,
-  required List<CommentatorGroup> commentatorGroups,
-  required Set<String> activeCommentators,
-  required void Function(Set<String> updated) onCommentatorsChanged,
-  required void Function(List<String> commentators) onToggleAll,
-}) {
-  final items = <AppContextMenuEntry>[];
-
-  AppContextMenuEntry buildItem(String commentator) {
-    final isActive = activeCommentators.contains(commentator);
-    return AppContextMenuEntry(
-      label: commentator,
-      isSelected: isActive,
-      // ביטול בחירה נעשה בסינון; לחיצה על מפרש פעיל פותחת את החלונית.
-      onTap: () => onCommentatorsChanged({...activeCommentators, commentator}),
-    );
-  }
-
-  if (commentatorGroups.isNotEmpty) {
-    final allGrouped = commentatorGroups
-        .expand((group) => group.commentators)
-        .toSet();
-
-    for (final group in commentatorGroups) {
-      final groupItems = group.commentators
-          .where((commentator) => relevantCommentators.contains(commentator))
-          .toList();
-      if (groupItems.isNotEmpty) {
-        if (items.isNotEmpty) {
-          items.add(const AppContextMenuEntry.divider());
-        }
-        // פריט "הצג את כל <תקופה>" שמסמן/מבטל את כל הקבוצה (כמו בספרי טקסט)
-        final groupActive = activeCommentators.containsAll(groupItems);
-        items.add(
-          AppContextMenuEntry(
-            label: 'הצג את כל ${group.title}',
-            isSelected: groupActive,
-            onTap: () => onToggleAll(groupItems),
-          ),
-        );
-        items.addAll(groupItems.map(buildItem));
-      }
-    }
-
-    final ungrouped = relevantCommentators
-        .where((commentator) => !allGrouped.contains(commentator))
-        .toList();
-    if (ungrouped.isNotEmpty) {
-      if (items.isNotEmpty) {
-        items.add(const AppContextMenuEntry.divider());
-      }
-      items.addAll(ungrouped.map(buildItem));
-    }
-  } else {
-    items.addAll(relevantCommentators.map(buildItem));
-  }
-
-  return items;
-}
-
 /// מעדכן ושומר בחירה שהשתנתה, ופותח את חלונית המפרשים בכל לחיצה.
 @visibleForTesting
 void applyPdfCommentatorSelection({
@@ -1501,36 +1434,22 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
-  void _setActiveCommentators(Set<String> updated) {
+  void _setActiveCommentators(List<String> updated) {
     applyPdfCommentatorSelection(
       activeCommentators: widget.tab.activeCommentators,
-      updated: updated,
+      updated: updated.toSet(),
       onChanged: _saveActiveCommentators,
       onOpenPane: _openCommentaryPane,
     );
   }
 
-  void _toggleAllCommentators(List<String> commentators) {
-    final allActive = widget.tab.activeCommentators.containsAll(commentators);
-    if (allActive) {
-      widget.tab.activeCommentators.removeAll(commentators);
-    } else {
-      widget.tab.activeCommentators.addAll(commentators);
-    }
-    _saveActiveCommentators();
+  void _openCommentatorsFilter() {
     _openCommentaryPane();
-  }
-
-  List<AppContextMenuEntry> _buildGroupedCommentatorEntries(
-    List<String> relevantCommentators,
-  ) {
-    return buildGroupedCommentatorEntries(
-      relevantCommentators: relevantCommentators,
-      commentatorGroups: _commentatorGroups,
-      activeCommentators: widget.tab.activeCommentators,
-      onCommentatorsChanged: _setActiveCommentators,
-      onToggleAll: _toggleAllCommentators,
-    );
+    _openPdfFilterNotifier.value++;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _openFilterRequest.value++;
+    });
   }
 
   List<AppContextMenuEntry> _buildPdfContextMenuEntries(
@@ -1539,10 +1458,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   ) {
     final (commentators: relevantCommentators, links: relevantLinks) =
         _getRelevantContent();
-
-    final allActive =
-        relevantCommentators.isNotEmpty &&
-        widget.tab.activeCommentators.containsAll(relevantCommentators);
 
     final isRightPaneClosed = switch (_bloc.state) {
       PdfBookLoaded(showRightPane: final isShown) => !isShown,
@@ -1564,38 +1479,18 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       isCommentatorsTabActive: isCommentatorsTabActive,
     );
 
-    final commentatorChildren = <AppContextMenuEntry>[
-      if (shouldShowOpenPaneEntry)
-        AppContextMenuEntry(
-          label: 'פתח את חלונית המפרשים',
-          icon: FluentIcons.panel_right_24_regular,
-          isHighlighted: true,
-          onTap: () => _openCommentaryPane(),
-        ),
-      if (shouldShowSelectEntry)
-        AppContextMenuEntry(
-          label: 'בחר מפרשים מרובים',
-          icon: FluentIcons.filter_24_regular,
-          isHighlighted: true,
-          onTap: () {
-            _openCommentaryPane();
-            _openPdfFilterNotifier.value++;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _openFilterRequest.value++;
-            });
-          },
-        ),
-      if (shouldShowOpenPaneEntry || shouldShowSelectEntry)
-        const AppContextMenuEntry.divider(),
-      AppContextMenuEntry(
-        label: 'הצג את כל המפרשים',
-        isSelected: allActive,
-        onTap: () => _toggleAllCommentators(relevantCommentators),
-      ),
-      if (relevantCommentators.isNotEmpty) const AppContextMenuEntry.divider(),
-      ..._buildGroupedCommentatorEntries(relevantCommentators),
-    ];
+    final commentatorChildren = buildCommentatorsContextMenuChildren(
+      activeCommentators: widget.tab.activeCommentators.toList(),
+      availableCommentators: relevantCommentators,
+      commentatorGroups: _commentatorGroups,
+      // Every change opens the pane, as the PDF has no inline commentaries.
+      onCommentatorsChanged: (updated, {required isAdding}) =>
+          _setActiveCommentators(updated),
+      onOpenPane: shouldShowOpenPaneEntry ? _openCommentaryPane : null,
+      onSelectMultiple: shouldShowSelectEntry ? _openCommentatorsFilter : null,
+      showAllLabel: 'הצג את כל המפרשים',
+      keepPaneEntriesWithoutCommentators: true,
+    );
 
     final showOpenLinksPaneEntry = shouldShowOpenLinksPaneEntry(
       hasLinks: relevantLinks.isNotEmpty,

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/book_common/utils/commentators_menu.dart';
 import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/pdf_book/view/pdf_book_screen.dart';
@@ -42,24 +43,24 @@ void main() {
       final modified = await file.lastModified();
       var saves = 0;
       var opens = 0;
-      final entries = buildGroupedCommentatorEntries(
-        relevantCommentators: const ['רש"י', 'רמב"ן'],
+      final entries = buildCommentatorsContextMenuChildren(
+        availableCommentators: const ['רש"י', 'רמב"ן'],
         commentatorGroups: const [],
-        activeCommentators: active,
-        onCommentatorsChanged: (updated) => applyPdfCommentatorSelection(
-          activeCommentators: active,
-          updated: updated,
-          onChanged: () {
-            saves++;
-            unawaited(
-              PdfBookPerBookSettings(
-                activeCommentators: active.toList(),
-              ).save(book),
-            );
-          },
-          onOpenPane: () => opens++,
-        ),
-        onToggleAll: (_) {},
+        activeCommentators: active.toList(),
+        onCommentatorsChanged: (updated, {required isAdding}) =>
+            applyPdfCommentatorSelection(
+              activeCommentators: active,
+              updated: updated.toSet(),
+              onChanged: () {
+                saves++;
+                unawaited(
+                  PdfBookPerBookSettings(
+                    activeCommentators: active.toList(),
+                  ).save(book),
+                );
+              },
+              onOpenPane: () => opens++,
+            ),
       );
       final entry = entries.firstWhere((entry) => entry.label == 'רש"י');
 
@@ -79,24 +80,24 @@ void main() {
     final active = {'רמב"ן'};
     var saves = 0;
     var opens = 0;
-    final entries = buildGroupedCommentatorEntries(
-      relevantCommentators: const ['רש"י', 'רמב"ן'],
+    final entries = buildCommentatorsContextMenuChildren(
+      availableCommentators: const ['רש"י', 'רמב"ן'],
       commentatorGroups: const [],
-      activeCommentators: active,
-      onCommentatorsChanged: (updated) => applyPdfCommentatorSelection(
-        activeCommentators: active,
-        updated: updated,
-        onChanged: () {
-          saves++;
-          unawaited(
-            PdfBookPerBookSettings(
-              activeCommentators: active.toList(),
-            ).save(book),
-          );
-        },
-        onOpenPane: () => opens++,
-      ),
-      onToggleAll: (_) {},
+      activeCommentators: active.toList(),
+      onCommentatorsChanged: (updated, {required isAdding}) =>
+          applyPdfCommentatorSelection(
+            activeCommentators: active,
+            updated: updated.toSet(),
+            onChanged: () {
+              saves++;
+              unawaited(
+                PdfBookPerBookSettings(
+                  activeCommentators: active.toList(),
+                ).save(book),
+              );
+            },
+            onOpenPane: () => opens++,
+          ),
     );
     final entry = entries.firstWhere((entry) => entry.label == 'רש"י');
     entry.onTap!();
