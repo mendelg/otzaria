@@ -20,6 +20,7 @@ import 'package:otzaria/settings/engine/settings_state.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/bloc/tabs_event.dart';
 import 'package:otzaria/tabs/bloc/tabs_state.dart';
+import 'package:otzaria/tabs/models/combined_tab.dart';
 import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/tabs/models/tab.dart';
@@ -412,6 +413,36 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(identical(tabScreenWidget(tester, 'ב'), before), isFalse);
+    });
+
+    testWidgets('committing a split ratio does not rebuild any tab content', (
+      tester,
+    ) async {
+      final background = [_tab('א'), _tab('ב'), _tab('ג')];
+      final split = CombinedTab(rightTab: _tab('ד'), leftTab: _tab('ה'));
+      final tabs = <OpenedTab>[...background, split];
+      addTearDown(() {
+        for (final t in [...background, split.rightTab, split.leftTab]) {
+          t.dispose();
+        }
+      });
+      final bloc = await pumpReadingScreen(tester, tabs);
+      await visitAllTabs(tester, bloc, 3);
+
+      const titles = ['א', 'ב', 'ג', 'ד', 'ה'];
+      final before = {for (final t in titles) t: tabScreenWidget(tester, t)};
+      split.splitRatio = 0.7;
+      bloc.add(const UpdateSplitRatio(0.7));
+      await tester.pumpAndSettle();
+
+      expect(split.splitRatio, 0.7);
+      for (final t in titles) {
+        expect(
+          identical(tabScreenWidget(tester, t), before[t]),
+          isTrue,
+          reason: 'the ratio is already on screen; "$t" must not be rebuilt',
+        );
+      }
     });
   });
 
