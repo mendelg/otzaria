@@ -1375,6 +1375,10 @@ class _PageShapeScreenState extends State<PageShapeScreen> {
                                                           _isLeftSidebarOpen &&
                                                           _leftSidebarTabIndex ==
                                                               kCommentaryTabIndex,
+                                                      isLinksTabActive:
+                                                          _isLeftSidebarOpen &&
+                                                          _leftSidebarTabIndex ==
+                                                              kLinksTabIndex,
                                                       onOpenCommentatorsPane:
                                                           _openCommentatorsPane,
                                                       onOpenCommentatorsPaneWithFilter:
