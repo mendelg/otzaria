@@ -171,7 +171,7 @@ class SemanticResultsBloc
       state.copyWith(
         status: SemanticResultsStatus.loaded,
         items: page.items,
-        pageableTotal: page.pageableTotal,
+        morePages: page.hasMore,
         isDebugPreview: source.isDebugPreview,
       ),
     );
@@ -210,10 +210,8 @@ class SemanticResultsBloc
         isLoadingMore: false,
         clearMessage: true,
         items: [...state.items, ...page.items],
-        // עמוד ריק אומר שאין עוד, גם כשהספירה מקורבת.
-        pageableTotal: page.items.isEmpty
-            ? state.items.length
-            : page.pageableTotal,
+        // עמוד ריק אומר שאין עוד, גם כשהמקור דיווח אחרת.
+        morePages: page.items.isNotEmpty && page.hasMore,
       ),
     );
     final context = _context;

@@ -104,6 +104,10 @@ class FakeBackend implements SemanticEngineBackend {
   final List<SemanticOpenRequest> openRequests = [];
   final List<SemanticInstallRequest> installRequests = [];
   final List<SemanticCancelHandle> searchHandles = [];
+  final List<SemanticSearchRequest> searchRequests = [];
+
+  /// התשובה לחיפוש; `null` = [emptyResponse].
+  SemanticSearchResponse? response;
 
   @override
   Future<SemanticBackendStatus> status() async => statusValue;
@@ -190,6 +194,7 @@ class FakeBackend implements SemanticEngineBackend {
   }) async {
     calls.add('search:${request.query}');
     searchHandles.add(cancel);
+    searchRequests.add(request);
     final gate = request.query == kSemanticWarmUpQuery
         ? warmUpGate
         : searchGate;
@@ -197,7 +202,7 @@ class FakeBackend implements SemanticEngineBackend {
     if (cancel.isCancelled) {
       throw const SemanticFailure(SemanticFailureKind.cancelled);
     }
-    return SemanticSearchOutcome(response: emptyResponse());
+    return SemanticSearchOutcome(response: response ?? emptyResponse());
   }
 }
 

@@ -75,8 +75,8 @@ SemanticSearchParamsSnapshot buildSemanticParamsSnapshot(
   SemanticRankingConfig? ranking,
 }) => SemanticSearchParamsSnapshot(
   retrievalMode: options.includeLexical ? 'hybrid' : 'semanticOnly',
-  lexicalMode: 'exact',
-  fuzzyMaxDistance: 0,
+  lexicalMode: kSmartSearchLexicalMode.name,
+  fuzzyMaxDistance: kSmartSearchFuzzyMaxDistance,
   grouping: options.groupIdenticalText ? 'identicalText' : null,
   matchNikud: false,
   matchTaamim: false,

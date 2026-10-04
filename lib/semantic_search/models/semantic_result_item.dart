@@ -117,8 +117,8 @@ class SemanticResultItem extends Equatable {
 class SemanticResultsPage {
   final List<SemanticResultItem> items;
 
-  /// מספר הפריטים שאפשר לדפדף אליהם (קבוצות כשיש איחוד).
-  final int pageableTotal;
+  /// האם יש עמוד נוסף; לא נגזר מהספירות, שמתארות חלון מועמדים.
+  final bool hasMore;
   final String executedMode;
   final bool semanticAvailable;
   final String? fallbackReason;
@@ -133,7 +133,7 @@ class SemanticResultsPage {
 
   const SemanticResultsPage({
     required this.items,
-    required this.pageableTotal,
+    required this.hasMore,
     required this.executedMode,
     required this.semanticAvailable,
     required this.latencyMs,

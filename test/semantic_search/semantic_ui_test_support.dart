@@ -105,6 +105,9 @@ class FakeResultsSource implements SemanticResultsSource {
   Object? error;
   Completer<void>? gate;
   bool returnsNull = false;
+
+  /// ה-hasMore שהמקור מדווח; `null` = לפי [total].
+  bool? reportsHasMore;
   int cancels = 0;
   final List<({int offset, int limit})> fetches = [];
 
@@ -130,7 +133,7 @@ class FakeResultsSource implements SemanticResultsSource {
     final page = all.skip(offset).take(limit).toList();
     return SemanticResultsPage(
       items: page,
-      pageableTotal: all.length,
+      hasMore: reportsHasMore ?? offset + page.length < all.length,
       executedMode: 'hybrid',
       semanticAvailable: true,
       latencyMs: 12,

@@ -77,6 +77,8 @@ class EngineSemanticResultsSource implements SemanticResultsSource {
         facets: options.facets,
         limit: limit,
         offset: offset,
+        lexicalMode: kSmartSearchLexicalMode,
+        fuzzyMaxDistance: kSmartSearchFuzzyMaxDistance,
         retrievalMode: options.includeLexical
             ? SemanticRetrievalMode.hybrid
             : SemanticRetrievalMode.semanticOnly,
@@ -94,7 +96,7 @@ class EngineSemanticResultsSource implements SemanticResultsSource {
         for (final result in response.results)
           SemanticResultItem.fromEngine(result),
       ],
-      pageableTotal: response.groupCount ?? response.totalCount,
+      hasMore: response.hasMore,
       executedMode: response.executedMode.name,
       semanticAvailable: response.semanticAvailable,
       fallbackReason: response.fallbackReason,
@@ -157,7 +159,8 @@ class DebugLexicalPreviewSource implements SemanticResultsSource {
         for (var i = 0; i < page.results.length; i++)
           SemanticResultItem.debugFromLexical(page.results[i], offset + i + 1),
       ],
-      pageableTotal: page.groupCount ?? page.totalCount,
+      hasMore:
+          offset + page.results.length < (page.groupCount ?? page.totalCount),
       executedMode: 'lexicalOnly',
       semanticAvailable: false,
       fallbackReason: kSemanticDebugPreviewFallbackReason,

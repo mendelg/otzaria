@@ -213,6 +213,8 @@ class OnnxSemanticEngineAdapter implements SemanticEngineBackend {
       duplicatePenalty: config.duplicatePenalty,
       metadataRankingEnabled: config.metadataRankingEnabled,
       candidateWindowMultiplier: config.candidateWindowMultiplier,
+      foundationalBonus: config.foundationalBonus,
+      foundationalCandidateShare: config.foundationalCandidateShare,
     );
   }
 

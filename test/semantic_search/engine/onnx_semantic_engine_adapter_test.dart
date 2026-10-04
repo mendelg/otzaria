@@ -260,6 +260,22 @@ void main() {
     expect(tokens.last.isCancelled, isTrue);
   });
 
+  test('mapRanking ממפה את כל השדות, כולל ספרי היסוד', () {
+    const config = SemanticRankingConfig(
+      foundationalBonus: 0.004,
+      foundationalCandidateShare: 0.25,
+    );
+    final options = OnnxSemanticEngineAdapter.mapRanking(config);
+    expect(options.foundationalBonus, 0.004);
+    expect(options.foundationalCandidateShare, 0.25);
+
+    final defaults = OnnxSemanticEngineAdapter.mapRanking(
+      const SemanticRankingConfig(),
+    );
+    // ברירות המחדל של האפליקציה זהות לאלה של המנוע.
+    expect(defaults, const SemanticRankingOptions());
+  });
+
   test('ביטול בזמן חיפוש נשלח למנוע ומשחרר את ה-token בסיום', () async {
     engine.searchPause = Completer<void>();
     final cancel = SemanticCancelHandle();

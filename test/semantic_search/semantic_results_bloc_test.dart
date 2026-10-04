@@ -113,7 +113,12 @@ void main() {
       expect(context.params.facets, ['/תנ״ך']);
       expect(context.params.allLibrary, isFalse);
       expect(context.params.pageSize, 30);
-      expect(context.params.ranking?['fusionStrategy'], 'weighted');
+      expect(context.params.ranking?['fusionStrategy'], 'rrf');
+      expect(context.params.ranking?['foundationalBonus'], 0.002);
+      expect(context.params.ranking?['foundationalCandidateShare'], 0.5);
+      // החיפוש החכם שולח fuzzy במרחק 0 — ערך קיים ברשימה הסגורה של השרת.
+      expect(context.params.lexicalMode, 'fuzzy');
+      expect(context.params.fuzzyMaxDistance, 0);
       expect(context.response.executedMode, 'hybrid');
       expect(context.response.totalCount, 3);
       expect(context.engine.state, 'ready');
@@ -479,5 +484,41 @@ void main() {
     );
     expect(recorder.opens.single.result.rank, 1);
     expect(recorder.opens.single.result.title, firstItem.title);
+  });
+
+  group('דפדוף לפי hasMore של המקור', () {
+    test('אין עוד עמוד כשהמקור אומר כך, גם כשהספירה גדולה', () async {
+      final source = FakeResultsSource(total: 75)..reportsHasMore = false;
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+
+      expect(bloc.state.items, hasLength(30));
+      expect(bloc.state.hasMore, isFalse);
+    });
+
+    test('יש עוד עמוד כשהמקור אומר כך; עמוד ריק סוגר את הדפדוף', () async {
+      final source = FakeResultsSource(total: 3)..reportsHasMore = true;
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      expect(bloc.state.hasMore, isTrue);
+
+      bloc.add(const SemanticMoreResultsRequested());
+      await _settle(bloc);
+      expect(bloc.state.items, hasLength(3));
+      expect(bloc.state.hasMore, isFalse);
+      expect(source.fetches.map((f) => f.offset), [0, 3]);
+    });
   });
 }
