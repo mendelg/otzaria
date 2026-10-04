@@ -1992,109 +1992,100 @@ class _CombinedViewState extends State<CombinedView> {
                         },
                         child: widget.isPreviewMode
                             ? _buildPreviewList(state)
-                            // מרווח זהה לרוחב המסילה בקצה הנגדי, כדי שעמודת
-                            // הטקסט תהיה ממורכזת בין דפנות אזור הקריאה.
-                            : Padding(
-                                padding: const EdgeInsetsDirectional.only(
-                                  end: ScrollablePositionedListScrollbar
-                                      .trackWidth,
-                                ),
-                                child: ScrollablePositionedListScrollbar(
-                                  scrollController: widget.tab.scrollController,
-                                  itemPositionsListener:
-                                      widget.tab.positionsListener,
-                                  offsetController:
+                            : ScrollablePositionedListScrollbar(
+                                scrollController: widget.tab.scrollController,
+                                itemPositionsListener:
+                                    widget.tab.positionsListener,
+                                offsetController:
+                                    widget.tab.mainOffsetController,
+                                itemCount: state.readingSegments.isNotEmpty
+                                    ? state.readingSegments.length
+                                    : widget.data.length,
+                                labelForIndex: state.tableOfContents.isEmpty
+                                    ? null
+                                    : (index) {
+                                        // במצב קריאה רציף האינדקס הוא אינדקס
+                                        // סגמנט; ממירים לשורת המקור כדי שמיפוי
+                                        // ה-TOC (שמבוסס על מספרי שורות) יהיה נכון.
+                                        final segments = state.readingSegments;
+                                        final lineIndex = segments.isNotEmpty
+                                            ? (index >= 0 &&
+                                                      index < segments.length
+                                                  ? segments[index]
+                                                        .startLineIndex
+                                                  : index)
+                                            : index;
+                                        final ref = refFromTocList(
+                                          lineIndex,
+                                          state.tableOfContents,
+                                        );
+                                        return addBookTitleToRef(
+                                          ref,
+                                          state.book.title,
+                                        );
+                                      },
+                                child: ProgressiveScroll(
+                                  focusNode: _focusNode,
+                                  maxSpeed: 10000.0,
+                                  curve: 10.0,
+                                  accelerationFactor: 5,
+                                  scrollController:
                                       widget.tab.mainOffsetController,
-                                  itemCount: state.readingSegments.isNotEmpty
-                                      ? state.readingSegments.length
-                                      : widget.data.length,
-                                  labelForIndex: state.tableOfContents.isEmpty
-                                      ? null
-                                      : (index) {
-                                          // במצב קריאה רציף האינדקס הוא אינדקס
-                                          // סגמנט; ממירים לשורת המקור כדי שמיפוי
-                                          // ה-TOC (שמבוסס על מספרי שורות) יהיה נכון.
-                                          final segments =
-                                              state.readingSegments;
-                                          final lineIndex = segments.isNotEmpty
-                                              ? (index >= 0 &&
-                                                        index < segments.length
-                                                    ? segments[index]
-                                                          .startLineIndex
-                                                    : index)
-                                              : index;
-                                          final ref = refFromTocList(
-                                            lineIndex,
-                                            state.tableOfContents,
-                                          );
-                                          return addBookTitleToRef(
-                                            ref,
-                                            state.book.title,
+                                  itemScrollController:
+                                      widget.tab.scrollController,
+                                  child:
+                                      BlocBuilder<
+                                        PersonalNotesBloc,
+                                        PersonalNotesState
+                                      >(
+                                        builder: (context, notesState) {
+                                          final noteMap =
+                                              <int, List<PersonalNote>>{};
+                                          if (notesState.bookId ==
+                                              personalNotesBookKey(
+                                                state.book,
+                                              )) {
+                                            for (final note
+                                                in notesState.locatedNotes) {
+                                              final line = note.lineNumber;
+                                              if (line == null) continue;
+                                              noteMap
+                                                  .putIfAbsent(line, () => [])
+                                                  .add(note);
+                                            }
+                                          }
+                                          return SmoothWheelScroll(
+                                            child: ValueListenableBuilder(
+                                              valueListenable:
+                                                  _savedSelectedText,
+                                              builder:
+                                                  (
+                                                    context,
+                                                    selected,
+                                                    list,
+                                                  ) => ScrollPositionReanchor(
+                                                    // עיגון הוא קפיצה, והיה מנקה את הבחירה.
+                                                    enabled: selected == null,
+                                                    preferredIndex:
+                                                        _selectedItemIndex(
+                                                          state,
+                                                        ),
+                                                    scrollController: widget
+                                                        .tab
+                                                        .scrollController,
+                                                    positionsListener: widget
+                                                        .tab
+                                                        .positionsListener,
+                                                    child: list!,
+                                                  ),
+                                              child: buildOuterList(
+                                                state,
+                                                noteMap,
+                                              ),
+                                            ),
                                           );
                                         },
-                                  child: ProgressiveScroll(
-                                    focusNode: _focusNode,
-                                    maxSpeed: 10000.0,
-                                    curve: 10.0,
-                                    accelerationFactor: 5,
-                                    scrollController:
-                                        widget.tab.mainOffsetController,
-                                    itemScrollController:
-                                        widget.tab.scrollController,
-                                    child:
-                                        BlocBuilder<
-                                          PersonalNotesBloc,
-                                          PersonalNotesState
-                                        >(
-                                          builder: (context, notesState) {
-                                            final noteMap =
-                                                <int, List<PersonalNote>>{};
-                                            if (notesState.bookId ==
-                                                personalNotesBookKey(
-                                                  state.book,
-                                                )) {
-                                              for (final note
-                                                  in notesState.locatedNotes) {
-                                                final line = note.lineNumber;
-                                                if (line == null) continue;
-                                                noteMap
-                                                    .putIfAbsent(line, () => [])
-                                                    .add(note);
-                                              }
-                                            }
-                                            return SmoothWheelScroll(
-                                              child: ValueListenableBuilder(
-                                                valueListenable:
-                                                    _savedSelectedText,
-                                                builder:
-                                                    (
-                                                      context,
-                                                      selected,
-                                                      list,
-                                                    ) => ScrollPositionReanchor(
-                                                      // עיגון הוא קפיצה, והיה מנקה את הבחירה.
-                                                      enabled: selected == null,
-                                                      preferredIndex:
-                                                          _selectedItemIndex(
-                                                            state,
-                                                          ),
-                                                      scrollController: widget
-                                                          .tab
-                                                          .scrollController,
-                                                      positionsListener: widget
-                                                          .tab
-                                                          .positionsListener,
-                                                      child: list!,
-                                                    ),
-                                                child: buildOuterList(
-                                                  state,
-                                                  noteMap,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                  ),
+                                      ),
                                 ),
                               ),
                       ),
@@ -2177,6 +2168,11 @@ class _CombinedViewState extends State<CombinedView> {
       ),
       initialScrollIndex: clampedInitial,
       initialAlignment: initialReadingAlignment(clampedInitial),
+      // מרווח ברוחב המסילה בקצה הנגדי ממרכז את הטקסט; הוא בתוך הרשימה ולא
+      // סביבה, כדי שטעם שבולט אחרי המילה האחרונה בשורה לא ייחתך בגבול שלה.
+      padding: const EdgeInsetsDirectional.only(
+        end: ScrollablePositionedListScrollbar.trackWidth,
+      ).resolve(Directionality.of(context)),
       itemPositionsListener: widget.tab.positionsListener,
       itemScrollController: widget.tab.scrollController,
       scrollOffsetController: widget.tab.mainOffsetController,

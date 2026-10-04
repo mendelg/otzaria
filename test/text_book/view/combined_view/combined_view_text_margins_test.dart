@@ -181,11 +181,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  /// השוליים של השורה הראשונה משני צדי אזור הרשימה.
-  ({double start, double end}) lineInsets(WidgetTester tester) {
+  /// השוליים של השורה הראשונה משני צדי אזור התוכן של הרשימה. בתצוגה הרגילה
+  /// המרווח שממרכז את הטקסט מול המסילה יושב בתוך הרשימה, בקצה הסוף.
+  ({double start, double end}) lineInsets(
+    WidgetTester tester, {
+    double listEndPadding = ScrollablePositionedListScrollbar.trackWidth,
+  }) {
     final list = tester.getRect(find.byType(ScrollablePositionedList));
     final line = tester.getRect(find.byType(SmartTextWidget).first);
-    return (start: list.right - line.right, end: line.left - list.left);
+    return (
+      start: list.right - line.right,
+      end: line.left - list.left - listEndPadding,
+    );
   }
 
   /// השוליים של השורה הראשונה משני צדי אזור הקריאה כולו — כולל המסילה.
@@ -232,7 +239,7 @@ void main() {
         textMaxWidth: -11,
         size: const Size(420, 700),
       );
-      final insets = lineInsets(tester);
+      final insets = lineInsets(tester, listEndPadding: 0);
       expect(insets.start, 0.0);
       expect(insets.end, 0.0);
     });
