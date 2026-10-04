@@ -75,6 +75,12 @@ class CalendarCubit extends Cubit<CalendarState> {
   int _pluginRefreshGeneration = 0;
   int _calendarWidgetCount = 0;
 
+  // אינדקס אירועים לפי תאריך, לשימוש ב-eventsForDate. נבנה מחדש רק כש-
+  // state.events מתחלף (זהות רשימה, לא שוויון ערכים) — ראו _rebuildEventIndexIfNeeded.
+  List<CustomEvent>? _eventIndexSource;
+  Map<DateTime, List<CustomEvent>>? _nonRecurringEventsByDate;
+  List<CustomEvent>? _recurringEvents;
+
   // Getter for accessing notification service from outside
   NotificationService get notificationService => _notificationService;
 
@@ -1279,9 +1285,61 @@ class CalendarCubit extends Cubit<CalendarState> {
     }
   }
 
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  /// בונה מחדש אינדקס תאריך→אירועים לא-חוזרים, ומפריד את האירועים החוזרים
+  /// (בדרך כלל מעטים) לרשימה נפרדת. כך eventsForDate לא סורק מחדש את כל
+  /// רשימת האירועים בכל יום — תצוגת חודש מרנדרת עד 42 תאים, וכל תא קורא
+  /// ל-eventsForDate פעם אחת.
+  void _rebuildEventIndexIfNeeded() {
+    final events = state.events;
+    if (identical(_eventIndexSource, events)) return;
+
+    final byDate = <DateTime, List<CustomEvent>>{};
+    final recurring = <CustomEvent>[];
+    for (final e in events) {
+      if (e.recurring) {
+        recurring.add(e);
+        continue;
+      }
+      final start = _dateOnly(e.baseGregorianDate);
+      final durationDays = e.endGregorianDate == null
+          ? 0
+          : _dateOnly(
+              e.endGregorianDate!,
+            ).difference(start).inDays.clamp(0, 366);
+      // הולכים יום-קלנדרי אחרי יום-קלנדרי (DateTime(y, m, day+1), לא
+      // Duration קבוע) ובודקים בכל יום את אותו תנאי בדיוק כמו occursOn.
+      // ליד מעבר לשעון קיץ יום אחד מתקצר ל-23 שעות, מה ש-inDays מעגל
+      // כלפי מטה — occursOn (ולכן גם האינדקס כאן) עשוי להתאים ליום אחד
+      // נוסף סביב המעבר; לא מניחים עלייה מונוטונית וממשיכים לבדוק כל
+      // מועמד עד הגבול, כדי לשחזר את ההתנהגות הזו במדויק.
+      var candidate = start;
+      for (var guard = 0; guard <= durationDays + 10; guard++) {
+        if (candidate.difference(start).inDays <= durationDays) {
+          byDate.putIfAbsent(candidate, () => []).add(e);
+        }
+        candidate = DateTime(
+          candidate.year,
+          candidate.month,
+          candidate.day + 1,
+        );
+      }
+    }
+    _nonRecurringEventsByDate = byDate;
+    _recurringEvents = recurring;
+    _eventIndexSource = events;
+  }
+
   List<CustomEvent> eventsForDate(DateTime date) {
-    return state.events.where((e) => e.occursOn(date)).toList()
-      ..sort(compareCalendarEventsByTime);
+    _rebuildEventIndexIfNeeded();
+    final day = _dateOnly(date);
+    final matches = <CustomEvent>[
+      ...?_nonRecurringEventsByDate![day],
+      for (final e in _recurringEvents!)
+        if (e.occursOn(date)) e,
+    ];
+    return matches..sort(compareCalendarEventsByTime);
   }
 
   List<CustomEvent> getFilteredEvents(String query) {
