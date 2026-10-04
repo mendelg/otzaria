@@ -69,6 +69,7 @@ SemanticResultSnapshot buildSemanticResultSnapshot(
 }
 
 /// הפרמטרים שנשלחו לחיפוש, כפי שהם נרשמים בטלמטריה.
+/// הבקשה ולא מה שבוצע: ביטוי במירכאות נשלח כ-fuzzy והמנוע מריץ אותו כ-exact.
 SemanticSearchParamsSnapshot buildSemanticParamsSnapshot(
   SemanticQueryOptions options, {
   required int pageSize,

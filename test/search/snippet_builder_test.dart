@@ -68,6 +68,34 @@ Future<void> main() async {
       expect(_allText(spans), 'א ב ג ד ה');
     });
 
+    test('קינון font ו-mark: התג החיצוני קובע בשני הכיוונים', () {
+      const markStyle = TextStyle(backgroundColor: Color(0x1F000000));
+      final spans = SnippetBuilder.fromHighlightedHtml(
+        html:
+            '<mark>א <font color=red>ב</font></mark> '
+            '<font color=red>ג <mark>ד</mark></font>',
+        defaultStyle: _defaultStyle,
+        highlightStyle: _highlightStyle,
+        markStyle: markStyle,
+      );
+      List<String?> textsWith(TextStyle style) => [
+        for (final span in spans.whereType<TextSpan>())
+          if (identical(span.style, style)) span.text,
+      ];
+
+      expect(textsWith(markStyle), ['א ', 'ב']);
+      expect(textsWith(_highlightStyle), ['ג ', 'ד']);
+      expect(textsWith(_defaultStyle), [' ']);
+
+      // בלי markStyle שני התגים מקבלים את ההדגשה הרגילה, כמו קודם.
+      final plain = SnippetBuilder.fromHighlightedHtml(
+        html: '<mark>א <font color=red>ב</font></mark>',
+        defaultStyle: _defaultStyle,
+        highlightStyle: _highlightStyle,
+      );
+      expect(_highlighted(plain), 'א ב');
+    });
+
     test('תגי עיצוב של תוכן הספר (b) אינם נחשבים הדגשת חיפוש', () {
       final spans = SnippetBuilder.fromHighlightedHtml(
         html: '<b>כותרת</b> טקסט רגיל',

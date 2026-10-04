@@ -778,5 +778,110 @@ void main() {
       expect(recorder.opens.single.result.passageText, 'הפסקה המלאה של ספר 1');
       expect(identical(bloc.state.items.first, items.first), isTrue);
     });
+
+    List<SemanticResultItem> semanticItems(int count) => [
+      for (var i = 1; i <= count; i++)
+        resultItem(i, source: SemanticResultSource.semantic),
+    ];
+
+    test(
+      'עמוד 2 נטען בזמן שאצוות של עמוד 1 ממתינות: כל סימון במקומו',
+      () async {
+        final gate = Completer<void>();
+        final source = FakeResultsSource(items: semanticItems(60));
+        source.highlighter = (items, _) async {
+          if (source.highlightCalls.length == 1) await gate.future;
+          return markAll(items);
+        };
+        final bloc = buildResultsBloc(
+          source: source,
+          recorder: RecordingRecorder(),
+        );
+        addTearDown(bloc.close);
+
+        bloc.add(const SemanticSearchSubmitted(_options));
+        await _settle(bloc);
+        expect(source.highlightCalls, hasLength(1));
+        bloc.add(const SemanticMoreResultsRequested());
+        await _settle(bloc);
+        expect(bloc.state.items, hasLength(60));
+        bloc.add(const SemanticVoteToggled(3, SearchFeedbackVote.like));
+        await _settle(bloc);
+        // הסימון של עמוד 2 ממתין מאחורי עמוד 1.
+        expect(source.highlightCalls, hasLength(1));
+
+        gate.complete();
+        await _settle(bloc);
+        expect(bloc.state.passageHighlights, hasLength(60));
+        for (var i = 0; i < 60; i++) {
+          expect(
+            bloc.state.passageHighlights[i],
+            contains('הקטע הקרוב ${i + 1}<'),
+          );
+        }
+        expect(bloc.state.votes[3], SearchFeedbackVote.like);
+        expect(bloc.state.isLoadingMore, isFalse);
+      },
+    );
+
+    test('סימון שמגיע בזמן טעינת עמוד שומר את מצב הטעינה', () async {
+      final source = FakeResultsSource(items: semanticItems(60));
+      final gate = Completer<void>();
+      source.highlighter = (items, _) async {
+        await gate.future;
+        return markAll(items);
+      };
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      source.gate = Completer<void>();
+      bloc.add(const SemanticMoreResultsRequested());
+      await _settle(bloc);
+      expect(bloc.state.isLoadingMore, isTrue);
+
+      gate.complete();
+      await _settle(bloc);
+      expect(bloc.state.passageHighlights, hasLength(30));
+      expect(bloc.state.isLoadingMore, isTrue);
+
+      source.gate!.complete();
+      await _settle(bloc);
+      expect(bloc.state.isLoadingMore, isFalse);
+      expect(bloc.state.items, hasLength(60));
+      expect(bloc.state.passageHighlights, hasLength(60));
+    });
+
+    test('ביטול טעינת עמוד אינו עוצר את הסימון', () async {
+      final source = FakeResultsSource(items: semanticItems(60))
+        ..highlighter = (items, _) async => markAll(items);
+      final bloc = buildResultsBloc(
+        source: source,
+        recorder: RecordingRecorder(),
+      );
+      addTearDown(bloc.close);
+
+      bloc.add(const SemanticSearchSubmitted(_options));
+      await _settle(bloc);
+      source.gate = Completer<void>();
+      bloc.add(const SemanticMoreResultsRequested());
+      await _settle(bloc);
+      bloc.add(const SemanticSearchCancelRequested());
+      await _settle(bloc);
+      source.gate!.complete();
+      await _settle(bloc);
+      expect(bloc.state.items, hasLength(30));
+      expect(bloc.state.passageHighlights, hasLength(30));
+
+      source.gate = null;
+      bloc.add(const SemanticMoreResultsRequested());
+      await _settle(bloc);
+      expect(bloc.state.items, hasLength(60));
+      expect(bloc.state.passageHighlights, hasLength(60));
+    });
   });
 }

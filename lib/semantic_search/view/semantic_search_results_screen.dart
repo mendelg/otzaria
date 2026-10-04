@@ -44,6 +44,19 @@ import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
     show MergedSibling;
 
+/// האם לבנות מחדש את מסגרת המסך (סרגל, מסננים, תצוגה מקדימה). סימון קטע
+/// והצבעה משנים רק כרטיסים, והרשימה הפנימית מאזינה ל-bloc בעצמה.
+@visibleForTesting
+bool semanticLayoutNeedsRebuild(
+  SemanticResultsState previous,
+  SemanticResultsState current,
+) =>
+    previous.copyWith(
+      votes: current.votes,
+      passageHighlights: current.passageHighlights,
+    ) !=
+    current;
+
 /// מסך כרטיסיית התוצאות של החיפוש הסמנטי.
 class SemanticSearchResultsScreen extends StatefulWidget {
   const SemanticSearchResultsScreen({
@@ -423,6 +436,7 @@ class _SemanticSearchResultsScreenState
             _clearPreview();
             if (_scrollController.hasClients) _scrollController.jumpTo(0);
           },
+          buildWhen: semanticLayoutNeedsRebuild,
           builder: (context, state) {
             final loading = state.status == SemanticResultsStatus.loading;
             return SearchResultsLayout(

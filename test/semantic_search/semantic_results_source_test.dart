@@ -1,13 +1,56 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/search/search_engine_gateway.dart';
+import 'package:otzaria/search/search_repository.dart';
+import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/repository/semantic_results_source.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart';
 
+import '../support/search_engine_test_init.dart';
 import 'semantic_test_support.dart';
+
+/// מנוע מילולי שמחזיר [total] תוצאות, בעמודים לפי הבקשה.
+class _LexicalEngine extends Fake implements SearchEngineOperations {
+  _LexicalEngine(this.total, {this.groupCount});
+
+  final int total;
+  final int? groupCount;
+
+  @override
+  void primeHighlightPattern(SearchEngineRequest request) {}
+
+  @override
+  Future<SearchPageResult> searchAndCountExact(
+    SearchEngineRequest request,
+  ) async {
+    final shown = (groupCount ?? total) - request.offset;
+    return SearchPageResult(
+      totalCount: total,
+      groupCount: groupCount,
+      truncated: false,
+      results: [
+        for (var i = 0; i < shown.clamp(0, request.limit); i++)
+          SearchResult(
+            title: 'ספר',
+            reference: 'ספר, א',
+            text: 'טקסט',
+            id: BigInt.from(request.offset + i),
+            segment: BigInt.from(request.offset + i),
+            isPdf: false,
+            filePath: 'id:${request.offset + i}',
+            mergedCount: 1,
+            merged: const [],
+            textStatus: TextStatus.ok,
+            continuesToNextLine: false,
+          ),
+      ],
+    );
+  }
+}
 
 SemanticSearchResult _result(int n) => SemanticSearchResult(
   title: 'ספר $n',
@@ -47,7 +90,8 @@ SemanticSearchResponse _response({
   hasMore: hasMore,
 );
 
-void main() {
+Future<void> main() async {
+  final engineReady = await tryInitSearchEngine();
   late Directory root;
   late FakeBackend backend;
   late EngineSemanticResultsSource source;
@@ -139,5 +183,33 @@ void main() {
         ),
       ),
     );
+  });
+
+  group('תצוגה מקדימה בפיתוח', () {
+    Future<List<bool>> pages(_LexicalEngine engine, int limit) async {
+      final preview = DebugLexicalPreviewSource(
+        engineSnapshot: () async => const SemanticEngineSnapshot(),
+        searchRepository: SearchRepository(engineProvider: () async => engine),
+      );
+      final more = <bool>[];
+      for (var offset = 0; ; offset += limit) {
+        final page = await preview.fetch(
+          const SemanticQueryOptions(query: 'שלום'),
+          offset: offset,
+          limit: limit,
+        );
+        more.add(page!.hasMore);
+        if (!page.hasMore) return more;
+      }
+    }
+
+    test('hasMore לפי הספירה, עד העמוד האחרון', () async {
+      expect(await pages(_LexicalEngine(7), 3), [true, true, false]);
+      expect(await pages(_LexicalEngine(6), 3), [true, false]);
+    }, skip: engineReady ? false : searchEngineSkipReason);
+
+    test('עם איחוד — לפי מספר הקבוצות', () async {
+      expect(await pages(_LexicalEngine(50, groupCount: 4), 3), [true, false]);
+    }, skip: engineReady ? false : searchEngineSkipReason);
   });
 }
