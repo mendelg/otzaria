@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/search/utils/find_match_utils.dart';
 import 'package:otzaria/search/utils/scope_tree.dart';
 
 /// בונה ספריית בדיקה: תנ״ך, משנה, ותחת "מדרש" יש "הלכה" ו"אגדה".
@@ -147,6 +148,53 @@ void main() {
 
     test('search על מחרוזת ריקה מחזיר רשימה ריקה', () {
       expect(tree.search(''), isEmpty);
+    });
+
+    test('הטקסט המנורמל של צומת מחושב פעם אחת ונשמר בין חיפושים', () {
+      final t = ScopeTree.fromLibrary(
+        _lib([
+          _mkCat(
+            'שו"ע',
+            books: [TextBook(title: 'אֹרַח חַיִּים', author: "ר' יוסף קָארוֹ")],
+          ),
+        ]),
+      );
+      final node = t.nodesByFacet.values.firstWhere((n) => n.isBook);
+      final title = node.normalizedTitle;
+      final subtitle = node.normalizedSubtitle;
+      // הנרמול חייב לשנות את הטקסט, אחרת identical מצליח גם בחישוב חוזר.
+      expect(title, isNot(node.title));
+      expect(subtitle, isNot(node.subtitle));
+      t.search('אורח');
+      t.search('קארו');
+      expect(identical(node.normalizedTitle, title), isTrue);
+      expect(identical(node.normalizedSubtitle, subtitle), isTrue);
+    });
+
+    test('search מחזיר תוצאות זהות לנרמול ישיר של הכותרות בכל קריאה', () {
+      final t = ScopeTree.fromLibrary(
+        _lib([
+          _mkCat(
+            'שו"ע',
+            books: [
+              TextBook(title: 'אורח־חיים', author: 'רבי יוסף קארו'),
+              TextBook(title: 'אֹרַח חַיִּים', author: 'מחבר | אחר'),
+              TextBook(title: 'יורה דעה'),
+            ],
+          ),
+        ]),
+      );
+      for (final query in ['אורח', 'חיים', 'שוע', 'קארו', 'דעה', 'אחר']) {
+        final expected = <String>{
+          for (final node in t.nodesByFacet.values)
+            if (normalizeFindText(node.title).contains(query) ||
+                normalizeFindText(node.subtitle).contains(query))
+              node.facet,
+        };
+        final actual = t.search(query).map((r) => r.facet).toSet();
+        expect(actual, equals(expected), reason: query);
+        expect(actual, isNotEmpty, reason: query);
+      }
     });
   });
 
