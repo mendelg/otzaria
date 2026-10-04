@@ -138,6 +138,42 @@ void main() {
           throwsA(isA<PluginContextMenuException>()),
         );
       });
+
+      test(r'localService.post עם $storage נרשם; $book אינו זמין כאן', () {
+        registry.registerPayload('marker', {
+          'id': 'search',
+          'title': 'חיפוש בשירות',
+          'action': {
+            'type': 'localService.post',
+            'args': {
+              'port': {r'$storage': 'servicePort'},
+              'path': '/text/search',
+              'body': {
+                'text': {r'$selection': 'selectedText'},
+              },
+            },
+          },
+        });
+        expect(registry.findItem('marker', 'search')?.action, isNotNull);
+
+        expect(
+          () => registry.registerPayload('marker', {
+            'id': 'book',
+            'title': 'ספר',
+            'action': {
+              'type': 'localService.post',
+              'args': {
+                'port': 39700,
+                'path': '/x',
+                'body': {
+                  'id': {r'$book': 'id'},
+                },
+              },
+            },
+          }),
+          throwsA(isA<PluginContextMenuException>()),
+        );
+      });
     });
 
     test('updates an existing item without changing its id', () {

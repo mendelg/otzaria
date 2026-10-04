@@ -170,7 +170,7 @@ my-plugin/
 | `contributes.startup.programs` | `[]` | תכניות חישוב Host מוולדות, ללא JavaScript; ראו `API_REFERENCE.md` §תכניות Host ללא WebView. |
 | `contributes.startup.searchDialogItems` | `[]` | שורות checkbox סטטיות; `openPluginOnSubmit` יכול לנתב את אישור החיפוש לתוסף. |
 | `contributes.startup.externalEditions` | `[]` | קונפיגורציית מהדורות מקבילות של ספק חיצוני (טבלת מיפוי במקור DB מוכרז); ראו `API_REFERENCE.md` §מהדורות מקבילות חיצוניות. |
-| `contributes.startup.libraryBooks` | `[]` | ספק ספרים שמצטרף לאיתור הספרים במסך הספרייה, ולחיצה על ספריו נמסרת לתוסף. מגרסה 0.9.98; ראו `API_REFERENCE.md` §ספרים בחיפוש הספרייה. |
+| `contributes.startup.libraryBooks` | `[]` | ספק ספרים שמצטרף לאיתור הספרים במסך הספרייה. לחיצה על ספריו נמסרת לתוסף, או מבצעת `openAction` בלי להעיר את המנוע. מגרסה 0.9.98; ראו `API_REFERENCE.md` §ספרים בחיפוש הספרייה. |
 | `contributes.startup.activationEvents` | `[]` | אירועים שמעירים את מנוע הרקע בעצלנות; כל נושא דורש גם הרשאת subscribe מתאימה. |
 | `contributes.startup.keepAlive` | `false` | בקשה למנוע כיבוי אוטומטי; דורשת אישור נפרד של `app.background_keep_alive`. |
 

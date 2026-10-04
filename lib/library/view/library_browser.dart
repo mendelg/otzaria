@@ -27,6 +27,7 @@ import 'package:otzaria/settings/services/custom_folders/bloc/custom_folders_blo
 import 'package:otzaria/widgets/feedback/edge_scrollbar_behavior.dart';
 import 'package:otzaria/widgets/lists/filter_chips_widget.dart';
 import 'package:otzaria/navigation/view/main_window_screen.dart';
+import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
 import 'package:otzaria/plugins/services/plugin_library_books_registry.dart';
 import 'package:otzaria/library/view/grid_items.dart';
 import 'package:otzaria/library/view/otzar_book_dialog.dart';
@@ -2630,10 +2631,28 @@ class _LibraryBrowserState extends State<LibraryBrowser>
   }
 
   void _openExternalBook(ExternalLibraryBook book) {
-    if (PluginLibraryBooksRegistry.instance.open(book)) return;
+    if (PluginLibraryBooksRegistry.instance.open(
+      book,
+      actionDispatcher: _pluginBookActionDispatcher(),
+    )) {
+      return;
+    }
     // ספר של תוסף שהוסר בינתיים: אין לו קישור, ודיאלוג אוצר החכמה ריק.
     if (book.link.isEmpty) return;
     _openOtzarBook(book);
+  }
+
+  /// `openAction` של ספק ספרים מתוסף. עץ בלי PluginSystemBloc (בדיקות
+  /// widget) מחזיר null, והלחיצה נמסרת לתוסף באירוע.
+  PluginLibraryBookActionDispatcher? _pluginBookActionDispatcher() {
+    try {
+      return context
+          .read<PluginSystemBloc>()
+          .declarativeHost
+          ?.dispatchLibraryBookAction;
+    } on ProviderNotFoundException {
+      return null;
+    }
   }
 
   void _openOtzarBook(ExternalLibraryBook book) {

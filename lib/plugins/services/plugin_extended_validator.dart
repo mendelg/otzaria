@@ -788,11 +788,13 @@ class PluginExtendedValidator {
   static const Map<String, String> _actionMinVersions = {
     'storage.set': '0.9.97',
     'storage.remove': '0.9.97',
+    'localService.post': '0.9.98',
   };
   static const String _contextMenuActionMinVersion = '0.9.97';
   static const String _searchSubmitRoutingMinVersion = '0.9.97';
   static const String _externalEditionsMinVersion = '0.9.97';
   static const String _libraryBooksMinVersion = '0.9.98';
+  static const String _storageReferenceMinVersion = '0.9.98';
   static const String _whenConditionMinVersion = '0.9.97';
   static const String _headlessMinVersion = '0.9.98';
 
@@ -979,8 +981,51 @@ class PluginExtendedValidator {
         if (!providers.add(parsed.provider)) {
           errors.add('contributes.startup.libraryBooks מכיל ספק כפול');
         }
+        if (parsed.openAction case final action?) {
+          DeclarativeSelectionAction.validateTemplate(
+            action,
+            declaredPermissions: declaredPermissions,
+            source: DeclarativeClickSource.libraryBook,
+          );
+        }
       } on PluginLibraryBooksException catch (error) {
         errors.add('contributes.startup.libraryBooks לא תקין: $error');
+      } on DeclarativeProgramException catch (error) {
+        errors.add('contributes.startup.libraryBooks לא תקין: $error');
+      }
+    }
+  }
+
+  /// גרסת המינימום של מה שחדש מ-action בתפריט עצמו: הפעולה
+  /// `localService.post` וההפניה `$storage`. ב-libraryBooks אין צורך: הם
+  /// עצמם דורשים את אותה גרסה.
+  static void _checkContextMenuActionVersions(
+    PluginManifest manifest,
+    List<Map<String, dynamic>> actions,
+    List<String> errors,
+  ) {
+    final features = {
+      if (actions.any((action) => action['type'] == 'localService.post'))
+        'localService.post': _actionMinVersions['localService.post']!,
+      if (actions.any(
+        (action) => DeclarativeSelectionAction.storageKeys(action).isNotEmpty,
+      ))
+        r'ההפניה $storage': _storageReferenceMinVersion,
+    };
+    for (final MapEntry(key: feature, value: since) in features.entries) {
+      try {
+        if (PluginVersionUtils.compareCoreVersions(
+              since,
+              manifest.minAppVersion,
+            ) >
+            0) {
+          errors.add(
+            '$feature נתמכת החל מגרסה $since, אך minAppVersion שהוצהר הוא '
+            '${manifest.minAppVersion}',
+          );
+        }
+      } on PluginVersionFormatException {
+        // minAppVersion נבדק ב-PluginManifestValidator.
       }
     }
   }
@@ -1036,6 +1081,7 @@ class PluginExtendedValidator {
         errors.add('contributes.startup.contextMenuItems לא תקין: $error');
       }
     }
+    _checkContextMenuActionVersions(manifest, actions, errors);
   }
 
   /// ולידציית contributes.startup: סכימה (דרך אותם parsers של ה-runtime),
