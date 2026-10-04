@@ -100,11 +100,7 @@ dependencies:
   googleapis_auth: ^2.3.4
   characters: ^1.4.1
   collection: ^1.19.1
-  # מתאם ההדגשה והמיפוי החדשים דורשים את שלושת תיקוני המנוע יחד.
-  otzaria_search_engine:
-    git:
-      url: https://github.com/Otzaria/otzaria_search_engine
-      ref: 5d31630eee30c4114e3026461438c68fb992869a
+  otzaria_search_engine: ^1.0.0
   seforim_library_updater:
     git:
       url: https://github.com/Otzaria/otzaria_library_updater
