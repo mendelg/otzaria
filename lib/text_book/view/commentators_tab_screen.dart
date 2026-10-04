@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/book_common/view/commentators_side_pane.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -1171,54 +1172,16 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
     required TextBookLoaded state,
     required List<TocEntry> chapters,
   }) {
-    return Column(
-      children: [
-        NavPanelTabHeader(
-          controller: _navTabController,
-          tabs: const [
-            (
-              icon: OtzariaIcons.list_24_regular,
-              iconFilled: OtzariaIcons.list_24_filled,
-              label: 'ניווט',
-            ),
-            (
-              icon: OtzariaIcons.apps_list_24_regular,
-              iconFilled: OtzariaIcons.apps_list_24_filled,
-              label: 'מפרשים',
-            ),
-            (
-              icon: OtzariaIcons.search_24_regular,
-              iconFilled: OtzariaIcons.search_24_filled,
-              label: 'חיפוש',
-            ),
-          ],
-        ),
-        // ─── תוכן TabBarView ──────────────────────────────────────────
-        Expanded(
-          child: TabBarView(
-            controller: _navTabController,
-            children: [
-              NavPanelSearchSlot(
-                index: 0,
-                child: _buildTocList(
-                  context,
-                  chapters: chapters,
-                  content: state.content,
-                  title: state.book.title,
-                ),
-              ),
-              NavPanelSearchSlot(
-                index: 1,
-                child: _buildCommentatorsSelectionPanel(context, state),
-              ),
-              NavPanelSearchSlot(
-                index: 2,
-                child: _buildCommentarySearchPanel(context),
-              ),
-            ],
-          ),
-        ),
-      ],
+    return CommentatorsSidePane(
+      controller: _navTabController,
+      navigation: _buildTocList(
+        context,
+        chapters: chapters,
+        content: state.content,
+        title: state.book.title,
+      ),
+      selection: _buildCommentatorsSelectionPanel(context, state),
+      search: _buildCommentarySearchPanel(context),
     );
   }
 

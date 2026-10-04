@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:otzaria/book_common/view/commentators_side_pane.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -1068,42 +1069,11 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   /// פאנל הצד — סרגל 3 לשוניות זהה לכרטיסיית הטקסט (ניווט / מפרשים / חיפוש)
   /// עם כפתור נעיצה בפינה.
   Widget _buildSidePane(BuildContext context) {
-    return Column(
-      children: [
-        NavPanelTabHeader(
-          controller: _navTabController,
-          tabs: const [
-            (
-              icon: OtzariaIcons.list_24_regular,
-              iconFilled: OtzariaIcons.list_24_filled,
-              label: 'ניווט',
-            ),
-            (
-              icon: OtzariaIcons.apps_list_24_regular,
-              iconFilled: OtzariaIcons.apps_list_24_filled,
-              label: 'מפרשים',
-            ),
-            (
-              icon: OtzariaIcons.search_24_regular,
-              iconFilled: OtzariaIcons.search_24_filled,
-              label: 'חיפוש',
-            ),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(
-            controller: _navTabController,
-            children: [
-              NavPanelSearchSlot(index: 0, child: _buildNavPanel()),
-              NavPanelSearchSlot(
-                index: 1,
-                child: _buildCommentatorsSelectionTab(),
-              ),
-              NavPanelSearchSlot(index: 2, child: _buildSearchPanel()),
-            ],
-          ),
-        ),
-      ],
+    return CommentatorsSidePane(
+      controller: _navTabController,
+      navigation: _buildNavPanel(),
+      selection: _buildCommentatorsSelectionTab(),
+      search: _buildSearchPanel(),
     );
   }
 
