@@ -156,6 +156,136 @@ Future<void> main() async {
       },
       skip: !engineReady,
     );
+
+    testWidgets(
+      '${pdf ? 'PDF' : 'טקסט'}: אפשרויות חיפוש מדויק נשמרות ומוצגות אחרי אישור ועריכה',
+      (tester) async {
+        await _pumpSearchView(
+          tester,
+          pdf: pdf,
+          previous: const SearchModeScopedParameters(),
+          searchMode: SearchMode.exact,
+        );
+
+        Future<SearchingTab> openDialog() async {
+          await tester.tap(find.byTooltip('הגדרות חיפוש'));
+          await _settle(tester);
+          return tester
+              .widget<SearchDialog>(find.byType(SearchDialog))
+              .existingTab!;
+        }
+
+        Finder option(String label) => find.widgetWithText(FilterChip, label);
+
+        Future<void> submit() async {
+          await tester.tap(find.byTooltip('חפש'));
+          await _settle(tester);
+          await tester.pump(const Duration(milliseconds: 600));
+        }
+
+        await openDialog();
+        await tester.tap(option('קידומות דקדוקיות'));
+        await tester.pump();
+        await submit();
+
+        final reopened = await openDialog();
+        expect(
+          tester.widget<FilterChip>(option('קידומות דקדוקיות')).selected,
+          isTrue,
+        );
+        expect(reopened.effectiveSearchOptions(), {
+          'שלום_0': {'קידומות דקדוקיות': true},
+          'עולם_1': {'קידומות דקדוקיות': true},
+        });
+        await tester.tap(option('סיומות דקדוקיות'));
+        await tester.pump();
+        await submit();
+
+        final edited = await openDialog();
+        expect(
+          tester.widget<FilterChip>(option('קידומות דקדוקיות')).selected,
+          isTrue,
+        );
+        expect(
+          tester.widget<FilterChip>(option('סיומות דקדוקיות')).selected,
+          isTrue,
+        );
+        expect(edited.effectiveSearchOptions(), {
+          'שלום_0': {'קידומות דקדוקיות': true, 'סיומות דקדוקיות': true},
+          'עולם_1': {'קידומות דקדוקיות': true, 'סיומות דקדוקיות': true},
+        });
+        await tester.tap(option('קידומות דקדוקיות'));
+        await tester.pump();
+        await submit();
+
+        final disabled = await openDialog();
+        expect(
+          tester.widget<FilterChip>(option('קידומות דקדוקיות')).selected,
+          isFalse,
+        );
+        expect(
+          tester.widget<FilterChip>(option('סיומות דקדוקיות')).selected,
+          isTrue,
+        );
+        expect(disabled.effectiveSearchOptions(), {
+          'שלום_0': {'סיומות דקדוקיות': true},
+          'עולם_1': {'סיומות דקדוקיות': true},
+        });
+        disabled.queryController.text = 'שלום גדול עולם';
+        await tester.pump();
+        await submit();
+        final changedQuery = await openDialog();
+        expect(changedQuery.effectiveSearchOptions(), {
+          'שלום_0': {'סיומות דקדוקיות': true},
+          'גדול_1': {'סיומות דקדוקיות': true},
+          'עולם_2': {'סיומות דקדוקיות': true},
+        });
+        await tester.tap(find.byTooltip('סגור'));
+        await _settle(tester);
+      },
+      skip: !engineReady,
+    );
+
+    for (final mode in [SearchMode.advanced, SearchMode.exact]) {
+      testWidgets(
+        '${pdf ? 'PDF' : 'טקסט'}: אפשרויות מעורבות נשמרות פר-מילה ב-$mode',
+        (tester) async {
+          final previous = SearchQueryBuilder.normalizeParametersForMode(
+            mode,
+            searchOptions: {
+              'שלום_0': {'קידומות דקדוקיות': true},
+              'עולם_1': {'סיומות דקדוקיות': true},
+            },
+          );
+          await _pumpSearchView(
+            tester,
+            pdf: pdf,
+            previous: previous,
+            searchMode: mode,
+          );
+
+          Future<SearchingTab> openDialog() async {
+            await tester.tap(find.byTooltip('הגדרות חיפוש'));
+            await _settle(tester);
+            return tester
+                .widget<SearchDialog>(find.byType(SearchDialog))
+                .existingTab!;
+          }
+
+          final tab = await openDialog();
+          expect(tab.useGlobalSearchOptions.value, isFalse);
+          expect(tab.effectiveSearchOptions(), previous.searchOptions);
+          await tester.tap(find.byTooltip('חפש'));
+          await _settle(tester);
+          final reopened = await openDialog();
+          expect(reopened.useGlobalSearchOptions.value, isFalse);
+          expect(reopened.effectiveSearchOptions(), previous.searchOptions);
+          await tester.tap(find.byTooltip('סגור'));
+          await _settle(tester);
+        },
+        skip: !engineReady,
+      );
+    }
   }
 }
 
@@ -163,6 +293,7 @@ Future<void> _pumpSearchView(
   WidgetTester tester, {
   required bool pdf,
   required SearchModeScopedParameters previous,
+  SearchMode searchMode = SearchMode.advanced,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1100, 900));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -242,7 +373,7 @@ Future<void> _pumpSearchView(
           bookTitle: 'ספר בדיקה',
           bookTopics: 'תנך',
           pdfFilePath: '/nonexistent/test.pdf',
-          initialSearchMode: SearchMode.advanced,
+          initialSearchMode: searchMode,
           initialSearchOptions: previous.searchOptions,
           initialAlternativeWords: previous.alternativeWords,
           initialSpacingValues: previous.customSpacing,
@@ -254,7 +385,7 @@ Future<void> _pumpSearchView(
           focusNode: focus,
           closeLeftPaneCallback: () {},
           initialQuery: 'שלום עולם',
-          initialSearchMode: SearchMode.advanced,
+          initialSearchMode: searchMode,
           initialSearchOptions: previous.searchOptions,
           initialAlternativeWords: previous.alternativeWords,
           initialSpacingValues: previous.customSpacing,
@@ -372,11 +503,11 @@ class _NavigationBloc extends MockBloc<NavigationEvent, NavigationState>
     implements NavigationBloc {}
 
 Future<void> _settle(WidgetTester tester) async {
-  for (var i = 0; i < 6; i++) {
+  for (var i = 0; i < 10; i++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 20)),
     );
-    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump(const Duration(milliseconds: 100));
   }
   await tester.pumpAndSettle();
 }
