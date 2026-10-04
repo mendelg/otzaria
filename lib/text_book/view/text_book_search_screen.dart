@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:otzaria/search/view/in_book_snippet_style.dart';
 import 'package:otzaria/search/in_book_search_settings.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -932,14 +933,9 @@ class TextBookSearchViewState extends State<TextBookSearchView>
               if (item.isHeader) {
                 return BlocBuilder<SettingsBloc, SettingsState>(
                   builder: (context, settingsState) {
-                    String text = item.header!;
-                    if (settingsState.replaceHolyNames) {
-                      text = utils.replaceHolyNames(
-                        text,
-                        style: settingsState.holyNameStyle,
-                      );
-                    }
-                    return NavTreeHeader(title: text);
+                    return NavTreeHeader(
+                      title: withHolyNamesSetting(item.header!, settingsState),
+                    );
                   },
                 );
               }
@@ -949,25 +945,13 @@ class TextBookSearchViewState extends State<TextBookSearchView>
               final resultListIndex = item.resultListIndex!;
               return BlocBuilder<SettingsBloc, SettingsState>(
                 builder: (context, settingsState) {
-                  String snippet = result.snippet;
-                  if (settingsState.replaceHolyNames) {
-                    snippet = utils.replaceHolyNames(
-                      snippet,
-                      style: settingsState.holyNameStyle,
-                    );
-                  }
-
-                  final defaultStyle = TextStyle(
-                    fontSize: 16,
-                    fontFamily: settingsState.fontFamily,
-                    color: Theme.of(context).colorScheme.onSurface,
-                    height: 1.5,
+                  final snippet = withHolyNamesSetting(
+                    result.snippet,
+                    settingsState,
                   );
-                  final highlightStyle = TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    color: Theme.of(context).colorScheme.error,
-                  );
+                  final style = InBookSnippetStyle(context, settingsState);
+                  final defaultStyle = style.text;
+                  final highlightStyle = style.highlight;
 
                   // בחיפוש פשוט התוצאה היא טקסט מקומי — חותכים קטע ומדגישים את
                   // השאילתה הליטרלית. בחיפוש מתקדם/מקורב התוצאה מגיעה מהמנוע עם
@@ -1029,12 +1013,7 @@ class TextBookSearchViewState extends State<TextBookSearchView>
                       child: RichText(
                         textAlign: TextAlign.justify,
                         text: TextSpan(
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontFamily: settingsState.fontFamily,
-                            color: Theme.of(context).colorScheme.onSurface,
-                            height: 1.5,
-                          ),
+                          style: defaultStyle,
                           children: highlightedSnippet,
                         ),
                       ),

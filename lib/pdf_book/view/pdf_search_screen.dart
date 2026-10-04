@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:otzaria/search/view/in_book_snippet_style.dart';
 import 'package:otzaria/search/in_book_search_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -912,18 +913,12 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
             if (item is int) {
               return BlocBuilder<SettingsBloc, SettingsState>(
                 builder: (context, settingsState) {
-                  var text = _pageTitles[item]?.isNotEmpty == true
+                  final text = _pageTitles[item]?.isNotEmpty == true
                       ? _pageTitles[item]!
                       : 'עמוד $item';
-
-                  if (settingsState.replaceHolyNames) {
-                    text = utils.replaceHolyNames(
-                      text,
-                      style: settingsState.holyNameStyle,
-                    );
-                  }
-
-                  return NavTreeHeader(title: text);
+                  return NavTreeHeader(
+                    title: withHolyNamesSetting(text, settingsState),
+                  );
                 },
               );
             }
@@ -1086,17 +1081,9 @@ class SearchResultTile extends StatelessWidget {
     SettingsState settingsState,
     BuildContext context,
   ) {
-    final defaultStyle = TextStyle(
-      fontSize: 16,
-      fontFamily: settingsState.fontFamily,
-      color: Theme.of(context).colorScheme.onSurface,
-      height: 1.5,
-    );
-
-    var html = text;
-    if (settingsState.replaceHolyNames) {
-      html = utils.replaceHolyNames(html, style: settingsState.holyNameStyle);
-    }
+    final style = InBookSnippetStyle(context, settingsState);
+    final defaultStyle = style.text;
+    final html = withHolyNamesSetting(text, settingsState);
 
     if (query.isEmpty) {
       return Text(
@@ -1105,11 +1092,7 @@ class SearchResultTile extends StatelessWidget {
       );
     }
 
-    final highlightStyle = TextStyle(
-      fontWeight: FontWeight.bold,
-      fontSize: 18,
-      color: Theme.of(context).colorScheme.error,
-    );
+    final highlightStyle = style.highlight;
 
     if (isSimpleSearch) {
       final spans = SnippetBuilder.highlightLiteral(
