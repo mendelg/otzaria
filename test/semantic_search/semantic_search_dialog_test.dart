@@ -354,6 +354,8 @@ void main() {
             item: SemanticDownloadItem.vectors,
             receivedBytes: 25,
             totalBytes: 100,
+            step: 2,
+            stepCount: 3,
           ),
         ),
       );
@@ -361,7 +363,10 @@ void main() {
       await tester.pump();
 
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
-      expect(find.textContaining('25%'), findsOneWidget);
+      expect(
+        find.text('שלב 2 מתוך 3 — מוריד את נתוני החיפוש (25%)'),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('semantic-status-cancel')));
       await tester.pump();
       expect(harness.repository.cancels, 1);

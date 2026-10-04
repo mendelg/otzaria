@@ -261,7 +261,9 @@ class FakeDownloads {
     if (isCancelled?.call() ?? false) throw const PatchDownloadCancelled();
     final failure = error;
     if (failure != null) throw failure;
-    onProgress?.call(1, 1);
+    final size = expectedSize ?? 1;
+    onProgress?.call(size ~/ 2, size);
+    onProgress?.call(size, size);
     await File(destPath).create(recursive: true);
     await File(destPath).writeAsString('x');
   }

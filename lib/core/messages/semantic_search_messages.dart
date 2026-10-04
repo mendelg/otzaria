@@ -1,4 +1,5 @@
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
+import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 
 /// ריכוז הודעות החיפוש הסמנטי: כשלים ומצבי הורדה.
@@ -45,6 +46,46 @@ abstract class SemanticSearchMessages {
       'את נתוני {name} אפשר להוריד ולמחוק רק מהחלון הראשי של התוכנה.';
   static const String libraryMoving =
       'מיקום הספרייה מועבר כעת. נסו שוב בסיום ההעברה.';
+
+  // ── שלבי ההורדה (גם מפתחות התרגום) ──
+  static const String downloadingComponent = 'מוריד את רכיב החיפוש';
+  static const String downloadingData = 'מוריד את נתוני החיפוש';
+  static const String installingData = 'מתקין את נתוני החיפוש';
+  static const String stepTemplate = 'שלב {step} מתוך {count} — {action}';
+  static const String percentTemplate = '{label} ({percent}%)';
+
+  /// הפעולה של שלב [item].
+  static String stepAction(SemanticDownloadItem item) => switch (item) {
+    SemanticDownloadItem.model => downloadingComponent,
+    SemanticDownloadItem.vectors => downloadingData,
+    SemanticDownloadItem.install => installingData,
+  };
+
+  /// תווית השלב בעברית, עם מספר השלב כשיש יותר משלב אחד, ואחוז כולל בהורדה.
+  static String progressLabel(SemanticDownloadProgress progress) {
+    final action = stepAction(progress.item);
+    final label = progress.stepCount > 1
+        ? stepTemplate
+              .replaceAll('{step}', '${progress.step}')
+              .replaceAll('{count}', '${progress.stepCount}')
+              .replaceAll('{action}', action)
+        : action;
+    final percent = progressPercent(progress);
+    return percent == null
+        ? label
+        : percentTemplate
+              .replaceAll('{label}', label)
+              .replaceAll('{percent}', percent);
+  }
+
+  /// האחוז הכולל להצגה, או `null` בהתקנה ובגודל לא ידוע.
+  static String? progressPercent(SemanticDownloadProgress progress) {
+    final fraction = progress.fraction;
+    if (fraction == null || progress.item == SemanticDownloadItem.install) {
+      return null;
+    }
+    return (fraction * 100).toStringAsFixed(0);
+  }
 
   /// כל ההודעות של [failure] — לבדיקות הכיסוי של התרגום.
   static const List<String> allFailureMessages = [

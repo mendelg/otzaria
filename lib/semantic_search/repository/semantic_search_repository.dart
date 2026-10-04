@@ -102,6 +102,13 @@ class SemanticSearchRepository {
   static SemanticSearchRepository get instance =>
       _instance ??= SemanticSearchRepository();
 
+  static final StreamController<SemanticAvailability> _sharedChanges =
+      StreamController<SemanticAvailability>.broadcast();
+
+  /// שינויי המצב של [instance], בלי ליצור אותו: האזנה כאן אינה עבודה בעלייה.
+  static Stream<SemanticAvailability> get sharedAvailabilityChanges =>
+      _sharedChanges.stream;
+
   final SemanticEngineBackend _backend;
   final SearchFeedbackConsentStore Function() _consentFactory;
   final SemanticSettingsStore _settings;
@@ -130,6 +137,11 @@ class SemanticSearchRepository {
   SemanticCancelHandle _jobCancel = SemanticCancelHandle();
   SemanticAvailabilityPhase? _jobPhase;
   SemanticDownloadProgress? _jobProgress;
+
+  /// השלבים שהעבודה הנוכחית תעבור, וסך הבתים שלה — להתקדמות כוללת אחת.
+  List<SemanticDownloadItem> _jobSteps = const [];
+  int _jobTotalBytes = 0;
+  int _jobModelBytes = 0;
   SemanticFailure? _lastFailure;
   int? _unpublishedVersion;
 
@@ -480,6 +492,7 @@ class SemanticSearchRepository {
     if (next == _availability) return;
     _availability = next;
     _changes.add(next);
+    if (identical(this, _instance)) _sharedChanges.add(next);
   }
 
   bool _isConsentGranted() {
@@ -657,6 +670,9 @@ class SemanticSearchRepository {
     } finally {
       _jobPhase = null;
       _jobProgress = null;
+      _jobSteps = const [];
+      _jobTotalBytes = 0;
+      _jobModelBytes = 0;
       _reportJobFailures = false;
     }
   }
@@ -724,7 +740,17 @@ class SemanticSearchRepository {
     }
     if (release == null && !installed.present) return;
 
-    await _ensureModel(paths, identity, quantization);
+    final model = await _missingModelFiles(paths, quantization);
+    _jobModelBytes = model.missing.fold(0, (sum, t) => sum + t.file.size);
+    _jobTotalBytes = _jobModelBytes + (release?.downloadSize ?? 0);
+    _jobSteps = [
+      if (model.missing.isNotEmpty) SemanticDownloadItem.model,
+      if (release != null) ...[
+        SemanticDownloadItem.vectors,
+        SemanticDownloadItem.install,
+      ],
+    ];
+    await _ensureModel(paths, identity, quantization, model);
     if (_jobCancel.isCancelled || release == null) return;
     await _installRelease(paths, identity, release);
   }
@@ -743,7 +769,10 @@ class SemanticSearchRepository {
     final segment = await _downloadVectors(downloadDir.path, release);
     if (_jobCancel.isCancelled) return;
 
-    _setJob(SemanticAvailabilityPhase.installing, null);
+    _setJob(
+      SemanticAvailabilityPhase.installing,
+      _progressOf(SemanticDownloadItem.install, _jobTotalBytes),
+    );
     final repair = _needsRepair;
     if (repair) {
       // ב-Windows אי אפשר להחליף קובץ ממופה: התיקון מחייב לסגור את ה-session.
@@ -796,9 +825,9 @@ class SemanticSearchRepository {
     );
   }
 
-  Future<void> _ensureModel(
+  /// קבצי רכיב החיפוש שחסרים (או פגומים בתיקון) ל-[quantization].
+  Future<_ModelPlan> _missingModelFiles(
     SemanticPaths paths,
-    SemanticModelIdentity identity,
     SemanticQuantization quantization,
   ) async {
     final release = _modelReleases[quantization];
@@ -808,14 +837,11 @@ class SemanticSearchRepository {
         'no release for ${quantization.name}',
       );
     }
-    await _ensureOwnedOrAbsent(paths.modelDirectory, allowEmpty: true);
-    await markSemanticDirectory(paths.modelDirectory);
-    final identityFile = File(paths.identityFile);
     final targets = [
       (file: release.graph, dest: paths.modelFile(quantization)),
       (file: release.tokenizer, dest: paths.tokenizerFile),
       (file: release.license, dest: paths.licenseFile),
-      if (!await identityFile.exists())
+      if (!await File(paths.identityFile).exists())
         (file: release.identity, dest: paths.identityFile),
     ];
     final missing = <({SemanticModelFile file, String dest})>[];
@@ -830,24 +856,34 @@ class SemanticSearchRepository {
         missing.add(target);
       }
     }
-    final total = missing.fold(0, (sum, target) => sum + target.file.size);
+    return (release: release, missing: missing);
+  }
+
+  Future<void> _ensureModel(
+    SemanticPaths paths,
+    SemanticModelIdentity identity,
+    SemanticQuantization quantization,
+    _ModelPlan model,
+  ) async {
+    final release = model.release;
+    final missing = model.missing;
+    await _ensureOwnedOrAbsent(paths.modelDirectory, allowEmpty: true);
+    await markSemanticDirectory(paths.modelDirectory);
+    final identityFile = File(paths.identityFile);
     var done = 0;
     for (final target in missing) {
       // הורדה לשם זמני: קובץ חלקי בשם הסופי היה נחשב מותקן.
       final partial = '${target.dest}.part';
       final before = done;
-      _reportProgress(SemanticDownloadItem.model, before, total, force: true);
+      _reportProgress(SemanticDownloadItem.model, before, force: true);
       await _download(
         url: release.urlOf(target.file),
         destPath: partial,
         resumeIdentity: target.file.sha256,
         expectedSize: target.file.size,
         expectedSha256: target.file.sha256,
-        onProgress: (received, _) => _reportProgress(
-          SemanticDownloadItem.model,
-          before + received,
-          total,
-        ),
+        onProgress: (received, _) =>
+            _reportProgress(SemanticDownloadItem.model, before + received),
         isCancelled: () => _jobCancel.isCancelled,
       );
       done += target.file.size;
@@ -885,17 +921,10 @@ class SemanticSearchRepository {
     String downloadDir,
     SemanticVectorsRelease release,
   ) async {
-    final total = release.downloadSize;
-    var done = 0;
+    // הבתים של הוקטורים נספרים אחרי אלה של רכיב החיפוש.
+    var done = _jobModelBytes;
     final parts = <String>[];
-    _setJob(
-      SemanticAvailabilityPhase.downloading,
-      SemanticDownloadProgress(
-        item: SemanticDownloadItem.vectors,
-        receivedBytes: 0,
-        totalBytes: total,
-      ),
-    );
+    _reportProgress(SemanticDownloadItem.vectors, done, force: true);
     for (final file in release.files) {
       final dest = p.join(downloadDir, file.name);
       final before = done;
@@ -906,11 +935,8 @@ class SemanticSearchRepository {
             '${release.releaseTag}|${file.name}|${file.assetId}|${file.sha256}',
         expectedSize: file.size,
         expectedSha256: file.sha256,
-        onProgress: (received, _) => _reportProgress(
-          SemanticDownloadItem.vectors,
-          before + received,
-          total,
-        ),
+        onProgress: (received, _) =>
+            _reportProgress(SemanticDownloadItem.vectors, before + received),
         isCancelled: () => _jobCancel.isCancelled,
       );
       done += file.size;
@@ -986,15 +1012,30 @@ class SemanticSearchRepository {
     );
   }
 
+  /// ההתקדמות הכוללת של העבודה בשלב [item], אחרי [received] בתים.
+  SemanticDownloadProgress _progressOf(
+    SemanticDownloadItem item,
+    int received,
+  ) {
+    final index = _jobSteps.indexOf(item);
+    return SemanticDownloadProgress(
+      item: item,
+      receivedBytes: received,
+      totalBytes: _jobTotalBytes > 0 ? _jobTotalBytes : null,
+      step: index < 0 ? 1 : index + 1,
+      stepCount: _jobSteps.isEmpty ? 1 : _jobSteps.length,
+    );
+  }
+
   /// מעדכן את ההתקדמות בצעדים של חצי אחוז, לא בכל chunk.
   void _reportProgress(
     SemanticDownloadItem item,
-    int received,
-    int? total, {
+    int received, {
     bool force = false,
   }) {
     final previous = _jobProgress;
-    final step = total != null && total > 0 ? total ~/ 200 : 1 << 20;
+    final total = _jobTotalBytes;
+    final step = total > 0 ? total ~/ 200 : 1 << 20;
     if (!force &&
         previous != null &&
         previous.item == item &&
@@ -1002,14 +1043,7 @@ class SemanticSearchRepository {
         received != total) {
       return;
     }
-    _setJob(
-      SemanticAvailabilityPhase.downloading,
-      SemanticDownloadProgress(
-        item: item,
-        receivedBytes: received,
-        totalBytes: total,
-      ),
-    );
+    _setJob(SemanticAvailabilityPhase.downloading, _progressOf(item, received));
   }
 
   // ── עזרים ───────────────────────────────────────────────────────────────
@@ -1065,6 +1099,12 @@ class SemanticSearchRepository {
     debugPrint('[SemanticSearch] $step: $error\n$stackTrace');
   }
 }
+
+/// release של רכיב החיפוש והקבצים ממנו שחסרים במכשיר.
+typedef _ModelPlan = ({
+  SemanticModelRelease release,
+  List<({SemanticModelFile file, String dest})> missing,
+});
 
 /// ערוץ חיפוש של צרכן אחד (למשל כרטיסייה): חיפוש חדש מבטל רק את הקודם בו.
 class SemanticSearchSession {

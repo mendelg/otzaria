@@ -6,6 +6,7 @@ import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria/semantic_search/models/semantic_mode_gate.dart';
+import 'package:otzaria/semantic_search/view/semantic_progress_text.dart';
 import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 import 'package:otzaria/theme/app_surfaces.dart';
 import 'package:otzaria/theme/app_tokens.dart';
@@ -160,7 +161,8 @@ class SemanticModePanel extends StatelessWidget {
 
   Widget _buildStatusCard(BuildContext context) {
     final theme = Theme.of(context);
-    final fraction = availability.progress?.fraction;
+    final progress = availability.progress;
+    final fraction = progress?.fraction;
     final name = {'name': _modeName(context)};
     final String text = switch (availability.phase) {
       SemanticAvailabilityPhase.needsDownload => context.settingsText(
@@ -171,11 +173,9 @@ class SemanticModePanel extends StatelessWidget {
         'נתוני החיפוש לגרסת הספרייה {version} עוד לא פורסמו. הם יורדו כשיתפרסמו.',
         args: {'version': '${availability.unpublishedLibraryVersion ?? ''}'},
       ),
-      SemanticAvailabilityPhase.downloading when fraction != null =>
-        context.settingsText(
-          'מוריד את הנתונים ({percent}%)',
-          args: {'percent': (fraction * 100).toStringAsFixed(0)},
-        ),
+      SemanticAvailabilityPhase.downloading ||
+      SemanticAvailabilityPhase.installing when progress != null =>
+        semanticProgressText(context, progress),
       SemanticAvailabilityPhase.downloading => context.settingsText(
         'מוריד את הנתונים',
       ),
