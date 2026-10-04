@@ -134,3 +134,11 @@ List<AppContextMenuEntry> buildReaderDictionaryEntries({
   if (entries.isEmpty) return const [];
   return [const AppContextMenuEntry.divider(), ...entries];
 }
+
+/// The entry of a reader's "קישורים" submenu that opens the links pane.
+AppContextMenuEntry buildOpenLinksPaneEntry({required VoidCallback onTap}) =>
+    AppContextMenuEntry(
+      label: 'פתח קישורים בחלונית צד',
+      icon: FluentIcons.panel_right_24_regular,
+      onTap: onTap,
+    );

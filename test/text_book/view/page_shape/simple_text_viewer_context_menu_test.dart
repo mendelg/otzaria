@@ -255,7 +255,9 @@ void main() {
       expect(selected.index, 2);
     });
 
-    testWidgets('"פתח חלונית קישורים" פותח את לשונית הקישורים', (tester) async {
+    testWidgets('"פתח קישורים בחלונית צד" פותח את לשונית הקישורים', (
+      tester,
+    ) async {
       final bloc = _RecordingTextBookBloc(
         _loadedState(
           linksByLine: {
@@ -289,10 +291,50 @@ void main() {
       await openContextMenu(tester);
       await tester.tap(find.text('קישורים'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('פתח חלונית קישורים'));
+      await tester.tap(find.text('פתח קישורים בחלונית צד'));
       await tester.pumpAndSettle();
 
       expect(openedTab, kLinksTabIndex);
+    });
+
+    testWidgets('the links pane entry is hidden while the links tab is open', (
+      tester,
+    ) async {
+      final bloc = _RecordingTextBookBloc(
+        _loadedState(
+          linksByLine: {
+            1: [
+              Link(
+                heRef: 'בראשית א א',
+                index1: 1,
+                path2: 'בראשית',
+                index2: 1,
+                connectionType: 'reference',
+              ),
+            ],
+          },
+        ),
+      );
+      addTearDown(bloc.close);
+
+      await pumpViewer(
+        tester,
+        textBookBloc: bloc,
+        viewer: SimpleTextViewer(
+          content: const ['שורה א'],
+          fontSize: 18,
+          openBookCallback: (_) {},
+          isMainText: true,
+          onOpenSidebarTab: (_) {},
+          isLinksTabActive: true,
+        ),
+      );
+
+      await openContextMenu(tester);
+      await tester.tap(find.text('קישורים'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('פתח קישורים בחלונית צד'), findsNothing);
     });
 
     testWidgets('כשלשונית המפרשים פתוחה — פריטי הפתיחה מוסתרים', (

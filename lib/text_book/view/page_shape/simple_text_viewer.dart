@@ -398,6 +398,10 @@ class SimpleTextViewer extends StatefulWidget {
   /// מיותרים במצב זה.
   final bool isCommentatorsTabActive;
 
+  /// The links tab of the side pane is open, so the entry that opens it is
+  /// left out of the context menu.
+  final bool isLinksTabActive;
+
   /// פתיחת לשונית המפרשים בחלונית הצד. כש-null תת-התפריט "מפרשים" לא יוצג.
   final VoidCallback? onOpenCommentatorsPane;
 
@@ -434,6 +438,7 @@ class SimpleTextViewer extends StatefulWidget {
     this.notesRepository,
     this.isPersonalNotesTabActive = false,
     this.isCommentatorsTabActive = false,
+    this.isLinksTabActive = false,
     this.onOpenCommentatorsPane,
     this.onOpenCommentatorsPaneWithFilter,
     this.anchorLinksByLine,
@@ -1815,10 +1820,13 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
           removeNikud: state.commentaryRemoveNikud,
           removePunctuation: state.commentaryRemovePunctuation,
           maxFontSize: widget.fontSize,
-          openPaneEntry: widget.onOpenSidebarTab != null
-              ? AppContextMenuEntry(
-                  label: 'פתח חלונית קישורים',
-                  icon: FluentIcons.panel_right_24_regular,
+          openPaneEntry:
+              widget.onOpenSidebarTab != null &&
+                  shouldShowOpenLinksPaneEntry(
+                    hasLinks: true,
+                    isLinksTabActive: widget.isLinksTabActive,
+                  )
+              ? buildOpenLinksPaneEntry(
                   onTap: () => widget.onOpenSidebarTab!(kLinksTabIndex),
                 )
               : null,
