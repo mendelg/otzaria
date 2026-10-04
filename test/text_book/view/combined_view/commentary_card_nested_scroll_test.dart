@@ -108,6 +108,60 @@ void main() {
     expect(innerScrollable(), same(scrollableBefore));
     expect(innerScrollable().position.pixels, pixels);
   });
+
+  testWidgets('מרווח שורות אחרי ניווט אינו נסחף בגלל חוב של כרטיס שפורק', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const cardLine = 4;
+    final (tab, settings) = await _pumpCombinedView(
+      tester,
+      initialState: _loadedState(
+        cardLine: cardLine,
+        lineCount: 120,
+        multiline: true,
+      ),
+      lineHeight: 1,
+    );
+    final reanchor = find.byType(ScrollPositionReanchor).first;
+    ScrollableState outerScrollable() => tester.state<ScrollableState>(
+      find.descendant(of: reanchor, matching: find.byType(Scrollable)).first,
+    );
+    final first = tab.positionsListener.itemPositions.value.firstWhere(
+      (position) => position.index == 0,
+    );
+    final distance = first.itemTrailingEdge * 400 * cardLine - 20;
+    expect(distance, inExclusiveRange(400, 800));
+    outerScrollable().position.jumpTo(distance);
+    await tester.pump();
+    final card = find.byType(CommentaryListBase);
+    expect(card, findsOneWidget);
+    await tester.drag(card, const Offset(0, -150));
+    await tester.pump();
+    await _settle(tester, ScrollPositionReanchor.idleDelay);
+
+    tab.scrollController.jumpTo(index: 50);
+    await _settle(tester);
+    expect(find.byType(CommentaryListBase), findsNothing);
+    outerScrollable().position.jumpTo(450);
+    await _settle(tester, ScrollPositionReanchor.idleDelay);
+    final top = reanchorTargetPosition(
+      tab.positionsListener.itemPositions.value,
+    )!;
+    settings.changeLineHeight(3);
+    await _settle(tester);
+    final after = tab.positionsListener.itemPositions.value
+        .where((position) => position.index == top.index)
+        .firstOrNull;
+    expect(after, isNotNull, reason: 'פסקת הקריאה יצאה מהמסך');
+    expect(
+      after!.itemLeadingEdge,
+      moreOrLessEquals(top.itemLeadingEdge, epsilon: 0.02),
+    );
+  });
 }
 
 /// פריימים קצובים במקום pumpAndSettle: שלד הטעינה של המפרשים מונפש.
@@ -121,10 +175,16 @@ Future<void> _settle(
   }
 }
 
-Future<void> _pumpCombinedView(WidgetTester tester) async {
-  final state = _loadedState();
+Future<(TextBookTab, _TestSettingsBloc)> _pumpCombinedView(
+  WidgetTester tester, {
+  TextBookLoaded? initialState,
+  double? lineHeight,
+}) async {
+  final state = initialState ?? _loadedState();
   final textBookBloc = _TestTextBookBloc(state);
-  final settingsBloc = _TestSettingsBloc(SettingsState.initial());
+  final settingsBloc = _TestSettingsBloc(
+    SettingsState.initial().copyWith(lineHeight: lineHeight),
+  );
   final personalNotesBloc = _TestPersonalNotesBloc(
     PersonalNotesState(
       isLoading: false,
@@ -169,11 +229,12 @@ Future<void> _pumpCombinedView(WidgetTester tester) async {
   );
   await _settle(tester);
   await _settle(tester, const Duration(milliseconds: 500));
+  return (tab, settingsBloc);
 }
 
-Link _link(String title, int segment) => Link(
+Link _link(String title, int segment, {int cardLine = _cardLine}) => Link(
   heRef: 'קטע ${segment + 1}',
-  index1: _cardLine + 1,
+  index1: cardLine + 1,
   path2: '$title.txt',
   index2: segment + 1,
   connectionType: LinkTypes.commentary,
@@ -181,16 +242,25 @@ Link _link(String title, int segment) => Link(
   targetFileType: 'txt',
 );
 
-TextBookLoaded _loadedState() {
+TextBookLoaded _loadedState({
+  int cardLine = _cardLine,
+  int lineCount = _lineCount,
+  bool multiline = false,
+}) {
   final links = [
     for (final title in _commentators)
       for (var segment = 0; segment < _segmentsPerCommentator; segment++)
-        _link(title, segment),
+        _link(title, segment, cardLine: cardLine),
   ];
   return TextBookLoaded(
     book: TextBook(title: 'ספר בדיקה'),
     showLeftPane: false,
-    content: [for (var i = 0; i < _lineCount; i++) 'שורה $i'],
+    content: [
+      for (var i = 0; i < lineCount; i++)
+        multiline
+            ? 'שורה $i ${'טקסט עברי לבדיקת מרווח שורות ושמירת מקום הקריאה. ' * 5}'
+            : 'שורה $i',
+    ],
     fontSize: 18,
     showSplitView: false,
     showPageShapeView: false,
@@ -201,13 +271,13 @@ TextBookLoaded _loadedState() {
     availableCommentators: _commentators,
     links: links,
     visibleLinks: const [],
-    linksByLine: {_cardLine + 1: links},
+    linksByLine: {cardLine + 1: links},
     linksLoading: false,
     tableOfContents: const [],
     removeNikud: false,
-    visibleIndices: const [_cardLine],
-    selectedIndex: _cardLine,
-    selectedIndices: const {_cardLine},
+    visibleIndices: [cardLine],
+    selectedIndex: cardLine,
+    selectedIndices: {cardLine},
     pinLeftPane: false,
     searchText: '',
     scrollController: ItemScrollController(),
@@ -254,6 +324,9 @@ class _TestPersonalNotesBloc
 
 class _TestSettingsBloc extends Bloc<SettingsEvent, SettingsState>
     implements SettingsBloc {
+  void changeLineHeight(double height) =>
+      emit(state.copyWith(lineHeight: height));
+
   _TestSettingsBloc(super.initialState) {
     on<SettingsEvent>((event, emit) {});
   }

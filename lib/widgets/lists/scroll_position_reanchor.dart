@@ -16,12 +16,8 @@ ItemPosition? reanchorTargetPosition(Iterable<ItemPosition> positions) {
   return best;
 }
 
-/// מעגן מחדש `ScrollablePositionedList` על הפריט שבראש התצוגה בכל פעם
-/// שהגלילה נחה.
-///
-/// החבילה שומרת מיקום כ"פריט עוגן + היסט בפיקסלים", והעוגן מתעדכן רק בקפיצה
-/// תכנותית. בלי העיגון הזה שינוי רוחב (חלונית שנפתחת, שינוי גודל החלון) שופך
-/// את הטקסט מחדש, וההיסט הישן נוחת במקום אחר לגמרי.
+/// מעגן מחדש את הרשימה ברגיעה כדי ששינוי רוחב לא יסחוף את מקום הקריאה.
+/// החבילה שומרת היסט מעוגן שמתעדכן רק בקפיצה תכנותית.
 class ScrollPositionReanchor extends StatefulWidget {
   const ScrollPositionReanchor({
     super.key,
@@ -56,9 +52,8 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
   double? _lastWidth;
   double? _selectedEdge;
 
-  /// ההיסט שבו גלילה מקוננת ביטלה עיגון. עד ששינוי רוחב מבצע אותו, או שהרשימה
-  /// המקוננת יוצאת מהמסך, עיגון ברגיעה היה מאפס אותה.
-  double? _owedAt;
+  /// החוב שייך למקור הגלילה המקוננת; ניווט שמפרק אותו משנה גם את העוגן.
+  ({double pixels, BuildContext? context})? _owedAt;
   double _pixels = 0;
 
   @override
@@ -144,7 +139,9 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
         // גלילה ברשימה מקוננת (כרטיס המפרשים): קפיצה הייתה בונה את הפריט מחדש
         // ומאפסת אותה — ולכן גם עיגון שכבר תוזמן מגלילה חיצונית מתבטל.
         if (notification.depth != 0) {
-          if (_idleTimer?.isActive ?? false) _owedAt = _pixels;
+          if (_idleTimer?.isActive ?? false) {
+            _owedAt = (pixels: _pixels, context: notification.context);
+          }
           _idleTimer?.cancel();
           return false;
         }
@@ -153,7 +150,7 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
         final owedAt = _owedAt;
         // רשימה מקוננת אינה גבוהה מהמסך, ולכן שני מסכים ממנה היא כבר מחוצה לו.
         if (owedAt != null &&
-            (_pixels - owedAt).abs() >= 2 * metrics.viewportDimension) {
+            (_pixels - owedAt.pixels).abs() >= 2 * metrics.viewportDimension) {
           _owedAt = null;
         }
         // `pixels` הוא ההיסט מהעוגן, והוא מתאפס בכל עיגון. כל עוד לא
@@ -169,7 +166,9 @@ class _ScrollPositionReanchorState extends State<ScrollPositionReanchor> {
   }
 
   void _reanchor() {
-    if (_owedAt != null) return;
+    final owedAt = _owedAt;
+    if (owedAt != null && owedAt.context?.mounted != false) return;
+    _owedAt = null;
     if (!mounted || !widget.enabled || !widget.scrollController.isAttached) {
       return;
     }
