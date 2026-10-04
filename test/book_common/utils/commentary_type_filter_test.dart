@@ -114,6 +114,40 @@ void main() {
 
       expect(keys, isEmpty);
     });
+
+    test('אותם קישורים ומפרשים משתמשים בתוצאה מחושבת', () {
+      final links = [_link(path2: 'אונקלוס.txt', type: LinkTypes.targum)];
+
+      final first = CommentaryTypeFilter.chipKeysForCommentators(
+        links: links,
+        selectedCommentators: ['אונקלוס'],
+      );
+      final second = CommentaryTypeFilter.chipKeysForCommentators(
+        links: links,
+        selectedCommentators: ['אונקלוס'],
+      );
+
+      expect(identical(first, second), isTrue);
+    });
+
+    test('שינוי המפרשים על אותם קישורים מחשב מחדש', () {
+      final links = [
+        _link(path2: 'אונקלוס.txt', type: LinkTypes.targum),
+        _link(path2: 'מדרש רבה.txt', type: LinkTypes.midrash),
+      ];
+
+      final first = CommentaryTypeFilter.chipKeysForCommentators(
+        links: links,
+        selectedCommentators: const ['אונקלוס'],
+      );
+      final second = CommentaryTypeFilter.chipKeysForCommentators(
+        links: links,
+        selectedCommentators: const ['מדרש רבה'],
+      );
+
+      expect(first, [LinkTypes.targum]);
+      expect(second, [LinkTypes.midrash]);
+    });
   });
 
   group('commentatorsByType', () {

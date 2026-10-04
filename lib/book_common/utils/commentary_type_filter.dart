@@ -13,6 +13,12 @@ class CommentaryTypeFilter {
     'commentatorsByType',
   );
 
+  // נקרא בכל build של רשימת המפרשים (גם בגלילה), על כל קישורי חלון הקריאה.
+  static final _chipKeysForCommentatorsCache =
+      Expando<({List<String> commentators, List<String> keys})>(
+        'chipKeysForCommentators',
+      );
+
   /// מפתחות צ׳יפי סוגי המפרשים שקיימים בפועל ב-[links], בסדר
   /// [LinkTypes.commentaryFilterTypes]. סוג בלי קישורים אינו מקבל צ׳יפ.
   static List<String> chipKeys(List<Link> links) {
@@ -33,8 +39,13 @@ class CommentaryTypeFilter {
     required List<Link> links,
     required List<String> selectedCommentators,
   }) {
+    final cached = _chipKeysForCommentatorsCache[links];
+    if (cached != null &&
+        listEquals(cached.commentators, selectedCommentators)) {
+      return cached.keys;
+    }
     final commentatorsSet = selectedCommentators.toSet();
-    return chipKeys(
+    final keys = chipKeys(
       links
           .where(
             (link) =>
@@ -42,6 +53,11 @@ class CommentaryTypeFilter {
           )
           .toList(growable: false),
     );
+    _chipKeysForCommentatorsCache[links] = (
+      commentators: List.of(selectedCommentators),
+      keys: keys,
+    );
+    return keys;
   }
 
   /// מיפוי סוג קנוני → שמות המפרשים שיש להם קישור מאותו סוג. משמש לצמצום
