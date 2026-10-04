@@ -255,6 +255,31 @@ void main() {
     );
   });
 
+  test(
+    'markPendingReportAsSent: עובר להיסטוריה בלי פנייה לשרת (#1766)',
+    () async {
+      var requests = 0;
+      final service = build(
+        MockClient((_) async {
+          requests++;
+          return http.Response('', 500);
+        }),
+      );
+      final report = _report();
+      await service.queueReport(report);
+
+      await service.markPendingReportAsSent(report);
+
+      expect(requests, 0);
+      expect(await service.getPendingReportsCount(), 0);
+      final sent = (await service.getSentReports()).single;
+      expect(sent.reportId, report.reportId);
+      expect(sent.sentAt, isNotNull);
+      expect(sent.diagnostics, isNull);
+      expect(await service.getSentReportsTotal(), 1);
+    },
+  );
+
   test('צילומי מסך: נשלחים, נשמרים בתור בכשל, ונמחקים מההיסטוריה', () async {
     final image = AppReportImage(
       bytes: Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 9]),

@@ -193,6 +193,14 @@ class AppReportService {
     return send(report);
   }
 
+  /// מעביר דיווח מהתור להיסטוריה בלי לשלוח — כשנשלח בדרך אחרת (סקריפט).
+  Future<void> markPendingReportAsSent(AppReport report) async {
+    await _saveSentReport(
+      report.withoutAttachments().copyWith(sentAt: _clock()),
+    );
+    await deletePendingReport(report.reportId);
+  }
+
   /// שומר דיווח בתור בלי לנסות לשלוח.
   Future<void> queueReport(AppReport report) => _enqueueIfNeeded(report);
 

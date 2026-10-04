@@ -283,6 +283,11 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               icon: FluentIcons.delete_24_regular,
               onPressed: () => _deletePending(report),
             ),
+            ActionButton.neutral(
+              text: context.settingsText('סמן כנשלח'),
+              icon: FluentIcons.checkmark_24_regular,
+              onPressed: () => _markPendingAsSent(report),
+            ),
             _managed(
               enabled: !widget.isOfflineMode,
               child: ActionButton.recommended(
@@ -528,6 +533,25 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     if (!mounted) return;
     setState(() {});
     UiSnack.show(ReportMessages.removedFromQueue);
+  }
+
+  Future<void> _markPendingAsSent(AppReport report) async {
+    final confirmed = await showTwoActionsDialog(
+      context: context,
+      title: context.settingsText('לסמן כנשלח?'),
+      content: context.settingsText(
+        'הדיווח יעבור להיסטוריית הדיווחים שנשלחו ויוסר מהתור, ללא שליחה לשרת. '
+        'השתמשו בכך אם כבר שלחתם את הדיווח בדרך אחרת.',
+      ),
+      cancelText: context.settingsText('ביטול'),
+      confirmText: context.settingsText('סמן כנשלח'),
+    );
+    if (confirmed != true) return;
+
+    await _service.markPendingReportAsSent(report);
+    if (!mounted) return;
+    setState(() {});
+    UiSnack.show(ReportMessages.markedAsSent);
   }
 
   Future<void> _deleteSent(AppReport report) async {
