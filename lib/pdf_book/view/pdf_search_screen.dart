@@ -698,7 +698,11 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     required InBookSearchSettings settings,
     required PdfBookBloc pdfBookBloc,
   }) {
-    setState(() => _settings = settings);
+    setState(() {
+      _settings = settings;
+      // The preference is global; a toggle in another tab leaves a stale value.
+      _wholeWord = InBookSearchPreferences.loadWholeWord();
+    });
     pdfBookBloc.add(
       UpdateSearchOptions(
         searchOptions: settings.searchOptions,
