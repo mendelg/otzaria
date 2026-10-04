@@ -409,6 +409,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   /// נשמרות כדי להשאיר את עץ הרשימה חי ומוסתר בזמן טעינת הקטע הבא.
   List<CommentaryGroup>? _lastResolvedGroups;
   _PdfVisibleContentCache? _visibleContentCache;
+  final _visibleLinksCache = PdfCommentaryVisibleLinksCache();
   List<CommentatorGroup> _commentatorGroups = [];
   PdfCommentaryVisibility? _visibility =
       const HiddenLibraryStore().load().isEmpty
@@ -1961,7 +1962,10 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         !widget.enableInternalFilter && widget.tab.activeCommentators.isEmpty;
 
     final extraLines = widget.extraLineIndices;
-    final visibleLinks = widget.tab.links.where(visibility.allowsLink).toList();
+    final visibleLinks = _visibleLinksCache.forSource(
+      widget.tab.links,
+      visibility,
+    );
     for (final link in visibleLinks) {
       if (!pdfLinkInVisibleScope(
         link.index1,
