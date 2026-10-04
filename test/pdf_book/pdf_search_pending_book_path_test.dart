@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:otzaria/core/messages/pdf_messages.dart';
+import 'package:otzaria/core/messages/library_messages.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_bloc.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_event.dart';
@@ -171,7 +171,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text(PdfMessages.searchError), findsOneWidget);
+    expect(find.text(LibraryMessages.searchError), findsOneWidget);
     expect(find.text('אין תוצאות'), findsNothing);
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(repository.calls, 0);

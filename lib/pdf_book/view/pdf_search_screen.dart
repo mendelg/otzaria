@@ -7,6 +7,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:otzaria/core/messages/library_messages.dart';
 import 'package:otzaria/core/messages/pdf_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
@@ -750,7 +751,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
           _searchResults = [];
           _isSearching = !_bookPathResolved;
           _searchErrorMessage = _bookPathResolved
-              ? PdfMessages.searchError
+              ? LibraryMessages.searchError
               : null;
         });
       }
@@ -851,10 +852,10 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
       setState(() {
         _searchResults = [];
         _isSearching = false;
-        _searchErrorMessage = PdfMessages.searchError;
+        _searchErrorMessage = LibraryMessages.searchError;
       });
       _updateAdvancedHighlight(const []);
-      UiSnack.showError(PdfMessages.searchError);
+      UiSnack.showError(LibraryMessages.searchError);
     }
   }
 
