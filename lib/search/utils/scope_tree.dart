@@ -394,8 +394,8 @@ class ScopeTree {
     final results = <ScopeSearchResultItem>[];
 
     void visit(ScopeNode node) {
-      final normalizedTitle = normalizeFindText(node.title);
-      final normalizedSubtitle = normalizeFindText(node.subtitle);
+      final normalizedTitle = node.normalizedTitle;
+      final normalizedSubtitle = node.normalizedSubtitle;
       final matches = findNormalizedTextMatches(
         normalizedQuery: normalizedQuery,
         normalizedPrimaryText: normalizedTitle,
@@ -520,12 +520,16 @@ abstract class ScopeNode {
   final String subtitle;
   final List<ScopeNode> children;
 
-  const ScopeNode({
+  ScopeNode({
     required this.facet,
     required this.title,
     required this.subtitle,
     required this.children,
   });
+
+  // העץ ממוטמן לספרייה, ו-search עובר על כל הצמתים בכל הקשה — מנרמלים פעם אחת.
+  late final String normalizedTitle = normalizeFindText(title);
+  late final String normalizedSubtitle = normalizeFindText(subtitle);
 
   bool get isBook;
 }
