@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -40,6 +41,26 @@ Future<List<String>> _orderedLabels(
     typesToShow: typesToShow,
   );
   return result.map((l) => l.heRef.split(',').last.trim()).toList();
+}
+
+class _CountingCommentators extends ListBase<String> {
+  int reads = 0;
+
+  @override
+  int get length => 1000;
+
+  @override
+  set length(int value) => throw UnsupportedError('read-only');
+
+  @override
+  String operator [](int index) {
+    reads++;
+    return 'מפרש $index';
+  }
+
+  @override
+  void operator []=(int index, String value) =>
+      throw UnsupportedError('read-only');
 }
 
 void main() {
@@ -158,6 +179,52 @@ void main() {
     for (var i = 0; i < expected.length; i++) {
       expect(identical(actual[i], expected[i]), isTrue, reason: 'מיקום $i');
     }
+  });
+
+  test('מיון אפס או קישור יחיד אינו סורק מפרשים ושומר עותק גמיש', () {
+    final link = _link(heRef: 'מפרש א', index2: 1);
+    for (final input in [
+      const <Link>[],
+      List<Link>.unmodifiable([link]),
+    ]) {
+      final commentators = _CountingCommentators();
+      final result = sortLinksByCommentatorOrder(input, commentators);
+
+      expect(commentators.reads, 0);
+      expect(identical(result, input), isFalse);
+      expect(result.length, input.length);
+      if (input.isNotEmpty) expect(identical(result.single, link), isTrue);
+      result.add(link);
+      result.removeLast();
+      expect(input.length, result.length);
+    }
+  });
+
+  test('סינון לקישור יחיד שומר את הקלט ומחזיר עותק גמיש', () async {
+    final kept = _link(
+      heRef: 'מפרש א',
+      path2: r'ספרים\מפרש 0.txt',
+      index2: 2,
+    );
+    final input = List<Link>.unmodifiable([
+      kept,
+      _link(heRef: 'שורה אחרת', index1: 2, index2: 1),
+    ]);
+    final commentators = _CountingCommentators();
+    final result = await getLinksforIndexs(
+      indexes: const [0],
+      links: input,
+      commentatorsToShow: commentators,
+    );
+
+    expect(commentators.reads, commentators.length);
+
+    expect(result, [same(kept)]);
+    expect(identical(result, input), isFalse);
+    result.add(kept);
+    expect(input, hasLength(2));
+    result.clear();
+    expect(input.first, same(kept));
   });
 
   group('מיון בתוך אותו מפרש — ס"ק כרכיב האחרון ב-heRef', () {

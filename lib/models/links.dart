@@ -495,9 +495,8 @@ Future<List<Link>> getLinksforIndexs({
     return commentatorsSet.contains(utils.getTitleFromPath(link.path2));
   }).toList();
 
-  // אם אין קישורים, מחזיר רשימה ריקה מיד
-  if (filteredLinks.isEmpty) {
-    return [];
+  if (filteredLinks.length < 2) {
+    return filteredLinks;
   }
 
   return sortLinksByCommentatorOrder(filteredLinks, commentatorsToShow);
@@ -509,6 +508,8 @@ List<Link> sortLinksByCommentatorOrder(
   List<Link> links,
   List<String> commentatorsToShow,
 ) {
+  if (links.length < 2) return List.of(links);
+
   // הדרגה מחושבת פעם לקישור; ריצה מהסוף משמרת את המופע הראשון כמו indexOf.
   final rankByTitle = <String, int>{
     for (var i = commentatorsToShow.length - 1; i >= 0; i--)
