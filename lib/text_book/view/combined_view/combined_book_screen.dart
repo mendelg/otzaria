@@ -1399,7 +1399,10 @@ class _CombinedViewState extends State<CombinedView> {
         paragraphIndex: paragraphIndex,
         selectedText: selectedText,
         onCopy: () => _copyFormattedText(selectedText),
-        onAddNote: () => _showNoteEditor(selectedText),
+        onAddNote: () => _showNoteEditor(
+          selectedText,
+          _currentSelectedIndex.value ?? paragraphIndex,
+        ),
       ),
       _copyAsEntry(state, selectedText),
       const AppContextMenuEntry.divider(),
@@ -1691,14 +1694,21 @@ class _CombinedViewState extends State<CombinedView> {
   }
 
   /// הצגת עורך ההערות
-  Future<void> _showNoteEditor([String? capturedText]) async {
+  Future<void> _showNoteEditor([
+    String? capturedText,
+    int? clickedIndex,
+  ]) async {
     final state = _textBookBloc.state;
     if (state is! TextBookLoaded) return;
 
     final selectedText = capturedText ?? _savedSelectedText.value;
+    final hasSelection = selectedText?.trim().isNotEmpty == true;
 
-    // משתמש בשורה שממנה הודגש טקסט (אם קיים), אחרת בשורה הנבחרת, אחרת בשורה הראשונה הנראית
+    // בחירה פעילה מקבלת קדימות; בלעדיה משתמשים בשורת הלחיצה,
+    // כי האינדקס השמור עשוי להישאר מבחירה קודמת.
     final currentIndex =
+        (hasSelection ? _savedSelectedIndex.value : null) ??
+        clickedIndex ??
         _savedSelectedIndex.value ??
         state.selectedIndex ??
         (state.visibleIndices.isNotEmpty ? state.visibleIndices.first : 0);
