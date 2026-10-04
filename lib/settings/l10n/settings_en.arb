@@ -1150,6 +1150,7 @@
   "מה לעשות כשהתוכנה מזהה שנסגרה בלי סגירה מסודרת": "What to do when Otzaria detects it did not exit cleanly",
   "חיפוש חכם": "Smart Search",
   "שיפור המנגנון": "Help Improve the Engine",
+  "השליחה לשרת חסומה כעת ברשת שלך (ייתכן שעל ידי סינון). הנתונים נשמרים במחשב ויישלחו כשהגישה תיפתח.": "Sending to the server is currently blocked on your network (possibly by a filter). The data is kept on this computer and will be sent once access is restored.",
   "השימוש ב{name} מותנה בהסכמה לשליחת נתוני שימוש אנונימיים לשיפור המנגנון: מילות החיפוש, התוצאות שהוצגו ודירוגן, הקטעים שנפתחו או שסומנו (אהבתי / לא אהבתי) וזמן העיון בהם, וכן גרסת התוכנה ומערכת ההפעלה. לא נשלחים שם, כתובת דוא\"ל, נתיבי קבצים, תוכן מספרים אישיים או כל פרט מזהה אחר. מומלץ לא לכלול פרטים אישיים בטקסט החיפוש. אפשר לבטל את ההסכמה בכל עת בהגדרות, והביטול חוסם את מצב החיפוש הזה.": "Using {name} requires agreeing to send anonymous usage data to improve the engine: the search words, the results shown and their ranking, the passages opened or marked (like / dislike) and how long they were read, as well as the app version and operating system. No name, email address, file paths, content of personal books or any other identifying detail is sent. Avoid including personal details in the search text. You can withdraw consent at any time in Settings, and withdrawing it blocks this search mode.",
   "שליחת נתוני שימוש אנונימיים לשיפור החיפוש": "Send anonymous usage data to improve search",
   "נתוני {name}": "{name} Data",
