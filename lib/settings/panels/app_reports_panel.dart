@@ -13,6 +13,7 @@ import 'package:otzaria/app_report/view/app_report_result_snack.dart';
 import 'package:otzaria/core/messages/report_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
+import 'package:otzaria/settings/panels/report_panel_widgets.dart';
 import 'package:otzaria/settings/services/offline_send_target.dart';
 import 'package:otzaria/settings/services/safer_mode_guard.dart';
 import 'package:otzaria/settings/widgets/settings_widgets_exports.dart';
@@ -24,7 +25,7 @@ import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-/// כרטיס "דיווחים על התוכנה" במסך ההגדרות: פתיחת הטופס, מצב הדיווח אחרי
+/// דיווחים על התוכנה בחלון ניהול הדיווחים: פתיחת הטופס, מצב הדיווח אחרי
 /// קריסה, וניהול התור וההיסטוריה — באותו מבנה כמו דיווחי הטעויות והתוספים.
 class AppReportsPanel extends StatefulWidget {
   const AppReportsPanel({
@@ -33,9 +34,11 @@ class AppReportsPanel extends StatefulWidget {
     required this.crashReportMode,
     required this.onCrashReportModeChanged,
     this.service,
+    this.onPendingReportsChanged,
   });
 
   final bool isOfflineMode;
+  final VoidCallback? onPendingReportsChanged;
   final AppCrashReportMode crashReportMode;
   final ValueChanged<AppCrashReportMode> onCrashReportModeChanged;
   final AppReportService? service;
@@ -57,12 +60,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return SettingsCard(
-      cardId: 'system.appReports',
-      title: context.settingsText('דיווחים על התוכנה'),
-      subtitle: context.settingsText(
-        'דיווח על תקלות בתוכנה עצמה. הדיווח נפתח כדיווח ציבורי ב-GitHub, וקובצי האבחון גלויים למפתחי אוצריא בלבד.',
-      ),
+    return AppCard.section(
       children: [
         SettingsActionTile.text(
           icon: FluentIcons.bug_24_regular,
@@ -77,7 +75,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               onPressed: () => showAppReportDialog(
                 context,
                 dialogBuilder: settingsDialogBuilder,
-              ).then((_) => _refresh()),
+              ).then(_refresh),
             ),
           ],
         ),
@@ -154,7 +152,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               icon: FluentIcons.checkmark_circle_24_regular,
               title: context.settingsText('דיווחים שנשלחו'),
               hasContent: sent.isNotEmpty,
-              subtitle: _sentSubtitle(
+              subtitle: sentReportsSubtitle(
                 context,
                 shown: sent.length,
                 total: snapshot.data?.$2 ?? 0,
@@ -171,7 +169,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: _managed(
+                        child: buildManagedActionButton(
                           enabled: sent.isNotEmpty,
                           child: ActionButton.neutral(
                             text: context.settingsText('נקה את כל ההיסטוריה'),
@@ -199,7 +197,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < LayoutBreakpoints.compact;
-          final send = _managed(
+          final send = buildManagedActionButton(
             enabled: !widget.isOfflineMode,
             child: ActionButton.recommended(
               text: context.settingsText('שלח עכשיו'),
@@ -208,7 +206,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               isLoading: _isFlushing,
             ),
           );
-          final clear = _managed(
+          final clear = buildManagedActionButton(
             enabled: hasReports,
             child: ActionButton.neutral(
               text: context.settingsText('נקה דיווחים'),
@@ -217,7 +215,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               isLoading: _isClearingPending,
             ),
           );
-          final export = _managed(
+          final export = buildManagedActionButton(
             enabled: hasReports,
             child: ActionButton.neutral(
               text: context.settingsText('הורד לשליחה במחשב מחובר'),
@@ -266,7 +264,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        _actions(
+        buildReportActions(
           children: [
             ActionButton.neutral(
               text: context.settingsText('צפה'),
@@ -288,7 +286,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
               icon: FluentIcons.checkmark_24_regular,
               onPressed: () => _markPendingAsSent(report),
             ),
-            _managed(
+            buildManagedActionButton(
               enabled: !widget.isOfflineMode,
               child: ActionButton.recommended(
                 text: context.settingsText('שלח'),
@@ -317,7 +315,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
             overflow: TextOverflow.ellipsis,
           ),
         ),
-        _actions(
+        buildReportActions(
           children: [
             ActionButton.neutral(
               text: context.settingsText('צפה'),
@@ -347,28 +345,6 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     );
   }
 
-  Widget _actions({required List<Widget> children}) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 56, left: 16, bottom: 12),
-      child: Align(
-        alignment: AlignmentDirectional.centerEnd,
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.end,
-          children: children,
-        ),
-      ),
-    );
-  }
-
-  Widget _managed({required bool enabled, required Widget child}) {
-    return IgnorePointer(
-      ignoring: !enabled,
-      child: Opacity(opacity: enabled ? 1 : 0.45, child: child),
-    );
-  }
-
   String _summaryLine(BuildContext context, AppReport report) {
     final date = report.sentAt ?? report.createdAt;
     final local = date.toLocal();
@@ -388,28 +364,10 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     AppReportType.suggestion => context.settingsText('הצעה'),
   };
 
-  String _sentSubtitle(
-    BuildContext context, {
-    required int shown,
-    required int total,
-  }) {
-    if (shown == 0) {
-      return context.settingsText('עדיין אין דיווחים שנשלחו דרך המערכת');
-    }
-    if (total > shown) {
-      return context.settingsText(
-        'נשלחו {total} דיווחים, מוצגים {shown} האחרונים',
-        args: {'total': total, 'shown': shown},
-      );
-    }
-    return context.settingsText(
-      'נשמרו {count} דיווחים שנשלחו',
-      args: {'count': shown},
-    );
-  }
-
-  void _refresh() {
-    if (mounted) setState(() {});
+  void _refresh(AppReportDeliveryResult? result) {
+    if (!mounted) return;
+    setState(() {});
+    if (result != null) widget.onPendingReportsChanged?.call();
   }
 
   Future<void> _showDetails(AppReport report, {required bool sent}) async {
@@ -455,6 +413,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     final sentCount = await _service.flushPendingReports();
     final pendingAfter = await _service.getPendingReportsCount();
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() => _isFlushing = false);
     if (sentCount > 0) {
       UiSnack.showSuccess(ReportMessages.pendingFlushed(sentCount));
@@ -473,7 +432,10 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     } catch (e) {
       if (mounted) UiSnack.showError(ReportMessages.sendError(e));
     } finally {
-      if (mounted) setState(() => _sendingReportId = null);
+      if (mounted) {
+        setState(() => _sendingReportId = null);
+        widget.onPendingReportsChanged?.call();
+      }
     }
     if (result != null) showAppReportResultSnack(result);
   }
@@ -532,6 +494,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     await _service.deletePendingReport(report.reportId);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.removedFromQueue);
   }
 
@@ -551,6 +514,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     await _service.markPendingReportAsSent(report);
     if (!mounted) return;
     setState(() {});
+    widget.onPendingReportsChanged?.call();
     UiSnack.show(ReportMessages.markedAsSent);
   }
 
@@ -574,6 +538,7 @@ class _AppReportsPanelState extends State<AppReportsPanel> {
     setState(() => _isClearingPending = true);
     await _service.clearPendingReports();
     if (!mounted) return;
+    widget.onPendingReportsChanged?.call();
     setState(() => _isClearingPending = false);
     UiSnack.show(ReportMessages.pendingCleared);
   }
