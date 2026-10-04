@@ -8,7 +8,9 @@
 //
 // כל הוריאנטים כוללים ניווט מקלדת (חיצים, Enter, Escape) והדגשת פוקוס חזותית.
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:otzaria/widgets/controls/action_buttons.dart';
 import 'package:otzaria/widgets/misc/keyboard_dialog_navigation.dart';
 
@@ -34,6 +36,9 @@ class AppDialog extends StatefulWidget {
   // מאפשר לעצור סגירת הדיאלוג — למשל כשוולידציה נכשלת. null = סגור תמיד.
   final bool Function()? onConfirm;
 
+  /// כל עוד true, לחיצה מחוץ לדיאלוג לא סוגרת אותו ומשמיעה צליל אזהרה.
+  final ValueListenable<bool>? hasUnsavedChanges;
+
   const AppDialog.singleAction({
     super.key,
     required this.title,
@@ -49,7 +54,8 @@ class AppDialog extends StatefulWidget {
        _variant = _DialogVariant.singleAction,
        cancelText = '',
        subtitle = null,
-       handleEnterKey = true;
+       handleEnterKey = true,
+       hasUnsavedChanges = null;
 
   const AppDialog.twoActions({
     super.key,
@@ -60,6 +66,7 @@ class AppDialog extends StatefulWidget {
     this.confirmText = 'אישור',
     this.textDirection,
     this.handleEnterKey = true,
+    this.hasUnsavedChanges,
   }) : _variant = _DialogVariant.twoActions,
        subtitle = null,
        onConfirm = null;
@@ -75,7 +82,8 @@ class AppDialog extends StatefulWidget {
     this.textDirection,
   }) : _variant = _DialogVariant.warning,
        handleEnterKey = true,
-       onConfirm = null;
+       onConfirm = null,
+       hasUnsavedChanges = null;
 
   @override
   State<AppDialog> createState() => _AppDialogState();
@@ -119,7 +127,7 @@ class _AppDialogState extends State<AppDialog> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return DialogKeyboardNavigator(
+    final dialog = DialogKeyboardNavigator(
       focusedIndex: _focusedIndex,
       onFocusChange: _moveFocus,
       onConfirm: _handleConfirm,
@@ -133,6 +141,20 @@ class _AppDialogState extends State<AppDialog> {
         content: _buildContent(cs),
         actions: _buildActions(),
       ),
+    );
+    final unsaved = widget.hasUnsavedChanges;
+    if (unsaved == null) return dialog;
+    // הרקע סוגר דרך maybePop, שנחסם כאן; הכפתורים ו-Esc סוגרים ב-pop ישיר.
+    return ValueListenableBuilder<bool>(
+      valueListenable: unsaved,
+      builder: (context, hasChanges, child) => PopScope(
+        canPop: !hasChanges,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) SystemSound.play(SystemSoundType.alert);
+        },
+        child: child!,
+      ),
+      child: dialog,
     );
   }
 
@@ -239,6 +261,7 @@ Future<bool?> showTwoActionsDialog({
   TextDirection? textDirection,
   bool barrierDismissible = true,
   bool handleEnterKey = true,
+  ValueListenable<bool>? hasUnsavedChanges,
 }) => showDialog<bool>(
   context: context,
   barrierDismissible: barrierDismissible,
@@ -252,6 +275,7 @@ Future<bool?> showTwoActionsDialog({
       confirmText: confirmText,
       textDirection: textDirection,
       handleEnterKey: handleEnterKey,
+      hasUnsavedChanges: hasUnsavedChanges,
     ),
   ),
 );

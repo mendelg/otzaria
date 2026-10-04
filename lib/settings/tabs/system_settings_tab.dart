@@ -685,6 +685,7 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
       errorDetails: report.errorDetails,
       contextText: report.contextText,
     );
+    final hasChanges = ValueNotifier(false);
 
     final confirmed = await showTwoActionsDialog(
       context: context,
@@ -693,14 +694,22 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
       cancelText: context.settingsText('ביטול'),
       confirmText: context.settingsText('שמור'),
       handleEnterKey: false,
+      hasUnsavedChanges: hasChanges,
       customContent: SizedBox(
         width: 560,
         child: _PendingReportEditFields(
           initialValues: editValues,
-          onChanged: (values) => editValues = values,
+          onChanged: (values) {
+            editValues = values;
+            hasChanges.value =
+                values.selectedText != report.selectedText ||
+                values.errorDetails != report.errorDetails ||
+                values.contextText != report.contextText;
+          },
         ),
       ),
     );
+    hasChanges.dispose();
 
     if (confirmed == true) {
       await DirectErrorReportService().updatePendingReport(
@@ -1563,6 +1572,7 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
   Future<void> _editPendingPluginReport(PluginReportRecord record) async {
     var reportType = record.reportType;
     var details = record.details;
+    final hasChanges = ValueNotifier(false);
 
     final confirmed = await showTwoActionsDialog(
       context: context,
@@ -1580,10 +1590,14 @@ class _SystemSettingsTabState extends State<SystemSettingsTab> {
           onChanged: (type, text) {
             reportType = type;
             details = text;
+            hasChanges.value =
+                type != record.reportType || text != record.details;
           },
         ),
       ),
+      hasUnsavedChanges: hasChanges,
     );
+    hasChanges.dispose();
     if (confirmed != true) return;
     if (details.trim().isEmpty) {
       UiSnack.showError(ReportMessages.detailsRequired);
