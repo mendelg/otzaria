@@ -1097,7 +1097,7 @@ class _TantivySearchResultsState extends State<TantivySearchResults> {
                                           ? null
                                           : () {
                                               final plainText = utils
-                                                  .stripHtmlIfNeeded(
+                                                  .stripHtmlPreservingBreaks(
                                                     rawHtml,
                                                   );
                                               // אותה התנהגות כמו העתקה ממסך הקריאה:

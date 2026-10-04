@@ -408,6 +408,59 @@ Future<void> main() async {
   );
 
   testWidgets(
+    'תוצאת מנוע שנמשכת לשורה הבאה נספרת פעם אחת ומסמנת את שתי השורות',
+    (tester) async {
+      final repository = _RecordingSearchRepository(
+        results: [
+          _result(
+            title: 'בראשית',
+            reference: 'פרק טו',
+            segment: 0,
+            text: 'ידע <font color=red>תדע</font><br>כי־גר יהיה',
+            continuesToNextLine: true,
+          ),
+        ],
+      );
+
+      final harness = await pumpSearchView(
+        tester,
+        searchRepository: repository,
+        initialQuery: 'תדע כי',
+        searchDistance: 1,
+        bookTitle: 'בראשית',
+        content: const ['ויאמר לאברם ידע תדע', 'כי־גר יהיה זרעך'],
+      );
+
+      await harness.settle();
+
+      expect(find.text('נמצאו 1 תוצאות'), findsOneWidget);
+      expect(harness.bloc.reportedResultLines.last, {0, 1});
+    },
+    skip: !engineReady,
+  );
+
+  testWidgets(
+    'חיפוש מקומי מוצא ביטוי שנמשך לשורה הבאה ומסמן את שתי השורות',
+    (tester) async {
+      final harness = await pumpSearchView(
+        tester,
+        searchRepository: _RecordingSearchRepository(results: const []),
+        initialQuery: 'ובין המים ויאמר',
+        content: const [
+          'ויבדל בין המים אשר מתחת לרקיע ובין המים',
+          '(ג) ויאמר אלהים יקוו המים',
+        ],
+      );
+
+      await harness.settle();
+
+      expect(find.text('נמצאו 1 תוצאות'), findsOneWidget);
+      expect(harness.bloc.reportedResultLines.last, {0, 1});
+    },
+    skip: !engineReady,
+  );
+
+  testWidgets(
     'כשל בזיהוי הספר מציג שגיאה, ואינו משאיר את החלונית במצב "מחפש"',
     (tester) async {
       // הספר עדיין נטען (ה-state אינו TextBookLoaded) ולכן אין ממה לבנות את
@@ -484,6 +537,7 @@ SearchResult _result({
   String text =
       'ידע <font color=red>תדע</font> כי־גר יהיה <font color=red>זרעך</font>',
   TextStatus textStatus = TextStatus.ok,
+  bool continuesToNextLine = false,
 }) {
   return SearchResult(
     id: BigInt.from(segment + 1),
@@ -496,7 +550,7 @@ SearchResult _result({
     mergedCount: 1,
     merged: const [],
     textStatus: textStatus,
-    continuesToNextLine: false,
+    continuesToNextLine: continuesToNextLine,
   );
 }
 

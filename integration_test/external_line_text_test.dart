@@ -349,7 +349,7 @@ void main() {
       expect(crossing.segment, BigInt.one);
       expect(
         withoutHighlight(crossing.text),
-        'והארץ היתה תהו ובהו ¶ ויאמר אלהים יהי אור',
+        'והארץ היתה תהו ובהו<br>ויאמר אלהים יהי אור',
       );
       expect(crossing.text, (await single(stored, crossingQuery)).text);
       expect((await lineSourceStatus()).libraryFallbacks, BigInt.zero);

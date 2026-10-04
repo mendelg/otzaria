@@ -944,7 +944,6 @@ const _crossLineBrackets = {0x28: 0x29, 0x5B: 0x5D, 0x7B: 0x7D};
 
 /// גבולות התוכן של שורה לביטוי שנמשך לשורה הסמוכה: בלי סימון ממוספר כמו
 /// `(ג)` בתחילתה או `{פ}` בסופה — אותו כלל כמו במנוע.
-@visibleForTesting
 ({int start, int end}) crossLineContentRange(String html) {
   int skipTagsAndSpaces(int i) {
     while (i < html.length) {

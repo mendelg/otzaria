@@ -27,6 +27,23 @@ class SnippetBuilder {
 
   static final RegExp _whitespace = RegExp(r'\s+');
 
+  static final RegExp _lineBreakTag = RegExp(
+    r'<br\s*/?>',
+    caseSensitive: false,
+  );
+
+  /// תו פרטי שמחליף `<br>` עד אחרי כיווץ הרווחים — רק מעבר שורה שהמנוע
+  /// סימן נשמר, ושאר הרווחים (כולל `\n` בתוך טקסט) מתכווצים כרגיל.
+  static const String _lineBreakMark = '\uE000';
+
+  static String _withLineBreakMarks(String html) =>
+      html.replaceAll(_lineBreakTag, _lineBreakMark);
+
+  /// מכווץ רווחים ומחזיר את סימוני המעבר כמעבר שורה אמיתי, בלי רווח סביבו.
+  static String _collapseWhitespace(String text) => text
+      .replaceAll(_whitespace, ' ')
+      .replaceAll(RegExp(' ?$_lineBreakMark ?'), '\n');
+
   /// ממיר HTML מודגש שמגיע ממנוע החיפוש לרשימת [InlineSpan].
   ///
   /// טקסט שעטוף בתג הדגשה ([_highlightTags]) מקבל את [highlightStyle];
@@ -37,7 +54,7 @@ class SnippetBuilder {
     required TextStyle defaultStyle,
     required TextStyle highlightStyle,
   }) {
-    final body = html_parser.parse(html).body;
+    final body = html_parser.parse(_withLineBreakMarks(html)).body;
     if (body == null) {
       return [TextSpan(text: '', style: defaultStyle)];
     }
@@ -66,7 +83,7 @@ class SnippetBuilder {
   }) {
     for (final child in node.nodes) {
       if (child is dom.Text) {
-        final text = child.text.replaceAll(_whitespace, ' ');
+        final text = _collapseWhitespace(child.text);
         if (text.isEmpty) continue;
         spans.add(
           TextSpan(
@@ -121,8 +138,8 @@ class SnippetBuilder {
   /// מחלץ טקסט גולמי מ-HTML של המנוע (מסיר תגים ומנרמל רווחים), לצורך
   /// הדגשה-מחדש בצד האפליקציה בעקביות עם פאנל הקריאה.
   static String htmlToPlainText(String html) {
-    final body = html_parser.parse(html).body;
-    return (body?.text ?? '').replaceAll(_whitespace, ' ').trim();
+    final body = html_parser.parse(_withLineBreakMarks(html)).body;
+    return _collapseWhitespace(body?.text ?? '').trim();
   }
 
   /// בונה [InlineSpan] מטקסט גולמי [plainText] וטווחי הדגשה [ranges]
@@ -233,7 +250,12 @@ class SnippetBuilder {
     bool wholeWord = true,
     int? Function(String text)? anchorOf,
   }) {
-    final text = fullText.replaceAll(_whitespace, ' ').trim();
+    final text = fullText
+        .replaceAllMapped(
+          _whitespace,
+          (match) => match[0]!.contains('\n') ? '\n' : ' ',
+        )
+        .trim();
     if (text.length <= maxChars) return text;
 
     int findWordEnd(int fromIndex) {
