@@ -1288,16 +1288,19 @@ class FindRefRepository {
     return bookMatchRanks;
   }
 
-  static DbReferenceResult _bookResult(ReferenceBookHit hit) =>
-      DbReferenceResult(
-        title: hit.title,
-        reference: hit.title,
-        segment: 0,
-        isPdf: hit.fileType == 'pdf',
-        filePath: hit.filePath,
-        orderIndex: hit.orderIndex,
-        bookId: hit.bookId,
-      );
+  static DbReferenceResult _bookResult(
+    ReferenceBookHit hit, {
+    bool isCategoryMatch = false,
+  }) => DbReferenceResult(
+    title: hit.title,
+    reference: hit.title,
+    segment: 0,
+    isPdf: hit.fileType == 'pdf',
+    filePath: hit.filePath,
+    orderIndex: hit.orderIndex,
+    bookId: hit.bookId,
+    isCategoryMatch: isCategoryMatch,
+  );
 
   static Iterable<DbReferenceResult> _dibburResults(
     ReferenceBookHit hit,
@@ -1624,7 +1627,7 @@ class FindRefRepository {
         remainingTokens,
         wholeName: !isOverCap,
       )) {
-        results.add(_bookResult(hit));
+        results.add(_bookResult(hit, isCategoryMatch: true));
       }
       return results;
     }
@@ -1677,7 +1680,7 @@ class FindRefRepository {
     // כשה-TOC לא החזיר כלום, כדי שכותרת פנימית תמיד תגבר.
     if (results.length == resultsBeforeToc &&
         _remainingTokensAreLeafCategory(bookId, remainingTokens)) {
-      results.add(_bookResult(hit));
+      results.add(_bookResult(hit, isCategoryMatch: true));
     }
     return results;
   }
@@ -2863,16 +2866,28 @@ class FindRefRepository {
     List<String> remainingTokens, {
     bool wholeName = false,
   }) {
+    final leaf = _leafCategory(bookId);
+    if (leaf == null) return false;
+    return _tokensNameLeafCategory(
+      leaf,
+      remainingTokens,
+      wholeName: wholeName,
+    );
+  }
+
+  String? _leafCategory(int bookId) {
     final resolver =
         getCategoryPathSync ??
         ReferenceBooksCache.instance.getCategoryPathForBookSync;
     final path = resolver(bookId);
-    if (path == null || path.isEmpty) return false;
-    return _tokensNameLeafCategory(
-      path.split(', ').last,
-      remainingTokens,
-      wholeName: wholeName,
-    );
+    if (path == null || path.isEmpty) return null;
+    return path.split(', ').last;
+  }
+
+  Set<String> _leafCategoryTokens(int bookId) {
+    final leaf = _leafCategory(bookId);
+    if (leaf == null) return const {};
+    return titleMatchTokens(_normalizeForMatch(leaf));
   }
 
   /// האם כל [remainingTokens] הם מילים בשם הקטגוריה [leaf].
@@ -3088,6 +3103,9 @@ class FindRefRepository {
           reference: r.reference,
           segment: r.segment,
           bookId: r.bookId,
+          categoryTokens: r.isCategoryMatch
+              ? _leafCategoryTokens(r.bookId)
+              : const {},
         );
       },
     );

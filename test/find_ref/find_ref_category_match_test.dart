@@ -35,10 +35,17 @@ const _hilchotSanhedrin = (
   acronyms: ['הרמבם הלכות סנהדרין', 'הרמבם סנהדרין', 'רמבם סנהדרין'],
 );
 
+const _kiryatSeferShabbat = (
+  id: 5042,
+  title: 'קרית ספר על משנה תורה, הלכות שבת',
+  acronyms: ['קרית ספר על רמבם, הלכות שבת'],
+);
+
 const _categoryPaths = {
   296: 'הלכה, משנה תורה, ספר מדע',
   308: 'הלכה, משנה תורה, ספר זמנים',
   375: 'הלכה, משנה תורה, ספר שופטים',
+  5042: 'הלכה, משנה תורה, מפרשים, קרית ספר, ספר זמנים',
   7: 'תנ"ך, נביאים',
   7286: 'תלמוד בבלי, אחרונים, שמות בארץ',
   2: 'תנ"ך, תורה',
@@ -123,6 +130,22 @@ void main() {
 
       expect(titles, isNot(contains('יום תרועה')));
     });
+
+    test(
+      '"רמבם ספר זמנים": "ספר" בכותרת המפרש אינו מקדים את משנה תורה',
+      () async {
+        seedLibrary(const [
+          _kiryatSeferShabbat,
+          _hilchotShabbat,
+        ], categoryPaths: _categoryPaths);
+
+        final titles = (await buildFindRefRepo().findRefs(
+          'רמבם ספר זמנים',
+        )).map((r) => r.title).toList();
+
+        expect(titles, [_hilchotShabbat.title, _kiryatSeferShabbat.title]);
+      },
+    );
 
     test('segment אב ("הלכה") אינו מחזיר כלום', () async {
       // "הלכה" משותף לאלפי ספרים; רק העלה — הקטגוריה הישירה — נבדק.
