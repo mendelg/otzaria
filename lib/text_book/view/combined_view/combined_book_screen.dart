@@ -1326,7 +1326,7 @@ class _CombinedViewState extends State<CombinedView> {
         paragraphIndex,
       );
       return buildCommentatorsContextMenuChildren(
-        activeCommentators: state.activeCommentators,
+        getActiveCommentators: () => state.activeCommentators,
         availableCommentators: paragraphCommentators(
           availableCommentators: state.availableCommentators,
           content: state.content,

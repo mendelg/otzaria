@@ -2109,7 +2109,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     }
 
     return buildCommentatorsContextMenuChildren(
-      activeCommentators: state.activeCommentators,
+      getActiveCommentators: () => state.activeCommentators,
       availableCommentators: paragraphCommentators(
         availableCommentators: state.availableCommentators,
         content: widget.content,

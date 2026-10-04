@@ -51,7 +51,7 @@ void main() {
     void Function()? onOpenPane,
     void Function()? onSelectMultiple,
   }) => buildCommentatorsContextMenuChildren(
-    activeCommentators: active,
+    getActiveCommentators: () => active,
     availableCommentators: availableCommentators,
     commentatorGroups: groups,
     onCommentatorsChanged: onChange ?? (_, {required isAdding}) {},
@@ -61,6 +61,59 @@ void main() {
   );
 
   group('buildCommentatorsContextMenuChildren', () {
+    test('uses the given label for showing all commentators', () {
+      final entries = buildCommentatorsContextMenuChildren(
+        getActiveCommentators: () => const [],
+        availableCommentators: available,
+        commentatorGroups: groups,
+        onCommentatorsChanged: (_, {required isAdding}) {},
+        showAllLabel: 'הצג את כל המפרשים',
+      );
+      expect(labelsOf(entries).first, 'הצג את כל המפרשים');
+    });
+
+    test('can keep the pane entries when there are no commentators', () {
+      List<AppContextMenuEntry> withoutCommentators({required bool keep}) =>
+          buildCommentatorsContextMenuChildren(
+            getActiveCommentators: () => const [],
+            availableCommentators: const [],
+            commentatorGroups: groups,
+            onCommentatorsChanged: (_, {required isAdding}) {},
+            onOpenPane: () {},
+            onSelectMultiple: () {},
+            keepPaneEntriesWithoutCommentators: keep,
+          );
+      expect(withoutCommentators(keep: false), isEmpty);
+      expect(labelsOf(withoutCommentators(keep: true)), [
+        'פתח את חלונית המפרשים',
+        'בחר מפרשים מרובים',
+      ]);
+    });
+
+    test('lists commentators outside every group at the end', () {
+      final entries = buildCommentatorsContextMenuChildren(
+        getActiveCommentators: () => const [],
+        availableCommentators: const ['רש"י', 'פירוש חדש'],
+        commentatorGroups: groups,
+        onCommentatorsChanged: (_, {required isAdding}) {},
+      );
+      expect(labelsOf(entries).last, 'פירוש חדש');
+      expect(entries[entries.length - 2].isDivider, isTrue);
+    });
+
+    test('lists all commentators while the groups are not loaded', () {
+      final entries = buildCommentatorsContextMenuChildren(
+        getActiveCommentators: () => const [],
+        availableCommentators: available,
+        commentatorGroups: const [],
+        onCommentatorsChanged: (_, {required isAdding}) {},
+      );
+      expect(labelsOf(entries), [
+        'הצג את כל המפרשים על פסקה זו',
+        ...available,
+      ]);
+    });
+
     test('מציג את כל הקבוצות והמפרשים בסדר הדורות', () {
       expect(labelsOf(build()), [
         'הצג את כל המפרשים על פסקה זו',
@@ -197,15 +250,17 @@ void main() {
       expect(adding, isFalse);
     });
 
-    test('קבוצה ריקה אינה יוצרת פריטים או מפריד', () {
+    test('קבוצה ריקה אינה יוצרת כותרת קבוצה', () {
       final entries = buildCommentatorsContextMenuChildren(
-        activeCommentators: const [],
+        getActiveCommentators: () => const [],
         availableCommentators: const ['רש"י'],
-        commentatorGroups: const [],
+        commentatorGroups: const [
+          CommentatorGroup(title: 'אחרונים', commentators: ['מלבי"ם']),
+        ],
         onCommentatorsChanged: (_, {required isAdding}) {},
       );
-      expect(labelsOf(entries), ['הצג את כל המפרשים על פסקה זו']);
-      expect(entries.where((e) => e.isDivider), isEmpty);
+      expect(labelsOf(entries), ['הצג את כל המפרשים על פסקה זו', 'רש"י']);
+      expect(entries.where((e) => e.isDivider), hasLength(1));
     });
 
     test('הקבוצות מסוננות למפרשי הפסקה בלבד, וקבוצה שהתרוקנה נעלמת', () {
