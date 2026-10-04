@@ -61,6 +61,35 @@ void main() {
   );
 
   group('buildCommentatorsContextMenuChildren', () {
+    test('uses the given label for showing all commentators', () {
+      final entries = buildCommentatorsContextMenuChildren(
+        activeCommentators: const [],
+        availableCommentators: available,
+        commentatorGroups: groups,
+        onCommentatorsChanged: (_, {required isAdding}) {},
+        showAllLabel: 'הצג את כל המפרשים',
+      );
+      expect(labelsOf(entries).first, 'הצג את כל המפרשים');
+    });
+
+    test('can keep the pane entries when there are no commentators', () {
+      List<AppContextMenuEntry> withoutCommentators({required bool keep}) =>
+          buildCommentatorsContextMenuChildren(
+            activeCommentators: const [],
+            availableCommentators: const [],
+            commentatorGroups: groups,
+            onCommentatorsChanged: (_, {required isAdding}) {},
+            onOpenPane: () {},
+            onSelectMultiple: () {},
+            keepPaneEntriesWithoutCommentators: keep,
+          );
+      expect(withoutCommentators(keep: false), isEmpty);
+      expect(labelsOf(withoutCommentators(keep: true)), [
+        'פתח את חלונית המפרשים',
+        'בחר מפרשים מרובים',
+      ]);
+    });
+
     test('lists commentators outside every group at the end', () {
       final entries = buildCommentatorsContextMenuChildren(
         activeCommentators: const [],

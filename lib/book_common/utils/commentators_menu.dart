@@ -43,6 +43,10 @@ typedef CommentatorsSelectionChanged =
 /// [onOpenPane] ו-[onSelectMultiple] אינם מוצגים כשהם `null`. כשאין מפרשים
 /// לפסקה מוחזר רק פריט "טוען…" מושבת בזמן [linksLoading], ואחריו
 /// רשימה ריקה — כך הפריט האב מתאפר (issue #1413).
+///
+/// [showAllLabel] names the entry that shows all the listed commentators.
+/// With [keepPaneEntriesWithoutCommentators], the pane entries stay when
+/// there are no commentators, so a first selection can still be made.
 List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
   required List<String> activeCommentators,
   required List<String> availableCommentators,
@@ -51,6 +55,8 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
   VoidCallback? onOpenPane,
   VoidCallback? onSelectMultiple,
   bool linksLoading = false,
+  String showAllLabel = 'הצג את כל המפרשים על פסקה זו',
+  bool keepPaneEntriesWithoutCommentators = false,
 }) {
   final activeSet = activeCommentators.toSet();
   final availableSet = availableCommentators.toSet();
@@ -95,13 +101,7 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
     ];
   }
 
-  if (availableCommentators.isEmpty) {
-    return linksLoading
-        ? const [AppContextMenuEntry(label: 'טוען מפרשים…', enabled: false)]
-        : const <AppContextMenuEntry>[];
-  }
-
-  final entries = <AppContextMenuEntry>[
+  final paneEntries = <AppContextMenuEntry>[
     if (onOpenPane != null)
       AppContextMenuEntry(
         label: 'פתח את חלונית המפרשים',
@@ -116,10 +116,22 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
         isHighlighted: true,
         onTap: onSelectMultiple,
       ),
-    if (onOpenPane != null || onSelectMultiple != null)
-      const AppContextMenuEntry.divider(),
+  ];
+
+  if (availableCommentators.isEmpty) {
+    if (linksLoading) {
+      return const [AppContextMenuEntry(label: 'טוען מפרשים…', enabled: false)];
+    }
+    return keepPaneEntriesWithoutCommentators
+        ? paneEntries
+        : const <AppContextMenuEntry>[];
+  }
+
+  final entries = <AppContextMenuEntry>[
+    ...paneEntries,
+    if (paneEntries.isNotEmpty) const AppContextMenuEntry.divider(),
     AppContextMenuEntry(
-      label: 'הצג את כל המפרשים על פסקה זו',
+      label: showAllLabel,
       isSelected: allActive,
       // Only the paragraph's commentators change; the rest of the selection
       // belongs to other paragraphs and stays.
