@@ -8,7 +8,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/widgets/misc/commentators_filter_button.dart';
 import 'package:otzaria/widgets/layout/commentators_filter_screen.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
-import 'package:otzaria/core/windowing/settings_sync.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/pdf_book/utils/pdf_commentary_visibility.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
@@ -415,8 +414,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       const HiddenLibraryStore().load().isEmpty
       ? PdfCommentaryVisibility.empty()
       : null;
-  StreamSubscription<dynamic>? _hiddenSelectionSubscription;
-  StreamSubscription<String>? _settingsSyncSubscription;
+  StreamSubscription<void>? _hiddenSelectionSubscription;
   int _visibilityLoadGeneration = 0;
 
   /// סינון לפי סוג מפרש (תרגום/מדרש וכו׳). מצב מקומי ולא מוגדר: הצ׳יפים תלויים
@@ -533,16 +531,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     widget.externalSearchController?.addListener(_onExternalSearchChanged);
     _searchFocusNode.addListener(_handleSearchFocusChange);
     widget.typeSelection?.addListener(_onTypeSelectionChanged);
-    _hiddenSelectionSubscription = const HiddenLibraryStore().changes.listen(
-      (_) => _refreshVisibility(),
-    );
-    _settingsSyncSubscription = SettingsSync.instance.changes.listen((key) {
-      if (key.isEmpty ||
-          key == HiddenLibraryStore.bookKeysSetting ||
-          key == HiddenLibraryStore.categoryPathsSetting) {
-        _refreshVisibility();
-      }
-    });
+    _hiddenSelectionSubscription = const HiddenLibraryStore().visibilityChanges
+        .listen((_) => _refreshVisibility());
     _loadCommentatorGroups();
     _scrolledRangeKey = _currentRangeKey();
   }
@@ -725,7 +715,6 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   void dispose() {
     _cancelPendingGroupPositionWait();
     _hiddenSelectionSubscription?.cancel();
-    _settingsSyncSubscription?.cancel();
     _searchUpdateDebounce?.cancel();
     _searchComputeDebounce?.cancel();
     _tabController.removeListener(_tabControllerListener);

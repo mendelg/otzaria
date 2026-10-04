@@ -19,6 +19,34 @@ class HiddenLibraryStore {
   /// בחירה שנשמרה בחלון הנוכחי, אחרי ששני המפתחות נכתבו.
   Stream<HiddenLibrarySelection> get changes => _changes.stream;
 
+  /// Fires whenever the hidden books or categories change, in this window
+  /// through [changes] or in another window through [SettingsSync].
+  Stream<void> get visibilityChanges {
+    final subscriptions = <StreamSubscription<Object?>>[];
+    late final StreamController<void> controller;
+    controller = StreamController<void>(
+      sync: true,
+      onListen: () {
+        subscriptions
+          ..add(changes.listen((_) => controller.add(null)))
+          ..add(
+            SettingsSync.instance.changes
+                .where(
+                  (key) =>
+                      key.isEmpty ||
+                      key == bookKeysSetting ||
+                      key == categoryPathsSetting,
+                )
+                .listen((_) => controller.add(null)),
+          );
+      },
+      onCancel: () => Future.wait([
+        for (final subscription in subscriptions) subscription.cancel(),
+      ]),
+    );
+    return controller.stream;
+  }
+
   /// המפתחות מוצהרים ב-[SettingsRepository] ונמצאים ב-`allKeys`, כדי
   /// שהגיבוי יתפוס אותם גם במסלול הנסיגה שבו Hive אינו פתוח ונאספת רשימת
   /// המפתחות המוצהרת בלבד.

@@ -48,9 +48,7 @@ import 'package:otzaria/core/messages/text_book_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/data/book_locator.dart';
 import 'package:otzaria/library/hidden/hidden_titles.dart';
-import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
-import 'package:otzaria/core/windowing/settings_sync.dart';
 import 'package:otzaria/data/data_providers/book_database_resolver.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/library_provider_manager.dart';
@@ -129,8 +127,7 @@ class _PageShapeScreenState extends State<PageShapeScreen> {
   String? _bottomRightCommentator;
   bool _isLoadingConfig = true;
   int _loadConfigurationGeneration = 0;
-  StreamSubscription<HiddenLibrarySelection>? _hiddenSelectionSubscription;
-  StreamSubscription<String>? _settingsSyncSubscription;
+  StreamSubscription<void>? _hiddenSelectionSubscription;
   bool _applyTextMaxWidth = PageShapeSettingsManager.getApplyTextMaxWidth();
   bool _isLeftSidebarOpen = false;
   int _leftSidebarTabIndex = 0;
@@ -1047,16 +1044,8 @@ class _PageShapeScreenState extends State<PageShapeScreen> {
   @override
   void initState() {
     super.initState();
-    _hiddenSelectionSubscription = const HiddenLibraryStore().changes.listen(
-      (_) => unawaited(_loadConfiguration()),
-    );
-    _settingsSyncSubscription = SettingsSync.instance.changes.listen((key) {
-      if (key.isEmpty ||
-          key == HiddenLibraryStore.bookKeysSetting ||
-          key == HiddenLibraryStore.categoryPathsSetting) {
-        unawaited(_loadConfiguration());
-      }
-    });
+    _hiddenSelectionSubscription = const HiddenLibraryStore().visibilityChanges
+        .listen((_) => unawaited(_loadConfiguration()));
     widget.sidebarTabNotifier?.addListener(_handleSidebarTabRequest);
     widget.openSettingsNotifier?.addListener(_handleOpenSettingsRequest);
     widget.tab?.toggleCommentatorsPaneNotifier.addListener(
@@ -1093,7 +1082,6 @@ class _PageShapeScreenState extends State<PageShapeScreen> {
   @override
   void dispose() {
     unawaited(_hiddenSelectionSubscription?.cancel() ?? Future.value());
-    unawaited(_settingsSyncSubscription?.cancel() ?? Future.value());
     widget.sidebarTabNotifier?.removeListener(_handleSidebarTabRequest);
     widget.openSettingsNotifier?.removeListener(_handleOpenSettingsRequest);
     widget.tab?.toggleCommentatorsPaneNotifier.removeListener(
