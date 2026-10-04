@@ -27,6 +27,7 @@ import 'package:otzaria/semantic_search/bloc/semantic_search_bloc.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
+import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/repository/semantic_search_repository.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/bloc/tabs_event.dart';
@@ -37,6 +38,7 @@ import 'package:otzaria/widgets/controls/action_buttons.dart';
 
 import '../test_helpers/memory_cache_provider.dart';
 import 'semantic_test_support.dart';
+import 'semantic_ui_test_support.dart';
 
 class _MockHistoryBloc extends MockBloc<HistoryEvent, HistoryState>
     implements HistoryBloc {}
@@ -143,6 +145,7 @@ void main() {
     bool debug = false,
     SearchMode? initialMode = SearchMode.exact,
     SearchingTab? existingTab,
+    SearchingTab? editTab,
     FakeConsentStore? injectedConsent,
   }) async {
     final repository = _FakeRepository(availability);
@@ -207,6 +210,7 @@ void main() {
                 dialog: SearchDialog(
                   initialSearchMode: initialMode,
                   existingTab: existingTab,
+                  editTab: editTab,
                   semanticRepository: repository,
                   semanticConsent: consent,
                   semanticDebugPreview: debug,
@@ -509,7 +513,7 @@ void main() {
     await completionCheck;
     expect(tester.takeException(), isNull);
   });
-  testWidgets('ספר יחיד וממד אינם מורחבים לכל הספרייה; תיקון ההיקף מאפשר חיפוש', (
+  testWidgets('ספר יחיד וממד נשלחים כמו שהם; ספר אישי מושמט מההיקף', (
     tester,
   ) async {
     final harness = await pumpDialog(
@@ -518,42 +522,23 @@ void main() {
     );
     await tester.tap(_semanticSegment);
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+          .officialBooksOnly,
+      isTrue,
+    );
     final facet = FacetHelper.buildBookFacet(
       '/הלכה',
       TextBook(id: 1, title: 'ספר 1'),
     );
-    final unsupported = [
-      {facet},
-      {'/author/רש״י'},
-      {'/הלכה', facet},
-    ];
-    for (final selection in unsupported) {
-      tester
-          .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
-          .onChanged(selection);
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
-            .selected,
-        selection,
-      );
-      expect(
-        find.text(
-          'במצב זה החיפוש מוגבל לקטגוריות של הספרייה; ספרים בודדים וספרים אישיים אינם נכללים.',
-        ),
-        findsOneWidget,
-      );
-      expect(submitButton(tester).onPressed, isNull);
-      await tester.enterText(_queryField, 'מצוות');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await tester.pumpAndSettle();
-      verifyNever(() => harness.tabs.add(any()));
-    }
+    final hint = find.byKey(const ValueKey('semantic-narrow-scope-hint'));
+    expect(hint, findsOneWidget);
     tester
         .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
-        .onChanged({'/'});
+        .onChanged({facet, '/author/רש״י', '/uid:4'});
     await tester.pumpAndSettle();
+    expect(hint, findsNothing);
     expect(submitButton(tester).onPressed, isNotNull);
     const rawQuery = '  כָּבוֹד אב  ';
     await tester.enterText(_queryField, rawQuery);
@@ -565,8 +550,60 @@ void main() {
             ).captured.whereType<AddTab>().single.tab
             as SemanticSearchTab;
     addTearDown(tab.dispose);
-    expect(tab.options.facets, ['/']);
+    expect(tab.options.facets, ['/author/רש״י', facet]);
     expect(tab.options.query, rawQuery);
+  });
+  testWidgets('בשדה החיפוש החכם יש ניקוי והיסטוריה', (tester) async {
+    await pumpDialog(tester, _availability(SemanticAvailabilityPhase.ready));
+    await tester.tap(_semanticSegment);
+    await tester.pumpAndSettle();
+    final clear = find.byKey(const ValueKey('semantic-query-clear'));
+    expect(find.byTooltip('היסטוריית חיפושים'), findsOneWidget);
+    await tester.enterText(_queryField, 'צדקה');
+    await tester.pump();
+    await tester.tap(clear);
+    await tester.pump();
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).first)
+          .controller
+          .text,
+      isEmpty,
+    );
+    expect(clear, findsNothing);
+  });
+
+  testWidgets('עריכת חיפוש חכם מעדכנת את אותה כרטיסייה', (tester) async {
+    final tab = SemanticSearchTab(
+      options: const SemanticQueryOptions(
+        query: 'צדקה',
+        facets: ['/הלכה'],
+        includeLexical: false,
+        groupIdenticalText: false,
+      ),
+      createResultsBloc: (_) =>
+          buildResultsBloc(source: null, recorder: RecordingRecorder()),
+    );
+    addTearDown(tab.dispose);
+    final harness = await pumpDialog(
+      tester,
+      _availability(SemanticAvailabilityPhase.ready),
+      editTab: tab,
+    );
+    expect(
+      tester
+          .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+          .selected,
+      {'/הלכה'},
+    );
+    await tester.enterText(_queryField, 'חסד');
+    await tester.tap(find.byKey(const ValueKey('search-dialog-submit')));
+    await tester.pumpAndSettle();
+    verifyNever(() => harness.tabs.add(any()));
+    expect(tab.options.query, 'חסד');
+    expect(tab.options.facets, ['/הלכה']);
+    expect(tab.options.includeLexical, isFalse);
+    expect(tab.options.groupIdenticalText, isFalse);
   });
   testWidgets('גם בדיבאג פלטפורמה לא נתמכת אינה מציגה מצב או הסכמה', (
     tester,

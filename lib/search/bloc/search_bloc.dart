@@ -1281,6 +1281,9 @@ class SearchBloc extends Bloc<SearchEvent, SearchState> {
   }
 
   /// מפת המפתח היציב של האינדקס → ספר, במטמון לכל עוד הספרייה לא הוחלפה.
+  Map<String, Book> booksByIndexedFilePath(Library library) =>
+      _booksByIndexedFilePathFor(library);
+
   Map<String, Book> _booksByIndexedFilePathFor(Library library) {
     final cached = _booksByIndexedFilePathCache;
     if (cached != null && identical(library, _resolveCacheLibrary)) {

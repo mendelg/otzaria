@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/library/models/library.dart';
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/search/utils/scope_tree.dart';
 
@@ -373,5 +374,38 @@ void main() {
       expect(node.subtitle, equals('תלמוד בבלי/סדר זרעים • חז״ל'));
       expect(node.facet, startsWith('/תלמוד בבלי/סדר זרעים/'));
     });
+  });
+
+  test('officialOnly משמיט ספרים אישיים ומצורפים וקטגוריות שהתרוקנו', () {
+    Category cat(String title, List<Book> books) => Category(
+      title: title,
+      description: '',
+      shortDescription: '',
+      order: 10,
+      subCategories: [],
+      books: books,
+      parent: null,
+    );
+    final library = Library(
+      categories: [
+        cat('תנ״ך', [
+          TextBook(id: 1, title: 'בראשית'),
+          TextBook(id: 2, title: 'שלי', source: BookSource.user),
+        ]),
+        cat('אישי', [TextBook(id: 3, title: 'עוד', source: BookSource.user)]),
+        cat('מצורף', [
+          TextBook(id: 4, title: 'זר', source: BookSource.attached('lib')),
+        ]),
+      ],
+    );
+    final tree = ScopeTree.fromLibrary(library).officialOnly();
+    expect(tree.rootNodes.map((n) => n.title), ['תנ״ך']);
+    expect(tree.allBookNodes().map((n) => n.title), ['בראשית']);
+    expect(tree.nodesByFacet.keys, contains('/תנ״ך'));
+    expect(tree.nodesByFacet.containsKey('/אישי'), isFalse);
+    expect(
+      identical(tree, ScopeTree.fromLibrary(library).officialOnly()),
+      isTrue,
+    );
   });
 }

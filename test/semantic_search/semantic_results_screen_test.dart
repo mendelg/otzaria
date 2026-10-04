@@ -18,9 +18,10 @@ import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/view/widgets/semantic_result_card.dart';
-import 'package:otzaria/search/view/search_scope_menu.dart';
 import 'package:otzaria/semantic_search/services/semantic_dwell_binding.dart';
+import 'package:otzaria/search/view/full_text_settings_widgets.dart';
 import 'package:otzaria/semantic_search/view/semantic_search_results_screen.dart';
+import 'package:otzaria/semantic_search/view/widgets/semantic_facet_filtering.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
@@ -257,11 +258,7 @@ void main() {
     await tester.tap(find.text('ספר 1, א'));
     await tester.pump(const Duration(milliseconds: 350));
     oldItems[0] = resultItem(3);
-    await tester.enterText(
-      find.byKey(const ValueKey('semantic-results-query')),
-      'שאילתה חדשה',
-    );
-    await tester.tap(find.byKey(const ValueKey('semantic-results-search')));
+    harness.tab.submit(const SemanticQueryOptions(query: 'שאילתה חדשה'));
     await settle(tester);
     expect(harness.tab.resultsBloc.state.options!.query, 'שאילתה חדשה');
     expect(harness.tab.previewTarget.value, isNull);
@@ -292,11 +289,7 @@ void main() {
     await tester.tap(find.text('ספר 1, א'));
     await tester.pump();
     items[0] = resultItem(3);
-    await tester.enterText(
-      find.byKey(const ValueKey('semantic-results-query')),
-      'שאילתה חדשה',
-    );
-    await tester.tap(find.byKey(const ValueKey('semantic-results-search')));
+    harness.tab.submit(const SemanticQueryOptions(query: 'שאילתה חדשה'));
     await settle(tester);
     expect(harness.tab.resultsBloc.state.items.first.id, BigInt.from(3));
     final library = Library(categories: const []);
@@ -375,47 +368,50 @@ void main() {
     },
   );
 
-  testWidgets('היקף לא נתמך במסך התוצאות חסום בלי לשנות את הבחירה', (
+  testWidgets('הסרגל מציג את מספר התוצאות שמוצגות כעת', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpScreen(tester);
+    expect(find.text('מוצגות כעת 30 תוצאות'), findsOneWidget);
+    expect(
+      tester.widget<SearchTermsDisplay>(find.byType(SearchTermsDisplay)).query,
+      'כבוד אב',
+    );
+    expect(
+      find.textContaining('כבוד', findRichText: true),
+      findsWidgets,
+    );
+    expect(find.byKey(const ValueKey('semantic-results-query')), findsNothing);
+  });
+
+  testWidgets('צמצום מהעץ מחפש בקטגוריה בלי לשנות את ההיקף השמור', (
     tester,
   ) async {
     final harness = await pumpScreen(tester);
-    tester
-        .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
-        .onChanged({'/הלכה/id:1'});
+    SemanticFacetFiltering tree() =>
+        tester.widget(find.byType(SemanticFacetFiltering, skipOffstage: false));
+
+    tree().onSetFacet('/הלכה/id:1');
     await settle(tester);
-    expect(
-      find.text(
-        'במצב זה החיפוש מוגבל לקטגוריות של הספרייה; ספרים בודדים וספרים אישיים אינם נכללים.',
-      ),
-      findsOneWidget,
-    );
-    await tester.enterText(
-      find.byKey(const ValueKey('semantic-results-query')),
-      'בדיקה',
-    );
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    expect(harness.tab.resultsBloc.state.options!.facets, ['/הלכה/id:1']);
+    expect(harness.tab.options.facets, ['/']);
+    expect(tree().selectedFacets, ['/הלכה/id:1']);
+
+    tree().onToggleDimension('/era/ראשונים');
     await settle(tester);
-    expect(harness.source.fetches, hasLength(1));
-    expect(
-      tester
-          .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
-          .selected,
-      {'/הלכה/id:1'},
-    );
-    tester
-        .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
-        .onChanged({'/'});
-    await tester.pump();
-    const rawQuery = '  כָּבוֹד אב  ';
-    await tester.enterText(
-      find.byKey(const ValueKey('semantic-results-query')),
-      rawQuery,
-    );
-    await tester.tap(find.byKey(const ValueKey('semantic-results-search')));
+    expect(harness.tab.resultsBloc.state.options!.facets, [
+      '/era/ראשונים',
+      '/הלכה/id:1',
+    ]);
+
+    tree().onClearAll();
     await settle(tester);
-    expect(harness.tab.options.query, rawQuery);
-    expect(harness.recorder.searches.last.query, rawQuery);
+    expect(harness.tab.resultsBloc.state.options!.facets, ['/']);
+    expect(harness.recorder.searches.last.query, 'כבוד אב');
   });
+
   testWidgets('כרטיסיית מחשב ששוחזרה במכשיר לא נתמך אינה מריצה חיפוש', (
     tester,
   ) async {

@@ -170,14 +170,6 @@ class _SearchFacetFilteringState extends State<SearchFacetFiltering>
     searchBloc.add(const RerunSearch());
   }
 
-  /// התקופות המוצעות לסינון. 'שאר מפרשים' לעולם לא מוטבעת, ו'תורה שבכתב'
-  /// אינה תקופת פרשנות רלוונטית לסינון.
-  static final List<String> _eraNames = [
-    for (final era in CommentaryEra.values)
-      if (era != CommentaryEra.other && era != CommentaryEra.torahShebichtav)
-        era.hebrewName,
-  ];
-
   /// מוסיף/מסיר facet ממדי (ספרי יסוד/תקופה), שומר בהעדפות ומריץ חיפוש מחדש
   /// דרך המנוע יחד עם הקטגוריות הפעילות.
   void _toggleDimension(BuildContext context, String dimFacet) {
@@ -220,61 +212,13 @@ class _SearchFacetFilteringState extends State<SearchFacetFiltering>
     onClear: _clearFilter,
   );
 
-  /// כפתור סינון בכותרת השורש — תפריט שטוח של מאפייני הספר (ספרי יסוד
-  /// ותקופות). סימון מרובה נשמר פתוח (closeOnActivate: false).
   Widget _buildDimensionFilterButton() {
     return BlocBuilder<SearchBloc, SearchState>(
       buildWhen: (p, c) => p.currentFacets != c.currentFacets,
-      builder: (context, state) {
-        final cs = Theme.of(context).colorScheme;
-        final dims = FacetHelper.dimensionFacetsOf(state.currentFacets).toSet();
-        final activeCount = dims.length;
-
-        Widget checkItem(String label, String facet) {
-          final selected = dims.contains(facet);
-          return MenuItemButton(
-            closeOnActivate: false,
-            leadingIcon: Icon(
-              selected
-                  ? FluentIcons.checkbox_checked_24_filled
-                  : FluentIcons.checkbox_unchecked_24_regular,
-              size: 18,
-              color: selected ? cs.primary : cs.onSurfaceVariant,
-            ),
-            onPressed: () => _toggleDimension(context, facet),
-            child: Text(label),
-          );
-        }
-
-        return MenuAnchor(
-          menuChildren: [
-            checkItem('ספרי יסוד', FacetHelper.baseDimensionFacet),
-            for (final era in _eraNames)
-              checkItem(era, FacetHelper.buildEraFacet(era)),
-          ],
-          builder: (context, controller, child) => SizedBox(
-            width: 32,
-            height: 32,
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              tooltip: 'סינון לפי מאפיין',
-              color: activeCount > 0 ? cs.primary : cs.onSurfaceVariant,
-              icon: activeCount > 0
-                  ? Badge(
-                      label: Text('$activeCount'),
-                      child: const Icon(
-                        FluentIcons.filter_24_regular,
-                        size: 20,
-                      ),
-                    )
-                  : const Icon(FluentIcons.filter_24_regular, size: 20),
-              onPressed: () =>
-                  controller.isOpen ? controller.close() : controller.open(),
-            ),
-          ),
-        );
-      },
+      builder: (context, state) => SearchDimensionFilterButton(
+        selectedFacets: state.currentFacets,
+        onToggle: (facet) => _toggleDimension(context, facet),
+      ),
     );
   }
 
@@ -398,6 +342,76 @@ class _SearchFacetFilteringState extends State<SearchFacetFiltering>
     return NavPanelCollapsibleSearch(
       delegate: delegate,
       child: _buildFacetTree(),
+    );
+  }
+}
+
+/// כפתור סינון בכותרת השורש — תפריט שטוח של מאפייני הספר (ספרי יסוד
+/// ותקופות). סימון מרובה נשמר פתוח (closeOnActivate: false).
+class SearchDimensionFilterButton extends StatelessWidget {
+  const SearchDimensionFilterButton({
+    super.key,
+    required this.selectedFacets,
+    required this.onToggle,
+  });
+
+  final Iterable<String> selectedFacets;
+  final ValueChanged<String> onToggle;
+
+  /// התקופות המוצעות לסינון. 'שאר מפרשים' לעולם לא מוטבעת, ו'תורה שבכתב'
+  /// אינה תקופת פרשנות רלוונטית לסינון.
+  static final List<String> _eraNames = [
+    for (final era in CommentaryEra.values)
+      if (era != CommentaryEra.other && era != CommentaryEra.torahShebichtav)
+        era.hebrewName,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dims = FacetHelper.dimensionFacetsOf(selectedFacets).toSet();
+    final activeCount = dims.length;
+
+    Widget checkItem(String label, String facet) {
+      final selected = dims.contains(facet);
+      return MenuItemButton(
+        closeOnActivate: false,
+        leadingIcon: Icon(
+          selected
+              ? FluentIcons.checkbox_checked_24_filled
+              : FluentIcons.checkbox_unchecked_24_regular,
+          size: 18,
+          color: selected ? cs.primary : cs.onSurfaceVariant,
+        ),
+        onPressed: () => onToggle(facet),
+        child: Text(label),
+      );
+    }
+
+    return MenuAnchor(
+      menuChildren: [
+        checkItem('ספרי יסוד', FacetHelper.baseDimensionFacet),
+        for (final era in _eraNames)
+          checkItem(era, FacetHelper.buildEraFacet(era)),
+      ],
+      builder: (context, controller, child) => SizedBox(
+        width: 32,
+        height: 32,
+        child: IconButton(
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          tooltip: 'סינון לפי מאפיין',
+          color: activeCount > 0 ? cs.primary : cs.onSurfaceVariant,
+          icon: activeCount > 0
+              ? Badge(
+                  label: Text('$activeCount'),
+                  child: const Icon(FluentIcons.filter_24_regular, size: 20),
+                )
+              : const Icon(FluentIcons.filter_24_regular, size: 20),
+          onPressed: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+        ),
+      ),
     );
   }
 }

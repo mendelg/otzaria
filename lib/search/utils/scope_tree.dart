@@ -165,6 +165,36 @@ class ScopeTree {
     return ScopeTree._(rootNodes, nodesByFacet);
   }
 
+  static final Expando<ScopeTree> _officialOnlyCache = Expando<ScopeTree>(
+    'officialOnlyScopeTree',
+  );
+
+  /// העץ בלי ספרים אישיים ומצורפים, ובלי קטגוריות שנותרו ריקות.
+  ScopeTree officialOnly() {
+    return _officialOnlyCache[this] ??= () {
+      final nodesByFacet = <String, ScopeNode>{};
+      ScopeNode? prune(ScopeNode node) {
+        if (node is BookScopeNode) {
+          return node.book.source.isOfficial ? node : null;
+        }
+        final children = [
+          for (final child in node.children) ?prune(child),
+        ];
+        if (children.isEmpty) return null;
+        final pruned = CategoryScopeNode._pruned(node, children);
+        nodesByFacet[pruned.facet] = pruned;
+        for (final child in children) {
+          nodesByFacet[child.facet] = child;
+        }
+        return pruned;
+      }
+
+      return ScopeTree._([
+        for (final node in rootNodes) ?prune(node),
+      ], nodesByFacet);
+    }();
+  }
+
   // --- שאילתות מצב ---
 
   bool isAllSelected(Set<String> selection) => selection.contains('/');
@@ -506,6 +536,14 @@ class CategoryScopeNode extends ScopeNode {
         facet: category.path,
         title: category.title,
         subtitle: category.path == '/' ? '' : category.path.substring(1),
+      );
+
+  CategoryScopeNode._pruned(ScopeNode source, List<ScopeNode> children)
+    : super(
+        facet: source.facet,
+        title: source.title,
+        subtitle: source.subtitle,
+        children: children,
       );
 
   @override

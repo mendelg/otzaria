@@ -21,8 +21,8 @@ class SemanticModePanel extends StatelessWidget {
     required this.availability,
     required this.queryController,
     required this.queryFocusNode,
+    this.queryTrailingAction,
     required this.scopeSelection,
-    this.scopeSupported = true,
     required this.onScopeChanged,
     required this.includeLexical,
     required this.onIncludeLexicalChanged,
@@ -39,8 +39,10 @@ class SemanticModePanel extends StatelessWidget {
   final SemanticAvailability availability;
   final TextEditingController queryController;
   final FocusNode queryFocusNode;
+
+  /// פעולה בסוף שדה השאילתה (היסטוריית החיפושים).
+  final Widget? queryTrailingAction;
   final Set<String> scopeSelection;
-  final bool scopeSupported;
   final ValueChanged<Set<String>> onScopeChanged;
   final bool includeLexical;
   final ValueChanged<bool> onIncludeLexicalChanged;
@@ -262,8 +264,6 @@ class SemanticModePanel extends StatelessWidget {
 
   Widget _buildSearchForm(BuildContext context) {
     final theme = Theme.of(context);
-    final droppedScope =
-        !scopeSupported || !semanticScopeIsSupported(scopeSelection);
     return Column(
       key: const ValueKey('semantic-search-form'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -284,6 +284,26 @@ class SemanticModePanel extends StatelessWidget {
             prefixIcon: const Icon(
               OtzariaIcons.search_in_the_library_24_regular,
             ),
+            suffixIcon: Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: queryController,
+                    builder: (context, value, _) => value.text.isEmpty
+                        ? const SizedBox.shrink()
+                        : IconButton(
+                            key: const ValueKey('semantic-query-clear'),
+                            icon: const Icon(FluentIcons.dismiss_24_regular),
+                            tooltip: context.settingsText('נקה'),
+                            onPressed: queryController.clear,
+                          ),
+                  ),
+                  ?queryTrailingAction,
+                ],
+              ),
+            ),
           ),
           onSubmitted: (_) => onSubmit(),
         ),
@@ -297,6 +317,7 @@ class SemanticModePanel extends StatelessWidget {
             children: [
               SearchScopeMenuButton(
                 selected: scopeSelection,
+                officialBooksOnly: true,
                 onChanged: onScopeChanged,
               ),
               FilterChip(
@@ -316,18 +337,33 @@ class SemanticModePanel extends StatelessWidget {
             ],
           ),
         ),
-        if (droppedScope) ...[
+        if (isWholeLibraryScope(scopeSelection)) ...[
           const SizedBox(height: 8),
-          Text(
-            context.settingsText(
-              'במצב זה החיפוש מוגבל לקטגוריות של הספרייה; ספרים בודדים וספרים אישיים אינם נכללים.',
-            ),
+          SemanticNarrowScopeHint(
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
         ],
       ],
+    );
+  }
+}
+
+/// המלצה לצמצם את ההיקף, כשהחיפוש רץ על כל הספרייה.
+class SemanticNarrowScopeHint extends StatelessWidget {
+  const SemanticNarrowScopeHint({super.key, this.style});
+
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      context.settingsText(
+        'החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימים.',
+      ),
+      key: const ValueKey('semantic-narrow-scope-hint'),
+      style: style,
     );
   }
 }
