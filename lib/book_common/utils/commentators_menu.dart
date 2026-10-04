@@ -119,10 +119,19 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
     AppContextMenuEntry(
       label: 'הצג את כל המפרשים על פסקה זו',
       isSelected: allActive,
-      onTap: () => onCommentatorsChanged(
-        allActive ? <String>[] : List<String>.from(availableCommentators),
-        isAdding: !allActive,
-      ),
+      // Only the paragraph's commentators change; the rest of the selection
+      // belongs to other paragraphs and stays.
+      onTap: () {
+        final updated = List<String>.from(activeCommentators);
+        if (allActive) {
+          updated.removeWhere(availableSet.contains);
+        } else {
+          for (final title in availableCommentators) {
+            if (!updated.contains(title)) updated.add(title);
+          }
+        }
+        onCommentatorsChanged(updated, isAdding: !allActive);
+      },
     ),
   ];
 
