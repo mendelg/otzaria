@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
+import 'package:otzaria/search/search_query_builder.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/tabs/models/searching_tab.dart';
 
-/// Builds the temporary tab that the advanced search dialog edits for an
-/// in-book search, seeded with the current query and settings.
-///
-/// The configuration is passed to the constructor rather than as bloc events,
-/// so the dialog cannot start a search before the settings are applied.
+/// יוצר טאב זמני לעריכת הגדרות החיפוש בספר.
+/// האתחול הישיר מונע חיפוש לפני שההגדרות הוחלו.
 SearchingTab createInBookSearchDialogTab({
   required String query,
   required SearchMode searchMode,
@@ -31,14 +29,27 @@ SearchingTab createInBookSearchDialogTab({
     alternativeWords: alternativeWords,
     spacingValues: spacingValues,
   );
-  // The restored options are a per-word map; in global mode the dialog reads
-  // the empty global map and the restored choices are lost.
-  tab.useGlobalSearchOptions.value = false;
+  final globalOptions = searchMode == SearchMode.exact
+      ? SearchQueryBuilder.globalOptionsFromPerWord(searchOptions)
+      : null;
+  // בחיפוש מדויק הפקדים גלובליים; מפה חלקית או מעורבת נשארת פר-מילה.
+  final globalWordKeys = globalOptions == null
+      ? const Iterable<String>.empty()
+      : SearchQueryBuilder.expandGlobalOptionsToWords(
+          query,
+          globalOptions,
+        ).keys;
+  tab.useGlobalSearchOptions.value =
+      globalOptions != null &&
+      globalWordKeys.length == searchOptions.length &&
+      globalWordKeys.every(searchOptions.containsKey);
+  if (tab.useGlobalSearchOptions.value) {
+    tab.globalSearchOptions.addAll(globalOptions!);
+  }
   return tab;
 }
 
-/// Opens the advanced search dialog for an in-book search and returns the
-/// submitted settings, or null when the dialog was closed.
+/// פותח חיפוש מתקדם בתוך ספר ומחזיר את ההגדרות שאושרו, או null בביטול.
 Future<SearchDialogResult?> showInBookAdvancedSearchDialog(
   BuildContext context, {
   required String? bookTitle,

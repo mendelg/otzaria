@@ -3,10 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/view/in_book_advanced_search_dialog.dart';
 
+import '../support/search_engine_test_init.dart';
 import '../test_helpers/memory_cache_provider.dart';
 
-void main() {
+Future<void> main() async {
   TestWidgetsFlutterBinding.ensureInitialized();
+  final engineReady = await tryInitSearchEngine();
 
   setUp(() async {
     await Settings.init(cacheProvider: MemoryCacheProvider());
@@ -38,6 +40,64 @@ void main() {
     expect(tab.alternativeWords, alternativeWords);
     expect(tab.spacingValues, spacingValues);
   });
+
+  for (final words in [
+    ['שלום', 'עולם'],
+    ['שלום', 'שלום'],
+    ['שָׁלוֹם', 'שָׁלוֹם'],
+  ]) {
+    test('אפשרויות אחידות בחיפוש מדויק חוזרות למצב גלובלי: $words', () {
+      final options = {
+        for (var i = 0; i < words.length; i++)
+          '${words[i]}_$i': {'קידומות דקדוקיות': true},
+      };
+      final tab = createInBookSearchDialogTab(
+        query: words.join(' '),
+        searchMode: SearchMode.exact,
+        distance: 0,
+        matchPolicy: SearchMatchPolicy.standard,
+        searchOptions: options,
+        alternativeWords: const {},
+        spacingValues: const {},
+      );
+      addTearDown(tab.dispose);
+
+      expect(tab.useGlobalSearchOptions.value, isTrue);
+      expect(tab.globalSearchOptions, {'קידומות דקדוקיות': true});
+      expect(tab.effectiveSearchOptions(), options);
+    }, skip: !engineReady);
+  }
+
+  for (final options in [
+    {
+      'שלום_0': {'קידומות דקדוקיות': true},
+    },
+    {
+      'שלום_0': {'קידומות דקדוקיות': true},
+      'עולם_1': {'סיומות דקדוקיות': true},
+    },
+    {
+      'ישן_0': {'קידומות דקדוקיות': true},
+      'עולם_1': {'קידומות דקדוקיות': true},
+    },
+  ]) {
+    test('חיפוש מדויק שומר אפשרויות פר-מילה שאינן גלובליות: $options', () {
+      final tab = createInBookSearchDialogTab(
+        query: 'שלום עולם',
+        searchMode: SearchMode.exact,
+        distance: 0,
+        matchPolicy: SearchMatchPolicy.standard,
+        searchOptions: options,
+        alternativeWords: const {},
+        spacingValues: const {},
+      );
+      addTearDown(tab.dispose);
+
+      expect(tab.useGlobalSearchOptions.value, isFalse);
+      expect(tab.globalSearchOptions, isEmpty);
+      expect(tab.effectiveSearchOptions(), options);
+    }, skip: !engineReady);
+  }
 
   test('editing the dialog tab leaves the source settings unchanged', () {
     final searchOptions = {
