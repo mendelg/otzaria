@@ -691,6 +691,7 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'כדי לסמן מקום, לחץ לחיצה ימנית על הטקסט ובחר "הוסף סימניה לקטע זה". כאן תמצא את הסימניות של הספר הנוכחי. ההיסטוריה הכללית נשמרת אוטומטית, ובקצה המסך העליון תמצא סימניות והיסטוריה.': 'To mark a place, right-click the text and select "הוסף סימניה לקטע זה". This is where the current sefer\'s bookmarks live. The general history saves automatically, and both bookmarks and history sit at the top edge of the screen.',
     'כהה': 'Dark',
     'כווץ את עמודת הכרטיסיות': 'Collapse the tab column',
+    'כווץ הכל': 'Collapse all',
     'כולל את כלל הגדרות התוכנה': 'All of Otzaria\'s settings',
     'כותבים חידושי תורה? אפשר להציג אותם בתוך אוצריא ואף לחפש בהם. היכנסו להגדרות ← ספרייה: במחשב דרך "תיקיות מותאמות אישית" (תיקיה שלמה), ובנייד דרך "ספרים אישיים" (בחירת קבצים). הקבצים (כולל Word ו-TXT) יתווספו ל"ספרים אישיים", והחיפוש יסרוק אותם אוטומטית. כדי לאתר אותם באיתור — סמנו "כלול ספרים אישיים".': 'Writing your own Chidushei Torah? You can see them in Otzaria and even search them. Go to Settings → Library: on desktop use "Custom folders" (a whole folder), and on mobile use "ספרים אישיים" (pick files). The files (Word and TXT included) join "ספרים אישיים", and the search picks them up automatically. To reach them from Find, check "כלול ספרים אישיים".',
     'כותרות': 'Headings',

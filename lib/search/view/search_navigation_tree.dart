@@ -5,6 +5,7 @@ import 'package:otzaria/library/view/grid_items.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/search/utils/facet_helper.dart';
 import 'package:otzaria/search/utils/search_catalogue_order_helper.dart';
+import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 import 'package:otzaria/widgets/navigation/nav_panel_search.dart';
@@ -269,7 +270,8 @@ class SearchNavigationTree extends StatelessWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (rows.any((r) => r.isExpanded)) _buildCollapseAllButton(rows),
+              if (rows.any((r) => r.isExpanded))
+                _buildCollapseAllButton(context, rows),
               const NavPanelSearchToggle(),
               ?rootHeaderAction,
             ],
@@ -387,11 +389,11 @@ class SearchNavigationTree extends StatelessWidget {
     );
   }
 
-  Widget _buildCollapseAllButton(List<_FlatRow> rows) {
+  Widget _buildCollapseAllButton(BuildContext context, List<_FlatRow> rows) {
     return SizedBox.square(
       dimension: 28,
       child: IconButton(
-        tooltip: 'כווץ הכל',
+        tooltip: context.settingsText('כווץ הכל'),
         padding: EdgeInsets.zero,
         visualDensity: VisualDensity.compact,
         icon: const Icon(FluentIcons.arrow_collapse_all_24_regular, size: 18),
