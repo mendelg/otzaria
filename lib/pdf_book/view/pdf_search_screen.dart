@@ -264,6 +264,9 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
   bool _isSearching = false;
   List<SearchResult> _searchResults = [];
+
+  /// Whether the engine found more results than the pane shows.
+  bool _resultsTruncated = false;
   List<PdfPageTextRange> _mappedMatches = const [];
   List<SearchResult>? _groupedSource;
   final List<dynamic> _groupedItems = [];
@@ -400,6 +403,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _lastAdvancedHighlightPattern = null;
     _mappedMatches = const [];
     _searchResults = [];
+    _resultsTruncated = false;
     _pageTitles.clear();
     _isSearching = false;
     _searchErrorMessage = null;
@@ -641,6 +645,9 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     if (_isSimpleSearch && current != null && current < _searchResults.length) {
       return 'תוצאה ${current + 1} מתוך ${_searchResults.length}';
     }
+    if (_resultsTruncated) {
+      return 'מוצגות ${_searchResults.length} התוצאות הראשונות';
+    }
     return 'נמצאו ${_searchResults.length} תוצאות';
   }
 
@@ -724,6 +731,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     // כל שינוי בשאילתה/במצב החיפוש מבטל תוצאות אסינכרוניות ישנות. בלי מזהה
     // דור, חיפוש איטי קודם יכול להסתיים אחרי החדש ולדרוס תוצאות והדגשות.
     final generation = ++_searchGeneration;
+    _resultsTruncated = false;
     // הדגל שייך לדור הקודם: כל מסלול יוצא מכאן בסדר השאילתה, והנסיגה
     // תדליק אותו מחדש אם תרוץ.
     _simpleSearchReversed = false;
@@ -816,12 +824,12 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
         widget.searchRepository,
         query: query,
         bookPath: _bookPath!,
-        limit: 1000,
+        limit: kInBookEngineFetchLimit,
         settings: _settings,
       );
 
       final indexedFilePath = _indexedFilePath;
-      final results =
+      final sorted =
           rawResults
               .where((r) {
                 if (!r.isPdf) return false;
@@ -835,10 +843,12 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
               if (sa != sb) return sa.compareTo(sb);
               return a.reference.compareTo(b.reference);
             });
+      final (shown: results, :truncated) = limitInBookResults(sorted);
 
       if (!mounted || generation != _searchGeneration) return;
       setState(() {
         _searchResults = results;
+        _resultsTruncated = truncated;
         _isSearching = false;
         if (results.isEmpty) {
           _searchErrorMessage = PdfBookSearchView.missingFromIndexNotice(
@@ -996,6 +1006,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
         _lastAdvancedHighlightPattern = null;
         setState(() {
           _searchResults = [];
+          _resultsTruncated = false;
           _searchErrorMessage = null;
           _settings = const InBookSearchSettings();
         });
