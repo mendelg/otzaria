@@ -76,3 +76,24 @@ List<AppContextMenuEntry> buildCopyAsMenuEntries({
         ),
   ];
 }
+
+/// The "העתק כ..." entry of a reader context menu for [selectedText], with
+/// the variants of [buildCopyAsMenuEntries]. It is disabled without a
+/// selection.
+AppContextMenuEntry buildCopyAsMenuEntry({
+  required TextDisplayProfile base,
+  required String? selectedText,
+  required void Function(TextDisplayProfile profile) onCopy,
+}) {
+  final hasSelection = selectedText != null && selectedText.trim().isNotEmpty;
+  return AppContextMenuEntry(
+    label: 'העתק כ...',
+    icon: OtzariaIcons.alef_copy_24_regular,
+    enabled: hasSelection,
+    children: buildCopyAsMenuEntries(
+      base: base,
+      hasSelection: hasSelection,
+      onCopy: onCopy,
+    ),
+  );
+}
