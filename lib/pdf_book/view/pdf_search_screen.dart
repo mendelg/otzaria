@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:otzaria/search/in_book_search_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria/models/book_source.dart';
@@ -20,7 +21,6 @@ import 'package:otzaria/search/view/whole_word_search_action.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/search_query_builder.dart';
 import 'package:otzaria/search/search_repository.dart';
-import 'package:otzaria/search/utils/in_book_search_routing.dart';
 import 'package:otzaria/search/utils/literal_search_pattern.dart';
 import 'package:otzaria/search/utils/snippet_builder.dart';
 import 'package:otzaria/search/view/in_book_advanced_search_dialog.dart';
@@ -275,14 +275,14 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
   bool _bookPathResolved = false;
   final Map<int, String> _pageTitles = <int, String>{};
 
-  bool _forceSearchEngine = false;
+  InBookSearchSettings _settings = const InBookSearchSettings();
 
-  Map<String, Map<String, bool>> _searchOptions = {};
-  Map<int, List<String>> _alternativeWords = {};
-  Map<String, String> _spacingValues = {};
-  SearchMode _searchMode = SearchMode.exact;
-  int _searchDistance = 0;
-  SearchMatchPolicy _matchPolicy = SearchMatchPolicy.standard;
+  Map<String, Map<String, bool>> get _searchOptions => _settings.searchOptions;
+  Map<int, List<String>> get _alternativeWords => _settings.alternativeWords;
+  Map<String, String> get _spacingValues => _settings.spacingValues;
+  SearchMode get _searchMode => _settings.searchMode;
+  int get _searchDistance => _settings.distance;
+  SearchMatchPolicy get _matchPolicy => _settings.matchPolicy;
 
   Timer? _pdfHighlightDebounce;
   String _lastPdfHighlightSource = '';
@@ -308,8 +308,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
   bool _wholeWord = InBookSearchPreferences.loadWholeWord();
 
-  bool get _isSimpleSearch =>
-      !_forceSearchEngine && _searchMode == SearchMode.exact;
+  bool get _isSimpleSearch => _settings.isSimpleSearch;
 
   /// מסכת PDF מצורפת אינה מאונדקסת בכוונה, ולכן מסלול המנוע ריק בה תמיד.
   bool get _isBundledTalmudPdf =>
@@ -334,25 +333,8 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _searchTextUpdated();
   }
 
-  void _updateForceSearchEngine() {
-    _forceSearchEngine = !InBookSearchRouting.canRunAsSimpleSearch(
-      searchMode: _searchMode,
-      distance: _searchDistance,
-      searchOptions: _searchOptions,
-      alternativeWords: _alternativeWords,
-      spacingValues: _spacingValues,
-      matchPolicy: _matchPolicy,
-    );
-  }
-
-  SearchModeScopedParameters get _activeSearchParameters {
-    return SearchQueryBuilder.normalizeParametersForMode(
-      _searchMode,
-      customSpacing: _spacingValues,
-      alternativeWords: _alternativeWords,
-      searchOptions: _searchOptions,
-    );
-  }
+  SearchModeScopedParameters get _activeSearchParameters =>
+      _settings.activeParameters;
 
   int _getPdfPageNumber(SearchResult result) => result.segment.toInt() + 1;
 
@@ -382,13 +364,14 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
   @override
   void initState() {
     super.initState();
-    _searchOptions = widget.initialSearchOptions;
-    _alternativeWords = widget.initialAlternativeWords;
-    _spacingValues = widget.initialSpacingValues;
-    _searchMode = widget.initialSearchMode;
-    _searchDistance = widget.initialSearchDistance;
-    _matchPolicy = widget.initialMatchPolicy;
-    _updateForceSearchEngine();
+    _settings = InBookSearchSettings(
+      searchOptions: widget.initialSearchOptions,
+      alternativeWords: widget.initialAlternativeWords,
+      spacingValues: widget.initialSpacingValues,
+      searchMode: widget.initialSearchMode,
+      distance: widget.initialSearchDistance,
+      matchPolicy: widget.initialMatchPolicy,
+    );
     // התצורה הממתינה כבר משוקפת בערכי האתחול; אין להחילה שוב.
     widget.incomingSearchConfiguration?.value = null;
     widget.incomingSearchConfiguration?.addListener(
@@ -399,7 +382,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     // shows it as running rather than as "no results".
     _isSearching =
         !_isSimpleSearch &&
-        _searchableQuery(widget.searchController.text) != null;
+        searchableInBookQuery(widget.searchController.text) != null;
     _initializeBookPath();
   }
 
@@ -424,7 +407,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _searchErrorMessage = null;
     _pendingSimpleSearchScrollFor = null;
     if (!_isSimpleSearch &&
-        _searchableQuery(widget.searchController.text) != null) {
+        searchableInBookQuery(widget.searchController.text) != null) {
       final generation = _searchGeneration;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _searchGeneration == generation) {
@@ -445,12 +428,14 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
     _applySearchConfiguration(
       query: configuration.searchText,
-      searchOptions: configuration.searchOptions,
-      alternativeWords: configuration.alternativeWords,
-      spacingValues: configuration.spacingValues,
-      searchMode: configuration.searchMode,
-      searchDistance: configuration.searchDistance,
-      matchPolicy: configuration.matchPolicy,
+      settings: InBookSearchSettings(
+        searchOptions: configuration.searchOptions,
+        alternativeWords: configuration.alternativeWords,
+        spacingValues: configuration.spacingValues,
+        searchMode: configuration.searchMode,
+        distance: configuration.searchDistance,
+        matchPolicy: configuration.matchPolicy,
+      ),
       pdfBookBloc: context.read<PdfBookBloc>(),
     );
   }
@@ -551,7 +536,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
             _searchResults.isEmpty &&
             _searchErrorMessage == null &&
             _textLayerCheckedGeneration != _searchGeneration &&
-            _searchableQuery(widget.searchController.text) != null) {
+            searchableInBookQuery(widget.searchController.text) != null) {
           _textLayerCheckedGeneration = _searchGeneration;
           unawaited(_onEmptySimpleSearch(_searchGeneration));
         }
@@ -571,7 +556,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
   /// חיפוש חוזר בסדר המילים ההפוך. שכבת הטקסט של חלק מהספרים הסרוקים
   /// שומרת כל שורה בסדר ויזואלי, ושם הסדר התקין מחזיר תמיד אפס.
   void _startReversedOrderSearch() {
-    final query = _searchableQuery(widget.searchController.text);
+    final query = searchableInBookQuery(widget.searchController.text);
     if (query == null) return;
     final reversed = PdfBookSearchView.buildSimpleSearchPattern(
       query,
@@ -702,21 +687,9 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     SearchDialogResult result,
     PdfBookBloc pdfBookBloc,
   ) {
-    final normalizedParameters = SearchQueryBuilder.normalizeParametersForMode(
-      result.searchMode,
-      customSpacing: result.spacingValues,
-      alternativeWords: result.alternativeWords,
-      searchOptions: result.searchOptions,
-    );
-
     _applySearchConfiguration(
       query: result.query,
-      searchOptions: normalizedParameters.searchOptions,
-      alternativeWords: normalizedParameters.alternativeWords,
-      spacingValues: normalizedParameters.customSpacing,
-      searchMode: result.searchMode,
-      searchDistance: result.distance,
-      matchPolicy: result.matchPolicy,
+      settings: InBookSearchSettings.fromDialogResult(result),
       pdfBookBloc: pdfBookBloc,
     );
   }
@@ -724,31 +697,18 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
   /// מחילה את התצורה לפני השאילתה ומריצה חיפוש אחד בלבד.
   void _applySearchConfiguration({
     required String query,
-    required Map<String, Map<String, bool>> searchOptions,
-    required Map<int, List<String>> alternativeWords,
-    required Map<String, String> spacingValues,
-    required SearchMode searchMode,
-    required int searchDistance,
-    required SearchMatchPolicy matchPolicy,
+    required InBookSearchSettings settings,
     required PdfBookBloc pdfBookBloc,
   }) {
-    setState(() {
-      _searchOptions = searchOptions;
-      _alternativeWords = alternativeWords;
-      _spacingValues = spacingValues;
-      _searchMode = searchMode;
-      _searchDistance = searchDistance;
-      _matchPolicy = matchPolicy;
-      _updateForceSearchEngine();
-    });
+    setState(() => _settings = settings);
     pdfBookBloc.add(
       UpdateSearchOptions(
-        searchOptions: searchOptions,
-        alternativeWords: alternativeWords,
-        spacingValues: spacingValues,
-        searchMode: searchMode,
-        searchDistance: searchDistance,
-        matchPolicy: matchPolicy,
+        searchOptions: settings.searchOptions,
+        alternativeWords: settings.alternativeWords,
+        spacingValues: settings.spacingValues,
+        searchMode: settings.searchMode,
+        searchDistance: settings.distance,
+        matchPolicy: settings.matchPolicy,
       ),
     );
 
@@ -758,15 +718,6 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     _searchTextUpdated();
   }
 
-  /// השאילתה שתרוץ בפועל, מנורמלת, או `null` כשאין מה לחפש עליה.
-  String? _searchableQuery(String raw) {
-    var query = raw.trim();
-    if (utils.hasNikud(query)) {
-      query = utils.removeVolwels(query);
-    }
-    return query.isEmpty ? null : query;
-  }
-
   Future<void> _searchTextUpdated() async {
     // כל שינוי בשאילתה/במצב החיפוש מבטל תוצאות אסינכרוניות ישנות. בלי מזהה
     // דור, חיפוש איטי קודם יכול להסתיים אחרי החדש ולדרוס תוצאות והדגשות.
@@ -774,7 +725,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     // הדגל שייך לדור הקודם: כל מסלול יוצא מכאן בסדר השאילתה, והנסיגה
     // תדליק אותו מחדש אם תרוץ.
     _simpleSearchReversed = false;
-    final searchable = _searchableQuery(widget.searchController.text);
+    final searchable = searchableInBookQuery(widget.searchController.text);
 
     // בלי ההודעה הזו מסלול המנוע במסכת PDF מצורפת מציג "אין תוצאות" גנרי.
     if (searchable != null && !_isSimpleSearch && _isBundledTalmudPdf) {
@@ -1048,7 +999,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
         ),
       ),
       isNoResults:
-          _searchableQuery(widget.searchController.text) != null &&
+          searchableInBookQuery(widget.searchController.text) != null &&
           _searchResults.isEmpty &&
           !_isSearching,
       errorMessage: _searchErrorMessage,
@@ -1059,13 +1010,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
         setState(() {
           _searchResults = [];
           _searchErrorMessage = null;
-          _forceSearchEngine = false;
-          _searchOptions = {};
-          _alternativeWords = {};
-          _spacingValues = {};
-          _searchMode = SearchMode.exact;
-          _searchDistance = 0;
-          _matchPolicy = SearchMatchPolicy.standard;
+          _settings = const InBookSearchSettings();
         });
         context.read<PdfBookBloc>().add(
           const UpdateSearchOptions(
