@@ -728,19 +728,36 @@ class BookActionsMenuButton extends StatefulWidget {
 }
 
 class _BookActionsMenuButtonState extends State<BookActionsMenuButton> {
-  // השורה נבנית מחדש בכל הקשה בחיפוש ובכל הרחבה בעץ,
-  // והשאילתות (כולל מסד הספרים האישיים) רצות רק כשהספר מתחלף.
+  List<bool>? _loadedActions;
   late Future<List<bool>> _actions = _loadActions();
 
-  Future<List<bool>> _loadActions() => Future.wait([
-    _canDeleteBookFromLibrary(widget.book),
-    hasBookVersionsToOpen(widget.book),
-  ]);
+  Future<List<bool>> _loadActions([List<bool>? previous]) {
+    _loadedActions = null;
+    late final Future<List<bool>> future;
+    future =
+        Future.wait([
+          previous?[0] == true
+              ? Future.value(true)
+              : _canDeleteBookFromLibrary(widget.book),
+          previous?[1] == true
+              ? Future.value(true)
+              : hasBookVersionsToOpen(widget.book),
+        ]).then((actions) {
+          if (identical(_actions, future)) _loadedActions = actions;
+          return actions;
+        });
+    return future;
+  }
 
   @override
   void didUpdateWidget(BookActionsMenuButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.book, widget.book)) _actions = _loadActions();
+    if (!identical(oldWidget.book, widget.book)) {
+      _actions = _loadActions();
+    } else if (_loadedActions?.contains(false) == true) {
+      // false עשוי לנבוע מכשל מסד זמני; הצלחות נשמרות גם בניסיון חוזר.
+      _actions = _loadActions(_loadedActions);
+    }
   }
 
   @override
@@ -749,6 +766,7 @@ class _BookActionsMenuButtonState extends State<BookActionsMenuButton> {
     final book = widget.book;
     final onBookDeleted = widget.onBookDeleted;
     return FutureBuilder<List<bool>>(
+      key: ObjectKey(book),
       future: _actions,
       builder: (context, snapshot) {
         final canDelete = snapshot.data?[0] ?? false;
