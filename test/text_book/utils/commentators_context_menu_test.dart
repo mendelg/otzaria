@@ -114,6 +114,38 @@ void main() {
       expect(adding, isFalse);
     });
 
+    test('"הצג את כל המפרשים" מוסיף את מפרשי הפסקה ושומר את השאר', () {
+      List<String>? updated;
+      bool? adding;
+      final entries = build(
+        active: const ['אבן עזרא', 'רש"י'],
+        onChange: (commentators, {required isAdding}) {
+          updated = commentators;
+          adding = isAdding;
+        },
+      );
+
+      entryNamed(entries, 'הצג את כל המפרשים על פסקה זו').onTap!();
+      expect(updated, ['אבן עזרא', 'רש"י', 'רמב"ן', 'מלבי"ם']);
+      expect(adding, isTrue);
+    });
+
+    test('ביטול "הצג את כל המפרשים" מסיר רק את מפרשי הפסקה', () {
+      List<String>? updated;
+      bool? adding;
+      final entries = build(
+        active: const ['אבן עזרא', ...available],
+        onChange: (commentators, {required isAdding}) {
+          updated = commentators;
+          adding = isAdding;
+        },
+      );
+
+      entryNamed(entries, 'הצג את כל המפרשים על פסקה זו').onTap!();
+      expect(updated, ['אבן עזרא']);
+      expect(adding, isFalse);
+    });
+
     test('לחיצה על מפרש כבוי מוסיפה אותו ומסמנת הוספה', () {
       List<String>? updated;
       bool? adding;
