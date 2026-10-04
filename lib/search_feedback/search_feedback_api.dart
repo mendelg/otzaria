@@ -33,7 +33,7 @@ abstract interface class SearchFeedbackConsentStore {
   /// רושם סירוב.
   Future<void> decline();
 
-  /// מסרב, ומוחק את התור שלא נשלח ואת מפתח ההתקנה.
+  /// מסרב ומוחק את התור שלא נשלח; מזהה ההתקנה הקבוע נשמר.
   Future<void> revoke();
 }
 

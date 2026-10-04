@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:http/http.dart' as http;
 import 'package:otzaria/search_feedback/search_feedback_identity.dart';
@@ -84,11 +85,13 @@ class SearchFeedbackSender {
     required SearchFeedbackIdentity identity,
     required String body,
     required String appVersion,
+    bool Function()? canSend,
   }) => _post(
     '/api/search-feedback/register',
     identity: identity,
     body: body,
     appVersion: appVersion,
+    canSend: canSend,
     includeKeyId: false,
   );
 
@@ -96,11 +99,13 @@ class SearchFeedbackSender {
     required SearchFeedbackIdentity identity,
     required String body,
     required String appVersion,
+    bool Function()? canSend,
   }) => _post(
     '/api/search-feedback/events',
     identity: identity,
     body: body,
     appVersion: appVersion,
+    canSend: canSend,
     includeKeyId: true,
   );
 
@@ -110,11 +115,15 @@ class SearchFeedbackSender {
     required String body,
     required String appVersion,
     required bool includeKeyId,
+    bool Function()? canSend,
   }) async {
-    final bytes = utf8.encode(body);
+    if (canSend != null && !canSend()) return SearchFeedbackOutcome.network;
+    final signed = await _signBody(identity, body);
+    if (canSend != null && !canSend()) return SearchFeedbackOutcome.network;
+    final bytes = signed.bytes;
     final headers = {
       'Content-Type': 'application/json; charset=utf-8',
-      'X-Otzaria-Signature': identity.sign(bytes),
+      'X-Otzaria-Signature': signed.signature,
       if (includeKeyId) 'X-Otzaria-Key-Id': identity.keyId,
       'User-Agent': 'otzaria-search-feedback/$appVersion',
     };
@@ -226,3 +235,11 @@ class SearchFeedbackSender {
     }
   }
 }
+
+Future<({List<int> bytes, String signature})> _signBody(
+  SearchFeedbackIdentity identity,
+  String body,
+) => Isolate.run(() {
+  final bytes = utf8.encode(body);
+  return (bytes: bytes, signature: identity.sign(bytes));
+});

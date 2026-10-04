@@ -155,6 +155,9 @@ void main() {
     otherWindows.add(SettingsRepository.keySearchFeedbackConsent);
     await pumpEventQueue();
 
+    await service
+        .flush(); // Drain the already-started session flush before cleanup.
+    expect(requests, isEmpty);
     expect(changes, [SearchFeedbackConsent.declined]);
     expect(service.isCollecting, isFalse);
     await otherWindows.close();

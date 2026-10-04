@@ -30,9 +30,13 @@ void main() {
   test('finds onnxruntime.dll in its own folder on Windows', () {
     touch('onnxruntime/onnxruntime.dll');
     for (final abi in [Abi.windowsX64, Abi.windowsArm64]) {
-      final path = bundledOnnxRuntimePath(executableDir: rootPath, abi: abi);
+      final path = bundledOnnxRuntimePath(
+        executableDir: rootPath,
+        abi: abi,
+        fileExists: (value) => File(value.replaceAll(r'\', '/')).existsSync(),
+      );
       expect(path, isNotNull);
-      expect(File(path!).existsSync(), isTrue);
+      expect(File(path!.replaceAll(r'\', '/')).existsSync(), isTrue);
       expect(path, endsWith(r'onnxruntime\onnxruntime.dll'));
     }
   });

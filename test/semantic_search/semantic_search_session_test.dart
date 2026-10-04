@@ -1,3 +1,4 @@
+import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -89,6 +90,11 @@ void main() {
       expect(await running, isNull);
       expect(backend.calls, contains('disable'));
       backend.searchGate = null;
+      await expectLater(
+        repository.search(request),
+        throwsA(isA<SemanticFailure>()),
+      );
+      repository.finishLibraryMove();
       await repository.search(request);
       expect(backend.calls.where((call) => call == 'open'), hasLength(2));
     },

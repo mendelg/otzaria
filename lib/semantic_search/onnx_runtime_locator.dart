@@ -15,7 +15,11 @@ import 'package:path/path.dart' as p;
 /// בודק קיום קובץ בצורה סינכרונית, ולכן נקרא רק לפי דרישה ולא בעליית האפליקציה.
 ///
 /// [executableDir] (נתיב מוחלט) ו־[abi] נועדו לבדיקות; ברירת המחדל היא התהליך הנוכחי.
-String? bundledOnnxRuntimePath({String? executableDir, Abi? abi}) {
+String? bundledOnnxRuntimePath({
+  String? executableDir,
+  Abi? abi,
+  bool Function(String)? fileExists,
+}) {
   final currentAbi = abi ?? Abi.current();
   final exeDir = executableDir ?? File(Platform.resolvedExecutable).parent.path;
 
@@ -35,5 +39,7 @@ String? bundledOnnxRuntimePath({String? executableDir, Abi? abi}) {
     return null;
   }
 
-  return File(path).existsSync() ? path : null;
+  return (fileExists ?? (value) => File(value).existsSync())(path)
+      ? path
+      : null;
 }

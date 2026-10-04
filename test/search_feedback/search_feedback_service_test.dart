@@ -156,24 +156,28 @@ void main() {
       ]);
     });
 
-    test('revoke deletes the queue files and the installation key', () async {
-      final service = await grantedService();
-      online = false;
-      await recordOne(service);
-      online = true;
-      await service.flush();
-      expect(keyFile().existsSync(), isTrue);
-      online = false;
-      await recordOne(service);
-      expect(hasQueueFiles(), isTrue);
+    test(
+      'revoke deletes the queue files and preserves the installation key',
+      () async {
+        final service = await grantedService();
+        online = false;
+        await recordOne(service);
+        online = true;
+        await service.flush();
+        expect(keyFile().existsSync(), isTrue);
+        online = false;
+        await recordOne(service);
+        expect(hasQueueFiles(), isTrue);
 
-      await service.revoke();
-      expect(service.consent, SearchFeedbackConsent.declined);
-      expect(hasQueueFiles(), isFalse);
-      expect(keyFile().existsSync(), isFalse);
-      await recordOne(service);
-      expect(service.queue.isEmpty, isTrue);
-    });
+        final keyBefore = await keyFile().readAsString();
+        await service.revoke();
+        expect(service.consent, SearchFeedbackConsent.declined);
+        expect(hasQueueFiles(), isFalse);
+        expect(await keyFile().readAsString(), keyBefore);
+        await recordOne(service);
+        expect(service.queue.isEmpty, isTrue);
+      },
+    );
   });
 
   group('recording', () {
@@ -302,8 +306,8 @@ void main() {
         await restarted.grant();
         expect(
           restarted.isCollecting,
-          isTrue,
-          reason: 'regrant resets the key',
+          isFalse,
+          reason: 'regrant preserves the blocked installation key',
         );
       },
     );

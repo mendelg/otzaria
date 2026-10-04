@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:isolate';
 
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 
@@ -289,13 +290,17 @@ class SearchFeedbackEventBuilder {
   /// ResultFull: כשאין פסקה מלאה, הקטע המקוצר משמש כטקסט עם מקור `snippet`.
   static Map<String, Object?> resultFull(SemanticResultSnapshot result) {
     final passage = result.passageText;
+    final complete =
+        passage != null && passage.length <= SearchFeedbackLimits.passageText;
     return {
       ...resultRef(result),
-      'passageText': truncateForSearchFeedback(
-        passage ?? result.snippetText,
-        SearchFeedbackLimits.passageText,
-      ),
-      'passageTextSource': passage == null
+      'passageText': complete
+          ? passage
+          : truncateForSearchFeedback(
+              result.snippetText,
+              SearchFeedbackLimits.snippetText,
+            ),
+      'passageTextSource': !complete
           ? 'snippet'
           : SearchFeedbackEnums.passageTextSource.contains(
               result.passageTextSource,
@@ -428,3 +433,39 @@ String coarseOsVersion(String raw) {
       : version;
   return truncateForSearchFeedback(result, 32);
 }
+
+Future<Map<String, Object?>?> buildSearchFeedbackEvent(
+  SemanticSearchContext context,
+  String type,
+  List<Object?> args,
+  DateTime now,
+  String id,
+) => Isolate.run(() {
+  final builder = SearchFeedbackEventBuilder(clock: () => now, newId: () => id);
+  return switch (type) {
+    'search' => builder.search(context),
+    'results' => builder.resultsShown(
+      context,
+      args[0] as int,
+      args[1] as List<SemanticResultSnapshot>,
+    ),
+    'open' => builder.open(
+      context,
+      args[0] as SemanticResultSnapshot,
+      args[1] as SearchFeedbackOpenVia,
+      args[2] as String,
+    ),
+    'dwell' => builder.dwell(
+      context,
+      args[0] as String,
+      args[1] as Duration,
+      args[2] as SearchFeedbackDwellEnd,
+    ),
+    'vote' => builder.vote(
+      context,
+      args[0] as SemanticResultSnapshot,
+      args[1] as SearchFeedbackVote,
+    ),
+    _ => null,
+  };
+});

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/search_feedback/search_feedback_queue.dart';
@@ -103,6 +104,7 @@ void main() {
 
     final single = makeQueue();
     await single.purge();
+    await single.resume();
     await single.append(event(7), context);
     final only = (await single.sealAndList()).single;
     await single.split(only);
@@ -116,4 +118,173 @@ void main() {
     expect(queue.isEmpty, isTrue);
     expect(dir.listSync(), isEmpty);
   });
+  test('writers in separate processes cannot race a sender', () async {
+    final received = <int>{};
+    var done = false;
+    final sender = makeQueue();
+    final processes = await Future.wait([
+      for (var i = 0; i < 2; i++)
+        Process.start('dart', [
+          '--packages=.dart_tool/package_config.json',
+          'test/search_feedback/support/queue_writer.dart',
+          dir.path,
+          '$i',
+        ]),
+    ]);
+    final finished =
+        Future.wait([for (final process in processes) process.exitCode]).then((
+          codes,
+        ) {
+          done = true;
+          return codes;
+        });
+    final output = Future.wait([
+      for (final process in processes)
+        Future.wait([
+          process.stdout.transform(utf8.decoder).join(),
+          process.stderr.transform(utf8.decoder).join(),
+        ]),
+    ]);
+    while (!done || (await sender.sealAndList()).isNotEmpty) {
+      for (final name in await sender.sealAndList()) {
+        final claimed = await sender.claim(name);
+        if (claimed == null) continue;
+        final batch = await sender.read(claimed);
+        expect(batch, isNotNull);
+        expect(batch!.contextJson, '{"app":"otzaria"}');
+        for (final line in batch.eventLines) {
+          received.add(jsonDecode(line)['n'] as int);
+        }
+        await sender.remove(claimed);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final codes = await finished;
+    final logs = await output;
+    expect(codes, [0, 0], reason: '$logs');
+    expect(received, {for (var i = 0; i < 200; i++) i});
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test(
+    'interrupted metadata publication rebuilds from committed event files',
+    () async {
+      final queue = makeQueue();
+      await queue.append(event(1), context);
+      await File('${dir.path}/.dirty').writeAsString('');
+      await File('${dir.path}/queue-state.json').writeAsString('{');
+      final restarted = makeQueue();
+      await restarted.append(event(2), context);
+      final batches = [
+        for (final name in await restarted.sealAndList())
+          (await restarted.read(name))!,
+      ];
+      expect(
+        batches.expand((b) => b.eventLines).map((l) => jsonDecode(l)['n']),
+        [1, 2],
+      );
+    },
+  );
+  test('independent isolates serialize shared disk transactions', () async {
+    final path = dir.path;
+    await Future.wait(
+      List.generate(
+        8,
+        (writer) => Isolate.run(() async {
+          final queue = SearchFeedbackQueue(
+            () async => Directory(path),
+            clock: DateTime.now,
+          );
+          for (var i = 0; i < 20; i++) {
+            await queue.append(
+              {'eventId': 'iso_${writer}_$i', 'n': writer * 20 + i},
+              {'app': 'otzaria'},
+            );
+          }
+        }),
+      ),
+    );
+    final reader = makeQueue();
+    final values = <int>[];
+    for (final name in await reader.sealAndList()) {
+      values.addAll(
+        (await reader.read(
+          name,
+        ))!.eventLines.map((l) => jsonDecode(l)['n'] as int),
+      );
+    }
+    expect(values.length, 160);
+    expect(values.toSet(), {for (var i = 0; i < 160; i++) i});
+    expect(reader.eventCount, 160);
+  });
+  test('fixed clocks cannot overwrite previous segments', () async {
+    final queue = SearchFeedbackQueue(
+      () async => dir,
+      clock: () => DateTime.utc(2026),
+      segmentEvents: 1,
+    );
+    for (var i = 0; i < 3; i++) {
+      await queue.append(event(i), context);
+    }
+    final names = await queue.sealAndList();
+    expect(names.toSet().length, 3);
+    final values = <int>[];
+    for (final name in names) {
+      values.addAll(
+        (await queue.read(
+          name,
+        ))!.eventLines.map((l) => jsonDecode(l)['n'] as int),
+      );
+    }
+    expect(values.toSet(), {0, 1, 2});
+  });
+  test('crash during revoke finishes purge before any restart reads', () async {
+    final queue = makeQueue();
+    await queue.append(event(1), context);
+    final cutoff = DateTime.now().microsecondsSinceEpoch;
+    await File('${dir.path}/.dirty').writeAsString('$cutoff', flush: true);
+    await File(
+      '${dir.path}.epoch',
+    ).writeAsString('revoked:$cutoff', flush: true);
+    final restarted = makeQueue();
+    expect(await restarted.sealAndList(), isEmpty);
+    await restarted.append(event(2), context); // stale consent cannot reopen it
+    expect(await restarted.sealAndList(), isEmpty);
+    await restarted.resume(); // explicit new consent
+    await restarted.append(event(3), context);
+    final name = (await restarted.sealAndList()).single;
+    expect(
+      (await restarted.read(name))!.eventLines.map((l) => jsonDecode(l)['n']),
+      [3],
+    );
+  });
+  test(
+    'process death releases the OS lock without a stale lock file deadlock',
+    () async {
+      final process = await Process.start('dart', [
+        '--packages=.dart_tool/package_config.json',
+        'test/search_feedback/support/queue_writer.dart',
+        dir.path,
+        'lock',
+      ]);
+      final stderr = process.stderr.transform(utf8.decoder).join();
+      expect(
+        await process.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .first,
+        'locked',
+      );
+      var completed = false;
+      final append = makeQueue()
+          .append(event(1), context)
+          .then((_) => completed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(completed, false);
+      expect(process.kill(), true);
+      await process.exitCode;
+      await stderr;
+      await append.timeout(const Duration(seconds: 5));
+      expect(completed, true);
+    },
+  );
 }

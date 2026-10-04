@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -138,6 +141,10 @@ class SemanticSearchRepository {
   Timer? _busyRetry;
 
   Future<void>? _opening;
+  int _lifecycleEpoch = 0;
+  bool _repairModel = false;
+  bool _updateRequested = false;
+  bool _restartCancelledJob = false;
   SemanticQuantization? _openQuantization;
   final SemanticSearchSession _defaultSession = SemanticSearchSession();
   final Set<SemanticCancelHandle> _activeSearches = {};
@@ -266,6 +273,7 @@ class SemanticSearchRepository {
     _lastFailure = null;
     _unpublishedVersion = null;
     _needsRepair = false;
+    _repairModel = false;
     try {
       final paths = await _paths();
       // רק תיקיות שלנו: תיקיית vectors של המשתמש באותו שם לא נמחקת.
@@ -502,6 +510,10 @@ class SemanticSearchRepository {
   // ── פתיחה ───────────────────────────────────────────────────────────────
 
   Future<void> _open() async {
+    final epoch = _lifecycleEpoch;
+    if (_moveInProgress) {
+      throw const SemanticFailure(SemanticFailureKind.libraryMoving);
+    }
     final availability = await refresh();
     if (!availability.consentGranted) {
       throw const SemanticFailure(SemanticFailureKind.consentRequired);
@@ -513,9 +525,12 @@ class SemanticSearchRepository {
     }
     final quantization = this.quantization;
     if (_openQuantization == quantization) return;
-    await _closeSession();
+    await _closeSession(waitForOpening: false, invalidateOpening: false);
     final paths = await _paths();
     final identity = await _loadIdentity();
+    if (epoch != _lifecycleEpoch || !_isConsentGranted() || _moveInProgress) {
+      throw const SemanticFailure(SemanticFailureKind.cancelled);
+    }
     try {
       await _backend.open(
         SemanticOpenRequest(
@@ -530,9 +545,22 @@ class SemanticSearchRepository {
       if (failure.kind == SemanticFailureKind.artifactCorrupt) {
         _needsRepair = true;
       }
-      _lastFailure = failure;
-      await refresh();
+      if ({
+        SemanticFailureKind.modelInvalid,
+        SemanticFailureKind.modelIdentityMismatch,
+        SemanticFailureKind.tokenizerMissing,
+      }.contains(failure.kind)) {
+        _repairModel = true;
+      }
+      if (epoch == _lifecycleEpoch) {
+        _lastFailure = failure;
+        await refresh();
+      }
       rethrow;
+    }
+    if (epoch != _lifecycleEpoch || !_isConsentGranted() || _moveInProgress) {
+      await _backend.disable();
+      throw const SemanticFailure(SemanticFailureKind.cancelled);
     }
     _openQuantization = quantization;
     unawaited(_warmUp());
@@ -558,7 +586,18 @@ class SemanticSearchRepository {
     }
   }
 
-  Future<void> _closeSession() async {
+  Future<void> _closeSession({
+    bool waitForOpening = true,
+    bool invalidateOpening = true,
+  }) async {
+    if (invalidateOpening) _lifecycleEpoch++;
+    if (waitForOpening) {
+      try {
+        await _opening;
+      } catch (_) {
+        /* הפותח כבר קיבל את הכשל. */
+      }
+    }
     if (_openQuantization == null) return;
     _openQuantization = null;
     try {
@@ -572,31 +611,54 @@ class SemanticSearchRepository {
 
   Future<void> _runJob({required bool userInitiated}) {
     if (userInitiated) _reportJobFailures = true;
-    return _job ??= _jobBody();
+    if (_job != null) {
+      _updateRequested = true;
+      if (userInitiated && _jobCancel.isCancelled) _restartCancelledJob = true;
+      return _job!;
+    }
+    return _job = _jobBody().whenComplete(() => _job = null);
   }
 
   Future<void> _jobBody() async {
     _jobCancel = SemanticCancelHandle();
     try {
-      await _performJob();
-    } on PatchDownloadCancelled {
-      // ביטול מפורש אינו כשל.
-    } catch (error, stackTrace) {
-      final failure = _failureOf(error);
-      if (failure.kind == SemanticFailureKind.vectorsBusy) {
-        _scheduleBusyRetry();
-      } else if (failure.kind != SemanticFailureKind.cancelled) {
-        _log('download', error, stackTrace);
-        // כשל ברקע לא מציף את הממשק; ההרצה הבאה תנסה שוב.
-        if (_reportJobFailures) _lastFailure = failure;
-      }
+      do {
+        _updateRequested = false;
+        _restartCancelledJob = false;
+        try {
+          await _performJob();
+          _lastFailure = null;
+        } on PatchDownloadCancelled {
+          // ביטול מפורש אינו כשל.
+        } catch (error, stackTrace) {
+          final failure = _failureOf(error);
+          if (failure.kind == SemanticFailureKind.vectorsBusy) {
+            _scheduleBusyRetry();
+          } else if (failure.kind != SemanticFailureKind.cancelled) {
+            _log('download', error, stackTrace);
+            // כשל ברקע לא מציף את הממשק; בקשה חדשה מריצה את הגרסה העדכנית.
+            if (_reportJobFailures) _lastFailure = failure;
+          }
+        }
+        _jobPhase = null;
+        _jobProgress = null;
+        await refresh();
+        if (_restartCancelledJob &&
+            !_settings.downloadPaused &&
+            !_moveInProgress &&
+            _isConsentGranted()) {
+          _jobCancel = SemanticCancelHandle();
+        }
+      } while (_updateRequested &&
+          !_jobCancel.isCancelled &&
+          !_settings.downloadPaused &&
+          !_moveInProgress &&
+          _isConsentGranted());
     } finally {
-      _job = null;
       _jobPhase = null;
       _jobProgress = null;
       _reportJobFailures = false;
     }
-    await refresh();
   }
 
   /// התקנה אחרת של הסט רצה: מנסים שוב מאוחר יותר, בלי כשל.
@@ -746,6 +808,7 @@ class SemanticSearchRepository {
         'no release for ${quantization.name}',
       );
     }
+    await _ensureOwnedOrAbsent(paths.modelDirectory, allowEmpty: true);
     await markSemanticDirectory(paths.modelDirectory);
     final identityFile = File(paths.identityFile);
     final targets = [
@@ -755,10 +818,18 @@ class SemanticSearchRepository {
       if (!await identityFile.exists())
         (file: release.identity, dest: paths.identityFile),
     ];
-    final missing = [
-      for (final target in targets)
-        if (!await File(target.dest).exists()) target,
-    ];
+    final missing = <({SemanticModelFile file, String dest})>[];
+    for (final target in targets) {
+      if (!await File(target.dest).exists() ||
+          (_repairModel &&
+              !await _verifyModelFile(
+                target.dest,
+                target.file.size,
+                target.file.sha256,
+              ))) {
+        missing.add(target);
+      }
+    }
     final total = missing.fold(0, (sum, target) => sum + target.file.size);
     var done = 0;
     for (final target in missing) {
@@ -788,6 +859,7 @@ class SemanticSearchRepository {
         await CompanionAssetsService.discardDownload(partial);
       }
     }
+    _repairModel = false;
     // המנוע מקבל את הנכס המצורף; העותק שבתיקייה תמיד זהה לו.
     if (!await identityFile.exists() ||
         await identityFile.readAsString() != identity.rawJson) {
@@ -1006,3 +1078,13 @@ class SemanticSearchSession {
   /// מבטל את החיפוש הרץ בערוץ, אם יש.
   void cancel() => _current?.cancel();
 }
+
+Future<bool> _verifyModelFile(
+  String path,
+  int expectedSize,
+  String expectedSha,
+) => Isolate.run(() async {
+  final file = File(path);
+  if (!await file.exists() || await file.length() != expectedSize) return false;
+  return (await sha256.bind(file.openRead()).first).toString() == expectedSha;
+});

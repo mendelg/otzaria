@@ -148,8 +148,8 @@ void main() {
       expect(full['title'], hasLength(300));
       expect(full['reference'], hasLength(300));
       expect(full['snippetText'], hasLength(2000));
-      expect(full['passageText'], hasLength(20000));
-      expect(full['passageTextSource'], 'line');
+      expect(full['passageText'], 'ק' * 2000);
+      expect(full['passageTextSource'], 'snippet');
       expect(full['matchedText'] as List, hasLength(50));
       expect((full['matchedText'] as List).first, hasLength(200));
       expect(full['fusedScore'], isNull, reason: 'non-finite → null');

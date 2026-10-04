@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -121,7 +122,6 @@ class SearchFeedbackService
       baseUrl: _baseUrl,
       clock: _clock,
     );
-    _events = SearchFeedbackEventBuilder(clock: _clock, newId: newId);
     // הסכמה שהשתנתה בחלון אחר מגיעה ל-box המקומי דרך SettingsSync.
     (settingsChangesFromOtherWindows ?? SettingsSync.instance.changes).listen(
       _onSettingChangedElsewhere,
@@ -193,7 +193,6 @@ class SearchFeedbackService
   late final SearchFeedbackIdentityStore _identityStore;
   late final SearchFeedbackQueue _queue;
   late final SearchFeedbackSender _sender;
-  late final SearchFeedbackEventBuilder _events;
 
   final StreamController<SearchFeedbackConsent> _changes =
       StreamController<SearchFeedbackConsent>.broadcast();
@@ -251,6 +250,10 @@ class SearchFeedbackService
       if (state == 'granted' &&
           (_consentPersistence.readVersion() ?? 0) >=
               kSearchFeedbackConsentVersion) {
+        if (!_sessionFlushDone && _isDesktop && !_isSecondaryWindow()) {
+          _sessionFlushDone = true;
+          _timerFactory(Duration.zero, _flushFromTimer);
+        }
         return SearchFeedbackConsent.granted;
       }
     } catch (error, stackTrace) {
@@ -264,11 +267,9 @@ class SearchFeedbackService
 
   @override
   Future<void> grant() async {
+    if (!_isDesktop) return;
     await _ensureIdentityLoaded();
-    if (_blocked) {
-      // הסכמה מחודשת אחרי חסימה = זהות אנונימית חדשה.
-      await _resetIdentity();
-    }
+    if (!_blocked) await _queue.resume();
     await _consentPersistence.write('granted', kSearchFeedbackConsentVersion);
     _changes.add(SearchFeedbackConsent.granted);
     _startSessionFlush();
@@ -287,35 +288,29 @@ class SearchFeedbackService
     _cancelTimers();
     await _consentPersistence.write('declined', kSearchFeedbackConsentVersion);
     _changes.add(SearchFeedbackConsent.declined);
+    await _lastEnqueue;
+    await _flushing;
     await _queue.purge();
-    await _resetIdentity();
     _backoffUntil = null;
     _backoffStep = 0;
   }
-
-  Future<void> _resetIdentity() => _identityOp(() async {
-    await _identityStore.delete();
-    _identity = null;
-    _identityLoaded = true;
-    _blocked = false;
-  });
 
   // ── רישום אירועים ────────────────────────────────────────────────────────
 
   @override
   bool get isCollecting =>
-      !_blocked && consent == SearchFeedbackConsent.granted;
+      _isDesktop && !_blocked && consent == SearchFeedbackConsent.granted;
 
   @override
   void recordSearch(SemanticSearchContext context) =>
-      _record(context, () => _events.search(context));
+      _record(context, 'search');
 
   @override
   void recordResultsShown(
     SemanticSearchContext context,
     int offset,
     List<SemanticResultSnapshot> results,
-  ) => _record(context, () => _events.resultsShown(context, offset, results));
+  ) => _record(context, 'results', [offset, results]);
 
   @override
   String recordOpen(
@@ -324,7 +319,7 @@ class SearchFeedbackService
     SearchFeedbackOpenVia via,
   ) {
     final openId = newId();
-    _record(context, () => _events.open(context, result, via, openId));
+    _record(context, 'open', [result, via, openId]);
     return openId;
   }
 
@@ -334,45 +329,70 @@ class SearchFeedbackService
     String openId,
     Duration dwell,
     SearchFeedbackDwellEnd end,
-  ) => _record(context, () => _events.dwell(context, openId, dwell, end));
+  ) => _record(context, 'dwell', [openId, dwell, end]);
 
   @override
   void recordVote(
     SemanticSearchContext context,
     SemanticResultSnapshot result,
     SearchFeedbackVote vote,
-  ) => _record(context, () => _events.vote(context, result, vote));
+  ) => _record(context, 'vote', [result, vote]);
+
+  bool get _isDesktop => {'windows', 'linux', 'macos'}.contains(_platform());
 
   void _record(
     SemanticSearchContext context,
-    Map<String, Object?>? Function() build,
-  ) {
+    String type, [
+    List<Object?> args = const [],
+  ]) {
     try {
       if (!isCollecting) return;
-      final event = build();
-      if (event == null) return;
-      final clientContext = _clientContext(context);
       final epoch = _epoch;
-      // שרשור: האירועים נכתבים לתור בסדר שבו נרשמו.
-      final pending = _lastEnqueue.then(
-        (_) => _enqueue(event, clientContext, epoch),
+      final recordedAt = DateTime.now();
+      final now = _clock();
+      final id = newId();
+      final clientContext = _clientContext(context);
+      _lastEnqueue = _lastEnqueue.then(
+        (_) => _enqueueEvent(
+          context,
+          type,
+          args,
+          now,
+          id,
+          clientContext,
+          epoch,
+          recordedAt,
+        ),
       );
-      _lastEnqueue = pending;
-      unawaited(pending);
+      unawaited(_lastEnqueue);
     } catch (error, stackTrace) {
       _log('record', error, stackTrace);
     }
   }
 
-  Future<void> _enqueue(
-    Map<String, Object?> event,
+  Future<void> _enqueueEvent(
+    SemanticSearchContext context,
+    String type,
+    List<Object?> args,
+    DateTime now,
+    String id,
     Map<String, Object?> clientContext,
     int epoch,
+    DateTime recordedAt,
   ) async {
     try {
+      if (epoch != _epoch || !isCollecting) return;
+      final event = await buildSearchFeedbackEvent(
+        context,
+        type,
+        args,
+        now,
+        id,
+      );
+      if (event == null) return;
       await _ensureIdentityLoaded();
       if (epoch != _epoch || !isCollecting) return;
-      await _queue.append(event, clientContext);
+      await _queue.append(event, clientContext, recordedAt: recordedAt);
       _debounceTimer?.cancel();
       _debounceTimer = _timerFactory(flushDebounce, _flushFromTimer);
       _startSessionFlush();
@@ -410,12 +430,11 @@ class SearchFeedbackService
   Future<void> _flush() async {
     final epoch = _epoch;
     try {
-      if (consent != SearchFeedbackConsent.granted) return;
+      if (!_isDesktop || consent != SearchFeedbackConsent.granted) return;
       // חלון משני רק כותב לתור המשותף; החלון הראשי הוא ששולח.
       if (_isSecondaryWindow()) return;
-      await _queue.load();
       await _reloadIdentity();
-      if (_blocked || _queue.isEmpty) return;
+      if (_blocked || epoch != _epoch || !isCollecting) return;
       if (!_buildAllowsSending || !_sendingAllowed()) return;
       final until = _backoffUntil;
       if (until != null && _clock().isBefore(until)) return;
@@ -460,14 +479,22 @@ class SearchFeedbackService
       await _queue.remove(name);
       return true;
     }
+    if (epoch != _epoch || !isCollecting) return false;
     var outcome = await _postBatch(
       localOnly ? batch.withoutContextKey(kSearchFeedbackLocalOnlyKey) : batch,
       identity,
+      epoch,
     );
     if (outcome.kind == SearchFeedbackOutcomeKind.unknownKey) {
       identity.registeredKeyId = null;
       if (!await _register(identity, epoch)) return false;
-      outcome = await _postBatch(batch, identity);
+      outcome = await _postBatch(
+        localOnly
+            ? batch.withoutContextKey(kSearchFeedbackLocalOnlyKey)
+            : batch,
+        identity,
+        epoch,
+      );
       if (outcome.kind == SearchFeedbackOutcomeKind.unknownKey) {
         _applyBackoff(null);
         return false;
@@ -522,6 +549,7 @@ class SearchFeedbackService
   Future<SearchFeedbackOutcome> _postBatch(
     SearchFeedbackStoredBatch batch,
     SearchFeedbackIdentity identity,
+    int epoch,
   ) {
     final body =
         '{"schema":1,"batchId":"${newId()}",'
@@ -532,6 +560,7 @@ class SearchFeedbackService
       identity: identity,
       body: body,
       appVersion: _appVersion(),
+      canSend: () => epoch == _epoch && isCollecting && _sendingAllowed(),
     );
   }
 
@@ -539,7 +568,11 @@ class SearchFeedbackService
   Future<SearchFeedbackIdentity?> _identityForSending(int epoch) async {
     var identity = _identity;
     if (identity == null) {
-      final created = SearchFeedbackIdentity.generate(_random);
+      final seed = [
+        for (var i = 0; i < SearchFeedbackIdentity.seedLength; i++)
+          _random.nextInt(256),
+      ];
+      final created = await _newIdentity(seed);
       final saved = await _identityOp(() async {
         if (epoch != _epoch) return false;
         await _identityStore.save(created);
@@ -566,6 +599,7 @@ class SearchFeedbackService
       identity: identity,
       body: body,
       appVersion: _appVersion(),
+      canSend: () => epoch == _epoch && isCollecting && _sendingAllowed(),
     );
     if (epoch != _epoch) return false;
     switch (outcome.kind) {
@@ -612,12 +646,11 @@ class SearchFeedbackService
     _backoffUntil = _clock().add(delay);
   }
 
-  /// טיימר מחזורי רק כשהתור אינו ריק; בזמן השהיה — עד סופה.
+  /// טיימר מחזורי מרווח מגלה גם אירועים חדשים מחלונות אחרים; בזמן השהיה — עד סופה.
   void _scheduleNextFlush() {
     _nextFlushTimer?.cancel();
     _nextFlushTimer = null;
     if (_blocked ||
-        _queue.isEmpty ||
         !isCollecting ||
         !_buildAllowsSending ||
         _isSecondaryWindow()) {
@@ -640,8 +673,7 @@ class SearchFeedbackService
 
   // ── עזרים ────────────────────────────────────────────────────────────────
 
-  /// קורא שוב את קובץ הזהות: ביטול בחלון אחר מוחק אותו, ואסור לרשום מחדש
-  /// מפתח מבוטל מהזיכרון.
+  /// קורא שוב את סטטוס המפתח המשותף לפני רישום ושליחה.
   Future<void> _reloadIdentity() => _identityOp(() async {
     _identity = await _identityStore.load();
     _blocked = _identity?.blocked ?? false;
@@ -710,3 +742,6 @@ class SearchFeedbackService
     }
   }
 }
+
+Future<SearchFeedbackIdentity> _newIdentity(List<int> seed) =>
+    Isolate.run(() => SearchFeedbackIdentity.fromSeed(seed));

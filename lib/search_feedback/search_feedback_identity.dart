@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -36,7 +37,7 @@ class SearchFeedbackIdentity {
   /// ה-keyId שהשרת אישר ברישום; null = טרם נרשם.
   String? registeredKeyId;
 
-  /// השרת חסם את המפתח — לא אוספים ולא שולחים עד איפוס המפתח.
+  /// השרת חסם את המפתח — לא אוספים ולא שולחים עם מפתח זה.
   bool blocked;
 
   bool get isRegistered => registeredKeyId == keyId;
@@ -95,7 +96,8 @@ class SearchFeedbackIdentityStore {
   Future<SearchFeedbackIdentity?> load() async {
     final file = await _file();
     if (!await file.exists()) return null;
-    return SearchFeedbackIdentity.tryParse(await file.readAsString());
+    final text = await file.readAsString();
+    return _parseIdentity(text);
   }
 
   /// כתיבה לקובץ זמני והחלפה, כדי שקריסה באמצע לא תשאיר קובץ חתוך.
@@ -114,3 +116,6 @@ class SearchFeedbackIdentityStore {
     }
   }
 }
+
+Future<SearchFeedbackIdentity?> _parseIdentity(String text) =>
+    Isolate.run(() => SearchFeedbackIdentity.tryParse(text));
