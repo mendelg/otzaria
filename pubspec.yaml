@@ -104,7 +104,7 @@ dependencies:
   otzaria_search_engine:
     git:
       url: https://github.com/Otzaria/otzaria_search_engine
-      ref: e5295afdcd64d993dc8991cd33b9e05da839c34c
+      ref: 5d31630eee30c4114e3026461438c68fb992869a
   seforim_library_updater:
     git:
       url: https://github.com/Otzaria/otzaria_library_updater
@@ -271,6 +271,8 @@ flutter:
     - assets/Acronyms.json
     - assets/support_organizations.json
     - assets/export_restricted_books.json
+    # זהות המודל הסמנטי (model.json מ-otzaria-semantic-search)
+    - assets/semantic/meivin-round2-onnx/
 
   fonts:
     # החבילה מספקת את הגופן אך אינה מצהירה עליו, ולכן שני אייקוני ה-light

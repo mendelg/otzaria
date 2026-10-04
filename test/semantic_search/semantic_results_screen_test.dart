@@ -1,0 +1,438 @@
+import "dart:async";
+import "package:flutter/services.dart";
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/repository/data_repository.dart';
+import 'package:otzaria/library/bloc/library_bloc.dart';
+import 'package:otzaria/library/bloc/library_event.dart';
+import 'package:otzaria/library/bloc/library_state.dart';
+import 'package:otzaria/library/models/library.dart';
+import 'package:otzaria/models/books.dart';
+import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
+import 'package:otzaria/navigation/bloc/navigation_event.dart';
+import 'package:otzaria/navigation/bloc/navigation_state.dart';
+import 'package:otzaria/search_feedback/search_feedback_api.dart';
+import 'package:otzaria/search_feedback/semantic_search_strings.dart';
+import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
+import 'package:otzaria/semantic_search/view/widgets/semantic_result_card.dart';
+import 'package:otzaria/search/view/search_scope_menu.dart';
+import 'package:otzaria/semantic_search/services/semantic_dwell_binding.dart';
+import 'package:otzaria/semantic_search/view/semantic_search_results_screen.dart';
+import 'package:otzaria/settings/engine/settings_bloc.dart';
+import 'package:otzaria/settings/engine/settings_event.dart';
+import 'package:otzaria/settings/engine/settings_state.dart';
+import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
+import 'package:otzaria/tabs/bloc/tabs_event.dart';
+import 'package:otzaria/tabs/bloc/tabs_state.dart';
+import 'package:otzaria/tabs/models/semantic_search_tab.dart';
+import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria_search_engine/otzaria_search_engine.dart'
+    show SemanticResultSource;
+
+import '../test_helpers/memory_cache_provider.dart';
+import 'semantic_ui_test_support.dart';
+
+class _MockSettingsBloc extends MockBloc<SettingsEvent, SettingsState>
+    implements SettingsBloc {}
+
+class _MockLibraryBloc extends MockBloc<LibraryEvent, LibraryState>
+    implements LibraryBloc {}
+
+class _MockNavigationBloc extends MockBloc<NavigationEvent, NavigationState>
+    implements NavigationBloc {}
+
+class _RecordingTabsBloc extends Bloc<TabsEvent, TabsState>
+    implements TabsBloc {
+  _RecordingTabsBloc() : super(TabsState.initial()) {
+    on<TabsEvent>((event, emit) {
+      if (event is OpenOrFocusTab) opened.add(event);
+    });
+  }
+
+  final List<OpenOrFocusTab> opened = [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    await Settings.init(cacheProvider: MemoryCacheProvider());
+  });
+
+  tearDown(SemanticDwellBinding.resetForTesting);
+
+  setUp(() {
+    final library = Library(categories: const []);
+    for (var i = 1; i <= 35; i++) {
+      library.books.add(TextBook(id: i, title: 'ספר $i'));
+    }
+    DataRepository.instance.library = Future.value(library);
+  });
+
+  Future<
+    ({
+      RecordingRecorder recorder,
+      _RecordingTabsBloc tabs,
+      SemanticSearchTab tab,
+      FakeResultsSource source,
+    })
+  >
+  pumpScreen(
+    WidgetTester tester, {
+    bool runOnFirstShow = true,
+    bool preview = false,
+    FakeResultsSource? injectedSource,
+    double? paneWidth,
+    bool platformSupported = true,
+  }) async {
+    final recorder = RecordingRecorder();
+    final items = [
+      resultItem(1, source: SemanticResultSource.both),
+      resultItem(2, source: SemanticResultSource.semantic, html: 'בלי סימון'),
+      resultItem(3, source: SemanticResultSource.lexical),
+      for (var i = 4; i <= 35; i++) resultItem(i),
+    ];
+    final source = injectedSource ?? FakeResultsSource(items: items);
+    final tab = SemanticSearchTab(
+      runOnFirstShow: runOnFirstShow,
+      options: const SemanticQueryOptions(query: 'כבוד אב'),
+      createResultsBloc: (_) => buildResultsBloc(
+        source: source,
+        recorder: recorder,
+      ),
+    );
+    final settings = _MockSettingsBloc();
+    whenListen(
+      settings,
+      const Stream<SettingsState>.empty(),
+      initialState: SettingsState.initial().copyWith(
+        searchShowPreview: preview,
+      ),
+    );
+    final navigation = _MockNavigationBloc();
+    whenListen(
+      navigation,
+      const Stream<NavigationState>.empty(),
+      initialState: const NavigationState(currentScreen: Screen.search),
+    );
+    final tabs = _RecordingTabsBloc();
+    final libraryBloc = _MockLibraryBloc();
+    whenListen(
+      libraryBloc,
+      const Stream<LibraryState>.empty(),
+      initialState: const LibraryState(),
+    );
+    addTearDown(() async {
+      await libraryBloc.close();
+      tab.dispose();
+      await settings.close();
+      await navigation.close();
+      await tabs.close();
+    });
+
+    await tester.pumpWidget(
+      MultiBlocProvider(
+        providers: [
+          BlocProvider<SettingsBloc>.value(value: settings),
+          BlocProvider<TabsBloc>.value(value: tabs),
+          BlocProvider<NavigationBloc>.value(value: navigation),
+          BlocProvider<LibraryBloc>.value(value: libraryBloc),
+        ],
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(size: Size(700, 900)),
+            child: Align(
+              child: SizedBox(
+                width: paneWidth,
+                child: SemanticSearchResultsScreen(
+                  tab: tab,
+                  platformSupported: platformSupported,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await settle(tester);
+    return (recorder: recorder, tabs: tabs, tab: tab, source: source);
+  }
+
+  testWidgets('הכרטיסים מציגים את תווית המקור', (tester) async {
+    await pumpScreen(tester);
+
+    expect(find.text(kSemanticSourceBothLabel), findsWidgets);
+    expect(find.text(kSemanticSourceSemanticLabel), findsOneWidget);
+    expect(find.text(kSemanticSourceLexicalLabel), findsOneWidget);
+  });
+
+  testWidgets('אהבתי, לחיצה חוזרת מבטלת; לא אהבתי', (tester) async {
+    final harness = await pumpScreen(tester);
+
+    await tester.tap(find.byKey(const ValueKey('semantic-like-1')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('semantic-like-1')));
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('semantic-dislike-2')));
+    await settle(tester);
+
+    expect(harness.recorder.votes.map((vote) => vote.vote), [
+      SearchFeedbackVote.like,
+      SearchFeedbackVote.cleared,
+      SearchFeedbackVote.dislike,
+    ]);
+    expect(harness.recorder.votes.last.result.rank, 2);
+  });
+
+  testWidgets('פתיחה: התאמה לפי עניין בלבד נפתחת בלי הדגשת מילים', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester);
+
+    await tester.tap(find.text('ספר 1, א'));
+    await settle(tester);
+    await tester.tap(find.text('ספר 2, א'));
+    await settle(tester);
+
+    final opened = harness.tabs.opened.map((e) => e.tab as TextBookTab);
+    expect(opened.map((tab) => tab.searchText), ['כבוד אב', '']);
+    expect(opened.last.initialSearchResultLines, {2});
+    expect(harness.recorder.opens.map((open) => open.via), [
+      SearchFeedbackOpenVia.click,
+      SearchFeedbackOpenVia.click,
+    ]);
+    SemanticDwellBinding.resetForTesting();
+  });
+
+  testWidgets('גלילה לסוף טוענת עמוד ורושמת results_shown עם ההיסט', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester);
+
+    // גלילה לסוף הרשימה טוענת את העמוד הבא, כמו "טען תוצאות נוספות".
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -3000));
+      await settle(tester);
+    }
+
+    expect(harness.recorder.shown.map((page) => page.offset), [0, 30]);
+    expect(harness.recorder.searches, hasLength(1));
+  });
+
+  testWidgets('כרטיסייה משוחזרת אינה מחפשת ואינה רושמת עד לחיצה', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester, runOnFirstShow: false);
+
+    expect(harness.recorder.total, 0);
+    expect(find.text('ספר 1, א'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('semantic-results-rerun')));
+    await settle(tester);
+
+    expect(find.text('ספר 1, א'), findsOneWidget);
+    expect(harness.recorder.searches, hasLength(1));
+  });
+  testWidgets('תצוגה מקדימה מושהית מתבטלת כשהחיפוש מתחלף', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1000, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final oldItems = [resultItem(1), resultItem(2)];
+    final source = FakeResultsSource(items: oldItems);
+    final harness = await pumpScreen(
+      tester,
+      preview: true,
+      injectedSource: source,
+    );
+    final pending = Completer<Library>();
+    DataRepository.instance.library = pending.future;
+    await tester.tap(find.text('ספר 1, א'));
+    await tester.pump(const Duration(milliseconds: 350));
+    oldItems[0] = resultItem(3);
+    await tester.enterText(
+      find.byKey(const ValueKey('semantic-results-query')),
+      'שאילתה חדשה',
+    );
+    await tester.tap(find.byKey(const ValueKey('semantic-results-search')));
+    await settle(tester);
+    expect(harness.tab.resultsBloc.state.options!.query, 'שאילתה חדשה');
+    expect(harness.tab.previewTarget.value, isNull);
+    final library = Library(categories: const []);
+    library.books.addAll([
+      TextBook(id: 1, title: 'ספר 1'),
+      TextBook(id: 3, title: 'ספר 3'),
+    ]);
+    pending.complete(library);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 40)),
+    );
+    expect(
+      harness.tab.previewTarget.value,
+      isNull,
+      reason: 'A preview requested before the new search must be invalidated',
+    );
+  });
+
+  testWidgets('פתיחה מושהית אינה מיוחסת לתוצאה מהחיפוש החדש', (
+    tester,
+  ) async {
+    final items = [resultItem(1), resultItem(2)];
+    final source = FakeResultsSource(items: items);
+    final harness = await pumpScreen(tester, injectedSource: source);
+    final pending = Completer<Library>();
+    DataRepository.instance.library = pending.future;
+    await tester.tap(find.text('ספר 1, א'));
+    await tester.pump();
+    items[0] = resultItem(3);
+    await tester.enterText(
+      find.byKey(const ValueKey('semantic-results-query')),
+      'שאילתה חדשה',
+    );
+    await tester.tap(find.byKey(const ValueKey('semantic-results-search')));
+    await settle(tester);
+    expect(harness.tab.resultsBloc.state.items.first.id, BigInt.from(3));
+    final library = Library(categories: const []);
+    for (var i = 1; i <= 3; i++) {
+      library.books.add(TextBook(id: i, title: 'ספר $i'));
+    }
+    pending.complete(library);
+    await settle(tester);
+    expect((harness.tabs.opened.single.tab as TextBookTab).book.title, 'ספר 1');
+    expect(
+      harness.recorder.opens,
+      isEmpty,
+      reason: 'A new search invalidates telemetry from the pending old opening',
+    );
+    SemanticDwellBinding.resetForTesting();
+  });
+
+  testWidgets('כשל עמוד נוסף מוצג ומאפשר ניסיון חוזר בלי בקשות אוטומטיות', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester);
+    harness.source.error = StateError('injected page failure');
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -3000));
+      await settle(tester);
+    }
+    expect(harness.tab.resultsBloc.state.message, isNotNull);
+    expect(
+      find.text(
+        harness.tab.resultsBloc.state.message!.replaceAll(
+          '{name}',
+          kSemanticSearchModeName,
+        ),
+      ),
+      findsWidgets,
+      reason: 'A loaded list must show its subsequent page failure',
+    );
+    expect(harness.source.fetches, hasLength(2));
+    harness.source.error = null;
+    await tester.tap(find.byKey(const ValueKey('semantic-results-more')));
+    await settle(tester);
+    expect(harness.tab.resultsBloc.state.items, hasLength(35));
+    expect(harness.tab.resultsBloc.state.message, isNull);
+    expect(
+      find.byKey(const ValueKey('semantic-results-page-error')),
+      findsNothing,
+    );
+    expect(harness.source.fetches, hasLength(3));
+    expect(harness.recorder.shown.map((page) => page.offset), [0, 30]);
+  });
+  testWidgets('רשימה גדולה בונה רק כרטיסים הנראים במסך', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(
+      tester,
+      injectedSource: FakeResultsSource(total: 10000),
+    );
+    expect(harness.tab.resultsBloc.state.items, hasLength(30));
+    final rendered = find.byType(SemanticResultCard).evaluate().length;
+    expect(rendered, lessThan(30));
+    expect(harness.source.fetches, hasLength(1));
+  });
+
+  testWidgets(
+    'חלונית desktop ברוחב 300 מציגה את הכרטיסים ללא גלישה',
+    (tester) async {
+      tester.view.physicalSize = const Size(1000, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final loader = FontLoader('Roboto')
+        ..addFont(rootBundle.load('fonts/Rubik-VariableFont_wght.ttf'));
+      await loader.load();
+      await pumpScreen(tester, paneWidth: 300);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('היקף לא נתמך במסך התוצאות חסום בלי לשנות את הבחירה', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester);
+    tester
+        .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+        .onChanged({'/הלכה/id:1'});
+    await settle(tester);
+    expect(
+      find.text(
+        'במצב זה החיפוש מוגבל לקטגוריות של הספרייה; ספרים בודדים וספרים אישיים אינם נכללים.',
+      ),
+      findsOneWidget,
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('semantic-results-query')),
+      'בדיקה',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settle(tester);
+    expect(harness.source.fetches, hasLength(1));
+    expect(
+      tester
+          .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+          .selected,
+      {'/הלכה/id:1'},
+    );
+    tester
+        .widget<SearchScopeMenuButton>(find.byType(SearchScopeMenuButton))
+        .onChanged({'/'});
+    await tester.pump();
+    const rawQuery = '  כָּבוֹד אב  ';
+    await tester.enterText(
+      find.byKey(const ValueKey('semantic-results-query')),
+      rawQuery,
+    );
+    await tester.tap(find.byKey(const ValueKey('semantic-results-search')));
+    await settle(tester);
+    expect(harness.tab.options.query, rawQuery);
+    expect(harness.recorder.searches.last.query, rawQuery);
+  });
+  testWidgets('כרטיסיית מחשב ששוחזרה במכשיר לא נתמך אינה מריצה חיפוש', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester, platformSupported: false);
+    expect(find.byKey(const ValueKey('semantic-results-query')), findsNothing);
+    expect(find.text('החיפוש אינו זמין כרגע'), findsOneWidget);
+    expect(harness.source.fetches, isEmpty);
+    expect(harness.recorder.total, 0);
+  });
+}
+
+/// מחכה לעבודה האסינכרונית האמיתית (פענוח הספר) ולפריימים שאחריה.
+Future<void> settle(WidgetTester tester) async {
+  for (var i = 0; i < 6; i++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
