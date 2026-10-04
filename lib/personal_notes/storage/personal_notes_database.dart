@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:otzaria/data/sqlite/sqlite3_api.dart';
 
 import 'package:otzaria/core/app_paths.dart';
@@ -36,6 +37,9 @@ class PersonalNotesDatabase {
   static final PersonalNotesDatabase instance = PersonalNotesDatabase._();
 
   Database? _database;
+
+  /// עולה בכל הוספה, עדכון או מחיקה של הערה, מכל מסלול שמירה.
+  final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   /// Get or initialize the database
   Future<Database> get database async {
@@ -131,6 +135,7 @@ class PersonalNotesDatabase {
       'INSERT OR REPLACE INTO $_tableNotes ($cols) VALUES ($placeholders)',
       m.values.toList(),
     );
+    revision.value++;
   }
 
   /// Update an existing note
@@ -142,12 +147,14 @@ class PersonalNotesDatabase {
       'UPDATE $_tableNotes SET $setClause WHERE $_columnId = ?',
       [...m.values, note.id],
     );
+    revision.value++;
   }
 
   /// Delete a note
   Future<void> deleteNote(String noteId) async {
     final db = await database;
     db.execute('DELETE FROM $_tableNotes WHERE $_columnId = ?', [noteId]);
+    revision.value++;
   }
 
   /// Get a single note by ID

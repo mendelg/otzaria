@@ -59,6 +59,7 @@ class TabbedCommentaryPanel extends StatefulWidget {
   final String? notesBookIdOverride;
   final int? notesCategoryIdOverride;
   final int? notesFocusLineNumber;
+  final Widget? notesFooter;
 
   /// בקשות גלילה לקטע מפרש מלחיצה על עוגן-אות בטקסט הראשי. מועבר כמות שהוא
   /// לרשימת המפרשים; רלוונטי רק במצב המפוצל, שבו היא בכלל מוצגת כאן.
@@ -84,6 +85,7 @@ class TabbedCommentaryPanel extends StatefulWidget {
     this.notesBookIdOverride,
     this.notesCategoryIdOverride,
     this.notesFocusLineNumber,
+    this.notesFooter,
     this.commentaryScrollTarget,
   });
 
@@ -278,6 +280,9 @@ class _TabbedCommentaryPanelState extends State<TabbedCommentaryPanel>
                         ? state.book.categoryId
                         : widget.notesCategoryIdOverride,
                     focusLineNumber: widget.notesFocusLineNumber,
+                    footer: widget.notesBookIdOverride == null
+                        ? widget.notesFooter
+                        : null,
                     onNavigateToLine:
                         widget.onNavigateToLine ??
                         (line) => _handleNoteNavigation(context, state, line),

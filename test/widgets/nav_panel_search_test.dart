@@ -14,12 +14,14 @@ class _Host extends StatefulWidget {
   final VoidCallback? onArrowDown;
   final VoidCallback? onArrowUp;
   final VoidCallback? onClear;
+  final int rowCount;
 
   const _Host({
     this.initialText = '',
     this.onArrowDown,
     this.onArrowUp,
     this.onClear,
+    this.rowCount = 3,
   });
 
   @override
@@ -59,10 +61,10 @@ class _HostState extends State<_Host> {
                 title: 'בראשית',
                 trailing: NavPanelSearchToggle(),
               ),
-              for (var i = 0; i < 3; i++)
+              for (var i = 0; i < widget.rowCount; i++)
                 NavTreeGroupCard(
                   isGroupStart: i == 0,
-                  isGroupEnd: i == 2,
+                  isGroupEnd: i == widget.rowCount - 1,
                   child: NavTreeTile.category(
                     title: 'שורה $i',
                     level: 0,
@@ -180,6 +182,66 @@ void main() {
       await tester.pumpWidget(wrap(const NavPanelSearchToggle()));
 
       expect(find.byType(IconButton), findsNothing);
+    });
+  });
+
+  // issue #1725 — האייקון נגלל עם הכותרת; במקומו מופיע אייקון צף.
+  group('אייקון צף כשהכותרת נגללה', () {
+    Finder searchIcon() => find.byIcon(FluentIcons.search_24_regular);
+    Finder listScrollable() => find.descendant(
+      of: find.byType(ListView),
+      matching: find.byType(Scrollable),
+    );
+
+    Future<void> scrollBy(WidgetTester tester, double dy) async {
+      await tester.drag(find.byType(ListView), Offset(0, dy));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('מופיע רק אחרי שהכותרת יצאה מהתחום ונעלם כשהיא חוזרת', (
+      tester,
+    ) async {
+      await tester.pumpWidget(wrap(const _Host(rowCount: 80)));
+      await tester.pumpAndSettle();
+      expect(searchIcon(), findsOneWidget);
+
+      await scrollBy(tester, -20);
+      expect(searchIcon(), findsOneWidget, reason: 'הכותרת עדיין בתחום');
+
+      await scrollBy(tester, -1500);
+      expect(find.byType(NavTreeHeader), findsNothing);
+      expect(searchIcon().hitTestable(), findsOneWidget);
+
+      await scrollBy(tester, 3000);
+      expect(searchIcon(), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(NavTreeHeader),
+          matching: searchIcon(),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('לחיצה עליו פותחת שדה ממוקד בלי לגלול', (tester) async {
+      await tester.pumpWidget(wrap(const _Host(rowCount: 80)));
+      await tester.pumpAndSettle();
+      await scrollBy(tester, -1500);
+      final offset = tester
+          .state<ScrollableState>(listScrollable())
+          .position
+          .pixels;
+
+      await tester.tap(searchIcon());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(OtzariaSearchField), findsOneWidget);
+      expect(_fieldHasFocus(tester), isTrue);
+      expect(searchIcon(), findsNothing);
+      expect(
+        tester.state<ScrollableState>(listScrollable()).position.pixels,
+        offset,
+      );
     });
   });
 

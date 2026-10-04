@@ -172,7 +172,7 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'בחר קובץ דחוס': 'Select a Compressed File',
     'בחר קובץ מסד ספרים': 'Choose a Seforim Database File',
     'בחר קובץ ספרייה': 'Select a Library File',
-    'בחר קובצי "דורות.csv", "כותרות.csv", "גרסאות.csv", "<שם הספר>.links.csv" או קובצי קישורים של אוצריא ("<שם הספר>_links.json") והם יכנסו לספרייה. ייבוא חוזר מעדכן ערכים קיימים ומוסיף חדשים.': 'Select "דורות.csv", "כותרות.csv", "גרסאות.csv", "<sefer name>.links.csv", or Otzaria link files ("<sefer name>_links.json") and they go into the library. Reimporting updates existing entries and adds any new ones.',
+    'בחר קובצי "דורות.csv", "כותרות.csv", "גרסאות.csv", "<שם הספר>.links.csv" או קובצי קישורים של אוצריא ("<שם הספר>_links.json") והם יכנסו לספרייה. ייבוא חוזר מעדכן ערכים קיימים ומוסיף חדשים. עמודות "כותרות.csv": ספר, מבנה, רמה, כותרת, שורה או טקסט; "רמה" 2 ומעלה יוצרת כותרות משנה.': 'Select "דורות.csv", "כותרות.csv", "גרסאות.csv", "<sefer name>.links.csv", or Otzaria link files ("<sefer name>_links.json") and they go into the library. Reimporting updates existing entries and adds any new ones. "כותרות.csv" columns: ספר, מבנה, רמה, כותרת, and שורה or טקסט; a רמה of 2 or more creates subheadings.',
     'בחר תיקייה': 'Select Folder',
     'בחר תיקייה המכילה את קבצי הספרייה': 'Select the folder containing Your library files',
     'בחר תיקייה קיימת': 'Select an Existing Folder',
