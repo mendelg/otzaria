@@ -1715,11 +1715,12 @@ class PluginExtendedValidator {
     // שהבא הוא ביטוי, לא חלוקה). שומרים את ההקשר ב-group(1) וב-group(2),
     // ואת ה-regex עצמו (group(3)) מוחקים (לא נסרק ולא משוחזר). ה-character-class
     // ‎`\[…\]` בתוך הregex מאפשר `/` בלתי בורח בתוך class (למשל `/[a-z\/]/`).
+    // `[` מוחרג מענף התו הבודד: חפיפה בין הענפים גרמה ל-backtracking מעריכי.
     stripped = stripped.replaceAllMapped(
       RegExp(
         r'(^|[=(,;:!?~&|+\-*/%<>{}\[\]]|=>|\breturn\b|\bthrow\b|\bin\b|\bof\b|\btypeof\b|\bdelete\b|\bvoid\b|\binstanceof\b|\bnew\b)'
         r'(\s*)'
-        r'(/(?:\\.|\[(?:\\.|[^\]\\\n\r])*\]|[^/\\\n\r])+?/[gimsuyd]*)',
+        r'(/(?:\\.|\[(?:\\.|[^\]\\\n\r])*\]|[^/\\\n\r\[])+?/[gimsuyd]*)',
       ),
       (m) {
         // regex literals נמחקים מהסריקה (לא משוחזרים): `//` או הטקסט
