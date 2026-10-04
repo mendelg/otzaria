@@ -113,9 +113,22 @@ String truncate(String text, int length) {
   return text.length > length ? '${text.substring(0, length)}...' : text;
 }
 
+final RegExp _nonLatin1 = RegExp(r'[\u0100-\uFFFF]');
+
 /// מקף, פסק ו-| הופכים לרווח; ניקוד וטעמים (U+0591–U+05C7) נמחקים.
-/// מעבר יחיד על יחידות הקוד, בלי מחרוזות ביניים.
+/// קלט נקי מוחזר ללא העתקה; ניקוי נעשה על יחידות הקוד בלי מחרוזות ביניים.
 String removeVolwels(String s) {
+  // ב-Latin1 אין ניקוד עברי; החלפה מובנית חוסכת סריקה והעתקה ב-Dart.
+  if (!_nonLatin1.hasMatch(s)) return s.replaceAll('|', ' ');
+
+  var firstChange = 0;
+  while (firstChange < s.length) {
+    final c = s.codeUnitAt(firstChange);
+    if (c == 0x7C || (c >= 0x0591 && c <= 0x05C7)) break;
+    firstChange++;
+  }
+  if (firstChange == s.length) return s;
+
   final units = Uint16List(s.length);
   var n = 0;
   for (var i = 0; i < s.length; i++) {

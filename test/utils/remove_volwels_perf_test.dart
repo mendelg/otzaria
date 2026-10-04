@@ -18,6 +18,28 @@ const _vocalizedLine =
 
 void main() {
   group('removeVolwels', () {
+    test('reuses clean text without allocating a copy', () {
+      for (final line in [
+        'Plain English book content with words and punctuation. ',
+        'Latin1 é ÿ café 123 ',
+        'בראשית ברא אלהים את השמים ואת הארץ ',
+        'English עברית é 中文 😀 \u0590\u05C8 ',
+        String.fromCharCodes([0xD83D, 0x41, 0xDE00]),
+      ]) {
+        final input = List.filled(40, line).join();
+        expect(identical(removeVolwels(input), input), isTrue);
+      }
+    });
+
+    test('cleans the full range after a Unicode prefix', () {
+      final prefix = List.filled(40, 'English עברית 😀 é ').join();
+      final range = String.fromCharCodes([
+        for (var c = 0x0591; c <= 0x05C7; c++) c,
+      ]);
+      final input = '$prefix$range|\u0590\u05C8😀';
+      expect(removeVolwels(input), '$prefix   \u0590\u05C8😀');
+    });
+
     test('identical to the regex oracle on edge and random input', () {
       final inputs = <String>[
         '',
