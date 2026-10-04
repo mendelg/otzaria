@@ -133,9 +133,9 @@ Future<LibraryFolderScan> scanLibraryFolderAssets(String folder) async {
     found.add(_kCatalogAssetLabel);
     probePath ??= catalogPath;
   }
-  final lexicalPath = await firstExisting([
-    DatabaseConstants.lexicalDatabaseFileName,
-  ]);
+  final lexicalPath = await firstExisting(
+    DatabaseConstants.lexicalReleaseAssetFileNames,
+  );
   if (lexicalPath != null) {
     found.add(_kLexicalAssetLabel);
     probePath ??= lexicalPath;

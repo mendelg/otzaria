@@ -416,13 +416,13 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     }
 
     // מילון החיפוש המקורב — אינו דחוס, אופציונלי
-    final lexical = File(
-      path.join(source, DatabaseConstants.lexicalDatabaseFileName),
-    );
-    if (await lexical.exists()) {
-      await lexical.copy(
-        path.join(target, DatabaseConstants.lexicalDatabaseFileName),
-      );
+    for (final name in DatabaseConstants.lexicalReleaseAssetFileNames) {
+      final lexical = File(path.join(source, name));
+      if (!await lexical.exists()) continue;
+      final dest = path.join(target, DatabaseConstants.lexicalDatabaseFileName);
+      await lexical.copy(dest);
+      await MagicDictionaryDownloader.writeFileDigestMarker(dest);
+      break;
     }
 
     // תלמוד בבלי — ארכיון tar.zst או תיקייה מחולצת, אופציונלי
@@ -1356,6 +1356,16 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
         debugPrint('איתור release של התלמוד נכשל: $e');
       }
 
+      // ה-API מוסר את הנכס המועדף ואת ה-digest שלו; בכשל — כתובת ה-latest.
+      MagicDictionaryRelease? lexicalRelease;
+      try {
+        lexicalRelease = await MagicDictionaryDownloader(
+          client: _httpClient,
+        ).fetchLatestRelease();
+      } catch (e) {
+        debugPrint('איתור release של המילון נכשל: $e');
+      }
+
       // שלושת הקבצים מורדים יחד ואז מחולצים יחד. פס ההתקדמות בשני השלבים
       // מתייחס לסכום שלושתם; רק כותרת המשנה משתנה לפי הקובץ הנוכחי.
       final assets = <_DownloadAsset>[
@@ -1392,14 +1402,16 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
         // לספרייה (החיפוש המקורב יפעל ללא הרחבה מורפולוגית).
         _DownloadAsset(
           url:
-              'https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db',
+              lexicalRelease?.downloadUrl.toString() ??
+              'https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/${DatabaseConstants.lexicalReleaseAssetFileNames.first}',
           tempFileName: 'otzaria_lexical.db',
           downloadTitle: 'מוריד מילון לחיפוש המקורב',
           extractTitle: 'מתקין מילון לחיפוש המקורב',
           isTar: false,
-          outputFileName: 'lexical.db',
+          outputFileName: DatabaseConstants.lexicalDatabaseFileName,
           isCompressed: false,
           optional: true,
+          sha256: lexicalRelease?.sha256,
         ),
       ];
 
@@ -1669,12 +1681,12 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
         final outputPath = path.join(outputDir, asset.outputFileName!);
         await File(tempPath).copy(outputPath);
         // בלי סימון גרסה, בדיקת העדכון הבאה תוריד את המילון מחדש בכל הפעלה.
-        final releaseTag = asset.releaseTag;
+        final version = asset.sha256 ?? asset.releaseTag;
         if (asset.outputFileName == DatabaseConstants.lexicalDatabaseFileName &&
-            releaseTag != null) {
+            version != null) {
           await MagicDictionaryDownloader.writeVersionMarker(
             outputPath,
-            releaseTag,
+            version,
           );
         }
         report(1.0);
@@ -1949,7 +1961,7 @@ class _DownloadAsset {
   /// `true` → best-effort: כשל בהורדה/חילוץ אינו מפיל את כל התהליך.
   final bool optional;
 
-  /// sha256 של הנכס מה-API — לאימות ההורדה ולסימון גרסת התלמוד.
+  /// sha256 של הנכס מה-API — לאימות ההורדה ולסימון גרסת התלמוד והמילון.
   final String? sha256;
 
   /// החלקים כשהנכס מפוצל; אז הם מורדים ומחוברים אל קובץ ה-temp.

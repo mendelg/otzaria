@@ -326,6 +326,12 @@ void main() {
       expect(scan.found, contains('ספריית הספרים (seforim.db)'));
     });
 
+    test('scanLibraryFolderAssets: lexical-v2.db מזוהה כמילון', () async {
+      await File('${temp.path}/lexical-v2.db').writeAsBytes([3]);
+      final scan = await scanLibraryFolderAssets(temp.path);
+      expect(scan.found, contains('מילון לחיפוש מקורב'));
+    });
+
     testWidgets('תיקייה חסומה: הנחיה לבחור את הקובץ, ואישור מושבת', (
       tester,
     ) async {

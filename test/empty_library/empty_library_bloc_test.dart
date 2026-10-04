@@ -259,7 +259,33 @@ void main() {
       final talmudDigest = sha256.convert(talmudBytes).toString();
       final catalogBytes = utf8.encode('compressed-catalog');
       final lexicalBytes = utf8.encode('lexical-dictionary');
+      final lexicalDigest = sha256.convert(lexicalBytes).toString();
       final client = MockClient((request) async {
+        // ה-API של המילון: הנכס המועדף lexical-v2.db עם ה-digest שלו.
+        if (request.url.path.contains(
+          '/repos/Otzaria/SeforimMagicIndexer/releases/latest',
+        )) {
+          const base =
+              'https://github.com/Otzaria/SeforimMagicIndexer/releases/download/v0.3.1';
+          return http.Response(
+            jsonEncode({
+              'tag_name': 'v0.3.1',
+              'assets': [
+                {
+                  'browser_download_url': '$base/lexical.db',
+                  'digest': 'sha256:${'0' * 64}',
+                },
+                {
+                  'browser_download_url': '$base/lexical-v2.db',
+                  'digest': 'sha256:$lexicalDigest',
+                  'size': lexicalBytes.length,
+                },
+              ],
+            }),
+            200,
+          );
+        }
+
         // ה-API של otzaria-library — איתור release התלמוד (כולל digest).
         if (request.url.path.contains(
           '/repos/Otzaria/otzaria-library/releases/latest',
@@ -320,19 +346,19 @@ void main() {
         // כמו GitHub: releases/latest/download מפנה לנתיב עם תג ה-release.
         if (request.url.host == 'github.com' &&
             request.url.path.contains('/releases/latest/download/') &&
-            request.url.path.endsWith('/lexical.db')) {
+            request.url.path.endsWith('/lexical-v2.db')) {
           return http.Response(
             '',
             302,
             headers: const {
               'location':
-                  'https://github.com/Otzaria/SeforimMagicIndexer/releases/download/v0.3.0/lexical.db',
+                  'https://github.com/Otzaria/SeforimMagicIndexer/releases/download/v0.3.0/lexical-v2.db',
             },
           );
         }
 
         if (request.url.host == 'github.com' &&
-            request.url.path.endsWith('/lexical.db')) {
+            request.url.path.endsWith('/lexical-v2.db')) {
           return http.Response.bytes(lexicalBytes, 200);
         }
 
@@ -412,11 +438,15 @@ void main() {
       );
       // מילון החיפוש המקורב (לא דחוס) הועתק לתיקיית הספרייה ליד seforim.db.
       expect(File(path.join(tempDir.path, 'lexical.db')).existsSync(), isTrue);
-      // סימון הגרסה נכתב מהתג שבשרשרת ה-redirect — בלעדיו בדיקת העדכון
-      // הבאה תוריד את המילון מחדש בכל הפעלה.
+      // סימון הגרסה הוא ה-digest של lexical-v2.db — בלעדיו בדיקת העדכון
+      // הבאה תוריד את המילון מחדש.
+      expect(
+        File(path.join(tempDir.path, 'lexical.db')).readAsBytesSync(),
+        lexicalBytes,
+      );
       expect(
         File(path.join(tempDir.path, 'lexical.db.version')).readAsStringSync(),
-        'v0.3.0',
+        lexicalDigest,
       );
       // גם לתלמוד נכתב סימון גרסה — digest של הנכס מה-API, כדי שבדיקות עדכון
       // ישוו תוכן ולא תג (תגי otzaria-library מתחלפים כמעט יומית).
@@ -692,7 +722,7 @@ void main() {
           return http.Response.bytes(catalogBytes, 200);
         }
         if (request.url.host == 'github.com' &&
-            request.url.path.endsWith('/lexical.db')) {
+            request.url.path.endsWith('/lexical-v2.db')) {
           return http.Response.bytes(lexicalBytes, 200);
         }
         return http.Response('not found', 404);
@@ -806,7 +836,7 @@ void main() {
             return http.Response.bytes(catalogBytes, 200);
           }
           if (request.url.host == 'github.com' &&
-              request.url.path.endsWith('/lexical.db')) {
+              request.url.path.endsWith('/lexical-v2.db')) {
             return request.method == 'HEAD'
                 ? http.Response.bytes(List.filled(10, 0), 200)
                 : http.Response.bytes(List.filled(5, 1), 200);
@@ -2431,6 +2461,10 @@ void main() {
         await File(
           path.join(srcDir.path, DatabaseConstants.lexicalDatabaseFileName),
         ).writeAsString('lex');
+        // הנכס החדש עדיף על lexical.db הקפוא, ומותקן בשם המקומי.
+        await File(
+          path.join(srcDir.path, 'lexical-v2.db'),
+        ).writeAsString('lex2');
         await File(
           path.join(
             srcDir.path,
@@ -2464,14 +2498,15 @@ void main() {
           ).exists(),
           isTrue,
         );
+        final lexicalTarget = path.join(
+          targetDir.path,
+          DatabaseConstants.lexicalDatabaseFileName,
+        );
+        expect(await File(lexicalTarget).readAsString(), 'lex2');
+        // הסימון מה-digest של הקובץ: מילון עדכני שיובא אינו מורד שוב.
         expect(
-          await File(
-            path.join(
-              targetDir.path,
-              DatabaseConstants.lexicalDatabaseFileName,
-            ),
-          ).exists(),
-          isTrue,
+          await File('$lexicalTarget.version').readAsString(),
+          sha256.convert(utf8.encode('lex2')).toString(),
         );
         expect(
           await File(
@@ -2862,7 +2897,7 @@ void main() {
         const catalogUrl =
             'https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst';
         const lexicalUrl =
-            'https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db';
+            'https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical-v2.db';
         final requestedUrls = <String>[];
 
         final client = MockClient((request) async {
