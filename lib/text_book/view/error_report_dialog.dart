@@ -1076,6 +1076,7 @@ $detailsSection
     // פתיחת הדיאלוג. בספר דיקטה מוצג בתוכו קישור בולט לתיקון עצמי.
     final ReportDialogResult? result = await showDialog<ReportDialogResult>(
       context: context,
+      barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return TabbedReportDialog(
           selectedText: resolvedSelectedText,
