@@ -623,6 +623,9 @@ static void show_success(Ui *ui) {
     ui->result_is_dir = TRUE;
     gtk_button_set_label(GTK_BUTTON(ui->finish_reveal), "הצג את התיקייה שהוכנה");
   }
+  GPtrArray *notes = otz_job_output_notes(ui->job);
+  for (guint i = 0; i < notes->len; i++)
+    g_string_append_printf(text, "\n\n%s", (const char *)g_ptr_array_index(notes, i));
   GPtrArray *unjoined = otz_job_unjoined_assets(ui->job);
   for (guint i = 0; i < unjoined->len; i++) {
     const char *name = g_ptr_array_index(unjoined, i);

@@ -812,6 +812,18 @@ List<String> validateReleaseManifest(Object? manifest) {
         'it (installedBy)',
       );
     }
+    final outputFolder = component['outputFolder'];
+    if (outputFolder != null &&
+        (outputFolder is! String || !isSafeOutputFolder(outputFolder))) {
+      errors.add(
+        'component $label: outputFolder must be a relative path of safe names',
+      );
+    }
+    final outputNote = component['outputNote'];
+    if (outputNote != null &&
+        (outputNote is! String || outputNote.trim().isEmpty)) {
+      errors.add('component $label: outputNote must be a non-empty string');
+    }
     final compatibility = component['compatibility'];
     if (compatibility != null && compatibility is! Map) {
       errors.add('component $label: compatibility must be a map');
@@ -864,6 +876,18 @@ List<String> validateReleaseManifest(Object? manifest) {
   }
   return errors;
 }
+
+final RegExp _outputFolderSegment = RegExp(r'^[A-Za-z0-9._-]+$');
+
+/// תיקייה יחסית בתיקיית הפלט של המסייעים: שמות בטוחים מופרדים ב-`/`, בלי
+/// מקטע של נקודות בלבד — המסייעים בונים ממנה נתיב כתיבה.
+bool isSafeOutputFolder(String folder) => folder
+    .split('/')
+    .every(
+      (segment) =>
+          _outputFolderSegment.hasMatch(segment) &&
+          segment.replaceAll('.', '').isNotEmpty,
+    );
 
 List<String> _validateAsset(Object? asset, String componentLabel) {
   final errors = <String>[];

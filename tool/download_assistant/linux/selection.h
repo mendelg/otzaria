@@ -65,6 +65,9 @@ char *otz_output_subfolder_name(const char *target_platform);
 GPtrArray *otz_planned_output_files(const OtzManifest *manifest,
                                     GPtrArray *selected_ids,
                                     const OtzTarget *target);
+/* The outputNote of each selected component, manifest order, no repeats. */
+GPtrArray *otz_planned_output_notes(const OtzManifest *manifest,
+                                    GPtrArray *selected_ids);
 /* "" for a single file, otherwise the subfolder name. */
 char *otz_planned_output_subfolder(GPtrArray *files,
                                    const char *target_platform);

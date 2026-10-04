@@ -131,6 +131,7 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'בהיר': 'Light',
     'בוא נתחיל': 'Let\'s Begin',
     'בודק אם נדרש איפוס ואינדוקס מחדש': 'Checking whether a reset and re-index is needed',
+    'בודק את הקבצים שהוכנו מראש': 'Checking the prepared files',
     'בודק עדכונים…': 'Checking for updates…',
     'בחירה': 'Select',
     'בחירות הסתרה ישירות': 'Direct hide selections',

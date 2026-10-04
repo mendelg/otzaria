@@ -53,6 +53,10 @@ class AssistantTarget {
 /// "מלאה" נשארת ראשונה ברשימה כי סדר ההצעות קובע איזו כפולה מושמטת.
 const String kDefaultPresetId = 'basic';
 
+/// נתונים שהתוכנה המותקנת קוראת מתיקיית הפלט (`outputFolder`), ולא מתקין.
+/// הם חלק מ"מלאה" — למחשב בלי אינטרנט — ואינם בשאר ההצעות.
+const Set<String> kOfflineDataTypes = {'semantic-model', 'semantic-vectors'};
+
 /// הצעה מוכנה: מזהה יציב, הטקסט למשתמש, והרכיבים בסדר המניפסט.
 class AssistantPreset {
   const AssistantPreset({
@@ -325,6 +329,7 @@ List<AssistantPreset> buildPresets(
         if (_ids(component, 'installedBy').contains(bundle['id']) &&
             componentIsOffered(manifest, component, target))
           component['id'] as String,
+      ..._collect(manifest, target, types: kOfflineDataTypes),
     ];
   } else {
     final collected = _collect(
@@ -335,7 +340,12 @@ List<AssistantPreset> buildPresets(
     final hasLibrary = components.any(
       (c) => collected.contains(c['id']) && _field(c, 'type') == 'library',
     );
-    full = hasLibrary ? collected : const [];
+    full = hasLibrary
+        ? [
+            ...collected,
+            ..._collect(manifest, target, types: kOfflineDataTypes),
+          ]
+        : const [];
   }
 
   final candidates = [
@@ -409,7 +419,8 @@ bool shouldAssembleSplitAsset(
 String outputSubfolderName(String targetPlatform) =>
     'אוצריא להתקנה ל-${kPlatformDisplayNames[targetPlatform] ?? targetPlatform}';
 
-/// הקבצים שייווצרו בתיקיית היעד, בסדר המניפסט.
+/// הקבצים שייווצרו בתיקיית היעד, בסדר המניפסט. קובץ של רכיב עם
+/// `outputFolder` נכתב בתיקייה הזאת, והנתיב היחסי מופרד ב-`/`.
 List<String> plannedOutputFiles(
   Map<String, Object?> manifest,
   Iterable<String> selectedIds,
@@ -419,17 +430,19 @@ List<String> plannedOutputFiles(
   final files = <String>[];
   for (final component in _components(manifest)) {
     if (!selected.contains(component['id'])) continue;
+    final folder = _field(component, 'outputFolder');
+    final prefix = folder.isEmpty ? '' : '$folder/';
     for (final asset
         in (component['assets'] as List).cast<Map<String, Object?>>()) {
       if (asset['kind'] == 'split' &&
           !shouldAssembleSplitAsset(asset, target.platform)) {
         files.addAll(
           (asset['parts'] as List).cast<Map<String, Object?>>().map(
-            (part) => part['name'] as String,
+            (part) => '$prefix${part['name']}',
           ),
         );
       } else {
-        files.add(asset['name'] as String);
+        files.add('$prefix${asset['name']}');
       }
     }
   }
@@ -439,3 +452,18 @@ List<String> plannedOutputFiles(
 /// התיקייה היחסית לתיקיית הבסיס: '' לקובץ יחיד, אחרת תת-התיקייה.
 String plannedOutputSubfolder(List<String> files, String targetPlatform) =>
     files.length > 1 ? outputSubfolderName(targetPlatform) : '';
+
+/// ההסברים (`outputNote`) שעמוד הסיום מוסיף לבחירה, בסדר המניפסט ובלי כפולים.
+List<String> plannedOutputNotes(
+  Map<String, Object?> manifest,
+  Iterable<String> selectedIds,
+) {
+  final selected = selectedIds.toSet();
+  final notes = <String>[];
+  for (final component in _components(manifest)) {
+    if (!selected.contains(component['id'])) continue;
+    final note = _field(component, 'outputNote');
+    if (note.isNotEmpty && !notes.contains(note)) notes.add(note);
+  }
+  return notes;
+}

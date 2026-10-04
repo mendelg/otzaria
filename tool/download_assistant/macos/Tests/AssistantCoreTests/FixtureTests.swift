@@ -122,11 +122,16 @@ final class FixtureTests: XCTestCase {
                     plannedOutputSubfolder(files, target.platform),
                     want["outputSubfolder"] as? String, "\(label) \(preset.id)"
                 )
+                XCTAssertEqual(
+                    plannedOutputNotes(manifest, preset.members),
+                    want["outputNotes"] as? [String], "\(label) \(preset.id)"
+                )
 
                 // התוכנית שהמסייע מבצע בפועל מפיקה בדיוק את אותם קבצים.
                 let plan = try PreparationPlan.make(manifest: manifest, selectedIds: preset.members, target: target)
                 XCTAssertEqual(plan.outputFiles, files, "\(label) \(preset.id)")
-                XCTAssertEqual(plan.actions.map(Self.outputName), files, "\(label) \(preset.id)")
+                XCTAssertEqual(plan.actions.map { $0.outputPath }, files, "\(label) \(preset.id)")
+                XCTAssertEqual(plan.outputNotes, want["outputNotes"] as? [String])
                 XCTAssertEqual(plan.outputSubfolder, want["outputSubfolder"] as? String)
             }
         }
@@ -147,10 +152,10 @@ final class FixtureTests: XCTestCase {
         )
     }
 
-    private static func outputName(_ action: OutputAction) -> String {
-        switch action {
-        case .place(let item): return item.name
-        case .assemble(let name, _, _, _, _): return name
+    func testUnsafeOutputFolderIsRejected() {
+        XCTAssertTrue(isSafeOutputFolder("semantic-import/vectors"))
+        for bad in ["", "../x", "/abs", "a//b", "a/..", "a/...", "a+b"] {
+            XCTAssertFalse(isSafeOutputFolder(bad), bad)
         }
     }
 }

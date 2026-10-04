@@ -1219,6 +1219,7 @@
   "מוריד את רכיב החיפוש": "Downloading the search component",
   "מוריד את נתוני החיפוש": "Downloading the search data",
   "מתקין את נתוני החיפוש": "Installing the search data",
+  "בודק את הקבצים שהוכנו מראש": "Checking the prepared files",
   "הנתונים יימחקו מהכונן. כדי להשתמש שוב ב{name} יהיה צורך להוריד אותם מחדש.": "The data will be deleted from disk. Using {name} again will require downloading it again.",
   "הורדת הנתונים, הרישיון ומחיקת הנתונים": "Download the data, the license and delete the data",
   "רכיב החיפוש של {name} חסר או פגום. יש להוריד אותו מחדש.": "The {name} search component is missing or damaged. Download it again.",

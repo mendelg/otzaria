@@ -169,6 +169,8 @@ static void check_fixtures(const char *manifest_name, const char *expected_name)
       g_autofree char *subfolder =
           otz_planned_output_subfolder(files, target.platform);
       g_assert_cmpstr(subfolder, ==, otz_json_get_string(want, "outputSubfolder"));
+      g_autoptr(GPtrArray) notes = otz_planned_output_notes(manifest, members);
+      assert_strings(notes, otz_json_get(want, "outputNotes"), "outputNotes");
     }
   }
 }
@@ -252,6 +254,12 @@ static void test_manifest_rejects(void) {
       "{\"schemaVersion\":1,\"components\":[{\"id\":\"a\",\"name\":\"n\","
       "\"assets\":[{\"kind\":\"single\",\"repository\":\"Otzaria/otzaria\","
       "\"releaseTag\":\"1\",\"name\":\"..\",\"size\":1,\"sha256\":"
+      "\"0000000000000000000000000000000000000000000000000000000000000000\"}]}]}",
+      /* outputFolder that leaves the output folder */
+      "{\"schemaVersion\":1,\"components\":[{\"id\":\"a\",\"name\":\"n\","
+      "\"outputFolder\":\"semantic-import/../..\","
+      "\"assets\":[{\"kind\":\"single\",\"repository\":\"Otzaria/otzaria\","
+      "\"releaseTag\":\"1\",\"name\":\"f\",\"size\":1,\"sha256\":"
       "\"0000000000000000000000000000000000000000000000000000000000000000\"}]}]}",
       /* dependsOn on a missing component */
       "{\"schemaVersion\":1,\"components\":[{\"id\":\"a\",\"name\":\"n\","
@@ -808,6 +816,54 @@ static void test_job_complete_download_promoted(void) {
   job_fixture_clear(&f);
 }
 
+/* A component with outputFolder lands in that folder inside the output, and
+ * its outputNote reaches the finish page. */
+static void test_job_output_folder(void) {
+  static const char *manifest_json =
+      "{\"schemaVersion\":1,\"components\":["
+      "{\"id\":\"data\",\"name\":\"n\",\"type\":\"semantic-vectors\","
+      "\"outputFolder\":\"semantic-import/vectors\",\"outputNote\":\"note\","
+      "\"assets\":[{\"kind\":\"single\",\"repository\":\"Otzaria/SeforimLibrary\","
+      "\"releaseTag\":\"vectors-v30\",\"name\":\"hello.bin\",\"size\":5,"
+      "\"sha256\":\"" HELLO_SHA "\"}]}]}";
+  g_autofree char *root = temp_dir();
+  g_autofree char *cache = g_build_filename(root, "cache", NULL);
+  g_autofree char *out = g_build_filename(root, "out", NULL);
+  g_mkdir_with_parents(cache, 0755);
+  g_autoptr(GError) error = NULL;
+  g_autoptr(OtzManifest) manifest =
+      otz_manifest_parse(manifest_json, strlen(manifest_json), &error);
+  g_assert_no_error(error);
+  otz_set_allowed_owner("SomeoneElse");
+  g_autofree char *download =
+      g_build_filename(cache, "hello.bin.2cf24dba5fb0.download", NULL);
+  write_file(download, "hello", 5);
+  g_autoptr(GPtrArray) ids = g_ptr_array_new();
+  g_ptr_array_add(ids, (gpointer) "data");
+  OtzTarget target = {"linux", "x64", "deb"};
+  g_autoptr(OtzJob) job =
+      otz_job_new(manifest, ids, &target, cache, out, &error);
+  g_assert_no_error(error);
+  g_assert_true(otz_job_run(job, NULL, &error));
+  g_assert_no_error(error);
+
+  g_autofree char *placed =
+      g_build_filename(out, "semantic-import", "vectors", "hello.bin", NULL);
+  g_assert_true(g_file_test(placed, G_FILE_TEST_EXISTS));
+  GPtrArray *files = otz_job_output_files(job);
+  g_assert_cmpuint(files->len, ==, 1);
+  g_assert_cmpstr(g_ptr_array_index(files, 0), ==,
+                  "semantic-import/vectors/hello.bin");
+  g_assert_cmpstr(otz_job_output_dir(job), ==, out);
+  GPtrArray *notes = otz_job_output_notes(job);
+  g_assert_cmpuint(notes->len, ==, 1);
+  g_assert_cmpstr(g_ptr_array_index(notes, 0), ==, "note");
+
+  g_autofree char *command = g_strdup_printf("rm -rf '%s'", root);
+  g_assert_cmpint(system(command), ==, 0);
+  otz_set_allowed_owner("Otzaria");
+}
+
 /* A full-size .download with the wrong content is not promoted: it is hashed
  * once, dropped, and the download is attempted (refused here). */
 static void test_job_complete_download_wrong(void) {
@@ -950,6 +1006,7 @@ int main(int argc, char **argv) {
   g_test_add_func("/job/complete-download-promoted",
                   test_job_complete_download_promoted);
   g_test_add_func("/job/complete-download-wrong", test_job_complete_download_wrong);
+  g_test_add_func("/job/output-folder", test_job_output_folder);
   g_test_add_func("/job/partial-bound-to-asset", test_job_partial_bound_to_asset);
   g_test_add_func("/job/space", test_space_verdict);
   return g_test_run();

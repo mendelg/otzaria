@@ -132,6 +132,11 @@ dart run tool/release/generate_release_manifest.dart \
   המשמעות למסייעים בפרק "ההצעות" שבחוזה המשותף.
 * **שדות הסינון** `platform`, `architecture` ו-`packageFormat` אופציונליים,
   ואם קיימים — מחרוזת לא ריקה (נאכף). המשמעות שלהם בפרק "חוזה משותף".
+* **`outputFolder`** (אופציונלי) — תיקייה יחסית בתוך תיקיית הפלט של המסייע שבה
+  נכתבים קובצי הרכיב, שמות `[A-Za-z0-9._-]` מופרדים ב-`/`, בלי מקטע ריק או של
+  נקודות בלבד (נאכף בגנרטור ובשלושת המסייעים — הוא נתיב כתיבה). חסר = ישירות
+  בתיקיית הפלט. **`outputNote`** (אופציונלי) — משפט בעברית שעמוד הסיום מוסיף
+  כשהרכיב הוכן, פעם אחת גם כשכמה רכיבים נושאים אותו.
 
 ## איך מוסיפים רכיב חדש (בעתיד)
 
@@ -167,13 +172,100 @@ ComponentSpec(
 הגנרטור קורא את מניפסט הפיצול, מאמת שכל חלק קיים בתיקייה ושגודלו תואם,
 ומשקף אותו פנימה. `downloadSize` של הרכיב הוא סכום החלקים.
 
-## איך מוסיפים מודל סמנטי (בעתיד)
+## נתוני החיפוש החכם (`semantic-model`, `semantic-vectors`)
 
-בדיוק כמו כל רכיב: `type: 'semantic-model'`, `origin: 'imported'` אם המודל
-יובא ולא נבנה אצלנו, `installOrder` גבוה, ו-`compatibility` עם המפתחות
-שקובעים התאמה (למשל גרסת המנוע שבנה את הווקטורים). סוג חדש אינו דורש שינוי
-בצרכן — הבדיקה `a future component type round-trips with no consumer change`
-שומרת על כך.
+מצב "חיפוש חכם" (`kSemanticSearchModeName`, `lib/semantic_search/`) צריך שני
+רכיבים, ושניהם אינם נבנים ב-release הזה — הם נכסים של מאגרים אחרים בארגון,
+ולכן `origin: 'imported'` וכתובת חיצונית מלאה (`repository` + `releaseTag` +
+`name`, אותו חוזה של כל נכס — שלושת המסייעים כבר בונים ממנו את הכתובת):
+
+| רכיב | `type` | מקור | `installOrder` | `compatibility` |
+|---|---|---|---|---|
+| `semantic-model-<פלטפורמה>` | `semantic-model` | `Otzaria/otzaria-semantic-search`, תג `model-meivin-round2-int8-v1`: הגרף, `tokenizer.json`, `model.json`, `LICENSE` — גודל ו-SHA-256 מ-`kSemanticModelReleases` | 40 | `modelFamilyId` |
+| `semantic-vectors-<פלטפורמה>` | `semantic-vectors` | `Otzaria/SeforimLibrary`, תג `vectors-<תג הספרייה>`: קובצי ה-segment (או חלקיו) לפי המניפסט, וגם המניפסט עצמו | 41 | `libraryReleaseTag`, `libraryVersion`, `modelFamilyId`, `vectorsManifestSha256` |
+
+* **זוג לכל פלטפורמה נתמכת** (`windows`, `linux`, `macos` — כמו
+  `isSemanticSearchPlatformSupported`), כי `platform` מקבל ערך אחד; ל-Android
+  אין רכיב. ב-macOS התיאור אומר שנדרשים Apple Silicon ו-macOS 14 — שדה
+  הארכיטקטורה של macOS ריק (Universal) ואינו מבחין בזה.
+* הווקטורים `dependsOn` המודל, ולכן וקטורים שסומנו לבדם מגיעים איתו.
+* **התג**: אותו `needs.bump_version.outputs.library_tag` שממנו נארזו כל חבילות
+  ה-FULL — הווקטורים תואמים בדיוק לספרייה שבהתקנה המלאה.
+
+### ב-CI — `tool/release/semantic_release_components.dart`
+
+השלב "Resolve semantic search components" (לפני "Generate release manifest",
+`continue-on-error: true`) כותב `$RUNNER_TEMP/semantic-components.json`, והגנרטור
+מקבל אותו ב-`--external` רק כשהקובץ לא ריק. הכלי משתמש באותו
+`SemanticVectorsReleaseLocator` של האפליקציה (digest המניפסט מול הערות ה-release
+ומול ה-digest של הנכס), ובנוסף מוודא:
+
+* כל קובץ שהמניפסט מונה קיים כנכס, בגודל ובאותו digest;
+* `identity.model.family_id` ו-`tokenizer_checksum` של הווקטורים שווים ל-`model.json`
+  שמצורף לאפליקציה;
+* כל קובץ מודל נעוץ קיים ב-release המודל באותו גודל ו-digest.
+
+**כשאין `vectors-<תג>`** (או כל כשל אחר — רשת, נכס שאינו תואם, מודל אחר) הכלי
+מדפיס `::warning::Semantic search data omitted from the release manifest (library <tag>): <סיבה>`,
+כותב `[]` ויוצא ב-0: שני הרכיבים מושמטים יחד (מודל בלי וקטורים אינו שמיש בלי
+אינטרנט), והשחרור יוצא כרגיל. הטוקן של ה-workflow נשלח רק ל-`api.github.com`.
+
+### במסייעים
+
+* **"מלאה" כוללת אותם** (`kOfflineDataTypes` במימוש הייחוס): היא ההצעה למחשב
+  בלי אינטרנט, כמו הספרייה. "בסיסית" (ברירת המחדל) ו"עדכון בלבד" אינן — במחשב
+  עם אינטרנט התוכנה מורידה אותם בעצמה אחרי ההסכמה. בבחירה האישית הם מוצגים בשם
+  המצב ובגודלם.
+* **"במחשב הזה" (Inno)** — אינם מוצעים: שם הפלט הוא המטמון, ואיש אינו קורא אותם
+  משם.
+* **הפלט** (`outputFolder`):
+
+  ```text
+  <תיקיית הפלט>/semantic-import/meivin-round2-onnx/   seforim-embed-round2-int8.onnx, tokenizer.json, model.json, LICENSE
+  <תיקיית הפלט>/semantic-import/vectors/              otzaria-vectors-…oxv.zst, otzaria-vectors-…manifest.json
+  ```
+
+  ב-Windows מתקין ה-FULL מעתיק אותה בעצמו: ב-`otzaria_full.iss` שורת `[Files]`
+  `external recursesubdirs createallsubdirs skipifsourcedoesntexist` מ-
+  `{src}\semantic-import\*` אל `GetSemanticImportDir` —
+  `ExtractFileDir(GetSelectedBooksPath(''))`, אותו הורה של תיקיית הספרייה שהוא
+  `SemanticPaths.root` באפליקציה (גם במצב נייד). `outputNote` של רכיבי Windows
+  אומר זאת, ומוסיף שבהתקנה בלי המתקין המלא מעתיקים ידנית; ב-Linux וב-macOS
+  ההעתקה ידנית תמיד, אל התיקייה שמכילה את תיקיית הספרייה.
+
+### באפליקציה — `lib/semantic_search/repository/semantic_staged_import.dart`
+
+התיקייה מזוהה ב-`<root>/semantic-import` (`SemanticPaths.root`, ההורה של תיקיית
+הספרייה; הקבועים ב-`semantic_import_layout.dart`, שגם כלי ה-CI קורא). **שום דבר
+אינו רץ בעלייה ושום דבר אינו מותקן בלי הסכמה**: הנתונים משמשים רק בתוך עבודת
+ההורדה של `SemanticSearchRepository` (`enableAndDownload` או העדכון שאחרי עדכון
+ספרייה), שבודקת הסכמה לפני כל דבר.
+
+* כל הורדה של קובץ מודל או וקטורים עוברת דרך `SemanticStagedImport.wrap`: קובץ
+  באותו שם בתיקייה המוכנה, באותו גודל ו-SHA-256 (המודל — הנעוץ; הוקטורים — מהמניפסט)
+  מועבר (`rename`, ובין כוננים העתקה) ליעד ההורדה במקום הורדה. קובץ שאינו תואם נשאר
+  במקומו והקובץ יורד מהרשת.
+* `SemanticStagedImport.locate`: ה-release נמצא ברשת כרגיל; כשהרשת אינה זמינה
+  (`IOException`, `ClientException`, timeout, מגבלת קצב) או במצב לא מקוון — ממניפסט
+  הוקטורים המוכן, ורק אם הוא של גרסת הספרייה המותקנת. ה-digest שנמסר למנוע הוא ה-SHA-256
+  של בתי המניפסט: המסייע אימת אותם מול מניפסט ה-release, וה-CI אימת אותו מול ה-digest שפורסם.
+* במצב לא מקוון העבודה רצה רק כשיש נתונים מוכנים, וקובץ חסר נכשל ב-`offline`
+  ואינו פונה לרשת.
+* **התקדמות**: קובץ מוכן נספר בסך הבתים של העבודה כמו קובץ שירד. בזמן בדיקת
+  ה-hash שלו ההתקדמות מסומנת `checking` (באותו שלב), ולכן התווית היא "שלב N מתוך M —
+  בודק את הקבצים שהוכנו מראש" (`SemanticSearchMessages.checkingStagedFiles`) והפס
+  בכרטיס, בהגדרות ובחיווי העבודה הוא בלי ערך.
+* **מקום פנוי**: `_ensureDiskSpace` אינו סופר קובץ וקטורים מוכן שנמצא באותו כונן
+  (לפי `volumeId`) — הוא עובר ב-`rename`. קובץ בכונן אחר מועתק ולכן נספר.
+
+הנקודות ב-`semantic_search_repository.dart`: השדות `_staged` ו-`_fetch`, שתי
+קריאות ההורדה (`_fetch` במקום `_download`), בדיקת מצב לא מקוון ב-`_performJob`,
+ואיתור ה-release ב-`_staged.locate`. בדיקות:
+`test/semantic_search/semantic_staged_import_test.dart`,
+`test/release/semantic_release_components_test.dart`.
+
+סוג חדש אחר אינו דורש שינוי בצרכן — הבדיקה `a future component type round-trips
+with no consumer change` שומרת על כך; הוא נכנס ל"מלאה" רק כשהוא ב-`kOfflineDataTypes`.
 
 ## חוזה משותף לכל המסייעים (Windows, macOS, Linux)
 
@@ -317,7 +409,8 @@ macOS ו-Linux מריצים בבדיקות שלהם את שני המניפסטי
   תחילת ההורדה.
 * **קובץ אחד** — ישירות בתיקיית הבסיס. **יותר מקובץ אחד** — בתת-תיקייה
   `אוצריא להתקנה ל-<פלטפורמה>` (`outputSubfolderName`). הפלטפורמה בשם כדי שהכנה
-  לשני יעדים באותו דיסק-און-קי לא תערבב קבצים.
+  לשני יעדים באותו דיסק-און-קי לא תערבב קבצים. קובץ של רכיב עם `outputFolder`
+  נכתב בתוכה בתיקייה הזאת, ו-`plannedOutputFiles` מחזיר אותו כ-`<folder>/<name>`.
 * **נכס מפוצל** (`shouldAssembleSplitAsset`): יעד Windows — מורכב רק exe מתחת
   ל-4 GiB, וארכיון נשאר חלקים (המתקין קורא אותם). כל יעד אחר — כל נכס מתחת
   ל-4 GiB מורכב, כי המשתמש פורס אותו בעצמו; מ-4 GiB ומעלה (FAT32 אינו מחזיק קובץ
@@ -518,7 +611,7 @@ ISCC /DDevManifestFile=C:\...\fixtures\release-manifest.json `
 
 | הצעה | הכלל |
 |---|---|
-| התקנה מלאה (למחשב בלי אינטרנט) | רכיב `application-bundle` הגדול ביותר שמוצע ליעד, עם כל רכיב מוצע שהוא ב-`installedBy` שלו; אם אין — כל ה-`application` + `library` + `dependency`, ורק כשיש ביניהם ספרייה |
+| התקנה מלאה (למחשב בלי אינטרנט) | רכיב `application-bundle` הגדול ביותר שמוצע ליעד, עם כל רכיב מוצע שהוא ב-`installedBy` שלו; אם אין — כל ה-`application` + `library` + `dependency`, ורק כשיש ביניהם ספרייה. בשני המקרים — גם כל רכיב מוצע מסוג `semantic-model`/`semantic-vectors` (`OfflineDataTypes`) |
 | התקנה בסיסית (מומלצת) — מסומנת מראש (`kDefaultPresetId`) | כל `application` תואם + כל רכיב `required` |
 | עדכון התוכנה בלבד | כל `application` תואם |
 | בחירה אישית | האפשרות היחידה שאינה נגזרת; תמיד אחרונה |

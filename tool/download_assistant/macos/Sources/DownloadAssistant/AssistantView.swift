@@ -366,6 +366,9 @@ struct FinishedView: View {
                         PathText(path: "• \(file.lastPathComponent)")
                     }
                 }
+                ForEach(result.outputNotes, id: \.self) { note in
+                    Text(note).fixedSize(horizontal: false, vertical: true)
+                }
                 if !result.keptSplitAssets.isEmpty {
                     Text("חלק מהקבצים גדולים מכדי להישמר כקובץ אחד בדיסק-און-קי, ולכן נשמרו בחלקים. במחשב היעד, כדי לחבר אותם, הרץ מתוך התיקייה:")
                         .fixedSize(horizontal: false, vertical: true)

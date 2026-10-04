@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/app_paths.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/plugins/services/bundled_plugin_seed_service.dart';
+import 'package:otzaria/semantic_search/models/semantic_import_layout.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 
 /// טסטים על סקריפטי ה-Inno Setup. הם אינם נבנים ב-CI של הטסטים, ולכן ההגנה
@@ -396,6 +397,32 @@ void main() {
         );
       },
     );
+  });
+
+  group('נתוני החיפוש החכם לצד מתקין ה-FULL', () {
+    test('semantic-import שליד המתקין מועתק להורה של תיקיית הספרייה', () {
+      final script = _script(_full);
+      // שורת המשך של Inno (`\` בסוף שורה) מצורפת לשורה אחת.
+      final files = _squeeze(
+        _section(script, 'Files').replaceAll('\\\n', ' '),
+      );
+      expect(
+        files,
+        contains(
+          'Source: "{src}\\$kSemanticImportFolderName\\*"; '
+          'DestDir: "{code:GetSemanticImportDir}"; Flags: external '
+          'recursesubdirs createallsubdirs skipifsourcedoesntexist',
+        ),
+      );
+      // SemanticPaths.root באפליקציה הוא ההורה של נתיב הספרייה.
+      expect(
+        _routine(script, 'function GetSemanticImportDir('),
+        contains(
+          "ExtractFileDir(GetSelectedBooksPath('')) + "
+          "'\\$kSemanticImportFolderName'",
+        ),
+      );
+    });
   });
 
   group('מתקין FULL מאונדקס מפוצל', () {

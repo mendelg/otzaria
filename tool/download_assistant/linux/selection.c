@@ -291,6 +291,9 @@ GPtrArray *otz_build_presets(const OtzManifest *manifest,
                                            "dependency", NULL};
   static const char *const application_types[] = {"application", NULL};
   static const char *const library_types[] = {"library", NULL};
+  /* Read by the installed app from the output folder: part of "full" only. */
+  static const char *const offline_data_types[] = {"semantic-model",
+                                                   "semantic-vectors", NULL};
 
   const OtzComponent *bundle = NULL;
   for (guint i = 0; i < manifest->components->len; i++) {
@@ -324,12 +327,16 @@ GPtrArray *otz_build_presets(const OtzManifest *manifest,
           otz_component_is_offered(manifest, component, target))
         g_ptr_array_add(candidates[0].members, g_strdup(component->id));
     }
+    collect(candidates[0].members, manifest, target, offline_data_types, FALSE);
   } else {
     g_autoptr(GPtrArray) libraries = new_strings();
     collect(libraries, manifest, target, library_types, FALSE);
     /* Without a library there is no "full" install. */
-    if (libraries->len > 0)
+    if (libraries->len > 0) {
       collect(candidates[0].members, manifest, target, full_types, FALSE);
+      collect(candidates[0].members, manifest, target, offline_data_types,
+              FALSE);
+    }
   }
   collect(candidates[1].members, manifest, target, application_types, FALSE);
   collect(candidates[1].members, manifest, target, NULL, TRUE);
@@ -385,20 +392,36 @@ GPtrArray *otz_planned_output_files(const OtzManifest *manifest,
   for (guint i = 0; i < manifest->components->len; i++) {
     const OtzComponent *component = g_ptr_array_index(manifest->components, i);
     if (!otz_string_array_contains(selected_ids, component->id)) continue;
+    const char *folder = component->output_folder;
+    const char *slash = *folder != '\0' ? "/" : "";
     for (guint a = 0; a < component->assets->len; a++) {
       const OtzAsset *asset = g_ptr_array_index(component->assets, a);
       if (strcmp(asset->kind, "split") == 0 &&
           !otz_should_assemble_split_asset(asset, target->platform)) {
         for (guint p = 0; p < asset->parts->len; p++) {
           const OtzPart *part = g_ptr_array_index(asset->parts, p);
-          g_ptr_array_add(files, g_strdup(part->name));
+          g_ptr_array_add(files, g_strconcat(folder, slash, part->name, NULL));
         }
       } else {
-        g_ptr_array_add(files, g_strdup(asset->name));
+        g_ptr_array_add(files, g_strconcat(folder, slash, asset->name, NULL));
       }
     }
   }
   return files;
+}
+
+GPtrArray *otz_planned_output_notes(const OtzManifest *manifest,
+                                    GPtrArray *selected_ids) {
+  GPtrArray *notes = new_strings();
+  for (guint i = 0; i < manifest->components->len; i++) {
+    const OtzComponent *component = g_ptr_array_index(manifest->components, i);
+    if (!otz_string_array_contains(selected_ids, component->id)) continue;
+    if (*component->output_note == '\0' ||
+        otz_string_array_contains(notes, component->output_note))
+      continue;
+    g_ptr_array_add(notes, g_strdup(component->output_note));
+  }
+  return notes;
 }
 
 char *otz_planned_output_subfolder(GPtrArray *files,
