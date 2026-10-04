@@ -3,8 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:otzaria/book_common/models/commentator_group.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 
-/// פריט "פתח את חלונית המפרשים" יוצג כשיש מפרשים נבחרים, המפרשים אינם מוצגים
-/// inline מתחת לטקסט, וטאב המפרשים אינו כבר פעיל בחלונית הצד.
+/// מציג פתיחת חלונית כשיש בחירה, בלי מפרשים inline או טאב מפרשים פעיל.
 bool shouldShowOpenCommentatorsPaneEntry({
   required bool hasSelectedCommentators,
   required bool showCommentaryAsExpansionTiles,
@@ -15,11 +14,7 @@ bool shouldShowOpenCommentatorsPaneEntry({
       !isCommentatorsTabActive;
 }
 
-/// פריט "בחר מפרשים מרובים" יוצג כשיש callback לפתיחת חלונית הסינון וטאב
-/// המפרשים אינו פעיל בחלונית הצד.
-///
-/// בניגוד ל-[shouldShowOpenCommentatorsPaneEntry], הפריט הזה לא תלוי
-/// ב-`hasSelectedCommentators` — מטרתו לאפשר בחירה גם כשהבחירה ריקה.
+/// מאפשר בחירה מרובה גם כשהבחירה ריקה, אם טאב המפרשים אינו פעיל.
 bool shouldShowSelectCommentatorsEntry({
   required bool hasOpenCommentatorsPaneWithFilterCallback,
   required bool isCommentatorsTabActive,
@@ -27,28 +22,14 @@ bool shouldShowSelectCommentatorsEntry({
   return hasOpenCommentatorsPaneWithFilterCallback && !isCommentatorsTabActive;
 }
 
-/// נקרא כשבחירת המפרשים משתנה מתוך תת-התפריט.
-///
-/// [commentators] - הבחירה המעודכנת המלאה.
-/// [isAdding] - האם הפעולה הוסיפה מפרשים (ולכן כדאי לפתוח את החלונית).
+/// מוסר את הבחירה המלאה; [isAdding] מציין שכדאי לפתוח את חלונית המפרשים.
 typedef CommentatorsSelectionChanged =
     void Function(List<String> commentators, {required bool isAdding});
 
-/// בונה את פריטי תת-התפריט "מפרשים על פסקה זו" בתפריט ההקשר של גוף הספר.
-///
-/// משותף לתצוגה המשולבת/מפוצלת ולצורת הדף, כדי ששלושתן יציגו את אותם פריטים
-/// ואותה התנהגות. [availableCommentators] הם מפרשי הפסקה בלבד (ראו
-/// [paragraphCommentators]); הקבוצות מסוננות לפיהם.
-///
-/// [onOpenPane] ו-[onSelectMultiple] אינם מוצגים כשהם `null`. כשאין מפרשים
-/// לפסקה מוחזר רק פריט "טוען…" מושבת בזמן [linksLoading], ואחריו
-/// רשימה ריקה — כך הפריט האב מתאפר (issue #1413).
-///
-/// [showAllLabel] names the entry that shows all the listed commentators.
-/// With [keepPaneEntriesWithoutCommentators], the pane entries stay when
-/// there are no commentators, so a first selection can still be made.
+/// בונה תפריט למפרשי הפסקה או העמוד; הקבוצות מסוננות למפרשים הזמינים.
+/// [getActiveCommentators] נקרא גם בלחיצה, כדי לשמר בחירה שנטענה אחרי הפתיחה.
 List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
-  required List<String> activeCommentators,
+  required Iterable<String> Function() getActiveCommentators,
   required List<String> availableCommentators,
   required List<CommentatorGroup> commentatorGroups,
   required CommentatorsSelectionChanged onCommentatorsChanged,
@@ -58,7 +39,7 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
   String showAllLabel = 'הצג את כל המפרשים על פסקה זו',
   bool keepPaneEntriesWithoutCommentators = false,
 }) {
-  final activeSet = activeCommentators.toSet();
+  final activeSet = getActiveCommentators().toSet();
   final availableSet = availableCommentators.toSet();
   final allActive = activeSet.containsAll(availableCommentators);
 
@@ -68,17 +49,17 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
       label: title,
       isSelected: isActive,
       onTap: () {
-        // מפרש פעיל אינו מוסר מכאן — לחיצה עליו רק פותחת את החלונית.
-        // הסרה שקטה גרמה ללולאת הוסף/הסר בכל ניסיון חוזר (issue #904).
-        final updated = List<String>.from(activeCommentators);
-        if (!isActive) updated.add(title);
-        onCommentatorsChanged(updated, isAdding: true);
+        // לחיצה על מפרש פעיל רק פותחת את החלונית; הסרה נעשית בחלונית הסינון.
+        final updated = getActiveCommentators().toSet()..add(title);
+        onCommentatorsChanged(updated.toList(), isAdding: true);
       },
     );
   }
 
   List<AppContextMenuEntry> buildGroup(CommentatorGroup group) {
-    final commentators = group.commentators.where(availableSet.contains);
+    final commentators = group.commentators
+        .where(availableSet.contains)
+        .toSet();
     if (commentators.isEmpty) return const <AppContextMenuEntry>[];
     final groupActive = commentators.every(activeSet.contains);
     return [
@@ -86,15 +67,14 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
         label: 'הצג את כל ${group.title}',
         isSelected: groupActive,
         onTap: () {
-          final updated = List<String>.from(activeCommentators);
-          if (groupActive) {
-            updated.removeWhere(commentators.contains);
+          final updated = getActiveCommentators().toSet();
+          final isRemoving = updated.containsAll(commentators);
+          if (isRemoving) {
+            updated.removeAll(commentators);
           } else {
-            for (final title in commentators) {
-              if (!updated.contains(title)) updated.add(title);
-            }
+            updated.addAll(commentators);
           }
-          onCommentatorsChanged(updated, isAdding: !groupActive);
+          onCommentatorsChanged(updated.toList(), isAdding: !isRemoving);
         },
       ),
       ...commentators.map(buildItem),
@@ -133,18 +113,16 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
     AppContextMenuEntry(
       label: showAllLabel,
       isSelected: allActive,
-      // Only the paragraph's commentators change; the rest of the selection
-      // belongs to other paragraphs and stays.
+      // בחירות מפסקאות או עמודים אחרים נשמרות.
       onTap: () {
-        final updated = List<String>.from(activeCommentators);
-        if (allActive) {
-          updated.removeWhere(availableSet.contains);
+        final updated = getActiveCommentators().toSet();
+        final isRemoving = updated.containsAll(availableSet);
+        if (isRemoving) {
+          updated.removeAll(availableSet);
         } else {
-          for (final title in availableCommentators) {
-            if (!updated.contains(title)) updated.add(title);
-          }
+          updated.addAll(availableSet);
         }
-        onCommentatorsChanged(updated, isAdding: !allActive);
+        onCommentatorsChanged(updated.toList(), isAdding: !isRemoving);
       },
     ),
   ];
@@ -158,8 +136,7 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
     entries.addAll(items);
   }
 
-  // Commentators outside every group, or all of them while the groups are
-  // not loaded yet, come last so that none is left out of the menu.
+  // מפרשים ללא קבוצה מוצגים גם בזמן שהקבוצות עדיין נטענות.
   final grouped = {
     for (final group in commentatorGroups) ...group.commentators,
   };
@@ -172,8 +149,7 @@ List<AppContextMenuEntry> buildCommentatorsContextMenuChildren({
   return entries;
 }
 
-/// The entry that opens the links pane is shown when there are links and
-/// the links tab of the side pane is not already active.
+/// מציג פתיחת חלונית קישורים כשיש קישורים והטאב אינו פעיל.
 bool shouldShowOpenLinksPaneEntry({
   required bool hasLinks,
   required bool isLinksTabActive,

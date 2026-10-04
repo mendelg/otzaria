@@ -51,7 +51,7 @@ void main() {
     void Function()? onOpenPane,
     void Function()? onSelectMultiple,
   }) => buildCommentatorsContextMenuChildren(
-    activeCommentators: active,
+    getActiveCommentators: () => active,
     availableCommentators: availableCommentators,
     commentatorGroups: groups,
     onCommentatorsChanged: onChange ?? (_, {required isAdding}) {},
@@ -63,7 +63,7 @@ void main() {
   group('buildCommentatorsContextMenuChildren', () {
     test('uses the given label for showing all commentators', () {
       final entries = buildCommentatorsContextMenuChildren(
-        activeCommentators: const [],
+        getActiveCommentators: () => const [],
         availableCommentators: available,
         commentatorGroups: groups,
         onCommentatorsChanged: (_, {required isAdding}) {},
@@ -75,7 +75,7 @@ void main() {
     test('can keep the pane entries when there are no commentators', () {
       List<AppContextMenuEntry> withoutCommentators({required bool keep}) =>
           buildCommentatorsContextMenuChildren(
-            activeCommentators: const [],
+            getActiveCommentators: () => const [],
             availableCommentators: const [],
             commentatorGroups: groups,
             onCommentatorsChanged: (_, {required isAdding}) {},
@@ -92,7 +92,7 @@ void main() {
 
     test('lists commentators outside every group at the end', () {
       final entries = buildCommentatorsContextMenuChildren(
-        activeCommentators: const [],
+        getActiveCommentators: () => const [],
         availableCommentators: const ['רש"י', 'פירוש חדש'],
         commentatorGroups: groups,
         onCommentatorsChanged: (_, {required isAdding}) {},
@@ -103,7 +103,7 @@ void main() {
 
     test('lists all commentators while the groups are not loaded', () {
       final entries = buildCommentatorsContextMenuChildren(
-        activeCommentators: const [],
+        getActiveCommentators: () => const [],
         availableCommentators: available,
         commentatorGroups: const [],
         onCommentatorsChanged: (_, {required isAdding}) {},
@@ -252,7 +252,7 @@ void main() {
 
     test('קבוצה ריקה אינה יוצרת כותרת קבוצה', () {
       final entries = buildCommentatorsContextMenuChildren(
-        activeCommentators: const [],
+        getActiveCommentators: () => const [],
         availableCommentators: const ['רש"י'],
         commentatorGroups: const [
           CommentatorGroup(title: 'אחרונים', commentators: ['מלבי"ם']),

@@ -1480,7 +1480,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
 
     final commentatorChildren = buildCommentatorsContextMenuChildren(
-      activeCommentators: widget.tab.activeCommentators.toList(),
+      getActiveCommentators: () => widget.tab.activeCommentators,
       availableCommentators: relevantCommentators,
       commentatorGroups: _commentatorGroups,
       // Every change opens the pane, as the PDF has no inline commentaries.
