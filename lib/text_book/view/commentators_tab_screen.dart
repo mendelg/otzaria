@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/book_common/view/commentators_tab_top_bar.dart';
 import 'package:otzaria/book_common/view/commentary_search_pane.dart';
 import 'package:otzaria/book_common/view/commentators_side_pane.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
@@ -12,7 +13,6 @@ import 'package:otzaria/book_common/utils/category_settings_utils.dart';
 import 'package:otzaria/book_common/utils/commentary_type_filter.dart';
 import 'package:otzaria/book_common/utils/commentator_group_builder.dart';
 import 'package:otzaria/text_book/utils/toc_unit_label.dart';
-import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/bookmarks/bloc/bookmark_bloc.dart';
@@ -46,7 +46,6 @@ import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
-import 'package:otzaria/widgets/navigation/reader_nav_center.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 const _kAllChapter = -1;
@@ -966,200 +965,56 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
     TextBookLoaded state,
     List<TocEntry> chapters,
   ) {
-    return AppTopBar(
-      minCenterWidth: ReaderNavCenter.minTitleWidth,
-      leadingItems: [
-        AppTopBarItem(
-          widget: NavPanelToggleButton(
-            isOpen: _navPaneOpen,
-            onToggle: () {
-              setState(() => _navPaneOpen = !_navPaneOpen);
-              if (_navPaneOpen && _navTabController.index == 0) {
-                _scrollNavToSelectedChapter();
-              }
-            },
-          ),
-        ),
-        if (_navPaneOpen || _pinLeftPane)
-          AppTopBarItem(
-            widget: NavPanelPinButton(
-              isPinned: _pinLeftPane,
-              onToggle: () => setState(() => _pinLeftPane = !_pinLeftPane),
-            ),
-          ),
-      ],
-      center: ReaderNavCenter(
-        title: Text(
-          'מפרשים על ${state.book.title}',
-          style: AppTopBar.titleStyle(context),
-          textAlign: TextAlign.center,
-          overflow: TextOverflow.ellipsis,
-        ),
-        prevMajorTooltip: 'הפרק הקודם',
-        prevMinorTooltip: 'הקטע הקודם',
-        nextMinorTooltip: 'הקטע הבא',
-        nextMajorTooltip: 'הפרק הבא',
-        onPrevMajor: () => _navigateToPrevChapter(chapters),
-        onPrevMinor: () => _navigateToPrevVerse(chapters),
-        onNextMinor: () => _navigateToNextVerse(chapters),
-        onNextMajor: () => _navigateToNextChapter(chapters),
+    final isCompact = context.read<SettingsBloc>().state.compactMenuMode;
+    void addBookmark() => _addBookmark(
+      context,
+      state,
+      _computeIndexes(
+        chapters,
+        _selectedChapter,
+        _selectedVerseIdx,
+        state.content.length,
       ),
-      trailingItems: [
-        AppTopBarItem(
-          flexible: true,
-          widget: ResponsiveActionBar(
-            overflowMenuOffset: const Offset(0, 8),
-            actions: [
-              // תצוגת הטקסט של המפרשים: לחיצה מחליפה ניקוד, החץ פותח את הפרופיל
-              ActionButtonData(
-                widget: TextBookDisplayBarButton(
-                  state: state,
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  targets: const [TextTarget.commentary],
-                ),
-                icon: textDisplayBarIcon(state.commentaryRemoveNikud),
-                tooltip: textDisplayBarTooltip(state.commentaryRemoveNikud),
-                actionId: ToolbarActionId.textDisplay,
-                toolbarWidth: BarSplitButton.toolbarWidth(
-                  context.read<SettingsBloc>().state.compactMenuMode,
-                ),
-                onPressed: () =>
-                    toggleTextBookNikud(context, state, TextTarget.commentary),
-              ),
-              // הדפסת המפרשים המוצגים
-              ActionButtonData(
-                widget: BarButton.icon(
-                  icon: FluentIcons.print_24_regular,
-                  tooltip: 'הדפסה',
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () =>
-                      _commentaryKey.currentState?.printDisplayedCommentaries(),
-                ),
-                icon: FluentIcons.print_24_regular,
-                tooltip: 'הדפסה',
-                actionId: ToolbarActionId.print,
-                onPressed: () =>
-                    _commentaryKey.currentState?.printDisplayedCommentaries(),
-              ),
-              // חיפוש
-              ActionButtonData(
-                widget: BarButton.icon(
-                  tooltip: 'חיפוש',
-                  icon: OtzariaIcons.search_24_regular,
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: _openSearchPane,
-                ),
-                icon: OtzariaIcons.search_24_regular,
-                tooltip: 'חיפוש',
-                actionId: ToolbarActionId.search,
-                onPressed: _openSearchPane,
-              ),
-              // כיווץ/הרחבת כל המפרשים — שולט במצב הגלובלי בתוך CommentaryListBase
-              ActionButtonData(
-                widget: ValueListenableBuilder<bool>(
-                  valueListenable: _allExpandedInChild,
-                  builder: (context, allExpanded, _) {
-                    return BarButton.icon(
-                      tooltip: allExpanded
-                          ? 'כווץ את כל המפרשים'
-                          : 'הרחב את כל המפרשים',
-                      icon: allExpanded
-                          ? FluentIcons.arrow_collapse_all_24_regular
-                          : FluentIcons.arrow_expand_all_24_regular,
-                      compact: context
-                          .read<SettingsBloc>()
-                          .state
-                          .compactMenuMode,
-                      onPressed: () =>
-                          _commentaryKey.currentState?.toggleAllExpanded(),
-                    );
-                  },
-                ),
-                icon: _allExpandedInChild.value
-                    ? FluentIcons.arrow_collapse_all_24_regular
-                    : FluentIcons.arrow_expand_all_24_regular,
-                tooltip: _allExpandedInChild.value
-                    ? 'כווץ את כל המפרשים'
-                    : 'הרחב את כל המפרשים',
-                actionId: ToolbarActionId.expandAll,
-                onPressed: () =>
-                    _commentaryKey.currentState?.toggleAllExpanded(),
-              ),
-              ActionButtonData(
-                widget: BarButton.icon(
-                  tooltip: 'הוסף סימניה',
-                  icon: FluentIcons.bookmark_add_24_regular,
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () => _addBookmark(
-                    context,
-                    state,
-                    _computeIndexes(
-                      chapters,
-                      _selectedChapter,
-                      _selectedVerseIdx,
-                      state.content.length,
-                    ),
-                  ),
-                ),
-                icon: FluentIcons.bookmark_add_24_regular,
-                tooltip: 'הוסף סימניה',
-                actionId: ToolbarActionId.bookmarkAdd,
-                onPressed: () => _addBookmark(
-                  context,
-                  state,
-                  _computeIndexes(
-                    chapters,
-                    _selectedChapter,
-                    _selectedVerseIdx,
-                    state.content.length,
-                  ),
-                ),
-              ),
-              // הגדל טקסט
-              ActionButtonData(
-                widget: BarButton.icon(
-                  tooltip: 'הגדל את גודל הטקסט',
-                  icon: FluentIcons.zoom_in_24_regular,
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () => _zoomIn(context),
-                ),
-                icon: FluentIcons.zoom_in_24_regular,
-                tooltip: 'הגדל את גודל הטקסט',
-                actionId: ToolbarActionId.zoomIn,
-                onPressed: () => _zoomIn(context),
-              ),
-              // הקטן טקסט
-              ActionButtonData(
-                widget: BarButton.icon(
-                  tooltip: 'הקטן את גודל הטקסט',
-                  icon: FluentIcons.zoom_out_24_regular,
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () => _zoomOut(context),
-                ),
-                icon: FluentIcons.zoom_out_24_regular,
-                tooltip: 'הקטן את גודל הטקסט',
-                actionId: ToolbarActionId.zoomOut,
-                onPressed: () => _zoomOut(context),
-              ),
-            ],
-            alwaysInMenu: [
-              ActionButtonData(
-                widget: BarButton.icon(
-                  tooltip: 'סימניות בספר זה',
-                  icon: FluentIcons.bookmark_multiple_24_regular,
-                  compact: context.read<SettingsBloc>().state.compactMenuMode,
-                  onPressed: () =>
-                      _showBookmarksForCurrentBook(context, state.book),
-                ),
-                icon: FluentIcons.bookmark_multiple_24_regular,
-                tooltip: 'סימניות בספר זה',
-                onPressed: () =>
-                    _showBookmarksForCurrentBook(context, state.book),
-              ),
-            ],
-          ),
+    );
+    return CommentatorsTabTopBar(
+      title: 'מפרשים על ${state.book.title}',
+      prevMajorTooltip: 'הפרק הקודם',
+      nextMajorTooltip: 'הפרק הבא',
+      navPaneOpen: _navPaneOpen,
+      navPanePinned: _pinLeftPane,
+      onToggleNavPane: () {
+        setState(() => _navPaneOpen = !_navPaneOpen);
+        if (_navPaneOpen && _navTabController.index == 0) {
+          _scrollNavToSelectedChapter();
+        }
+      },
+      onTogglePin: () => setState(() => _pinLeftPane = !_pinLeftPane),
+      onPrevMajor: () => _navigateToPrevChapter(chapters),
+      onPrevMinor: () => _navigateToPrevVerse(chapters),
+      onNextMinor: () => _navigateToNextVerse(chapters),
+      onNextMajor: () => _navigateToNextChapter(chapters),
+      textDisplayAction: ActionButtonData(
+        widget: TextBookDisplayBarButton(
+          state: state,
+          compact: isCompact,
+          targets: const [TextTarget.commentary],
         ),
-      ],
+        icon: textDisplayBarIcon(state.commentaryRemoveNikud),
+        tooltip: textDisplayBarTooltip(state.commentaryRemoveNikud),
+        actionId: ToolbarActionId.textDisplay,
+        toolbarWidth: BarSplitButton.toolbarWidth(isCompact),
+        onPressed: () =>
+            toggleTextBookNikud(context, state, TextTarget.commentary),
+      ),
+      onPrint: () => _commentaryKey.currentState?.printDisplayedCommentaries(),
+      onSearch: _openSearchPane,
+      allExpanded: _allExpandedInChild,
+      onToggleAllExpanded: () =>
+          _commentaryKey.currentState?.toggleAllExpanded(),
+      onAddBookmark: addBookmark,
+      onZoomIn: () => _zoomIn(context),
+      onZoomOut: () => _zoomOut(context),
+      onShowBookmarks: () => _showBookmarksForCurrentBook(context, state.book),
     );
   }
 
