@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
@@ -446,16 +446,20 @@ List<AppContextMenuEntry> buildGroupedCommentatorEntries({
   required List<String> relevantCommentators,
   required List<CommentatorGroup> commentatorGroups,
   required Set<String> activeCommentators,
-  required void Function(String commentator) onToggleCommentator,
+  required void Function(Set<String> updated) onCommentatorsChanged,
   required void Function(List<String> commentators) onToggleAll,
 }) {
   final items = <AppContextMenuEntry>[];
 
-  AppContextMenuEntry buildItem(String commentator) => AppContextMenuEntry(
-    label: commentator,
-    isSelected: activeCommentators.contains(commentator),
-    onTap: () => onToggleCommentator(commentator),
-  );
+  AppContextMenuEntry buildItem(String commentator) {
+    final isActive = activeCommentators.contains(commentator);
+    return AppContextMenuEntry(
+      label: commentator,
+      isSelected: isActive,
+      // ביטול בחירה נעשה בסינון; לחיצה על מפרש פעיל פותחת את החלונית.
+      onTap: () => onCommentatorsChanged({...activeCommentators, commentator}),
+    );
+  }
 
   if (commentatorGroups.isNotEmpty) {
     final allGrouped = commentatorGroups
@@ -497,6 +501,23 @@ List<AppContextMenuEntry> buildGroupedCommentatorEntries({
   }
 
   return items;
+}
+
+/// מעדכן ושומר בחירה שהשתנתה, ופותח את חלונית המפרשים בכל לחיצה.
+@visibleForTesting
+void applyPdfCommentatorSelection({
+  required Set<String> activeCommentators,
+  required Set<String> updated,
+  required VoidCallback onChanged,
+  required VoidCallback onOpenPane,
+}) {
+  if (!setEquals(activeCommentators, updated)) {
+    activeCommentators
+      ..clear()
+      ..addAll(updated);
+    onChanged();
+  }
+  onOpenPane();
 }
 
 /// מרכיב את פריטי תפריט ההקשר של עמוד ה-PDF.
@@ -1505,14 +1526,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
-  void _toggleCommentator(String commentator) {
-    if (widget.tab.activeCommentators.contains(commentator)) {
-      widget.tab.activeCommentators.remove(commentator);
-    } else {
-      widget.tab.activeCommentators.add(commentator);
-    }
-    _saveActiveCommentators();
-    _openCommentaryPane();
+  void _setActiveCommentators(Set<String> updated) {
+    applyPdfCommentatorSelection(
+      activeCommentators: widget.tab.activeCommentators,
+      updated: updated,
+      onChanged: _saveActiveCommentators,
+      onOpenPane: _openCommentaryPane,
+    );
   }
 
   void _toggleAllCommentators(List<String> commentators) {
@@ -1533,7 +1553,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       relevantCommentators: relevantCommentators,
       commentatorGroups: _commentatorGroups,
       activeCommentators: widget.tab.activeCommentators,
-      onToggleCommentator: _toggleCommentator,
+      onCommentatorsChanged: _setActiveCommentators,
       onToggleAll: _toggleAllCommentators,
     );
   }
