@@ -257,6 +257,52 @@ Future<void> main() async {
     );
   });
 
+  // issue #1725 — ברשימה הוירטואלית הכותרת עם אייקון החיפוש נפרקת בגלילה.
+  testWidgets('גלילה בעץ גדול מציגה אייקון חיפוש צף שפותח את השדה', (
+    tester,
+  ) async {
+    final bloc = _TestTextBookBloc(
+      _loadedState(
+        toc: _buildLargeToc(simanim: 100, seifim: 60),
+        visibleIndices: const [0],
+      ),
+    );
+    addTearDown(bloc.close);
+    final focusNode = FocusNode();
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      _wrap(
+        TocViewer(
+          scrollController: ItemScrollController(),
+          closeLeftPaneCallback: () {},
+          focusNode: focusNode,
+        ),
+        bloc,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final searchIcon = find.byIcon(FluentIcons.search_24_regular);
+    expect(
+      find.descendant(of: find.byType(NavTreeHeader), matching: searchIcon),
+      findsOneWidget,
+    );
+
+    await tester.drag(
+      find.byType(ScrollablePositionedList),
+      const Offset(0, -3000),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NavTreeHeader), findsNothing);
+    expect(searchIcon.hitTestable(), findsOneWidget);
+
+    await tester.tap(searchIcon);
+    await tester.pumpAndSettle();
+    expect(focusNode.hasFocus, isTrue);
+    expect(searchIcon, findsNothing);
+  });
+
   testWidgets('ספר עם TOC < סף → משתמש ב-SingleChildScrollView (לא וירטואלי)', (
     tester,
   ) async {
