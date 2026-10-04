@@ -17,7 +17,6 @@ import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/bookmarks/bloc/bookmark_bloc.dart';
 import 'package:otzaria/bookmarks/models/bookmark.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/core/messages/notes_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
@@ -34,7 +33,6 @@ export 'package:otzaria/widgets/commentary/commentary_search_results_list.dart'
 import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:otzaria/widgets/lists/commentators_selection_panel.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
-import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/text_display/view/text_display_bar_button.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
@@ -625,14 +623,6 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
     });
   }
 
-  void _zoomIn(BuildContext context) {
-    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(2));
-  }
-
-  void _zoomOut(BuildContext context) {
-    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(-2));
-  }
-
   @override
   Widget build(BuildContext context) {
     super.build(context); // נדרש ע"י AutomaticKeepAliveClientMixin
@@ -951,13 +941,6 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
     );
   }
 
-  void _showBookmarksForCurrentBook(BuildContext context, Book book) {
-    showDialog(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: book),
-    );
-  }
-
   // ── AppBar ─────────────────────────────────────────────────────────────────
 
   Widget _buildAppBar(
@@ -1012,9 +995,7 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
       onToggleAllExpanded: () =>
           _commentaryKey.currentState?.toggleAllExpanded(),
       onAddBookmark: addBookmark,
-      onZoomIn: () => _zoomIn(context),
-      onZoomOut: () => _zoomOut(context),
-      onShowBookmarks: () => _showBookmarksForCurrentBook(context, state.book),
+      book: state.book,
     );
   }
 

@@ -15,7 +15,6 @@ import 'package:otzaria/shortcuts/shortcut_helper.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/bookmarks/bloc/bookmark_bloc.dart';
 import 'package:otzaria/bookmarks/models/bookmark.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/core/messages/notes_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
@@ -340,14 +339,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   void _openCommentatorsTab() {
     setState(() => _navPaneOpen = true);
     _navTabController.animateTo(_commentatorsTabIndex);
-  }
-
-  void _zoomIn(BuildContext context) {
-    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(2));
-  }
-
-  void _zoomOut(BuildContext context) {
-    context.read<SettingsBloc>().add(const AdjustCommentatorsFontSize(-2));
   }
 
   /// ניווט לכותרת הקודמת (כל הכותרת) — מקביל ל"הפרק הקודם" בכרטיסיית הטקסט.
@@ -826,13 +817,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
     });
   }
 
-  void _showBookmarksForCurrentBook(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: widget.tab.sourceTab.book),
-    );
-  }
-
   Future<void> _addBookmark(BuildContext context) async {
     final sourceTab = widget.tab.sourceTab;
     final bookmarkBloc = context.read<BookmarkBloc>();
@@ -926,9 +910,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
       allExpanded: _allExpandedInChild,
       onToggleAllExpanded: () => _panelKey.currentState?.toggleAllExpanded(),
       onAddBookmark: () => _addBookmark(context),
-      onZoomIn: () => _zoomIn(context),
-      onZoomOut: () => _zoomOut(context),
-      onShowBookmarks: () => _showBookmarksForCurrentBook(context),
+      book: widget.tab.sourceTab.book,
     );
   }
 

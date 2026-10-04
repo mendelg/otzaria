@@ -2,6 +2,8 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
+import 'package:otzaria/models/books.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/widgets/controls/bar_button.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
@@ -36,9 +38,7 @@ class CommentatorsTabTopBar extends StatelessWidget {
     required this.allExpanded,
     required this.onToggleAllExpanded,
     required this.onAddBookmark,
-    required this.onZoomIn,
-    required this.onZoomOut,
-    required this.onShowBookmarks,
+    required this.book,
     this.titleMaxLines,
   });
 
@@ -60,9 +60,9 @@ class CommentatorsTabTopBar extends StatelessWidget {
   final ValueListenable<bool> allExpanded;
   final VoidCallback onToggleAllExpanded;
   final VoidCallback onAddBookmark;
-  final VoidCallback onZoomIn;
-  final VoidCallback onZoomOut;
-  final VoidCallback onShowBookmarks;
+
+  /// The book whose bookmarks the bookmarks action lists.
+  final Book book;
 
   static String _expandAllTooltip(bool allExpanded) =>
       allExpanded ? 'כווץ את כל המפרשים' : 'הרחב את כל המפרשים';
@@ -92,7 +92,14 @@ class CommentatorsTabTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = context.read<SettingsBloc>().state.compactMenuMode;
+    final settings = context.read<SettingsBloc>();
+    final compact = settings.state.compactMenuMode;
+    void onZoomIn() => settings.add(const AdjustCommentatorsFontSize(2));
+    void onZoomOut() => settings.add(const AdjustCommentatorsFontSize(-2));
+    void onShowBookmarks() => showDialog<void>(
+      context: context,
+      builder: (_) => BookmarksDialog(bookFilter: book),
+    );
     return AppTopBar(
       minCenterWidth: ReaderNavCenter.minTitleWidth,
       leadingItems: [

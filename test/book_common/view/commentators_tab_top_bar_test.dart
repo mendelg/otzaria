@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/book_common/view/commentators_tab_top_bar.dart';
+import 'package:otzaria/models/books.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
@@ -11,8 +12,10 @@ import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 class _SettingsBloc extends Bloc<SettingsEvent, SettingsState>
     implements SettingsBloc {
   _SettingsBloc() : super(SettingsState.initial()) {
-    on<SettingsEvent>((event, emit) {});
+    on<SettingsEvent>((event, emit) => received.add(event));
   }
+
+  final List<SettingsEvent> received = [];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -63,9 +66,7 @@ void main() {
               allExpanded: allExpanded,
               onToggleAllExpanded: () => calls.add('expand'),
               onAddBookmark: () => calls.add('bookmark'),
-              onZoomIn: () => calls.add('zoomIn'),
-              onZoomOut: () => calls.add('zoomOut'),
-              onShowBookmarks: () => calls.add('bookmarks'),
+              book: TextBook(title: 'בראשית'),
             ),
           ),
         ),
@@ -80,8 +81,6 @@ void main() {
       'הדפסה',
       'חיפוש',
       'הוסף סימניה',
-      'הגדל את גודל הטקסט',
-      'הקטן את גודל הטקסט',
       'הפרק הבא',
     ]) {
       await tester.tap(find.byTooltip(tooltip));
@@ -90,10 +89,18 @@ void main() {
       'print',
       'search',
       'bookmark',
-      'zoomIn',
-      'zoomOut',
       'nextMajor',
     ]);
+
+    await tester.tap(find.byTooltip('הגדל את גודל הטקסט'));
+    await tester.tap(find.byTooltip('הקטן את גודל הטקסט'));
+    await tester.pump();
+    expect(
+      settings.received.whereType<AdjustCommentatorsFontSize>().map(
+        (e) => e.delta,
+      ),
+      [2, -2],
+    );
 
     allExpanded.value = false;
     await tester.pump();
