@@ -206,6 +206,38 @@ bool hasCommentariesForLine({
   });
 }
 
+/// חלון הבחירה נבנה מחדש בכל תזוזת עכבר בגרירה; שורה מרונדרת תלויה רק
+/// בנתונים ובהגדרות. נדרשת רק לאורך גרירה אחת, ואינה מחזיקה את תוכן הספר.
+@visibleForTesting
+class SelectionLineCache {
+  static const _maxLines = 2000;
+  final Map<int, String> _lines = {};
+  WeakReference<List<String>>? _data;
+  RenderSettings? _settings;
+
+  String Function(int index) renderer(
+    List<String> data,
+    RenderSettings settings,
+  ) {
+    if (!identical(_data?.target, data) || _settings != settings) {
+      clear();
+      _data = WeakReference(data);
+      _settings = settings;
+    }
+    String render(int i) =>
+        renderSelectionLine(rawText: data[i], settings: settings);
+    return (i) =>
+        _lines[i] ??
+        (_lines.length < _maxLines ? _lines[i] = render(i) : render(i));
+  }
+
+  void clear() {
+    _lines.clear();
+    _data = null;
+    _settings = null;
+  }
+}
+
 @visibleForTesting
 ({String text, Link? link})? commentarySelectionForCopy({
   required SelectionSyncController? controller,
@@ -683,6 +715,7 @@ class _CombinedViewState extends State<CombinedView> {
   void _endSelectionPointer({required bool takeFocus}) {
     if (!_isSelectionPointerDown) return;
     _isSelectionPointerDown = false;
+    _selectionLineCache.clear();
     if (_pendingSelectionClear) _clearSelectionState();
     if (takeFocus) _focusNode.requestFocus();
     _flushDeferredSelectionAreaRefresh();
@@ -1744,12 +1777,11 @@ class _CombinedViewState extends State<CombinedView> {
       visibleIndices: state.visibleIndices,
       totalLines: widget.data.length,
       selectionLength: selectionLength,
-      renderLine: (index) => renderSelectionLine(
-        rawText: widget.data[index],
-        settings: renderSettings,
-      ),
+      renderLine: _selectionLineCache.renderer(widget.data, renderSettings),
     );
   }
+
+  final _selectionLineCache = SelectionLineCache();
 
   Widget buildKeyboardListener() {
     return BlocBuilder<TextBookBloc, TextBookState>(
