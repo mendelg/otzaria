@@ -713,7 +713,7 @@ class _BookGridActionColumn extends StatelessWidget {
 
 /// תפריט "אפשרויות נוספות" של ספר (גרסאות / מחיקה מהספרייה) — משותף לכרטיס
 /// הרשת ולשורת העץ. מוצג רק כשיש בפועל פעולה זמינה, אחרת נעלם.
-class BookActionsMenuButton extends StatelessWidget {
+class BookActionsMenuButton extends StatefulWidget {
   final Book book;
   final VoidCallback? onBookDeleted;
 
@@ -724,13 +724,32 @@ class BookActionsMenuButton extends StatelessWidget {
   });
 
   @override
+  State<BookActionsMenuButton> createState() => _BookActionsMenuButtonState();
+}
+
+class _BookActionsMenuButtonState extends State<BookActionsMenuButton> {
+  // השורה נבנית מחדש בכל הקשה בחיפוש ובכל הרחבה בעץ,
+  // והשאילתות (כולל מסד הספרים האישיים) רצות רק כשהספר מתחלף.
+  late Future<List<bool>> _actions = _loadActions();
+
+  Future<List<bool>> _loadActions() => Future.wait([
+    _canDeleteBookFromLibrary(widget.book),
+    hasBookVersionsToOpen(widget.book),
+  ]);
+
+  @override
+  void didUpdateWidget(BookActionsMenuButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.book, widget.book)) _actions = _loadActions();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final book = widget.book;
+    final onBookDeleted = widget.onBookDeleted;
     return FutureBuilder<List<bool>>(
-      future: Future.wait([
-        _canDeleteBookFromLibrary(book),
-        hasBookVersionsToOpen(book),
-      ]),
+      future: _actions,
       builder: (context, snapshot) {
         final canDelete = snapshot.data?[0] ?? false;
         final showVersions = snapshot.data?[1] ?? false;
