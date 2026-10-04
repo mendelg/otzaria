@@ -3708,13 +3708,11 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     await _loadActiveCommentators();
     await _applyDefaultCommentatorsIfNeeded(commentatorsSet.toList());
     _maybeAutoOpenCommentaryPane();
-    final available = commentatorsSet.toList();
-    final eras = await utils.splitByEra(
-      available,
+    final groups = await groupCommentatorsByEra(
+      commentatorsSet.toList(),
       source: widget.tab.book.source,
       sourceByTitle: sourceByTitle,
     );
-    final groups = buildCommentatorGroups(eras, available);
     if (!mounted) return;
     setState(() {
       _commentatorGroups = groups;

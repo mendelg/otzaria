@@ -1,8 +1,6 @@
-import 'package:otzaria/library/hidden/hidden_library_selection.dart';
 import 'package:otzaria/text_book/view/page_shape/utils/page_shape_default_commentators.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/library/hidden/hidden_titles.dart';
-import 'package:otzaria/core/windowing/settings_sync.dart';
 import 'dart:async';
 import 'package:otzaria/core/error_log_file.dart';
 import 'package:bloc_concurrency/bloc_concurrency.dart';
@@ -21,7 +19,6 @@ import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/book_common/models/commentator_group.dart';
 import 'package:otzaria/utils/text/ref_helper.dart';
-import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/tantivy_data_provider.dart';
@@ -143,8 +140,7 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
   /// על סריקות עתידיות גם אם 'הערות' לא נוסף ל-availableCommentators.
   bool _inlineNotesFullScanDone = false;
   Set<String> _hiddenCommentatorTitlesCache = const {};
-  StreamSubscription<HiddenLibrarySelection>? _hiddenSelectionSubscription;
-  StreamSubscription<String>? _settingsSyncSubscription;
+  StreamSubscription<void>? _hiddenSelectionSubscription;
   int _commentatorsLoadGeneration = 0;
   int _visibilityRefreshGeneration = 0;
 
@@ -223,16 +219,8 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
     on<RefreshLinksForCurrentWindow>(_onRefreshLinksForCurrentWindow);
     on<LoadAllLinksForIndices>(_onLoadAllLinksForIndices);
     on<SetTabVisibility>(_onSetTabVisibility);
-    _hiddenSelectionSubscription = const HiddenLibraryStore().changes.listen(
-      (_) => add(const RefreshCommentatorVisibility()),
-    );
-    _settingsSyncSubscription = SettingsSync.instance.changes.listen((key) {
-      if (key.isEmpty ||
-          key == HiddenLibraryStore.bookKeysSetting ||
-          key == HiddenLibraryStore.categoryPathsSetting) {
-        add(const RefreshCommentatorVisibility());
-      }
-    });
+    _hiddenSelectionSubscription = const HiddenLibraryStore().visibilityChanges
+        .listen((_) => add(const RefreshCommentatorVisibility()));
   }
 
   void _onSetTabVisibility(
@@ -2396,7 +2384,6 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
     _debounceTimer?.cancel();
     _highlightTimer?.cancel();
     final hiddenSelectionCancellation = _hiddenSelectionSubscription?.cancel();
-    final settingsSyncCancellation = _settingsSyncSubscription?.cancel();
 
     if (_positionListenerCallback != null) {
       positionsListener.itemPositions.removeListener(
@@ -2407,7 +2394,6 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
     final blocClosure = super.close();
     await Future.wait<void>([
       ?hiddenSelectionCancellation,
-      ?settingsSyncCancellation,
       blocClosure,
     ]);
   }
@@ -3130,14 +3116,10 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
         book,
       );
 
-      final eras = await utils.splitByEra(
+      final groups = await groupCommentatorsByEra(
         availableCommentators,
         source: book.source,
         sourceByTitle: await repository.getExternalCommentatorSources(book),
-      );
-      final groups = buildCommentatorGroups(
-        eras,
-        availableCommentators,
         baseCommentators: baseCommentators,
       );
 

@@ -13,7 +13,6 @@ import 'package:otzaria/text_book/view/page_shape/utils/page_shape_commentary_se
 import 'package:otzaria/text_book/view/page_shape/utils/page_shape_settings_manager.dart';
 import 'package:otzaria/book_common/models/commentator_group.dart';
 import 'package:otzaria/book_common/utils/commentator_group_builder.dart';
-import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
 import 'package:otzaria/widgets/controls/action_buttons.dart';
 import 'package:otzaria/widgets/dialogs/dialogs_exports.dart';
 import 'package:otzaria/widgets/controls/segmented_control.dart';
@@ -212,11 +211,10 @@ class _PageShapeSettingsPanelState extends State<PageShapeSettingsPanel> {
   Future<void> _loadCommentatorGroups() async {
     final generation = ++_groupsLoadGeneration;
     final available = widget.availableCommentators;
-    final eras = await utils.splitByEra(
+    final groups = await groupCommentatorsByEra(
       available,
       source: widget.bookSource,
     );
-    final groups = buildCommentatorGroups(eras, available);
 
     if (mounted && generation == _groupsLoadGeneration) {
       setState(() {

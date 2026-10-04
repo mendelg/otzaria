@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:otzaria/models/link_types.dart';
-import 'package:otzaria/core/windowing/settings_sync.dart';
 import 'package:otzaria/library/hidden/hidden_library_store.dart';
 import 'package:otzaria/pdf_book/utils/pdf_commentary_visibility.dart';
 import 'package:otzaria/shortcuts/shortcut_helper.dart';
@@ -113,8 +112,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
       const HiddenLibraryStore().load().isEmpty
       ? PdfCommentaryVisibility.empty()
       : null;
-  StreamSubscription<dynamic>? _hiddenSelectionSubscription;
-  StreamSubscription<String>? _settingsSyncSubscription;
+  StreamSubscription<void>? _hiddenSelectionSubscription;
   int _visibilityLoadGeneration = 0;
   final _visibleLinksCache = PdfCommentaryVisibleLinksCache();
 
@@ -188,16 +186,8 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
     _ensureDataLoaded();
     _loadTextContent();
     _loadCommentatorGroups();
-    _hiddenSelectionSubscription = const HiddenLibraryStore().changes.listen(
-      (_) => _refreshVisibility(),
-    );
-    _settingsSyncSubscription = SettingsSync.instance.changes.listen((key) {
-      if (key.isEmpty ||
-          key == HiddenLibraryStore.bookKeysSetting ||
-          key == HiddenLibraryStore.categoryPathsSetting) {
-        _refreshVisibility();
-      }
-    });
+    _hiddenSelectionSubscription = const HiddenLibraryStore().visibilityChanges
+        .listen((_) => _refreshVisibility());
 
     // ממקד את חלונית המפרשים כשהטאב הופך פעיל (מעבר טאב) כדי שגלילה עם
     // החיצים תעבוד מיד בלי לחיצה.
@@ -508,7 +498,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
     final available = commentatorsSet.toList();
     await _applyDefaultCommentatorsIfNeeded(available);
     if (!mounted || generation != _visibilityLoadGeneration) return;
-    final eras = await utils.splitByEra(
+    final groups = await groupCommentatorsByEra(
       available,
       source: widget.tab.sourceTab.book.source,
       sourceByTitle: {
@@ -518,7 +508,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
           utils.getTitleFromPath(link.path2): link.targetSource,
       },
     );
-    final groups = buildCommentatorGroups(eras, available);
     if (!mounted || generation != _visibilityLoadGeneration) return;
     setState(() {
       _visibility = visibility;
@@ -550,7 +539,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   @override
   void dispose() {
     _hiddenSelectionSubscription?.cancel();
-    _settingsSyncSubscription?.cancel();
     FocusRepository().unregisterTabContentFocusRequester(widget.tab);
     widget.tab.sourceTab.currentTitle.removeListener(_syncWithSourceTab);
     _navTabController.removeListener(_handleTabChanged);
