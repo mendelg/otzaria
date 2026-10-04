@@ -1,10 +1,12 @@
 import 'package:equatable/equatable.dart';
+import 'package:otzaria/search/utils/result_text_status.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
     show
         MergedSibling,
         SearchResult,
         SemanticResultSource,
-        SemanticSearchResult;
+        SemanticSearchResult,
+        TextStatus;
 
 /// תוצאה אחת במסך החיפוש הסמנטי — משותפת למנוע ולתצוגה המקדימה בפיתוח.
 class SemanticResultItem extends Equatable {
@@ -49,7 +51,12 @@ class SemanticResultItem extends Equatable {
       SemanticResultItem(
         title: result.title,
         reference: result.reference,
-        snippetHtml: result.snippetHtml,
+        snippetHtml: switch (result.textStatus) {
+          TextStatus.unavailable => unavailableResultText,
+          TextStatus.stale when result.snippetHtml.isEmpty =>
+            unavailableResultText,
+          _ => result.snippetHtml,
+        },
         isHighlighted: result.isHighlighted,
         id: result.id,
         segment: result.segment.toInt(),
