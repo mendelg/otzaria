@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
@@ -69,39 +71,74 @@ Future<String?> heRefFromDbLine(TextBook book, int index) async {
 /// הגרסה הסינכרונית של [refFromIndex]: מחשבת את הכתובת ההיררכית עבור שורה
 /// [index] מתוך רשימת תוכן עניינים שכבר נטענה לזיכרון. נחוצה למקומות שצריכים
 /// חישוב מיידי בלי `await` (למשל תווית יעד ברחיפה מעל פס הגלילה), והחישוב
-/// עצמו הוא רקורסיה זולה על העץ עם עצירה מוקדמת.
-String refFromTocList(int index, List<TocEntry> toc) {
-  List<String> texts = [];
+/// עצמו נעשה במבנה עזר שנבנה פעם אחת לכל עץ, כי היא נקראת בכל גלילה.
+String refFromTocList(int index, List<TocEntry> toc) =>
+    (_tocRefLookups[toc] ??= _TocRefLookup(toc)).refAt(index);
 
-  void searchToc(List<TocEntry> entries, int index) {
-    for (final TocEntry entry in entries) {
-      if (entry.index > index) {
-        return;
-      }
-      // Guard against invalid level values, but still search children
-      if (entry.level <= 0) {
-        searchToc(entry.children, index);
-        continue;
-      }
-      // ממקמים כל כותרת לפי הרמה האמיתית שלה (level-1). אם חסרות רמות-על
-      // (למשל ספר שמתחיל ברמה 2 בלי כותרת-חלק ברמה 1), ממלאים את המקומות
-      // החסרים במחרוזות ריקות במקום לדחוף את הכותרת לאינדקס 0 — אחרת
-      // הכותרת הראשונה הייתה "נתקעת" באינדקס 0 ומזהמת כל כתובת אחריה.
-      final targetIndex = entry.level - 1;
-      while (texts.length <= targetIndex) {
-        texts.add('');
-      }
-      texts[targetIndex] = entry.text;
-      texts = texts.getRange(0, entry.level).toList();
+final _tocRefLookups = Expando<_TocRefLookup>();
 
-      searchToc(entry.children, index);
+/// הכתובת היא שרשרת הכותרות שנסרקו, כל אחת הקודמת שרמתה נמוכה מזו שאחריה.
+/// כותרת נסרקת כשהמפתח שלה (מקסימום האינדקסים של אחיה הקודמים ואבותיה) <= השורה.
+class _TocRefLookup {
+  final _entries = <TocEntry>[];
+  final _keys = <int>[];
+  final _prevShallower = <int>[];
+  final _sortedKeys = <int>[];
+  final _lastPosUpTo = <int>[];
+
+  _TocRefLookup(List<TocEntry> toc) {
+    final stack = <int>[];
+    void visit(List<TocEntry> entries, int key) {
+      for (final entry in entries) {
+        key = max(key, entry.index);
+        final level = entry.level > 0 ? entry.level : 1 << 30;
+        while (stack.isNotEmpty && _entries[stack.last].level >= level) {
+          stack.removeLast();
+        }
+        _prevShallower.add(stack.isEmpty ? -1 : stack.last);
+        if (entry.level > 0) stack.add(_entries.length);
+        _entries.add(entry);
+        _keys.add(key);
+        visit(entry.children, key);
+      }
+    }
+
+    visit(toc, -1 << 62);
+    final titled = [
+      for (var i = 0; i < _entries.length; i++)
+        if (_entries[i].level > 0) i,
+    ]..sort((a, b) => _keys[a].compareTo(_keys[b]));
+    for (final pos in titled) {
+      _sortedKeys.add(_keys[pos]);
+      _lastPosUpTo.add(max(pos, _lastPosUpTo.lastOrNull ?? -1));
     }
   }
 
-  searchToc(toc, index);
-
-  texts = texts.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-  return texts.join(', ');
+  String refAt(int index) {
+    var lo = 0, hi = _sortedKeys.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      _sortedKeys[mid] <= index ? lo = mid + 1 : hi = mid;
+    }
+    final parts = <String>[];
+    var bound = 1 << 30;
+    var pos = lo == 0 ? -1 : _lastPosUpTo[lo - 1];
+    while (pos >= 0) {
+      final entry = _entries[pos];
+      final candidate = entry.level > 0 && entry.level < bound;
+      // כותרת שלא נסרקה אינה מדלגת על קודמותיה כמו כותרת עמוקה — בודקים אחת-אחת.
+      if (candidate && _keys[pos] > index) {
+        pos--;
+        continue;
+      }
+      if (candidate) {
+        parts.add(entry.text.trim());
+        bound = entry.level;
+      }
+      pos = _prevShallower[pos];
+    }
+    return parts.reversed.where((e) => e.isNotEmpty).join(', ');
+  }
 }
 
 /// מחזירה כתובת תצוגה מלאה ואחידה עבור ספר יעד.
