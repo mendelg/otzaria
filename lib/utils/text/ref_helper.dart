@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:otzaria/attached_libraries/repository/attached_library_registry.dart';
 import 'package:otzaria/data/data_providers/db_read_worker.dart';
 import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
@@ -69,39 +71,125 @@ Future<String?> heRefFromDbLine(TextBook book, int index) async {
 /// הגרסה הסינכרונית של [refFromIndex]: מחשבת את הכתובת ההיררכית עבור שורה
 /// [index] מתוך רשימת תוכן עניינים שכבר נטענה לזיכרון. נחוצה למקומות שצריכים
 /// חישוב מיידי בלי `await` (למשל תווית יעד ברחיפה מעל פס הגלילה), והחישוב
-/// עצמו הוא רקורסיה זולה על העץ עם עצירה מוקדמת.
-String refFromTocList(int index, List<TocEntry> toc) {
-  List<String> texts = [];
+/// עצמו נעשה במבנה עזר שנבנה פעם אחת לכל עץ, כי היא נקראת בכל גלילה.
+String refFromTocList(int index, List<TocEntry> toc) =>
+    (_tocRefLookups[toc] ??= _TocRefLookup(toc)).refAt(index);
 
-  void searchToc(List<TocEntry> entries, int index) {
-    for (final TocEntry entry in entries) {
-      if (entry.index > index) {
-        return;
-      }
-      // Guard against invalid level values, but still search children
-      if (entry.level <= 0) {
-        searchToc(entry.children, index);
-        continue;
-      }
-      // ממקמים כל כותרת לפי הרמה האמיתית שלה (level-1). אם חסרות רמות-על
-      // (למשל ספר שמתחיל ברמה 2 בלי כותרת-חלק ברמה 1), ממלאים את המקומות
-      // החסרים במחרוזות ריקות במקום לדחוף את הכותרת לאינדקס 0 — אחרת
-      // הכותרת הראשונה הייתה "נתקעת" באינדקס 0 ומזהמת כל כתובת אחריה.
-      final targetIndex = entry.level - 1;
-      while (texts.length <= targetIndex) {
-        texts.add('');
-      }
-      texts[targetIndex] = entry.text;
-      texts = texts.getRange(0, entry.level).toList();
+final _tocRefLookups = Expando<_TocRefLookup>();
 
-      searchToc(entry.children, index);
+/// הכתובת היא שרשרת הכותרות שנסרקו, כל אחת הקודמת שרמתה נמוכה מזו שאחריה.
+/// כותרת נסרקת כשהמפתח שלה (מקסימום האינדקסים של אחיה הקודמים ואבותיה) <= השורה.
+class _TocRefLookup {
+  final _entries = <TocEntry>[];
+  final _ranks = <int>[];
+  final _sortedKeys = <int>[];
+  final _roots = <int>[];
+  final _left = <int>[0];
+  final _right = <int>[0];
+  final _lastPos = <int>[-1];
+  late final int _levelCount;
+
+  _TocRefLookup(List<TocEntry> toc) {
+    final keys = <int>[];
+    final pending = <({Iterator<TocEntry> entries, int? key})>[
+      (entries: toc.iterator, key: null),
+    ];
+    while (pending.isNotEmpty) {
+      final frame = pending.removeLast();
+      if (!frame.entries.moveNext()) continue;
+      final entry = frame.entries.current;
+      final key = frame.key == null
+          ? entry.index
+          : max(frame.key!, entry.index);
+      pending.add((entries: frame.entries, key: key));
+      if (entry.level > 0) {
+        _entries.add(entry);
+        keys.add(key);
+      }
+      if (entry.children.isNotEmpty) {
+        pending.add((entries: entry.children.iterator, key: key));
+      }
+    }
+
+    final levels = _entries.map((entry) => entry.level).toSet().toList()
+      ..sort();
+    _levelCount = levels.length;
+    final ranks = {for (var i = 0; i < levels.length; i++) levels[i]: i};
+    _ranks.addAll(_entries.map((entry) => ranks[entry.level]!));
+    final positions = List.generate(_entries.length, (i) => i)
+      ..sort((a, b) => keys[a].compareTo(keys[b]));
+    var root = 0, firstNewNode = 1;
+    for (final pos in positions) {
+      if (_sortedKeys.isEmpty || _sortedKeys.last != keys[pos]) {
+        firstNewNode = _lastPos.length;
+      }
+      root = _insert(root, 0, _levelCount, _ranks[pos], pos, firstNewNode);
+      if (_sortedKeys.isNotEmpty && _sortedKeys.last == keys[pos]) {
+        _roots[_roots.length - 1] = root;
+      } else {
+        _sortedKeys.add(keys[pos]);
+        _roots.add(root);
+      }
     }
   }
 
-  searchToc(toc, index);
+  // כל גרסה שומרת את הכותרת האחרונה בכל רמה עבור סף שורה אחד.
+  int _insert(int node, int lo, int hi, int rank, int pos, int firstNewNode) {
+    if (hi - lo == 1 && _lastPos[node] >= pos) return node;
+    var left = _left[node], right = _right[node];
+    if (hi - lo > 1) {
+      final mid = (lo + hi) >> 1;
+      if (rank < mid) {
+        left = _insert(left, lo, mid, rank, pos, firstNewNode);
+      } else {
+        right = _insert(right, mid, hi, rank, pos, firstNewNode);
+      }
+      if (left == _left[node] &&
+          right == _right[node] &&
+          _lastPos[node] == max(_lastPos[left], _lastPos[right])) {
+        return node;
+      }
+    }
+    final lastPos = hi - lo == 1 ? pos : max(_lastPos[left], _lastPos[right]);
+    // עד לפרסום גרסה חדשה אפשר לעדכן את צמתיה בלי להעתיק שוב את אותו מסלול.
+    if (node >= firstNewNode) {
+      _left[node] = left;
+      _right[node] = right;
+      _lastPos[node] = lastPos;
+      return node;
+    }
+    _left.add(left);
+    _right.add(right);
+    _lastPos.add(lastPos);
+    return _lastPos.length - 1;
+  }
 
-  texts = texts.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-  return texts.join(', ');
+  int _lastBelow(int node, int lo, int hi, int bound) {
+    if (node == 0 || lo >= bound) return -1;
+    if (hi <= bound) return _lastPos[node];
+    final mid = (lo + hi) >> 1;
+    return max(
+      _lastBelow(_left[node], lo, mid, bound),
+      _lastBelow(_right[node], mid, hi, bound),
+    );
+  }
+
+  String refAt(int index) {
+    var lo = 0, hi = _sortedKeys.length;
+    while (lo < hi) {
+      final mid = (lo + hi) >> 1;
+      _sortedKeys[mid] <= index ? lo = mid + 1 : hi = mid;
+    }
+    if (lo == 0) return '';
+    final root = _roots[lo - 1];
+    final parts = <String>[];
+    var pos = _lastPos[root];
+    while (pos >= 0) {
+      parts.add(_entries[pos].text.trim());
+      pos = _lastBelow(root, 0, _levelCount, _ranks[pos]);
+    }
+    return parts.reversed.where((part) => part.isNotEmpty).join(', ');
+  }
 }
 
 /// מחזירה כתובת תצוגה מלאה ואחידה עבור ספר יעד.
