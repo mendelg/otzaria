@@ -744,7 +744,7 @@
   "הספרים עצמם לא יימחקו, וגם לא נתונים מקבצים שבתיקיות הספרים.": "The seforim themselves are not deleted, and neither is data from files inside the seforim folders.",
   "מחק הכל": "Delete All",
   "ייבוא נתונים": "Import Data",
-  "בחר קובצי \"דורות.csv\", \"כותרות.csv\", \"גרסאות.csv\", \"<שם הספר>.links.csv\" או קובצי קישורים של אוצריא (\"<שם הספר>_links.json\") והם יכנסו לספרייה. ייבוא חוזר מעדכן ערכים קיימים ומוסיף חדשים.": "Select \"דורות.csv\", \"כותרות.csv\", \"גרסאות.csv\", \"<sefer name>.links.csv\", or Otzaria link files (\"<sefer name>_links.json\") and they go into the library. Reimporting updates existing entries and adds any new ones.",
+  "בחר קובצי \"דורות.csv\", \"כותרות.csv\", \"גרסאות.csv\", \"<שם הספר>.links.csv\" או קובצי קישורים של אוצריא (\"<שם הספר>_links.json\") והם יכנסו לספרייה. ייבוא חוזר מעדכן ערכים קיימים ומוסיף חדשים. עמודות \"כותרות.csv\": ספר, מבנה, רמה, כותרת, שורה או טקסט; \"רמה\" 2 ומעלה יוצרת כותרות משנה.": "Select \"דורות.csv\", \"כותרות.csv\", \"גרסאות.csv\", \"<sefer name>.links.csv\", or Otzaria link files (\"<sefer name>_links.json\") and they go into the library. Reimporting updates existing entries and adds any new ones. \"כותרות.csv\" columns: ספר, מבנה, רמה, כותרת, and שורה or טקסט; a רמה of 2 or more creates subheadings.",
   "נקה הכל": "Clear All",
   "בחר קבצי ספרים לייבוא": "Select Files to Import",
   "מחיקת ספר": "Delete Sefer",
