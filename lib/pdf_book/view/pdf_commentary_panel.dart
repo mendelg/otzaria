@@ -1,7 +1,13 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
+import 'package:otzaria/widgets/smart_text/render_settings.dart';
+import 'package:otzaria/tools/dictionary/widgets/laaz_commentary_subblock.dart';
+import 'package:otzaria/tools/dictionary/repository/dictionary_lookup_repository.dart';
 import 'package:otzaria/book_common/view/content_width.dart';
 import 'package:otzaria/book_common/selection/commentary_selection.dart';
+import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
+import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -57,7 +63,9 @@ import 'package:otzaria/core/messages/pdf_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
 import 'package:otzaria/printing/commentary_print_builder.dart';
 import 'package:otzaria/printing/view/printing_screen.dart';
-import 'dart:async'; // Added for Timer
+
+import 'dart:async';
+
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 /// Type alias לתאימות - משתמש ב-LinkGroup מה-Service
@@ -356,6 +364,18 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   }
 
   String? _savedSelectedText;
+  Object? _fullSelectionScope;
+  List<String? Function()>? _fullSelectionLines;
+  String? get _fullSelectionText {
+    final lines = _fullSelectionLines?.map((line) => line()).toList();
+    if (lines == null || lines.any((line) => line == null)) return null;
+    return lines.join('\n');
+  }
+
+  late final _commentarySelectionDelegate = _PdfCommentarySelectionDelegate(
+    scope: () => _fullSelectionScope,
+    fullText: () => _fullSelectionText,
+  );
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
@@ -395,10 +415,10 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
-  Completer<bool>? _pendingGroupPositionWait;
-  VoidCallback? _pendingGroupPositionListener;
-  int? _pendingGroupPositionIndex;
-  String? _pendingGroupPositionTitle;
+  Completer<bool>? _pendingItemPositionWait;
+  VoidCallback? _pendingItemPositionListener;
+  int? _pendingItemPositionIndex;
+  String? _pendingItemPositionId;
   int _searchScrollGeneration = 0;
   final ScrollOffsetController _scrollOffsetController =
       ScrollOffsetController();
@@ -406,6 +426,11 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   final Map<String, GlobalKey> _itemKeys = {};
   List<Link> _orderedLinks = [];
   List<CommentaryGroup> _orderedGroups = [];
+
+  /// One item per group header and one per commentary of an expanded group,
+  /// so the list builds only what is on screen (#844).
+  List<CommentaryFlatItem> _flatItems = const [];
+  Map<String, int> _linkFlatIndex = const {};
 
   /// נשמרות כדי להשאיר את עץ הרשימה חי ומוסתר בזמן טעינת הקטע הבא.
   List<CommentaryGroup>? _lastResolvedGroups;
@@ -691,7 +716,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       _lastResolvedGroups = null;
       _orderedLinks = [];
       _orderedGroups = [];
-      _cancelPendingGroupPositionWait();
+      _cancelPendingItemPositionWait();
       _itemKeys.clear();
       _commentatorGroups = [];
       _loadCommentatorGroups();
@@ -708,7 +733,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   @override
   void dispose() {
-    _cancelPendingGroupPositionWait();
+    _cancelPendingItemPositionWait();
+    _commentarySelectionDelegate.dispose();
     _hiddenSelectionSubscription?.cancel();
     _searchUpdateDebounce?.cancel();
     _searchComputeDebounce?.cancel();
@@ -763,7 +789,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     _lastLinksSignature = 0;
     _orderedLinks = [];
     _orderedGroups = [];
-    _cancelPendingGroupPositionWait();
+    _cancelPendingItemPositionWait();
     _totalSearchResults = 0;
     _currentSearchIndex = 0;
     _searchResultsPerLink.clear();
@@ -816,6 +842,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   /// מרחיב/מכווץ את כל קבוצות המפרשים (להפעלה מסרגל הכלים של הכרטיסייה).
   void toggleAllExpanded() {
+    // Toggling adds or removes items above the view, so the list index would
+    // land elsewhere. Keep the group that was on top in view instead.
+    final anchorTitle = _topVisibleGroupTitle();
     setState(() {
       final nextExpanded = !_allExpanded;
       _allExpanded = nextExpanded;
@@ -827,6 +856,23 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       }
     });
     widget.externalAllExpandedNotifier?.value = _allExpanded;
+    if (anchorTitle == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_itemScrollController.isAttached) return;
+      final index = _flatItems.indexWhere(
+        (item) => item.link == null && item.group.bookTitle == anchorTitle,
+      );
+      if (index >= 0) _itemScrollController.jumpTo(index: index);
+    });
+  }
+
+  String? _topVisibleGroupTitle() {
+    final visible = _itemPositionsListener.itemPositions.value.where(
+      (position) => position.itemTrailingEdge > 0,
+    );
+    if (visible.isEmpty) return null;
+    final top = visible.reduce((a, b) => a.index <= b.index ? a : b).index;
+    return top < _flatItems.length ? _flatItems[top].group.bookTitle : null;
   }
 
   void _scheduleSearchCompute() {
@@ -955,13 +1001,26 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     textsByKey: _renderedTextByKey,
   );
 
+  bool _selectionSpansMultipleItems() {
+    if (_commentarySelectionDelegate.hasCurrentFullSelection &&
+        _flatItems.where((item) => item.link != null).take(2).length > 1) {
+      return true;
+    }
+    return selectionSpansMultipleItems(_itemKeys);
+  }
+
+  String? get _currentSelectedText =>
+      _commentarySelectionDelegate.hasCurrentFullSelection
+      ? _fullSelectionText
+      : _savedSelectedText;
+
   /// העתקת טקסט מעוצב (HTML) ללוח
   Future<void> _copyFormattedText() async {
     await ContextMenuUtils.copyFormattedText(
       context: context,
-      savedSelectedText: _restoreLineBreaks(_savedSelectedText),
+      savedSelectedText: _restoreLineBreaks(_currentSelectedText),
       fontSize: widget.fontSize,
-      link: selectionSpansMultipleItems(_itemKeys) ? null : _lastSelectedLink,
+      link: _selectionSpansMultipleItems() ? null : _lastSelectedLink,
     );
   }
 
@@ -984,21 +1043,21 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       fontSize: widget.fontSize,
       displayProfile: widget.displayProfile,
       copyDisplayProfile: widget.copyDisplayProfile,
-      savedSelectedText: _savedSelectedText,
+      savedSelectedText: _currentSelectedText,
       onNavigateToLink: _navigateToLink,
       onCopySelected: () => ContextMenuUtils.copyFormattedText(
         context: menuCtx,
-        savedSelectedText: _restoreLineBreaks(_savedSelectedText),
+        savedSelectedText: _restoreLineBreaks(_currentSelectedText),
         fontSize: widget.fontSize,
-        link: selectionSpansMultipleItems(_itemKeys)
+        link: _selectionSpansMultipleItems()
             ? null
             : (_lastSelectedLink ?? link),
       ),
       onCopySelectedWithoutNikud: () => ContextMenuUtils.copyFormattedText(
         context: menuCtx,
-        savedSelectedText: _restoreLineBreaks(_savedSelectedText),
+        savedSelectedText: _restoreLineBreaks(_currentSelectedText),
         fontSize: widget.fontSize,
-        link: selectionSpansMultipleItems(_itemKeys)
+        link: _selectionSpansMultipleItems()
             ? null
             : (_lastSelectedLink ?? link),
         removeNikud: true,
@@ -1066,18 +1125,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             }
           },
           tabs: const [
-            PanelTab(
-              icon: OtzariaIcons.book_24_regular,
-              label: 'מפרשים',
-            ),
-            PanelTab(
-              icon: OtzariaIcons.links_24_regular,
-              label: 'קישורים',
-            ),
-            PanelTab(
-              icon: FluentIcons.note_24_regular,
-              label: 'הערות',
-            ),
+            PanelTab(icon: OtzariaIcons.book_24_regular, label: 'מפרשים'),
+            PanelTab(icon: OtzariaIcons.links_24_regular, label: 'קישורים'),
+            PanelTab(icon: FluentIcons.note_24_regular, label: 'הערות'),
           ],
         ),
         // כל לשונית עוטפת את עצמה ב-SelectionArea; המפרשים בנוסף ב-
@@ -1182,10 +1232,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             });
           },
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(
-            minWidth: 40,
-            minHeight: 40,
-          ),
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           iconSize: 20,
         ),
         // 2. הרחב/כווץ הכל — רק כשיש מפרשים פעילים (לוגיקה מקורית)
@@ -1207,10 +1254,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           icon: const Icon(FluentIcons.open_24_regular),
           tooltip: 'פתח כרטסיית מפרשים',
           onPressed: () => context.read<TabsBloc>().add(
-            AddTab(
-              PdfCommentatorsTab.of(widget.tab),
-              insertAdjacent: true,
-            ),
+            AddTab(PdfCommentatorsTab.of(widget.tab), insertAdjacent: true),
           ),
         ),
         const SizedBox(width: gap),
@@ -1313,7 +1357,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   Widget _buildCommentariesView() {
     if (_showFilterTab) {
-      _cancelPendingGroupPositionWait();
+      _cancelPendingItemPositionWait();
       return _buildCommentatorsFilter();
     }
 
@@ -1321,17 +1365,99 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       children: [
         // במצב fullscreen עם חיפוש חיצוני, מסתיר שורת חיפוש פנימית
         if (widget.externalSearchController == null) _buildSearchBar(),
-        Expanded(
-          child: _buildCommentariesListContent(),
-        ),
+        Expanded(child: _buildCommentariesListContent()),
       ],
     );
+  }
+
+  void _invalidateFullSelection() {
+    _fullSelectionScope = null;
+    _fullSelectionLines = null;
+    _savedSelectedText = null;
+  }
+
+  void _prepareFullSelection(
+    List<CommentaryGroup> groups,
+    List<CommentaryFlatItem> items,
+    SettingsState settings,
+  ) {
+    final scope = (
+      groups,
+      widget.displayProfile,
+      settings.replaceHolyNames,
+      settings.holyNameStyle,
+      _allExpanded,
+      items
+          .map(
+            (item) => item.link == null
+                ? 'header:${item.group.bookTitle}'
+                : _getLinkKey(item.link!),
+          )
+          .join('\n'),
+    );
+    if (_fullSelectionScope == scope) return;
+    _fullSelectionScope = scope;
+    _fullSelectionLines = null;
+    _savedSelectedText = null;
+    final renderSettings = RenderSettings.fromProfile(widget.displayProfile);
+    _fullSelectionLines = items.map((item) {
+      final link = item.link;
+      if (link == null) {
+        return () => _pdfCommentaryTitle(item.group.bookTitle, settings);
+      }
+      var title = link.fallbackDisplayReference;
+      unawaited(link.displayReference.then((value) => title = value));
+      final isRashi =
+          LinkTypes.isDependentTextLink(link.connectionType) &&
+          isRashiTitle(utils.getTitleFromPath(link.path2));
+      final dictionary = DictionaryLookupRepository.instance;
+      if (isRashi && !dictionary.areLaazLinksLoaded) {
+        unawaited(dictionary.ensureLaazLinksLoaded().catchError((_) {}));
+      }
+      final loaded = link.loadedContent;
+      String? content = loaded == null
+          ? null
+          : renderSelectionLine(rawText: loaded, settings: renderSettings);
+      unawaited(
+        link.content.then(
+          (data) {
+            content = renderSelectionLine(
+              rawText: data,
+              settings: renderSettings,
+            );
+          },
+          onError: (Object error) {
+            content = 'שגיאה בטעינת הפרשן: $error';
+          },
+        ),
+      );
+      return () {
+        if (content == null) return null;
+        final laaz = isRashi && dictionary.areLaazLinksLoaded
+            ? dictionary
+                  .laazForRashiLine(
+                    rashiBookTitle: utils.getTitleFromPath(link.path2),
+                    rashiLineIndex: link.index2,
+                  )
+                  .map(
+                    (entry) =>
+                        laazCommentaryEntrySpan(entry: entry).toPlainText(),
+                  )
+            : const <String>[];
+        return [
+          _pdfCommentaryLinkTitle(link, title, settings),
+          content,
+          ...laaz,
+        ].join('\n');
+      };
+    }).toList();
   }
 
   Widget _buildCommentariesListContent() {
     final visibleContent = _getVisibleContent();
     if (visibleContent == null) {
-      _cancelPendingGroupPositionWait();
+      _invalidateFullSelection();
+      _cancelPendingItemPositionWait();
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -1347,7 +1473,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     }
 
     if (visibleContent.commentaryLinks.isEmpty) {
-      _cancelPendingGroupPositionWait();
+      _invalidateFullSelection();
+      _cancelPendingItemPositionWait();
       if (widget.linksLoading) {
         return Center(
           child: Padding(
@@ -1412,16 +1539,39 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             snapshot.connectionState == ConnectionState.done && snapshot.hasData
             ? snapshot.data
             : null;
-        if (currentGroups == null) _cancelPendingGroupPositionWait();
+        if (currentGroups == null) {
+          _invalidateFullSelection();
+          _cancelPendingItemPositionWait();
+        }
         final sortedGroups = currentGroups ?? _lastResolvedGroups;
         if (sortedGroups == null) {
           return const Center(child: CircularProgressIndicator());
         }
+        for (final group in sortedGroups) {
+          _expansionStates.putIfAbsent(group.bookTitle, () => _allExpanded);
+        }
+        final linkFlatIndex = <String, int>{};
+        final flatItems = buildCommentaryFlatItems(
+          groups: sortedGroups,
+          isGroupExpanded: (title) => _expansionStates[title] ?? _allExpanded,
+          linkKey: _getLinkKey,
+          headerIndexOut: <String, int>{},
+          linkIndexOut: linkFlatIndex,
+        );
+        if (currentGroups != null) {
+          _prepareFullSelection(
+            currentGroups,
+            flatItems,
+            context.watch<SettingsBloc>().state,
+          );
+        }
+        _flatItems = flatItems;
+        _linkFlatIndex = linkFlatIndex;
         if (currentGroups != null) {
           _lastResolvedGroups = currentGroups;
           _orderedGroups = currentGroups;
-          _cancelPendingWaitIfGroupChanged();
         }
+        _cancelPendingWaitIfItemChanged();
 
         // Rebuild _orderedLinks based on groups
         final orderedLinks = <Link>[];
@@ -1486,49 +1636,50 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           });
         }
 
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Visibility(
-              visible: currentGroups != null,
-              maintainState: true,
-              maintainAnimation: true,
-              maintainSize: true,
-              child: ScrollablePositionedListScrollbar(
-                scrollController: _itemScrollController,
-                offsetController: _scrollOffsetController,
-                itemPositionsListener: _itemPositionsListener,
-                itemCount: sortedGroups.length,
-                labelForIndex: (index) =>
-                    index >= 0 && index < sortedGroups.length
-                    ? sortedGroups[index].bookTitle
-                    : '',
-                child: constrainToContentWidth(
-                  ScrollablePositionedList.builder(
-                    key: PageStorageKey(
-                      pdfCommentaryListStorageKey(
-                        widget.tab.activeCommentators,
+        return SelectionContainer(
+          delegate: _commentarySelectionDelegate,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Visibility(
+                visible: currentGroups != null,
+                maintainState: true,
+                maintainAnimation: true,
+                maintainSize: true,
+                child: ScrollablePositionedListScrollbar(
+                  scrollController: _itemScrollController,
+                  offsetController: _scrollOffsetController,
+                  itemPositionsListener: _itemPositionsListener,
+                  itemCount: flatItems.length,
+                  labelForIndex: (index) =>
+                      index >= 0 && index < flatItems.length
+                      ? flatItems[index].group.bookTitle
+                      : '',
+                  child: constrainToContentWidth(
+                    ScrollablePositionedList.builder(
+                      key: PageStorageKey(
+                        pdfCommentaryListStorageKey(
+                          widget.tab.activeCommentators,
+                        ),
                       ),
+                      itemCount: flatItems.length,
+                      itemScrollController: _itemScrollController,
+                      itemPositionsListener: _itemPositionsListener,
+                      scrollOffsetController: _scrollOffsetController,
+                      itemBuilder: (context, index) =>
+                          _buildFlatItem(flatItems[index]),
                     ),
-                    itemCount: sortedGroups.length,
-                    itemScrollController: _itemScrollController,
-                    itemPositionsListener: _itemPositionsListener,
-                    scrollOffsetController: _scrollOffsetController,
-                    itemBuilder: (context, index) {
-                      final group = sortedGroups[index];
-                      return _buildCommentaryGroupTile(group);
-                    },
+                    widget.contentMaxWidth,
                   ),
-                  widget.contentMaxWidth,
                 ),
               ),
-            ),
-            if (currentGroups == null)
-              ColoredBox(
-                color: Theme.of(context).colorScheme.surface,
-                child: const Center(child: CircularProgressIndicator()),
-              ),
-          ],
+              if (currentGroups == null)
+                ColoredBox(
+                  color: Theme.of(context).colorScheme.surface,
+                  child: const Center(child: CircularProgressIndicator()),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -1536,7 +1687,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   void _scrollToSearchResult() {
     final generation = ++_searchScrollGeneration;
-    _cancelPendingGroupPositionWait();
+    _cancelPendingItemPositionWait();
     if (_totalSearchResults == 0 ||
         _orderedLinks.isEmpty ||
         !_itemScrollController.isAttached) {
@@ -1560,22 +1711,13 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     if (targetLink == null) return;
 
     // 2. מוצא את ה-group שמכיל את ה-link
-    // Since we have _orderedGroups
-    int targetGroupIndex = -1;
-    CommentaryGroup? targetGroup;
-
-    for (int i = 0; i < _orderedGroups.length; i++) {
-      final group = _orderedGroups[i];
-      // Check if link is in group. Note: link instances might differ if rebuilt, so compare by key
-      final targetLinkKey = _getLinkKey(targetLink);
-      if (group.links.any((l) => _getLinkKey(l) == targetLinkKey)) {
-        targetGroupIndex = i;
-        targetGroup = group;
-        break;
-      }
-    }
-
-    if (targetGroupIndex == -1 || targetGroup == null) return;
+    final targetLinkKey = _getLinkKey(targetLink);
+    final targetGroup = _orderedGroups
+        .where(
+          (group) => group.links.any((l) => _getLinkKey(l) == targetLinkKey),
+        )
+        .firstOrNull;
+    if (targetGroup == null) return;
 
     // 3. מבטיח שה-ExpansionTile של הקבוצה פתוח
     final groupTitle = targetGroup.bookTitle;
@@ -1608,15 +1750,14 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           itemContext.findRenderObject() is RenderBox;
 
       if (!itemInRenderTree) {
-        if (_itemScrollController.isAttached) {
+        // The index exists only after the expanded group was laid out.
+        final flatIndex = _linkFlatIndex[linkKey];
+        if (flatIndex != null && _itemScrollController.isAttached) {
           // לא scrollTo: הוא בונה רשימה שנייה, ובשתיהן אותו GlobalKey (issue #1505).
-          _itemScrollController.jumpTo(
-            index: targetGroupIndex,
-            alignment: 0.05,
-          );
-          final reachedTarget = await _waitForGroupPosition(
-            targetGroupIndex,
-            groupTitle,
+          _itemScrollController.jumpTo(index: flatIndex, alignment: 0.05);
+          final reachedTarget = await _waitForItemPosition(
+            flatIndex,
+            'l:$linkKey',
             generation,
           );
           if (!reachedTarget) return;
@@ -1641,19 +1782,28 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     });
   }
 
-  Future<bool> _waitForGroupPosition(
+  /// Identifies a flat list item across rebuilds: its index moves when a
+  /// group above it expands or collapses.
+  String? _flatItemIdAt(int index) {
+    if (index < 0 || index >= _flatItems.length) return null;
+    final item = _flatItems[index];
+    final link = item.link;
+    return link == null
+        ? 'h:${item.group.bookTitle}'
+        : 'l:${_getLinkKey(link)}';
+  }
+
+  Future<bool> _waitForItemPosition(
     int index,
-    String groupTitle,
+    String itemId,
     int generation,
   ) async {
     bool isVisible() => _itemPositionsListener.itemPositions.value.any(
       (position) => position.index == index,
     );
-    bool isTargetGroupCurrent() =>
-        index < _orderedGroups.length &&
-        _orderedGroups[index].bookTitle == groupTitle;
+    bool isTargetItemCurrent() => _flatItemIdAt(index) == itemId;
     if (!mounted || generation != _searchScrollGeneration) return false;
-    if (!isTargetGroupCurrent()) return false;
+    if (!isTargetItemCurrent()) return false;
     if (isVisible()) return true;
 
     final wait = Completer<bool>();
@@ -1661,91 +1811,98 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       if (wait.isCompleted) return;
       if (!mounted ||
           generation != _searchScrollGeneration ||
-          !isTargetGroupCurrent()) {
+          !isTargetItemCurrent()) {
         wait.complete(false);
       } else if (isVisible()) {
         wait.complete(true);
       }
     }
 
-    _pendingGroupPositionWait = wait;
-    _pendingGroupPositionListener = onPositionsChanged;
-    _pendingGroupPositionIndex = index;
-    _pendingGroupPositionTitle = groupTitle;
+    _pendingItemPositionWait = wait;
+    _pendingItemPositionListener = onPositionsChanged;
+    _pendingItemPositionIndex = index;
+    _pendingItemPositionId = itemId;
     _itemPositionsListener.itemPositions.addListener(onPositionsChanged);
     onPositionsChanged();
     try {
       return await wait.future;
     } finally {
       _itemPositionsListener.itemPositions.removeListener(onPositionsChanged);
-      if (identical(_pendingGroupPositionWait, wait)) {
-        _pendingGroupPositionWait = null;
-        _pendingGroupPositionListener = null;
-        _pendingGroupPositionIndex = null;
-        _pendingGroupPositionTitle = null;
+      if (identical(_pendingItemPositionWait, wait)) {
+        _pendingItemPositionWait = null;
+        _pendingItemPositionListener = null;
+        _pendingItemPositionIndex = null;
+        _pendingItemPositionId = null;
       }
     }
   }
 
-  void _cancelPendingWaitIfGroupChanged() {
-    final index = _pendingGroupPositionIndex;
-    final title = _pendingGroupPositionTitle;
-    if (index == null || title == null) return;
-    if (index >= _orderedGroups.length ||
-        _orderedGroups[index].bookTitle != title) {
-      _cancelPendingGroupPositionWait();
-    }
+  void _cancelPendingWaitIfItemChanged() {
+    final index = _pendingItemPositionIndex;
+    final itemId = _pendingItemPositionId;
+    if (index == null || itemId == null) return;
+    if (_flatItemIdAt(index) != itemId) _cancelPendingItemPositionWait();
   }
 
-  void _cancelPendingGroupPositionWait() {
-    final listener = _pendingGroupPositionListener;
+  void _cancelPendingItemPositionWait() {
+    final listener = _pendingItemPositionListener;
     if (listener != null) {
       _itemPositionsListener.itemPositions.removeListener(listener);
     }
-    final wait = _pendingGroupPositionWait;
-    _pendingGroupPositionWait = null;
-    _pendingGroupPositionListener = null;
-    _pendingGroupPositionIndex = null;
-    _pendingGroupPositionTitle = null;
+    final wait = _pendingItemPositionWait;
+    _pendingItemPositionWait = null;
+    _pendingItemPositionListener = null;
+    _pendingItemPositionIndex = null;
+    _pendingItemPositionId = null;
     if (wait != null && !wait.isCompleted) wait.complete(false);
   }
 
-  Widget _buildCommentaryGroupTile(CommentaryGroup group) {
-    final groupKey = group.bookTitle;
-    if (!_expansionStates.containsKey(groupKey)) {
-      _expansionStates[groupKey] = _allExpanded;
-    }
-    final isExpanded = _expansionStates[groupKey] ?? _allExpanded;
-
+  Widget _buildFlatItem(CommentaryFlatItem item) {
+    final group = item.group;
+    final link = item.link;
     return BlocBuilder<SettingsBloc, SettingsState>(
+      key: link == null
+          ? ValueKey('h:${group.bookTitle}')
+          : ValueKey('l:${_getLinkKey(link)}'),
       builder: (context, settingsState) {
-        return _CollapsibleCommentaryGroup(
-          key: PageStorageKey(group.bookTitle),
-          group: group,
-          settingsState: settingsState,
-          tab: widget.tab,
-          fontSize: widget.fontSize,
-          openBookCallback: widget.openBookCallback,
-          buildContextMenu: _buildCommentaryContextMenuEntries,
-          getSavedSelectedText: () => _savedSelectedText,
-          isExpanded: isExpanded,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              _expansionStates[groupKey] = expanded;
-            });
-          },
-          searchQuery: _searchQuery,
-          onSearchResultsCountUpdate: _updateSearchResultsCount,
-          getKeyForLink: _getLinkKeyObject,
-          getItemSearchIndex: _getItemSearchIndex, // Pass the function
-          displayProfile: widget.displayProfile,
-          onLinkRendered: (link, text) =>
-              _renderedTextByKey[_getLinkKey(link)] = text,
-          onLinkTitleRendered: (link, title) =>
-              _renderedTitleByKey[_getLinkKey(link)] = title
-                  .replaceAll(RegExp(r'\s+'), ' ')
-                  .trim(),
-          onLinkPointerDown: (link) => _lastSelectedLink = link,
+        final Widget child;
+        if (link == null) {
+          final groupKey = group.bookTitle;
+          final isExpanded = _expansionStates[groupKey] ?? _allExpanded;
+          child = _PdfCommentaryGroupHeader(
+            bookTitle: groupKey,
+            settingsState: settingsState,
+            isExpanded: isExpanded,
+            onTap: () => setState(() {
+              _expansionStates[groupKey] = !isExpanded;
+            }),
+          );
+        } else {
+          child = _PdfCommentaryLinkItem(
+            link: link,
+            settingsState: settingsState,
+            fontSize: widget.fontSize,
+            openBookCallback: widget.openBookCallback,
+            buildContextMenu: _buildCommentaryContextMenuEntries,
+            getSavedSelectedText: () => _currentSelectedText,
+            searchQuery: _searchQuery,
+            onSearchResultsCountUpdate: _updateSearchResultsCount,
+            getKeyForLink: _getLinkKeyObject,
+            getItemSearchIndex: _getItemSearchIndex,
+            displayProfile: widget.displayProfile,
+            onLinkRendered: (link, text) =>
+                _renderedTextByKey[_getLinkKey(link)] = text,
+            onLinkTitleRendered: (link, title) =>
+                _renderedTitleByKey[_getLinkKey(link)] = title
+                    .replaceAll(RegExp(r'\s+'), ' ')
+                    .trim(),
+            onLinkPointerDown: (link) => _lastSelectedLink = link,
+          );
+        }
+        if (!item.showDivider) return child;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [child, const Divider(height: 1)],
         );
       },
     );
@@ -1964,9 +2121,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       effectiveTypes: effectiveTypes,
       // אותה רשימה שממנה נגזרו הצ׳יפים — וגם מאפשר ל-Expando של המימוש
       // לפגוע, שכן זהות tab.links יציבה לכל חלון קישורים.
-      commentatorsByType: CommentaryTypeFilter.commentatorsByType(
-        visibleLinks,
-      ),
+      commentatorsByType: CommentaryTypeFilter.commentatorsByType(visibleLinks),
       // אסינכרוני: קיבוץ סינכרוני על ה-UI thread קפא בדפי גמרא עם מפרשים רבים.
       sortedGroupsFuture:
           (widget.commentaryGroupsLoader ??
@@ -2065,44 +2220,83 @@ class _KeepAliveTabState extends State<_KeepAliveTab>
 
 /// Widget מותאם אישית להצגת קבוצת מפרשים עם אפשרות כיווץ/הרחבה
 /// שלא מפריע לבחירת טקסט והעתקה (במקום ExpansionTile)
-class _CollapsibleCommentaryGroup extends StatefulWidget {
-  final CommentaryGroup group;
+/// The header of a commentator group: tapping it expands or collapses the
+/// group.
+class _PdfCommentaryGroupHeader extends StatelessWidget {
+  final String bookTitle;
   final SettingsState settingsState;
-  final PdfBookTab tab;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _PdfCommentaryGroupHeader({
+    required this.bookTitle,
+    required this.settingsState,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              turns: isExpanded ? -0.25 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: RtlIcon(
+                FluentIcons.chevron_left_24_regular,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _pdfCommentaryTitle(bookTitle, settingsState),
+                style: TextStyle(
+                  fontSize: settingsState.commentatorsFontSize - 2,
+                  fontWeight: FontWeight.bold,
+                  fontVariations: AppFonts.boldFontVariations(
+                    settingsState.commentatorsFontFamily,
+                  ),
+                  fontFamily: settingsState.commentatorsFontFamily,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One commentary of a group: its reference title and its content.
+class _PdfCommentaryLinkItem extends StatelessWidget {
+  final Link link;
+  final SettingsState settingsState;
   final double fontSize;
   final Function(OpenedTab) openBookCallback;
   final List<AppContextMenuEntry> Function(BuildContext, Link) buildContextMenu;
-  // מחזיר את הטקסט הנבחר הנוכחי (מנוהל ע"י ה-SelectionArea היחיד של הפאנל),
-  // לבדיקה אם לחיצה ימנית נופלת על הבחירה ולכן יש לשמרה.
   final String? Function() getSavedSelectedText;
-  final bool isExpanded;
-  final Function(bool) onExpansionChanged;
   final String searchQuery;
   final Function(Link, int)? onSearchResultsCountUpdate;
-  final Key? Function(Link)? getKeyForLink; // Support linking keys
-  final int Function(Link)? getItemSearchIndex; // Support highlighting
+  final Key? Function(Link)? getKeyForLink;
+  final int Function(Link)? getItemSearchIndex;
   final TextDisplayProfile displayProfile;
-
-  /// מדווח את הטקסט המרונדר של פריט — לשחזור מעברי שורה בהעתקה רב-שורתית.
   final void Function(Link link, String renderedPlainText)? onLinkRendered;
-
-  /// מדווח את הכותרת המרונדרת של פריט — לאותה מטרה.
   final void Function(Link link, String renderedTitle)? onLinkTitleRendered;
-
-  /// נקרא בלחיצת עכבר על פריט — לסימון המפרש שאליו תיוחס כותרת ההעתקה.
   final void Function(Link link)? onLinkPointerDown;
 
-  const _CollapsibleCommentaryGroup({
-    super.key,
-    required this.group,
+  const _PdfCommentaryLinkItem({
+    required this.link,
     required this.settingsState,
-    required this.tab,
     required this.fontSize,
     required this.openBookCallback,
     required this.buildContextMenu,
     required this.getSavedSelectedText,
-    required this.isExpanded,
-    required this.onExpansionChanged,
     required this.searchQuery,
     this.onSearchResultsCountUpdate,
     this.getKeyForLink,
@@ -2114,170 +2308,157 @@ class _CollapsibleCommentaryGroup extends StatefulWidget {
   });
 
   @override
-  State<_CollapsibleCommentaryGroup> createState() =>
-      _CollapsibleCommentaryGroupState();
+  Widget build(BuildContext context) {
+    return Listener(
+      // מזהה על איזה מפרש לחץ המשתמש — ל-SelectionArea היחיד אין מידע
+      // כזה, והוא נדרש לייחוס כותרת המקור בהעתקת מקלדת.
+      onPointerDown: (_) => onLinkPointerDown?.call(link),
+      child: Padding(
+        key: getKeyForLink?.call(link), // Attach the key here for scrolling
+        padding: const EdgeInsets.only(
+          right: 32.0,
+          left: 16.0,
+          top: 8.0,
+          bottom: 8.0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FutureBuilder<String>(
+              future: link.displayReference,
+              builder: (context, snapshot) {
+                final displayTitle = _pdfCommentaryLinkTitle(
+                  link,
+                  snapshot.data ?? link.fallbackDisplayReference,
+                  settingsState,
+                );
+                final reportedTitle = displayTitle;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  onLinkTitleRendered?.call(link, reportedTitle);
+                });
+                return Text(
+                  displayTitle,
+                  style: TextStyle(
+                    fontSize: settingsState.commentatorsFontSize - 4,
+                    fontWeight: FontWeight.normal,
+                    fontFamily: settingsState.commentatorsFontFamily,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 4),
+            AppContextMenuRegion(
+              // ריחוף מקדים את טעינת קישורי קטע היעד, כדי שהתפריט
+              // ייבנה עם נתונים מוכנים. הלחיצה מכסה מגע/עט (אין ריחוף).
+              onHoverEnter: () =>
+                  TargetLineLinksService.instance.prefetchOnHover(link),
+              onSecondaryTapDown: (_) =>
+                  TargetLineLinksService.instance.prefetch(link),
+              // לחיצה ימנית על הטקסט המסומן בפועל לא תשחרר את הבחירה
+              // (התנהגות ברירת המחדל של SelectableRegion ב-Windows); לחיצה
+              // על חלק לא-מסומן מבטלת כרגיל. הבחירה מנוהלת ע"י SelectionArea
+              // יחיד, לכן מחשבים את קטע הבחירה ישירות מול הפסקה שעליה לחצו.
+              shouldPreserveSelectionOnSecondaryTap: (globalPosition) {
+                final selected = getSavedSelectedText();
+                if (selected == null || selected.isEmpty) return false;
+                final root = context.findRenderObject();
+                if (root == null) return true; // סלחני
+                return clickIsOnSelectionWithinArea(
+                      root: root,
+                      globalPosition: globalPosition,
+                      selectedText: selected,
+                    ) ??
+                    true; // לא הוכרע — סלחני
+              },
+              menuBuilder: (menuCtx, _) => buildContextMenu(menuCtx, link),
+              child: CommentaryContent(
+                key: ValueKey(pdfCommentaryItemKey(link)),
+                link: link,
+                fontSize: fontSize,
+                openBookCallback: openBookCallback,
+                searchQuery: searchQuery,
+                onSearchResultsCountChanged: (count) {
+                  onSearchResultsCountUpdate?.call(link, count);
+                },
+                currentSearchIndex: getItemSearchIndex?.call(link) ?? -1,
+                displayProfile: displayProfile,
+                onRendered: (text) => onLinkRendered?.call(link, text),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _CollapsibleCommentaryGroupState
-    extends State<_CollapsibleCommentaryGroup> {
+String _pdfCommentaryTitle(String title, SettingsState settings) =>
+    settings.replaceHolyNames
+    ? utils.replaceHolyNames(title, style: settings.holyNameStyle)
+    : title;
+
+String _pdfCommentaryLinkTitle(
+  Link link,
+  String title,
+  SettingsState settings,
+) {
+  final marker = link.anchorStart == null ? null : anchorMarkerText(link);
+  return _pdfCommentaryTitle(
+    marker == null ? title : '$marker $title',
+    settings,
+  );
+}
+
+// הבחירה המלאה כוללת גם קטעים שלא נבנו; בחירה חלקית נשארת בידי Flutter.
+class _PdfCommentarySelectionDelegate extends StaticSelectionContainerDelegate {
+  _PdfCommentarySelectionDelegate({
+    required this.scope,
+    required this.fullText,
+  });
+
+  final Object? Function() scope;
+  final String? Function() fullText;
+  Object? _selectedScope;
+  bool _selectAll = false;
+
+  bool get hasCurrentFullSelection =>
+      _selectAll && _selectedScope != null && _selectedScope == scope();
+
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // כותרת הקבוצה - ניתנת ללחיצה להרחבה/כיווץ
-        InkWell(
-          onTap: () {
-            widget.onExpansionChanged(!widget.isExpanded);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 12.0,
-            ),
-            child: Row(
-              children: [
-                AnimatedRotation(
-                  turns: widget.isExpanded ? -0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: RtlIcon(
-                    FluentIcons.chevron_left_24_regular,
-                    size: 20,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    widget.settingsState.replaceHolyNames
-                        ? utils.replaceHolyNames(
-                            widget.group.bookTitle,
-                            style: widget.settingsState.holyNameStyle,
-                          )
-                        : widget.group.bookTitle,
-                    style: TextStyle(
-                      fontSize: widget.settingsState.commentatorsFontSize - 2,
-                      fontWeight: FontWeight.bold,
-                      fontVariations: AppFonts.boldFontVariations(
-                        widget.settingsState.commentatorsFontFamily,
-                      ),
-                      fontFamily: widget.settingsState.commentatorsFontFamily,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        // תוכן המפרשים - מוצג רק כשמורחב
-        if (widget.isExpanded)
-          ...widget.group.links.map((link) {
-            return Listener(
-              // מזהה על איזה מפרש לחץ המשתמש — ל-SelectionArea היחיד אין מידע
-              // כזה, והוא נדרש לייחוס כותרת המקור בהעתקת מקלדת.
-              onPointerDown: (_) => widget.onLinkPointerDown?.call(link),
-              child: Padding(
-                key: widget.getKeyForLink?.call(
-                  link,
-                ), // Attach the key here for scrolling
-                padding: const EdgeInsets.only(
-                  right: 32.0,
-                  left: 16.0,
-                  top: 8.0,
-                  bottom: 8.0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FutureBuilder<String>(
-                      future: link.displayReference,
-                      builder: (context, snapshot) {
-                        var displayTitle =
-                            snapshot.data ?? link.fallbackDisplayReference;
-                        // קישור עם עוגן-מילה: אות הסימון שמופיעה בגוף הטקסט
-                        // מוצגת גם לפני כותרת ההערה.
-                        if (link.anchorStart != null) {
-                          final markerText = anchorMarkerText(link);
-                          if (markerText != null) {
-                            displayTitle = '$markerText $displayTitle';
-                          }
-                        }
-                        if (widget.settingsState.replaceHolyNames) {
-                          displayTitle = utils.replaceHolyNames(
-                            displayTitle,
-                            style: widget.settingsState.holyNameStyle,
-                          );
-                        }
-                        final reportedTitle = displayTitle;
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          widget.onLinkTitleRendered?.call(link, reportedTitle);
-                        });
-                        return Text(
-                          displayTitle,
-                          style: TextStyle(
-                            fontSize:
-                                widget.settingsState.commentatorsFontSize - 4,
-                            fontWeight: FontWeight.normal,
-                            fontFamily:
-                                widget.settingsState.commentatorsFontFamily,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    AppContextMenuRegion(
-                      // ריחוף מקדים את טעינת קישורי קטע היעד, כדי שהתפריט
-                      // ייבנה עם נתונים מוכנים. הלחיצה מכסה מגע/עט (אין ריחוף).
-                      onHoverEnter: () =>
-                          TargetLineLinksService.instance.prefetchOnHover(link),
-                      onSecondaryTapDown: (_) =>
-                          TargetLineLinksService.instance.prefetch(link),
-                      // לחיצה ימנית על הטקסט המסומן בפועל לא תשחרר את הבחירה
-                      // (התנהגות ברירת המחדל של SelectableRegion ב-Windows); לחיצה
-                      // על חלק לא-מסומן מבטלת כרגיל. הבחירה מנוהלת ע"י SelectionArea
-                      // יחיד, לכן מחשבים את קטע הבחירה ישירות מול הפסקה שעליה לחצו.
-                      shouldPreserveSelectionOnSecondaryTap: (globalPosition) {
-                        final selected = widget.getSavedSelectedText();
-                        if (selected == null || selected.isEmpty) return false;
-                        final root = context.findRenderObject();
-                        if (root == null) return true; // סלחני
-                        return clickIsOnSelectionWithinArea(
-                              root: root,
-                              globalPosition: globalPosition,
-                              selectedText: selected,
-                            ) ??
-                            true; // לא הוכרע — סלחני
-                      },
-                      menuBuilder: (menuCtx, _) =>
-                          widget.buildContextMenu(menuCtx, link),
-                      child: CommentaryContent(
-                        key: ValueKey(pdfCommentaryItemKey(link)),
-                        link: link,
-                        fontSize: widget.fontSize,
-                        openBookCallback: widget.openBookCallback,
-                        searchQuery: widget.searchQuery,
-                        onSearchResultsCountChanged: (count) {
-                          widget.onSearchResultsCountUpdate?.call(link, count);
-                        },
-                        currentSearchIndex:
-                            widget.getItemSearchIndex?.call(link) ?? -1,
-                        displayProfile: widget.displayProfile,
-                        onRendered: (text) =>
-                            widget.onLinkRendered?.call(link, text),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }),
-        const Divider(height: 1),
-      ],
+  SelectionResult dispatchSelectionEvent(SelectionEvent event) {
+    _selectAll = event.type == SelectionEventType.selectAll;
+    _selectedScope = scope();
+    return super.dispatchSelectionEvent(event);
+  }
+
+  @override
+  SelectionGeometry getSelectionGeometry() {
+    final geometry = super.getSelectionGeometry();
+    if (!hasCurrentFullSelection) return geometry;
+    // קצות הבחירה המלאה יכולים להיות מחוץ למסך גם כשאין שורה נבחרת בנויה.
+    return SelectionGeometry(
+      startSelectionPoint: geometry.startSelectionPoint,
+      endSelectionPoint: geometry.endSelectionPoint,
+      selectionRects: geometry.selectionRects,
+      status: SelectionStatus.uncollapsed,
+      hasContent: true,
     );
+  }
+
+  @override
+  SelectedContent? getSelectedContent() {
+    if (!_selectAll) return super.getSelectedContent();
+    final text = hasCurrentFullSelection ? fullText() : null;
+    return text == null ? null : SelectedContent(plainText: text);
+  }
+
+  @override
+  void ensureChildUpdated(Selectable selectable) {
+    if (hasCurrentFullSelection) {
+      selectable.dispatchSelectionEvent(const SelectAllSelectionEvent());
+    } else {
+      super.ensureChildUpdated(selectable);
+    }
   }
 }

@@ -3,6 +3,7 @@ import 'package:otzaria/widgets/misc/rtl_icon.dart';
 import 'package:otzaria/book_common/view/content_width.dart';
 import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
+import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'package:flutter/gestures.dart';
@@ -55,7 +56,9 @@ import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/widgets/feedback/app_future_builder.dart';
 import 'package:otzaria/widgets/feedback/scrollable_positioned_list_scrollbar.dart';
 import 'package:flutter/foundation.dart';
+
 import 'dart:async';
+
 import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart'
     as inline_notes;
@@ -677,10 +680,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       child: IconButton(
         iconSize: 18,
         padding: const EdgeInsets.all(8),
-        constraints: const BoxConstraints(
-          minWidth: 36,
-          minHeight: 36,
-        ),
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         icon: const Icon(FluentIcons.dismiss_24_regular),
         onPressed: widget.onClosePane,
       ),
@@ -697,10 +697,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
           isActive: false,
           onPressed: _openCommentatorsFilter,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(
-            minWidth: 40,
-            minHeight: 40,
-          ),
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           iconSize: 20,
         ),
         // 2. הרחב/כווץ הכל — רק כשיש מפרשים נבחרים (לוגיקה מקורית)
@@ -2147,10 +2144,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                               if (!item.showDivider) return child;
                               return Column(
                                 mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  child,
-                                  const Divider(height: 1),
-                                ],
+                                children: [child, const Divider(height: 1)],
                               );
                             },
                           );
@@ -2282,9 +2276,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
           if (widget.externalSearchController != null) {
             return Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(fit: FlexFit.loose, child: buildList()),
-              ],
+              children: [Flexible(fit: FlexFit.loose, child: buildList())],
             );
           }
 
@@ -2297,10 +2289,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                     ? _buildSearchFieldRow()
                     : _buildButtonsRow(selectedCommentators),
               ),
-              Flexible(
-                fit: FlexFit.loose,
-                child: buildList(),
-              ),
+              Flexible(fit: FlexFit.loose, child: buildList()),
             ],
           );
         } else {
@@ -2333,9 +2322,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                   ),
                 ),
               // הרשימה
-              Flexible(
-                child: buildList(),
-              ),
+              Flexible(child: buildList()),
             ],
           );
         }
@@ -2418,68 +2405,6 @@ class _SkeletonLine extends StatelessWidget {
   }
 }
 
-/// פריט ברשימת המפרשים השטוחה: כותרת קבוצה (כש-[link] הוא null) או קטע מפרש
-/// בודד. [showDivider] — הפריט האחרון של הקבוצה (המפריד מצויר אחריו).
-@visibleForTesting
-class CommentaryFlatItem {
-  final CommentaryGroup group;
-  final Link? link;
-  final bool showDivider;
-
-  const CommentaryFlatItem({
-    required this.group,
-    this.link,
-    required this.showDivider,
-  });
-}
-
-/// בונה את פריטי הרשימה השטוחה: פריט כותרת לכל קבוצה, ופריט לכל קטע רק
-/// בקבוצה מורחבת — כך הרשימה נבנית בעצלנות (issue #844). [headerIndexOut]
-/// ו-[linkIndexOut] מקבלים את מיפוי האינדקסים לגלילה.
-@visibleForTesting
-List<CommentaryFlatItem> buildCommentaryFlatItems({
-  required List<CommentaryGroup> groups,
-  required bool Function(String bookTitle) isGroupExpanded,
-  required String Function(Link link) linkKey,
-  required Map<String, int> headerIndexOut,
-  required Map<String, int> linkIndexOut,
-}) {
-  final items = <CommentaryFlatItem>[];
-  for (final group in groups) {
-    final expanded = isGroupExpanded(group.bookTitle);
-    headerIndexOut[group.bookTitle] = items.length;
-    items.add(CommentaryFlatItem(group: group, showDivider: !expanded));
-    if (!expanded) continue;
-    for (int i = 0; i < group.links.length; i++) {
-      final link = group.links[i];
-      linkIndexOut[linkKey(link)] = items.length;
-      items.add(
-        CommentaryFlatItem(
-          group: group,
-          link: link,
-          showDivider: i == group.links.length - 1,
-        ),
-      );
-    }
-  }
-  return items;
-}
-
-/// כותרת הקבוצה שהפריט [flatIndex] שייך לה, לפי מיפוי הכותרות
-/// [headerIndexes] (כותרת → אינדקס ברשימה השטוחה) — הכותרת הקרובה ביותר מעליו.
-@visibleForTesting
-String? groupTitleAtFlatIndex(Map<String, int> headerIndexes, int flatIndex) {
-  String? title;
-  int best = -1;
-  headerIndexes.forEach((groupTitle, index) {
-    if (index <= flatIndex && index > best) {
-      best = index;
-      title = groupTitle;
-    }
-  });
-  return title;
-}
-
 /// כותרת קבוצת מפרשים ברשימה השטוחה — לחיצה מרחיבה/מכווצת דרך ההורה,
 /// בלי להפריע לבחירת טקסט והעתקה (במקום ExpansionTile).
 class _CommentaryGroupHeader extends StatelessWidget {
@@ -2501,10 +2426,7 @@ class _CommentaryGroupHeader extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16.0,
-          vertical: 12.0,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Row(
           children: [
             AnimatedRotation(
@@ -2685,10 +2607,7 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                     final reportedTitle = displayTitle;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
-                      widget.onLinkTitleRendered?.call(
-                        link,
-                        reportedTitle,
-                      );
+                      widget.onLinkTitleRendered?.call(link, reportedTitle);
                     });
                     return Text(
                       displayTitle,
@@ -2806,17 +2725,13 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                     onSearchResultsCountChanged:
                         (widget.showSearch ||
                             widget.highlightQueryListenable != null)
-                        ? (count) => widget.updateSearchResultsCount(
-                            link,
-                            count,
-                          )
+                        ? (count) =>
+                              widget.updateSearchResultsCount(link, count)
                         : null,
                     onSearchSnippetsChanged:
                         widget.showSearch && widget.updateSearchSnippets != null
-                        ? (snippets) => widget.updateSearchSnippets!(
-                            link,
-                            snippets,
-                          )
+                        ? (snippets) =>
+                              widget.updateSearchSnippets!(link, snippets)
                         : null,
                     onRendered: (text) =>
                         widget.onLinkRendered?.call(link, text),
