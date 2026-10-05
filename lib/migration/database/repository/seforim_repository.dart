@@ -3384,16 +3384,28 @@ extension BookAcronymRepository on SeforimRepository {
       entryParentIds[e.id] = e.parentId;
     }
 
-    // h1 יחיד בשורה 0 שחולק מילה עם שם הספר הוא כותרת הספר בפורמט אוצריא;
-    // כמו רמה 0, אינו חלק מהכתובת.
-    List<String> words(String s) => normalizeForFindRefMatch(s).split(' ');
-    final titleWords = words(bookTitle).where((w) => w.length > 2).toSet();
-    final h1s = tocEntries.where((e) => e.level == 1 && e.parentId == null);
+    // קיצור מותר רק לשם מלא של הספר; כותרת עם הקשר נוסף נשארת בכתובת.
+    String titleKey(String text) => normalizeForFindRefMatch(text)
+        .replaceFirst(RegExp(r'^(?:(?:ספר|שות) )+'), '')
+        .replaceAll('על מסכת ', 'על ')
+        .split(' ')
+        .map((word) => word == 'חידושי' ? 'חדושי' : word)
+        .join(' ');
+    final title = titleKey(bookTitle);
+    final roots = tocEntries
+        .where((e) {
+          final parentLevel = entryLevels[e.parentId];
+          return e.level != 0 && (parentLevel == null || parentLevel == 0);
+        })
+        .toList(growable: false);
     final titleHeadingId =
-        h1s.length == 1 &&
-            h1s.single.lineIndex == 0 &&
-            words(h1s.single.text).any(titleWords.contains)
-        ? h1s.single.id
+        roots.length == 1 &&
+            roots.single.level == 1 &&
+            roots.single.parentId == null &&
+            roots.single.lineIndex == 0 &&
+            title.isNotEmpty &&
+            titleKey(roots.single.text) == title
+        ? roots.single.id
         : null;
 
     final pathById = <int, String>{};
@@ -3469,6 +3481,9 @@ extension BookAcronymRepository on SeforimRepository {
       all: built,
       rootEntries: rootEntries,
       childrenByParentId: childrenByParentId,
+      titleHeadingTokens: titleHeadingId == null
+          ? const []
+          : tokensByTextId[roots.single.textId]!,
       hasBareDafHeadings: hasBareDafMark('.') && hasBareDafMark(':'),
     );
     _putTocCache(bookId, cache);
@@ -3620,7 +3635,11 @@ extension BookAcronymRepository on SeforimRepository {
       ).split(' ').where((t) => t.isNotEmpty).toList(growable: false);
       for (final token in tokens) {
         final alts = hebrewTokenAlternatives(token);
-        if (!alts.any((a) => pathTokens.contains(a))) return false;
+        if (!alts.any(
+          (a) => pathTokens.contains(a) || cache.titleHeadingTokens.contains(a),
+        )) {
+          return false;
+        }
       }
       return true;
     }).toList();
@@ -3987,6 +4006,9 @@ class _TocBookCache {
   /// מיפוי id → ילדים ישירים (ממוינים לפי segment).
   final Map<int, List<_CachedTocEntry>> childrenByParentId;
 
+  /// מילות השורש שקוצר בתצוגה; משותפות רק לספר שכל ערכיו תחת אותו שורש.
+  final List<String> titleHeadingTokens;
+
   /// כותרות דף בלי "דף" בשני העמודים ("ב." וגם "ב:") — ספר שבנוי מדפים, ולא
   /// סעיפים ממוספרים ("א.", "ב.").
   final bool hasBareDafHeadings;
@@ -4002,5 +4024,6 @@ class _TocBookCache {
     required this.rootEntries,
     required this.childrenByParentId,
     this.hasBareDafHeadings = false,
+    this.titleHeadingTokens = const [],
   });
 }
