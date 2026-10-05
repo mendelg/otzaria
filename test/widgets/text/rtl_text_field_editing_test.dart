@@ -500,4 +500,48 @@ void main() {
     await tester.pump();
     expect(changes, ['א']);
   });
+  testWidgets('clipboard failure reports its exception, context and stack', (
+    tester,
+  ) async {
+    final error = PlatformException(code: 'clipboard_unavailable');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') throw error;
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final controller = TextEditingController(text: 'א\nב');
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      host(RtlTextField(controller: controller, maxLines: null)),
+    );
+    await tester.tap(find.byType(TextField));
+    controller.selection = const TextSelection(baseOffset: 0, extentOffset: 3);
+    await tester.pump();
+    final reported = <FlutterErrorDetails>[];
+    final originalOnError = FlutterError.onError;
+    FlutterError.onError = reported.add;
+    try {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump();
+      expect(reported, hasLength(1));
+      expect(reported.single.exception, isA<PlatformException>());
+      expect((reported.single.exception as PlatformException).code, error.code);
+      expect(reported.single.stack, isNotNull);
+      expect(reported.single.stack.toString(), isNotEmpty);
+      expect(reported.single.context?.toDescription(), contains('העתקת טקסט'));
+      expect(controller.text, 'א\nב');
+    } finally {
+      FlutterError.onError = originalOnError;
+    }
+  });
 }
