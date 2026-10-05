@@ -297,6 +297,24 @@ typedef _CommentaryScrollTarget = ({
   String? linkKey,
 });
 
+final _detailsTag = RegExp(r'<details\b', caseSensitive: false);
+
+// מעבר אנימציה בונה שתי רשימות; scope מבדיל בין עותקי אותו פריט.
+class _ParagraphStateKey extends GlobalKey {
+  const _ParagraphStateKey(this.scope, this.index) : super.constructor();
+  final Object scope;
+  final int index;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ParagraphStateKey &&
+      identical(scope, other.scope) &&
+      index == other.index;
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(scope), index);
+}
+
 class _CombinedViewState extends State<CombinedView> {
   bool _anchorHandledCurrentTap = false;
   final ParagraphCommentatorsCache _paragraphCommentatorsCache =
@@ -2283,19 +2301,15 @@ class _CombinedViewState extends State<CombinedView> {
       return null;
     }();
 
-    return Column(
-      key: PageStorageKey(
-        'segment-${segment?.startLineIndex ?? primaryLineIndex}',
-      ),
+    Widget paragraph(Key key) => Column(
+      key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // הטקסט של הספר - ללא SelectionArea נפרד, כי יש SelectionArea כללי
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
-          // decoration קבוע (גם כשהצבע null) — מעבר null<->BoxDecoration היה
-          // מוסיף/מסיר DecoratedBox ומשנה את עומק הטקסט ב-tree, מה שאיפס מצב
-          // <details> פתוח (טקסט מוסתר) בכל בחירת שורה.
+          // decoration קבוע שומר על עומק הטקסט ועל מצב <details> בבחירה.
           decoration: BoxDecoration(color: backgroundColor),
           child: Listener(
             onPointerDown: (event) {
@@ -2731,6 +2745,16 @@ class _CombinedViewState extends State<CombinedView> {
           _buildCommentaryCard(state, selectedLineIndex),
       ],
     );
+
+    // החלפת עוגן מחליפה slivers; רק תוכן אינטראקטיבי צריך לעבור ביניהם.
+    if (_detailsTag.hasMatch(widget.data[primaryLineIndex])) {
+      return Builder(
+        builder: (itemContext) => paragraph(
+          _ParagraphStateKey(Scrollable.of(itemContext), primaryLineIndex),
+        ),
+      );
+    }
+    return paragraph(PageStorageKey('segment-$primaryLineIndex'));
   }
 
   /// כרטיס המפרשים שמוצג מתחת לשורה נבחרת במצב "מפרשים מתחת לטקסט".
