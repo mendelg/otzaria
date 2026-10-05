@@ -40,18 +40,17 @@ class PersonalNotesDatabase {
 
   /// Get or initialize the database
   Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDatabase();
-    return _database!;
+    final open = _database;
+    if (open != null) return open;
+    final dbPath = await AppPaths.resolveNotesDbPath('personal_notes.db');
+    return _database ??= _initDatabase(dbPath);
   }
 
   /// המסד, רק אם כבר נפתח.
   Database? get openDatabase => _database;
 
   /// Initialize the database
-  Future<Database> _initDatabase() async {
-    final dbPath = await AppPaths.resolveNotesDbPath('personal_notes.db');
-
+  Database _initDatabase(String dbPath) {
     final db = openWritableDatabase(dbPath, 'PersonalNotesDatabase');
     _createSchema(db);
     _migrateSchema(db);
