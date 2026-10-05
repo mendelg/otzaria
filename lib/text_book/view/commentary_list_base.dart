@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'package:flutter/gestures.dart';
@@ -526,28 +527,17 @@ class CommentaryListBaseState extends State<CommentaryListBase>
   }
 
   int _getItemSearchIndex(Link link) {
-    // מחשב את האינדקס המצטבר עד ל-link הנוכחי
-    int cumulativeIndex = 0;
     final linkKey = _getLinkKey(link);
-
-    for (final orderedLink in _orderedLinks) {
-      final currentKey = _getLinkKey(orderedLink);
-      if (currentKey == linkKey) {
-        // מצאנו את ה-link הנוכחי
-        final itemResults = _searchResultsPerLink[linkKey] ?? 0;
-        if (itemResults == 0) return -1;
-
-        // מחשב את האינדקס היחסי בתוך ה-link הזה
-        final relativeIndex =
-            _currentSearchIndexNotifier.value - cumulativeIndex;
-        return (relativeIndex >= 0 && relativeIndex < itemResults)
-            ? relativeIndex
-            : -1;
-      }
-      cumulativeIndex += _searchResultsPerLink[currentKey] ?? 0;
-    }
-
-    return -1;
+    if ((_searchResultsPerLink[linkKey] ?? 0) == 0) return -1;
+    return commentarySearchRelativeIndex(
+      key: linkKey,
+      currentIndex: _currentSearchIndexNotifier.value,
+      offsets: commentarySearchOffsets(
+        _orderedLinks.map(_getLinkKey),
+        _searchResultsPerLink,
+      ),
+      countsByKey: _searchResultsPerLink,
+    );
   }
 
   // מתודות ציבוריות לניווט בחיפוש (למשל מ-CommentatorsTabScreen)
@@ -1598,22 +1588,12 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       if (!mounted) return;
       _searchResultsPerLink.addAll(_pendingCounts);
       _pendingCounts.clear();
-      _totalSearchResultsNotifier.value = _searchResultsPerLink.values.fold(
-        0,
-        (sum, count) => sum + count,
+      _totalSearchResultsNotifier.value = totalCommentarySearchResults(
+        _searchResultsPerLink,
       );
 
-      // עדכון נוטיפייר חיצוני לתוצאות לפי מפרש
-      if (widget.externalSearchResultsByPathNotifier != null) {
-        final byPath = <String, int>{};
-        for (final entry in _searchResultsPerLink.entries) {
-          final path = _linkKeyToPath[entry.key] ?? '';
-          if (path.isNotEmpty && entry.value > 0) {
-            byPath[path] = (byPath[path] ?? 0) + entry.value;
-          }
-        }
-        widget.externalSearchResultsByPathNotifier!.value = byPath;
-      }
+      widget.externalSearchResultsByPathNotifier?.value =
+          commentarySearchCountsByPath(_searchResultsPerLink, _linkKeyToPath);
 
       // עדכון נוטיפייר קטעי החיפוש (snippets)
       _scheduleSnippetsNotifierRebuild();
@@ -1635,25 +1615,14 @@ class CommentaryListBaseState extends State<CommentaryListBase>
   }
 
   void _rebuildSnippetsNotifier() {
-    if (widget.externalSearchSnippetsNotifier == null) return;
-    final List<CommentarySearchSnippet> result = [];
-    int globalIndex = 0;
-    for (final link in _orderedLinks) {
-      final key = _getLinkKey(link);
-      final count = _searchResultsPerLink[key] ?? 0;
-      final snippets = _searchSnippetsPerLink[key] ?? [];
-      for (int i = 0; i < snippets.length; i++) {
-        result.add(
-          CommentarySearchSnippet(
-            path: link.path2,
-            snippet: snippets[i],
-            globalIndex: globalIndex,
-          ),
+    widget.externalSearchSnippetsNotifier?.value =
+        orderCommentarySearchSnippets<Link>(
+          items: _orderedLinks,
+          keyOf: _getLinkKey,
+          pathOf: (link) => link.path2,
+          countsByKey: _searchResultsPerLink,
+          snippetsOf: (key, _) => _searchSnippetsPerLink[key] ?? const [],
         );
-      }
-      globalIndex += count;
-    }
-    widget.externalSearchSnippetsNotifier!.value = result;
   }
 
   void _scheduleSnippetsNotifierRebuild() {
