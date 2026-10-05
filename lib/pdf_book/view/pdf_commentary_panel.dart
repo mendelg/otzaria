@@ -529,6 +529,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         .listen((_) => _refreshVisibility());
     _loadCommentatorGroups();
     _scrolledRangeKey = _currentRangeKey();
+    _searchScopeKey = _currentLinksScopeKey();
   }
 
   void _onExternalSearchChanged() {
@@ -726,6 +727,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   /// טווח השורות שהרשימה גוללה עבורו. מפתחות הרשימה קבועים ולכן ה-State שורד
   /// דפדוף; בלי איפוס מפורש הדף החדש נפתח על היסט הדף הקודם.
   String? _scrolledRangeKey;
+  String? _searchScopeKey;
 
   /// מזהה הטווח הנוכחי, או null כשאין מיקום. נגזר מאותם override-ים שמזינים
   /// את הרשימה, כדי שהאיפוס יתרחש בדיוק כשהתוכן מתחלף.
@@ -747,10 +749,18 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   void _resetScrollIfRangeChanged() {
     final rangeKey = _currentRangeKey();
-    if (rangeKey == null || _scrolledRangeKey == rangeKey) return;
-    final isFirstRange = _scrolledRangeKey == null;
+    final scopeKey = _currentLinksScopeKey();
+    if (scopeKey == null || _searchScopeKey == scopeKey) return;
+    final isFirstRange = _searchScopeKey == null;
+    final rangeChanged = _scrolledRangeKey != rangeKey;
     _scrolledRangeKey = rangeKey;
+    _searchScopeKey = scopeKey;
     if (isFirstRange) return;
+    _searchComputeGen++;
+    _searchScrollGeneration++;
+    _searchComputeDebounce?.cancel();
+    _searchUpdateDebounce?.cancel();
+    _lastLinksSignature = 0;
     _orderedLinks = [];
     _orderedGroups = [];
     _cancelPendingGroupPositionWait();
@@ -759,12 +769,14 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     _searchResultsPerLink.clear();
     _searchSnippetsPerLink.clear();
     _pendingCounts.clear();
-    widget.externalTotalResultsNotifier?.value = 0;
-    widget.externalCurrentIndexNotifier?.value = 0;
-    _publishSearchSnippets();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_itemScrollController.isAttached) return;
-      _itemScrollController.jumpTo(index: 0);
+      if (!mounted || _searchScopeKey != scopeKey) return;
+      widget.externalTotalResultsNotifier?.value = _totalSearchResults;
+      widget.externalCurrentIndexNotifier?.value = _currentSearchIndex;
+      _publishSearchSnippets();
+      if (rangeChanged && _itemScrollController.isAttached) {
+        _itemScrollController.jumpTo(index: 0);
+      }
     });
   }
 
@@ -923,8 +935,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         );
 
         // Reset current index if out of bounds
-        if (_currentSearchIndex >= _totalSearchResults &&
-            _totalSearchResults > 0) {
+        if (_currentSearchIndex >= _totalSearchResults) {
           _currentSearchIndex = 0;
         }
         widget.externalTotalResultsNotifier?.value = _totalSearchResults;
