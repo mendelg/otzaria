@@ -324,6 +324,10 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   void _openSearchPanel() {
     setState(() => _navPaneOpen = true);
     _navTabController.animateTo(_searchTabIndex);
+    // The tab listener focuses the field only when the tab changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   void _openCommentatorsTab() {
@@ -666,7 +670,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
 
     return Focus(
       autofocus: true,
-      onKeyEvent: _handlePrintShortcut,
+      onKeyEvent: _handleTabShortcuts,
       child: Scaffold(
         body: Column(
           children: [
@@ -751,7 +755,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   }
 
   /// מטפל בקיצור ההדפסה המוגדר — פעיל רק בכרטיסיית המפרשים.
-  KeyEventResult _handlePrintShortcut(FocusNode node, KeyEvent event) {
+  KeyEventResult _handleTabShortcuts(FocusNode node, KeyEvent event) {
     final printShortcut =
         Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
     if (ShortcutHelper.matchesShortcut(event, printShortcut)) {
