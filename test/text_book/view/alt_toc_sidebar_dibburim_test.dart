@@ -119,11 +119,7 @@ void main() {
     );
 
     expect(find.text('דיבורי המתחיל'), findsOneWidget);
-    // המבנה מכווץ עד לחיצה, גם כשהוא היחיד.
-    expect(find.text('דף ב.'), findsNothing);
-
-    await _expand(tester, 'דיבורי המתחיל');
-    // הדפים גלויים ומכווצים.
+    // מבנה יחיד נפתח מעצמו, והדפים שבו גלויים ומכווצים.
     expect(find.text('דף ב.'), findsOneWidget);
     expect(find.text('דף ב:'), findsOneWidget);
     // "דף ג." אין תחתיו דיבור ולכן אינו במבנה.
@@ -160,10 +156,6 @@ void main() {
       visibleIndices: const [10],
     );
 
-    // מבנה מכווץ: דבר לא נפתח בגלל המיקום.
-    expect(find.text('דף ב:'), findsNothing);
-
-    await _expand(tester, 'דיבורי המתחיל');
     // הדף של המיקום מסומן; הדיבור שבו קוראים עדיין מוסתר.
     expect(_tile(tester, 'דף ב:').isSelected, isTrue);
     expect(find.text('אמר ליה'), findsNothing);
