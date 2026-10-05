@@ -12,8 +12,9 @@ import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 
-/// The selected text as a reader's context menu searches for it: trimmed
-/// and without nikud or teamim, since search always ignores them.
+/// The selected text as a reader's context menu searches for it: without
+/// nikud or teamim, which search ignores, and with whitespace collapsed,
+/// since a selection across lines brings line breaks.
 class ReaderMenuSelection {
   ReaderMenuSelection(String? selectedText) : cleaned = _clean(selectedText);
 
@@ -28,8 +29,9 @@ class ReaderMenuSelection {
   }
 
   static String _clean(String? text) {
-    final raw = text?.trim() ?? '';
-    return utils.hasNikud(raw) ? utils.removeVolwels(raw).trim() : raw;
+    var raw = text?.trim() ?? '';
+    if (utils.hasNikud(raw)) raw = utils.removeVolwels(raw);
+    return raw.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 }
 
@@ -46,13 +48,9 @@ AppContextMenuEntry buildReaderIconRow({
 }) {
   final bookId = book.id;
   return AppContextMenuEntry.iconRow([
-    AppContextMenuIconAction(
-      label: 'חיפוש',
-      tooltip: selection.hasText
-          ? 'חיפוש "${selection.quote(14)}" בכל הספרים'
-          : 'חיפוש בכל הספרים',
-      icon: FluentIcons.library_24_regular,
+    buildSearchAllBooksIconAction(
       enabled: selection.hasText,
+      quote: selection.hasText ? selection.quote(14) : null,
       onTap: () =>
           openGlobalSearch(context, selection.cleaned, insertAdjacent: true),
     ),
@@ -79,6 +77,22 @@ AppContextMenuEntry buildReaderIconRow({
         ),
       ),
   ]);
+}
+
+/// The "search all books" action of a reader's icon row; [quote] is the
+/// selection shown in the tooltip.
+AppContextMenuIconAction buildSearchAllBooksIconAction({
+  required bool enabled,
+  required VoidCallback onTap,
+  String? quote,
+}) {
+  return AppContextMenuIconAction(
+    label: 'חיפוש',
+    tooltip: quote != null ? 'חיפוש "$quote" בכל הספרים' : 'חיפוש בכל הספרים',
+    icon: FluentIcons.library_24_regular,
+    enabled: enabled,
+    onTap: onTap,
+  );
 }
 
 /// The children of a paragraph's "קישורים" submenu: [openPaneEntry], when

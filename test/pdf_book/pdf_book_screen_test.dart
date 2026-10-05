@@ -567,8 +567,8 @@ void main() {
         ),
         hasTextSelection: hasTextSelection,
         canCopySelection: canCopySelection ?? hasTextSelection,
-        onSearch: () {},
-        onSearchParallels: () {},
+        onSearchInBook: () {},
+        onSearchAllBooks: () {},
         onCopySelection: onCopySelection ?? () {},
         onAddBookmark: () {},
         onAddNote: () {},
@@ -603,6 +603,22 @@ void main() {
       );
     });
 
+    test('"חיפוש" בשורת האייקונים מחפש בכל הספרים, כמו בתצוגת הטקסט', () {
+      final menu = buildMenu(hasTextSelection: true);
+      final search = menu
+          .firstWhere((entry) => entry.iconRowActions != null)
+          .iconRowActions!
+          .first;
+
+      expect(search.label, 'חיפוש');
+      expect(search.tooltip, 'חיפוש בכל הספרים');
+      expect(
+        menu.where((entry) => entry.label == 'חיפוש בספר'),
+        hasLength(1),
+        reason: 'החיפוש בתוך הספר נבדל בשמו מהחיפוש בכל הספרים',
+      );
+    });
+
     test('לחיצה על "העתקה" מפעילה את העתקת הבחירה', () {
       var copied = false;
       final menu = buildMenu(
@@ -622,7 +638,7 @@ void main() {
 
       expect(
         iconRow.iconRowActions!.map((action) => action.label),
-        containsAll(<String>['העתקה', 'מקבילות', 'הערה']),
+        containsAll(<String>['חיפוש', 'העתקה', 'הערה']),
       );
       expect(
         menu.any((entry) => entry.label == 'הוסף הערה אישית'),

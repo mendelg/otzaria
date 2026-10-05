@@ -74,6 +74,7 @@ import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/widgets/navigation/reader_nav_center.dart';
 import 'package:otzaria/utils/navigation/open_book.dart';
 import 'package:otzaria/utils/navigation/talmud_bavli_open_format.dart';
+import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/utils/text/global_search_helper.dart';
 import 'package:otzaria/utils/text/ref_helper.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -441,8 +442,8 @@ List<AppContextMenuEntry> buildPdfContextMenuEntries({
   required AppContextMenuEntry linksEntry,
   required bool hasTextSelection,
   required bool canCopySelection,
-  required VoidCallback onSearch,
-  required VoidCallback onSearchParallels,
+  required VoidCallback onSearchInBook,
+  required VoidCallback onSearchAllBooks,
   required VoidCallback onCopySelection,
   required VoidCallback onAddBookmark,
   required VoidCallback onAddNote,
@@ -450,18 +451,15 @@ List<AppContextMenuEntry> buildPdfContextMenuEntries({
   return [
     // שורת אייקונים עליונה בסגנון Windows 11, כמו בתצוגת הטקסט.
     AppContextMenuEntry.iconRow([
+      buildSearchAllBooksIconAction(
+        enabled: hasTextSelection,
+        onTap: onSearchAllBooks,
+      ),
       AppContextMenuIconAction(
         label: 'העתקה',
         icon: FluentIcons.copy_24_regular,
         enabled: canCopySelection,
         onTap: onCopySelection,
-      ),
-      AppContextMenuIconAction(
-        label: 'מקבילות',
-        tooltip: 'חפש מקבילות',
-        icon: OtzariaIcons.book_search_24_regular,
-        enabled: hasTextSelection,
-        onTap: onSearchParallels,
       ),
       AppContextMenuIconAction(
         label: 'הערה',
@@ -472,9 +470,9 @@ List<AppContextMenuEntry> buildPdfContextMenuEntries({
     ]),
     const AppContextMenuEntry.divider(),
     AppContextMenuEntry(
-      label: 'חיפוש',
+      label: 'חיפוש בספר',
       icon: FluentIcons.search_24_regular,
-      onTap: onSearch,
+      onTap: onSearchInBook,
     ),
     AppContextMenuEntry(
       label: 'מפרשים',
@@ -1511,8 +1509,8 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       ),
       hasTextSelection: hasTextSelection,
       canCopySelection: hasTextSelection && _isPdfCopyAllowed(),
-      onSearch: _ensureSearchTabIsActive,
-      onSearchParallels: _searchParallelsFromSelection,
+      onSearchInBook: _ensureSearchTabIsActive,
+      onSearchAllBooks: _searchAllBooksFromSelection,
       onCopySelection: _copyPdfTextSelection,
       onAddBookmark: () => _handleBookmarkPress(menuContext),
       onAddNote: () => _handleAddNotePress(menuContext),
@@ -1564,7 +1562,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
-  /// האם יש כרגע טקסט מסומן ב-PDF (מפעיל את "חפש מקבילות" בתפריט).
+  /// האם יש כרגע טקסט מסומן ב-PDF (מפעיל את החיפוש בכל הספרים בתפריט).
   ///
   /// ב-PDF סרוק ללא שכבת טקסט אין אפשרות לסמן טקסט, ולכן הפריט יופיע
   /// מנוטרל.
@@ -1579,30 +1577,14 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     return controller.isReady && controller.textSelectionDelegate.isCopyAllowed;
   }
 
-  /// מנרמל את הטקסט המסומן לשאילתת "חפש מקבילות": הסרת ניקוד/טעמים,
-  /// כיווץ רווחים (כולל מעברי שורה שמגיעים מסימון על פני כמה שורות ב-PDF),
-  /// והגבלה ל-10 המילים הראשונות — בחירה ארוכה הופכת חיפוש מדויק לקפדני
-  /// מדי ומחמיצה מקבילות.
-  static String _parallelsQueryFromSelection(String raw) {
-    var text = raw.trim();
-    if (utils.hasNikud(text)) {
-      text = utils.removeVolwels(text);
-    }
-    final words = text.split(RegExp(r'\s+')).where((w) => w.isNotEmpty);
-    return words.take(10).join(' ');
-  }
-
-  /// "חפש מקבילות": מריץ את הטקסט המסומן כחיפוש בכל הספרייה (ללא צמצום
-  /// לקטגוריה), כדי לאתר מקבילות גם ל-PDF שאין לו ספר טקסט מקביל.
-  Future<void> _searchParallelsFromSelection() async {
+  Future<void> _searchAllBooksFromSelection() async {
     final controller = widget.tab.pdfViewerController;
     if (!controller.isReady) return;
     final raw = await controller.textSelectionDelegate.getSelectedText();
     if (!mounted) return;
-    // טאב חיפוש חדש נפתח עם תצורת ברירת המחדל — כל הספרייה, בלי facets.
     openGlobalSearch(
       context,
-      _parallelsQueryFromSelection(raw),
+      ReaderMenuSelection(raw).cleaned,
       insertAdjacent: true,
     );
   }

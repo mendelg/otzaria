@@ -14,6 +14,13 @@ void main() {
       expect(selection.hasText, isTrue);
     });
 
+    test('collapses line breaks of a multi-line selection', () {
+      expect(
+        ReaderMenuSelection('בראשית\nברא  \r\n אלהים').cleaned,
+        'בראשית ברא אלהים',
+      );
+    });
+
     test('a missing or blank selection has no text', () {
       expect(ReaderMenuSelection(null).hasText, isFalse);
       expect(ReaderMenuSelection('  ').hasText, isFalse);
