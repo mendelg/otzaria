@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:otzaria/theme/app_tokens.dart';
@@ -8,7 +9,6 @@ import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:otzaria/widgets/text/rtl_selection_shortcuts.dart';
 import 'package:otzaria/widgets/text/selection_copy_shortcuts.dart';
-import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/link_types.dart';
@@ -1761,7 +1761,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       widget.selectionSyncController?.activate(
         _selectionOwner,
         selectionText: _restoreLineBreaks(text),
-        selectionLink: _selectionSpansMultipleItems()
+        selectionLink: selectionSpansMultipleItems(_itemKeys)
             ? null
             : _lastSelectedLink.value,
       );
@@ -1772,57 +1772,14 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     }
   }
 
-  /// האם הבחירה הנוכחית חוצה יותר מפריט מפרש אחד (לפי מיקום שני קצותיה).
-  /// משמש כדי לא לייחס כותרת מקור (copyWithHeaders) למפרש בודד בהעתקת מקלדת
-  /// כשהטקסט הנבחר בא מכמה מפרשים. נכשל "בטוח" (false) כשלא ניתן לקבוע.
-  bool _selectionSpansMultipleItems() {
-    SelectableRegionState? sa;
-    for (final k in _itemKeys.values) {
-      sa = k.currentContext?.findAncestorStateOfType<SelectableRegionState>();
-      if (sa != null) break;
-    }
-    final saRender = sa?.context.findRenderObject();
-    if (saRender is! RenderBox) return false;
-    final List<TextSelectionPoint> eps;
-    try {
-      eps = sa!.selectionEndpoints;
-    } catch (_) {
-      return false;
-    }
-    if (eps.length < 2) return false;
-    final p1 = saRender.localToGlobal(eps.first.point);
-    final p2 = saRender.localToGlobal(eps.last.point);
-    String? k1;
-    String? k2;
-    for (final entry in _itemKeys.entries) {
-      final box = entry.value.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached) continue;
-      final rect = box.localToGlobal(Offset.zero) & box.size;
-      if (rect.contains(p1)) k1 = entry.key;
-      if (rect.contains(p2)) k2 = entry.key;
-    }
-    return k1 != null && k2 != null && k1 != k2;
-  }
-
   /// משחזר מעברי שורה בטקסט נבחר רב-שורתי (Flutter מחזיר טקסט שטוח), לפי הטקסט
   /// המרונדר המוטמן של המפרשים המוצגים. אם לא נמצא — מחזיר את הטקסט כמות שהוא.
-  String? _restoreLineBreaks(String? flat) {
-    if (flat == null || flat.isEmpty || flat.contains('\n')) return flat;
-    // סדר התצוגה לכל מפרש: כותרת (displayReference) ואז התוכן.
-    final lines = <String>[];
-    for (final link in _orderedLinks) {
-      final key = _getLinkKey(link);
-      final title = _renderedTitleByKey[key];
-      if (title != null && title.isNotEmpty) lines.add(title);
-      final content = _renderedTextByKey[key];
-      if (content != null && content.isNotEmpty) lines.add(content);
-    }
-    if (lines.isEmpty) return flat;
-    return restoreSelectedTextLineBreaks(
-      selectedText: flat,
-      visibleLines: lines,
-    );
-  }
+  String? _restoreLineBreaks(String? flat) => restoreCommentaryLineBreaks(
+    flat,
+    orderedKeys: _orderedLinks.map(_getLinkKey),
+    titlesByKey: _renderedTitleByKey,
+    textsByKey: _renderedTextByKey,
+  );
 
   /// מגביל את רוחב הרשימה ל-[CommentaryListBase.contentMaxWidth]. יישור לראש
   /// ולא מרכוז — אחרת רשימה מכווצת (shrinkWrap) הייתה מתמרכזת אנכית.
@@ -2131,7 +2088,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                     onCopy: () {
                       // בחירה החוצה כמה מפרשים — לא מייחסים כותרת מקור
                       // (היא הייתה משתייכת למפרש בודד בלבד).
-                      final link = _selectionSpansMultipleItems()
+                      final link = selectionSpansMultipleItems(_itemKeys)
                           ? null
                           : _lastSelectedLink.value;
                       ContextMenuUtils.copyFormattedText(

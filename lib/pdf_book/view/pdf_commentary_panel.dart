@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +18,6 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/book_common/selection/selection_hit_test.dart';
-import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/tabs/models/tab.dart';
@@ -936,53 +936,12 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   }
 
   /// משחזר מעברי שורה בבחירה רב-שורתית לפי הטקסט המרונדר של המפרשים המוצגים.
-  String? _restoreLineBreaks(String? flat) {
-    if (flat == null || flat.isEmpty || flat.contains('\n')) return flat;
-    final lines = <String>[];
-    for (final link in _orderedLinks) {
-      final key = _getLinkKey(link);
-      final title = _renderedTitleByKey[key];
-      if (title != null && title.isNotEmpty) lines.add(title);
-      final content = _renderedTextByKey[key];
-      if (content != null && content.isNotEmpty) lines.add(content);
-    }
-    if (lines.isEmpty) return flat;
-    return restoreSelectedTextLineBreaks(
-      selectedText: flat,
-      visibleLines: lines,
-    );
-  }
-
-  /// האם הבחירה חוצה יותר ממפרש אחד, לפי מיקום שני קצותיה. בחירה כזו אינה
-  /// מיוחסת למפרש בודד, אחרת הייתה מקבלת כותרת מקור שגויה.
-  bool _selectionSpansMultipleItems() {
-    SelectableRegionState? sa;
-    for (final k in _itemKeys.values) {
-      sa = k.currentContext?.findAncestorStateOfType<SelectableRegionState>();
-      if (sa != null) break;
-    }
-    final saRender = sa?.context.findRenderObject();
-    if (saRender is! RenderBox) return false;
-    final List<TextSelectionPoint> eps;
-    try {
-      eps = sa!.selectionEndpoints;
-    } catch (_) {
-      return false;
-    }
-    if (eps.length < 2) return false;
-    final p1 = saRender.localToGlobal(eps.first.point);
-    final p2 = saRender.localToGlobal(eps.last.point);
-    String? k1;
-    String? k2;
-    for (final entry in _itemKeys.entries) {
-      final box = entry.value.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached) continue;
-      final rect = box.localToGlobal(Offset.zero) & box.size;
-      if (rect.contains(p1)) k1 = entry.key;
-      if (rect.contains(p2)) k2 = entry.key;
-    }
-    return k1 != null && k2 != null && k1 != k2;
-  }
+  String? _restoreLineBreaks(String? flat) => restoreCommentaryLineBreaks(
+    flat,
+    orderedKeys: _orderedLinks.map(_getLinkKey),
+    titlesByKey: _renderedTitleByKey,
+    textsByKey: _renderedTextByKey,
+  );
 
   /// העתקת טקסט מעוצב (HTML) ללוח
   Future<void> _copyFormattedText() async {
@@ -990,7 +949,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       context: context,
       savedSelectedText: _restoreLineBreaks(_savedSelectedText),
       fontSize: widget.fontSize,
-      link: _selectionSpansMultipleItems() ? null : _lastSelectedLink,
+      link: selectionSpansMultipleItems(_itemKeys) ? null : _lastSelectedLink,
     );
   }
 
@@ -1019,7 +978,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         context: menuCtx,
         savedSelectedText: _restoreLineBreaks(_savedSelectedText),
         fontSize: widget.fontSize,
-        link: _selectionSpansMultipleItems()
+        link: selectionSpansMultipleItems(_itemKeys)
             ? null
             : (_lastSelectedLink ?? link),
       ),
@@ -1027,7 +986,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         context: menuCtx,
         savedSelectedText: _restoreLineBreaks(_savedSelectedText),
         fontSize: widget.fontSize,
-        link: _selectionSpansMultipleItems()
+        link: selectionSpansMultipleItems(_itemKeys)
             ? null
             : (_lastSelectedLink ?? link),
         removeNikud: true,
