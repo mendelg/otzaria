@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/book_common/view/content_width.dart';
 import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/theme/app_fonts.dart';
@@ -1033,20 +1034,6 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     );
   }
 
-  /// מגביל את רוחב הרשימה ל-[PdfCommentaryPanel.contentMaxWidth]. יישור לראש
-  /// ולא מרכוז — אחרת הרשימה הייתה מתמרכזת אנכית.
-  Widget _constrainToContentWidth(Widget list) {
-    final maxWidth = widget.contentMaxWidth;
-    if (maxWidth == null || maxWidth <= 0) return list;
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: list,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     _searchResultOffsets = null;
@@ -1509,7 +1496,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
                     index >= 0 && index < sortedGroups.length
                     ? sortedGroups[index].bookTitle
                     : '',
-                child: _constrainToContentWidth(
+                child: constrainToContentWidth(
                   ScrollablePositionedList.builder(
                     key: PageStorageKey(
                       pdfCommentaryListStorageKey(
@@ -1525,6 +1512,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
                       return _buildCommentaryGroupTile(group);
                     },
                   ),
+                  widget.contentMaxWidth,
                 ),
               ),
             ),
