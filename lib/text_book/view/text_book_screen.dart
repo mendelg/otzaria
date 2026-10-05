@@ -2231,8 +2231,10 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   Widget _buildZoomInButton(BuildContext context, TextBookLoaded state) {
     final isCompact = context.read<SettingsBloc>().state.compactMenuMode;
     return BarButton.icon(
-      tooltip:
-          'הגדל את גודל הטקסט (${ShortcutHelper.formatShortcutForDisplay('ctrl++')})',
+      tooltip: _withShortcut(
+        'הגדל את גודל הטקסט',
+        ShortcutValidator.zoomInKey,
+      ),
       icon: FluentIcons.zoom_in_24_regular,
       compact: isCompact,
       onPressed: () => _stepFontSize(context, state, larger: true),
@@ -2242,8 +2244,10 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   Widget _buildZoomOutButton(BuildContext context, TextBookLoaded state) {
     final isCompact = context.read<SettingsBloc>().state.compactMenuMode;
     return BarButton.icon(
-      tooltip:
-          'הקטן את גודל הטקסט (${ShortcutHelper.formatShortcutForDisplay('ctrl+-')})',
+      tooltip: _withShortcut(
+        'הקטן את גודל הטקסט',
+        ShortcutValidator.zoomOutKey,
+      ),
       icon: FluentIcons.zoom_out_24_regular,
       compact: isCompact,
       onPressed: () => _stepFontSize(context, state, larger: false),
@@ -2991,6 +2995,14 @@ int _topmostVisibleSourceLine(TextBookLoaded state) => resolveTopmostSourceLine(
   continuousReadingMode: state.continuousReadingMode,
   readingSegments: state.readingSegments,
 );
+
+/// [label] followed by the shortcut the user set for [settingKey], or the
+/// label alone when the shortcut is cleared.
+String _withShortcut(String label, String settingKey) {
+  final shortcut = ShortcutValidator.getShortcutValue(settingKey);
+  if (shortcut == null || shortcut.isEmpty) return label;
+  return '$label (${ShortcutHelper.formatShortcutForDisplay(shortcut)})';
+}
 
 int _itemIndexForSourceLine(TextBookLoaded state, int lineIndex) =>
     resolveItemIndexForSourceLine(

@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:otzaria/shortcuts/shortcut_helper.dart';
+import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'dart:math';
 
 import 'package:flutter/gestures.dart';
@@ -79,6 +81,61 @@ void main() {
   });
 
   group('TextBookViewerBloc actions', () {
+    testWidgets('כפתורי הזום מציגים את הקיצור שהמשתמש הגדיר', (tester) async {
+      await Settings.setValue<String>(
+        ShortcutValidator.zoomInKey,
+        'ctrl+shift+k',
+      );
+      // A cleared shortcut leaves the label alone.
+      await Settings.setValue<String>(ShortcutValidator.zoomOutKey, '');
+      final book = TextBook(title: 'ספר בדיקה');
+      final bloc = _TestTextBookBloc(_loadedState(book));
+      final tab = TextBookTab(book: book, index: 0, blocOverride: bloc);
+      final tabsBloc = _TestTabsBloc(
+        TabsState(tabs: [tab], currentTabIndex: 0),
+      );
+      final settingsBloc = _TestSettingsBloc(SettingsState.initial());
+
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump();
+        await bloc.close();
+        await tabsBloc.close();
+        await settingsBloc.close();
+        tab.dispose();
+      });
+
+      await _setSurfaceSize(tester, const Size(1600, 900));
+      await _pumpTextBookScreen(
+        tester,
+        tab: tab,
+        textBookBloc: bloc,
+        tabsBloc: tabsBloc,
+        settingsBloc: settingsBloc,
+        focusRepository: focusRepository,
+        shamorZachorDataProvider: shamorZachorDataProvider,
+        shamorZachorProgressProvider: shamorZachorProgressProvider,
+        bookmarkBloc: bookmarkBloc,
+        personalNotesBloc: personalNotesBloc,
+        tourCubit: tourCubit,
+        isInCombinedView: false,
+      );
+
+      final zoomIn =
+          'הגדל את גודל הטקסט '
+          '(${ShortcutHelper.formatShortcutForDisplay('ctrl+shift+k')})';
+      expect(find.byTooltip(zoomIn), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Tooltip &&
+              (widget.message ?? '').startsWith('הקטן את גודל הטקסט ('),
+        ),
+        findsNothing,
+      );
+      expect(find.byTooltip('הקטן את גודל הטקסט'), findsWidgets);
+    });
+
     testWidgets('במצב רגיל ה-overflow כולל איפוס, ייצוא והדפסה', (
       tester,
     ) async {
