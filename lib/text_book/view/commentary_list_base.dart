@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/widgets/misc/rtl_icon.dart';
 import 'package:otzaria/book_common/view/content_width.dart';
 import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
@@ -2509,8 +2510,8 @@ class _CommentaryGroupHeader extends StatelessWidget {
             AnimatedRotation(
               turns: isExpanded ? -0.25 : 0,
               duration: const Duration(milliseconds: 200),
-              child: Icon(
-                Icons.keyboard_arrow_left,
+              child: RtlIcon(
+                FluentIcons.chevron_left_24_regular,
                 size: 20,
                 color: Theme.of(
                   context,
