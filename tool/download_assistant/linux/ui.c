@@ -28,6 +28,8 @@ enum {
 #define PRESET_UNCHOSEN (-3)
 #define SPEED_WINDOW_US (5 * G_USEC_PER_SEC)
 #define MAX_SAMPLES 64
+/* U+200F RIGHT-TO-LEFT MARK */
+#define RLM "\xE2\x80\x8F"
 
 typedef struct {
   gint64 time;
@@ -94,6 +96,20 @@ static GtkWidget *add_label(GtkWidget *box, const char *text, gboolean bold) {
   return label;
 }
 
+/* Pango sets each line's direction from its first strong character, even inside LRI.
+ * ASCII lines (shell commands) stay bare: copied invisible marks break them. */
+static void set_rtl_text(GtkWidget *label, const char *text) {
+  g_auto(GStrv) lines = g_strsplit(text, "\n", -1);
+  GString *full = g_string_new(NULL);
+  for (guint i = 0; lines[i] != NULL; i++) {
+    if (i > 0) g_string_append_c(full, '\n');
+    if (!g_str_is_ascii(lines[i])) g_string_append(full, RLM);
+    g_string_append(full, lines[i]);
+  }
+  gtk_label_set_text(GTK_LABEL(label), full->str);
+  g_string_free(full, TRUE);
+}
+
 static GtkWidget *add_list(GtkWidget *box) {
   GtkWidget *list = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
   gtk_box_pack_start(GTK_BOX(box), list, FALSE, FALSE, 6);
@@ -122,10 +138,11 @@ static void fill_radios(Ui *ui, GtkWidget *list, GPtrArray *captions,
     const char *note = notes != NULL ? g_ptr_array_index(notes, i) : NULL;
     g_autofree char *markup =
         note != NULL
-            ? g_markup_printf_escaped("<b>%s</b>\n<small>%s</small>",
+            ? g_markup_printf_escaped(RLM "<b>%s</b>\n" RLM "<small>%s</small>",
                                       (const char *)g_ptr_array_index(captions, i),
                                       note)
-            : g_markup_printf_escaped("%s", (const char *)g_ptr_array_index(captions, i));
+            : g_markup_printf_escaped(RLM "%s",
+                                      (const char *)g_ptr_array_index(captions, i));
     gtk_label_set_markup(GTK_LABEL(label), markup);
     gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
     gtk_label_set_xalign(GTK_LABEL(label), 0.0);
@@ -381,15 +398,30 @@ static void prepare_custom(Ui *ui) {
     g_autofree char *caption =
         g_strdup_printf("%s — %s%s", component->name, size,
                         component->required ? " (נדרש)" : "");
-    GtkWidget *check = gtk_check_button_new_with_label(caption);
+    GtkWidget *check = gtk_check_button_new();
+    GtkWidget *text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *title = gtk_label_new(NULL);
+    set_rtl_text(title, caption);
+    gtk_label_set_line_wrap(GTK_LABEL(title), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0);
+    gtk_box_pack_start(GTK_BOX(text), title, FALSE, FALSE, 0);
+    if (*component->description != '\0') {
+      GtkWidget *note = gtk_label_new(NULL);
+      g_autofree char *markup =
+          g_markup_printf_escaped(RLM "<small>%s</small>", component->description);
+      gtk_label_set_markup(GTK_LABEL(note), markup);
+      gtk_label_set_line_wrap(GTK_LABEL(note), TRUE);
+      gtk_label_set_xalign(GTK_LABEL(note), 0.0);
+      gtk_style_context_add_class(gtk_widget_get_style_context(note), "dim-label");
+      gtk_box_pack_start(GTK_BOX(text), note, FALSE, FALSE, 0);
+    }
+    gtk_container_add(GTK_CONTAINER(check), text);
     g_object_set_data_full(G_OBJECT(check), "component-id",
                            g_strdup(component->id), g_free);
     gtk_toggle_button_set_active(
         GTK_TOGGLE_BUTTON(check),
         g_hash_table_contains(ui->custom_checked, component->id));
     g_signal_connect(check, "toggled", G_CALLBACK(on_custom_toggled), ui);
-    if (*component->description != '\0')
-      gtk_widget_set_tooltip_text(check, component->description);
     gtk_box_pack_start(GTK_BOX(ui->custom_list), check, FALSE, FALSE, 0);
   }
   gtk_widget_show_all(ui->custom_list);
@@ -433,7 +465,7 @@ static void update_folder(Ui *ui) {
                                         : g_strdup(ui->base_dir);
     g_autofree char *shown = otz_ltr_isolate(dir);
     g_autofree char *text = g_strdup_printf("התוצאה תישמר בתיקייה:\n%s", shown);
-    gtk_label_set_text(GTK_LABEL(ui->folder_target), text);
+    set_rtl_text(ui->folder_target, text);
   } else {
     gtk_label_set_text(GTK_LABEL(ui->folder_target), "");
   }
@@ -548,8 +580,8 @@ static gboolean on_tick(gpointer data) {
     phase = g_strdup("מכין את ההורדה…");
     detail = g_strdup("");
   }
-  gtk_label_set_text(GTK_LABEL(ui->progress_phase), phase);
-  gtk_label_set_text(GTK_LABEL(ui->progress_detail), detail);
+  set_rtl_text(ui->progress_phase, phase);
+  set_rtl_text(ui->progress_detail, detail);
   if (fraction >= 0)
     gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(ui->progress_bar),
                                   CLAMP(fraction, 0.0, 1.0));
@@ -577,7 +609,7 @@ static void show_failure(Ui *ui, const char *text, const char *technical) {
                                "לא ניתן להשלים את ההכנה");
   g_autofree char *full = g_strconcat(
       text, "\n\nמה שכבר ירד נשמר, והפעלה חוזרת של המסייע תמשיך מאותו מקום.", NULL);
-  gtk_label_set_text(GTK_LABEL(ui->finish_text), full);
+  set_rtl_text(ui->finish_text, full);
   gtk_label_set_text(GTK_LABEL(ui->finish_details_label), technical);
   gtk_widget_show(ui->finish_details);
   gtk_widget_hide(ui->finish_reveal);
@@ -631,13 +663,12 @@ static void show_success(Ui *ui) {
   for (guint i = 0; i < unjoined->len; i++) {
     const char *name = g_ptr_array_index(unjoined, i);
     g_autofree char *command = g_strdup_printf("cat %s.part-* > %s", name, name);
-    g_autofree char *shown = otz_ltr_isolate(command);
     g_string_append_printf(text,
                            "\n\nהקובץ %s גדול מדי לקובץ אחד ולכן נשאר בחלקים. "
                            "במחשב היעד מחברים אותם בפקודה:\n%s",
-                           name, shown);
+                           name, command);
   }
-  gtk_label_set_text(GTK_LABEL(ui->finish_text), text->str);
+  set_rtl_text(ui->finish_text, text->str);
   g_string_free(text, TRUE);
   gtk_widget_hide(ui->finish_details);
   gtk_widget_show(ui->finish_reveal);

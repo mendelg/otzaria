@@ -166,7 +166,7 @@ var
   ArchListFor, FormatListFor: String;
 
   { --- הצעות מוכנות, נגזרות מהמניפסט --- }
-  PresetId, PresetLabel, PresetDesc, PresetMembers: TArrayOfString;
+  PresetId, PresetLabel, PresetDesc, PresetSize, PresetMembers: TArrayOfString;
 
   { --- מצב האשף --- }
   ModePage: TInputOptionWizardPage;
@@ -178,6 +178,7 @@ var
   FolderPage: TInputDirWizardPage;
   DownloadPage: TDownloadWizardPage;
   WorkPage: TOutputProgressWizardPage;
+  DownloadStatus, WorkStatus: TNewStaticText;
   CustomIndex: array of Integer;
   CustomPresetIndex: Integer;
   ResultText: String;
@@ -185,6 +186,7 @@ var
   RevealPath: String;
   RevealIsFile: Boolean;
   RevealCheck: TNewCheckBox;
+  ResultMemo: TNewMemo;
 
   { --- תור ההורדה של הריצה הנוכחית --- }
   QueueUrl, QueueFile, QueueSha, QueueLabel: TArrayOfString;
@@ -218,6 +220,21 @@ begin
     Result := IntToStr(Bytes div 1048576) + ' מגה'
   else
     Result := IntToStr((Bytes + 1023) div 1024) + ' קילו';
+end;
+
+{ נתיב לתצוגה בתוך עברית (LRE/PDF: פקדי Win32 אינם מכירים בידוד). לא לנתיב של
+  פעולת קבצים ולא לפקודה להעתקה — התווים הסמויים מועתקים ושוברים אותה בטרמינל. }
+function DisplayLtr(const Text: String): String;
+begin
+  Result := #$202A + Text + #$202C;
+end;
+
+{ שורת השם ומתחתיה התיאור: ה-SubItem של הרשימה הוא שורה אחת שאינה נשברת. }
+function OptionCaption(const Title, Desc: String): String;
+begin
+  Result := Title;
+  if Desc <> '' then
+    Result := Result + #13#10 + Desc;
 end;
 
 function IsExecutableName(const Name: String): Boolean;
@@ -1450,10 +1467,12 @@ begin
   SetArrayLength(PresetId, N + 1);
   SetArrayLength(PresetLabel, N + 1);
   SetArrayLength(PresetDesc, N + 1);
+  SetArrayLength(PresetSize, N + 1);
   SetArrayLength(PresetMembers, N + 1);
   PresetId[N] := Id;
-  PresetLabel[N] := Caption + ' — ' + HumanSize(MembersSize(Closed));
+  PresetLabel[N] := Caption;
   PresetDesc[N] := Description;
+  PresetSize[N] := HumanSize(MembersSize(Closed));
   PresetMembers[N] := Closed;
 end;
 
@@ -1482,6 +1501,7 @@ begin
   SetArrayLength(PresetId, 0);
   SetArrayLength(PresetLabel, 0);
   SetArrayLength(PresetDesc, 0);
+  SetArrayLength(PresetSize, 0);
   SetArrayLength(PresetMembers, 0);
 
   { מלאה: החבילה הגדולה ביותר עם מה שהיא מתקינה, אחרת התוכנה עם הספרייה —
@@ -1698,12 +1718,11 @@ begin
   PresetPage.CheckListBox.Items.Clear;
   for I := 0 to GetArrayLength(PresetLabel) - 1 do
   begin
-    PresetPage.Add(PresetLabel[I]);
-    PresetPage.CheckListBox.ItemSubItem[I] := PresetDesc[I];
+    PresetPage.Add(OptionCaption(PresetLabel[I], PresetDesc[I]));
+    PresetPage.CheckListBox.ItemSubItem[I] := PresetSize[I];
   end;
-  PresetPage.Add('בחירה אישית');
-  PresetPage.CheckListBox.ItemSubItem[CustomPresetIndex] :=
-    'אני רוצה לבחור בעצמי מה להוריד.';
+  PresetPage.Add(OptionCaption('בחירה אישית',
+    'אני רוצה לבחור בעצמי מה להוריד.'));
   if PresetPage.SelectedValueIndex < 0 then
     PresetPage.SelectedValueIndex := DefaultIndex(PresetId, 'basic');
 end;
@@ -1724,8 +1743,8 @@ begin
       Extra := ' (נדרש)'
     else
       Extra := '';
-    CustomPage.Add(CompName[I] + ' — ' + HumanSize(CustomChoiceSize(I)) + Extra);
-    CustomPage.CheckListBox.ItemSubItem[N] := CompDesc[I];
+    CustomPage.Add(OptionCaption(CompName[I] + Extra, CompDesc[I]));
+    CustomPage.CheckListBox.ItemSubItem[N] := HumanSize(CustomChoiceSize(I));
     CustomPage.Values[N] := CompSelected[I] or CompRequired[I];
     SetArrayLength(CustomIndex, N + 1);
     CustomIndex[N] := I;
@@ -1861,11 +1880,33 @@ begin
       VerifyStartTick := NowMs();
       Log('DownloadAssistant: ' + FileName + ' received, download page verifies');
     end;
-    DownloadPage.SetText('בודק את הקובץ שירד', Status);
+    DownloadPage.Msg1Label.Caption := 'בודק את הקובץ שירד';
   end
   else
-    DownloadPage.SetText(ProgressCaption, Status);
+    DownloadPage.Msg1Label.Caption := ProgressCaption;
+  DownloadStatus.Caption := Status;
   Result := True;
+end;
+
+{ Msg2Label של Inno כפוי משמאל לימין ועובר MinimizePathName, ובעמוד ההורדה
+  Inno כותב אליו את שם הקובץ בכל עדכון — לכן העברית בתווית משלנו. }
+function CreateStatusText(Page: TOutputProgressWizardPage;
+  Top: Integer): TNewStaticText;
+begin
+  Result := TNewStaticText.Create(Page);
+  Result.AutoSize := False;
+  Result.ShowAccelChar := False;
+  Result.Top := Top;
+  Result.Width := Page.SurfaceWidth;
+  Result.Height := Page.Msg2Label.Height;
+  Result.Anchors := [akLeft, akTop, akRight];
+  Result.Parent := Page.Surface;
+end;
+
+procedure SetWorkText(const Msg1, Msg2: String);
+begin
+  WorkStatus.Caption := Msg2;
+  WorkPage.SetText(Msg1, '');
 end;
 
 procedure InitializeWizard();
@@ -1945,6 +1986,13 @@ begin
     @OnDownloadProgress);
   WorkPage := CreateOutputProgressPage('הכנת ההתקנה',
     'רגע, מכינים את הקבצים.');
+
+  DownloadStatus := CreateStatusText(DownloadPage,
+    DownloadPage.ProgressBar.Top + DownloadPage.ProgressBar.Height + ScaleY(6));
+  DownloadPage.AbortButton.Top := DownloadStatus.Top + DownloadStatus.Height +
+    ScaleY(8);
+  WorkStatus := CreateStatusText(WorkPage, WorkPage.Msg2Label.Top);
+  WorkPage.Msg2Label.Visible := False;
 end;
 
 { עמוד שיש בו אפשרות אחת בלבד אינו מוצג. }
@@ -2088,7 +2136,7 @@ begin
   SetArrayLength(QueueSize, 0);
   Result := True;
 
-  WorkPage.SetText('בודק קבצים שכבר הורדו', '');
+  SetWorkText('בודק קבצים שכבר הורדו', '');
   WorkPage.Show;
   try
     for C := 0 to GetArrayLength(CompId) - 1 do
@@ -2097,7 +2145,7 @@ begin
         Continue;
       for A := CompAssetStart[C] to CompAssetStart[C] + CompAssetCount[C] - 1 do
       begin
-        WorkPage.SetText('בודק קבצים שכבר הורדו', CompName[C]);
+        SetWorkText('בודק קבצים שכבר הורדו', CompName[C]);
         if AssetKind[A] = 'split' then
         begin
           if ShouldAssembleSingleFile(A) and AssembledIsReady(A) then
@@ -2158,13 +2206,14 @@ begin
     ProgressTotal := ProgressTotal + QueueSize[I];
 
   DownloadPage.ShowBaseNameInsteadOfUrl := True;
+  DownloadStatus.Caption := '';
   DownloadPage.Show;
   try
     for I := 0 to GetArrayLength(QueueUrl) - 1 do
     begin
       ProgressCaption := 'מוריד: ' + QueueLabel[I] + ' (' + IntToStr(I + 1) +
         ' מתוך ' + IntToStr(GetArrayLength(QueueUrl)) + ')';
-      DownloadPage.SetText(ProgressCaption, '');
+      DownloadPage.Msg1Label.Caption := ProgressCaption;
       DownloadPage.Clear;
       ResetSpeed();
       VerifyStartTick := 0;
@@ -2242,7 +2291,7 @@ begin
           if Got <> Slice then
             Break;
           Copied := Copied + Got;
-          WorkPage.SetText('מחבר את הקבצים: ' + Caption,
+          SetWorkText('מחבר את הקבצים: ' + Caption,
             HumanSize(DoneBefore + Copied) + ' מתוך ' + HumanSize(Total));
           WorkPage.SetProgress(MegaBytes(DoneBefore + Copied), MegaBytes(Total));
         end;
@@ -2340,7 +2389,7 @@ begin
     DeleteFile(TmpPath + '.sha256');
     exit;
   end;
-  WorkPage.SetText('בודק את הקובץ המאוחד: ' + Caption,
+  SetWorkText('בודק את הקובץ המאוחד: ' + Caption,
     'מאמת את תוכן הקובץ מול המניפסט');
   WorkPage.SetProgress(0, 1);
   if HashFile(TmpPath) <> Lowercase(AssetSha[AssetIndex]) then
@@ -2465,7 +2514,7 @@ begin
             if not AssembledIsReady(A) then
               if not AssembleAsset(A, CompName[C]) then
                 exit;
-            Notes := Notes + '• ' + Folder + AssetName[A] + #13#10;
+            Notes := Notes + '• ' + DisplayLtr(Folder + AssetName[A]) + #13#10;
             SingleName := Folder + AssetName[A];
             Produced := Produced + 1;
           end
@@ -2476,14 +2525,15 @@ begin
             PartsNote := '';
             for P := AssetPartStart[A] to AssetPartStart[A] + AssetPartCount[A] - 1 do
             begin
-              WorkPage.SetText('מעתיק לתיקייה שנבחרה: ' + CompName[C], PartName[P]);
+              SetWorkText('מעתיק לתיקייה שנבחרה: ' + CompName[C], PartName[P]);
               WorkPage.SetProgress(Produced, Total);
               if not CopyToOutput(PartName[P], AssetOutputDir(A)) then
               begin
                 LoadErrorHeb := 'לא ניתן היה להעתיק את הקבצים לתיקייה שנבחרה.';
                 exit;
               end;
-              PartsNote := PartsNote + '• ' + Folder + PartName[P] + #13#10;
+              PartsNote := PartsNote + '• ' +
+                DisplayLtr(Folder + PartName[P]) + #13#10;
               SingleName := Folder + PartName[P];
               Produced := Produced + 1;
             end;
@@ -2494,14 +2544,14 @@ begin
         end
         else
         begin
-          WorkPage.SetText('מעתיק לתיקייה שנבחרה: ' + CompName[C], AssetName[A]);
+          SetWorkText('מעתיק לתיקייה שנבחרה: ' + CompName[C], AssetName[A]);
           WorkPage.SetProgress(Produced, Total);
           if not CopyToOutput(AssetName[A], AssetOutputDir(A)) then
           begin
             LoadErrorHeb := 'לא ניתן היה להעתיק את הקבצים לתיקייה שנבחרה.';
             exit;
           end;
-          Notes := Notes + '• ' + Folder + AssetName[A] + #13#10;
+          Notes := Notes + '• ' + DisplayLtr(Folder + AssetName[A]) + #13#10;
           SingleName := Folder + AssetName[A];
           Produced := Produced + 1;
         end;
@@ -2525,8 +2575,8 @@ begin
   begin
     RevealPath := OutputDir() + '\' + SingleName;
     RevealIsFile := True;
-    ResultText := 'הקובץ מוכן:' + #13#10 + SingleName + #13#10#13#10 +
-      'הוא נמצא בתיקייה:' + #13#10 + OutputDir() + #13#10#13#10 +
+    ResultText := 'הקובץ מוכן:' + #13#10 + DisplayLtr(SingleName) + #13#10#13#10 +
+      'הוא נמצא בתיקייה:' + #13#10 + DisplayLtr(OutputDir()) + #13#10#13#10 +
       'העתק את הקובץ הזה לדיסק-און-קי ומשם למחשב המנותק (' +
       PlatformDisplayName(TargetPlatform) + ').' + OpenHint(SingleName);
   end
@@ -2534,7 +2584,8 @@ begin
   begin
     RevealPath := OutputDir();
     RevealIsFile := False;
-    ResultText := 'ההתקנה מוכנה בתיקייה:' + #13#10 + OutputDir() + #13#10#13#10 +
+    ResultText := 'ההתקנה מוכנה בתיקייה:' + #13#10 +
+      DisplayLtr(OutputDir()) + #13#10#13#10 +
       'העתק את כל התיקייה הזאת לדיסק-און-קי ומשם למחשב המנותק (' +
       PlatformDisplayName(TargetPlatform) + '). הקבצים חייבים להישאר יחד ' +
       'באותה תיקייה.';
@@ -2605,27 +2656,37 @@ begin
   end
   else if CurPageID = wpFinished then
   begin
-    { ברירת המחדל של התווית נמוכה מדי — טקסט הסיום ארוך ממשפט אחד. }
-    WizardForm.FinishedLabel.AutoSize := False;
-    WizardForm.FinishedLabel.WordWrap := True;
-    WizardForm.FinishedLabel.Height := WizardForm.FinishedPage.ClientHeight -
-      WizardForm.FinishedLabel.Top;
-    WizardForm.FinishedLabel.Caption := ResultText;
+    { תווית אינה נגללת, ורשימת קבצים ארוכה מסתירה את פקודות החיבור וההסברים
+      שבסוף — לכן תיבה לקריאה בלבד במראה של תווית. }
+    if not Assigned(ResultMemo) then
+    begin
+      ResultMemo := TNewMemo.Create(WizardForm);
+      ResultMemo.Parent := WizardForm.FinishedPage;
+      ResultMemo.Left := WizardForm.FinishedLabel.Left;
+      ResultMemo.Top := WizardForm.FinishedLabel.Top;
+      ResultMemo.Width := WizardForm.FinishedLabel.Width;
+      ResultMemo.ReadOnly := True;
+      ResultMemo.BorderStyle := bsNone;
+      ResultMemo.ScrollBars := ssVertical;
+      ResultMemo.Color := WizardForm.FinishedPage.Color;
+      WizardForm.FinishedLabel.Visible := False;
+    end;
+    ResultMemo.Height := WizardForm.FinishedPage.ClientHeight - ResultMemo.Top;
+    ResultMemo.Text := ResultText;
     if RevealPath <> '' then
     begin
       if not Assigned(RevealCheck) then
       begin
         RevealCheck := TNewCheckBox.Create(WizardForm);
         RevealCheck.Parent := WizardForm.FinishedPage;
-        RevealCheck.Left := WizardForm.FinishedLabel.Left;
-        RevealCheck.Width := WizardForm.FinishedLabel.Width;
+        RevealCheck.Left := ResultMemo.Left;
+        RevealCheck.Width := ResultMemo.Width;
         RevealCheck.Height := ScaleY(17);
         RevealCheck.Checked := True;
       end;
       RevealCheck.Top := WizardForm.FinishedPage.ClientHeight -
         RevealCheck.Height;
-      WizardForm.FinishedLabel.Height := RevealCheck.Top - ScaleY(8) -
-        WizardForm.FinishedLabel.Top;
+      ResultMemo.Height := RevealCheck.Top - ScaleY(8) - ResultMemo.Top;
       if RevealIsFile then
         RevealCheck.Caption := 'הצג את הקובץ שהוכן'
       else
@@ -2696,7 +2757,7 @@ begin
     if DirIsWritable(FallbackOutputBase()) then
     begin
       MsgBox('לא ניתן לשמור בתיקייה שנבחרה. במקומה מוצעת התיקייה:' + #13#10 +
-        FallbackOutputBase() + #13#10#13#10 +
+        DisplayLtr(FallbackOutputBase()) + #13#10#13#10 +
         'אפשר להמשיך איתה או לבחור תיקייה אחרת.', mbInformation, MB_OK);
       FolderPage.Values[0] := FallbackOutputBase();
     end
@@ -2740,5 +2801,5 @@ begin
       SW_SHOWNORMAL, ewNoWait, I) then
       ResultText := ResultText + #13#10#13#10 +
         'לא ניתן היה להפעיל את המתקין. אפשר להפעיל אותו ידנית מתוך:'
-        + #13#10 + OutputDir();
+        + #13#10 + DisplayLtr(OutputDir());
 end;

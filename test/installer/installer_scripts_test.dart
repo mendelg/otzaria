@@ -1833,7 +1833,10 @@ void main() {
       );
       final single = prepare.substring(prepare.indexOf('else if Produced = 1'));
       final multi = single.substring(single.indexOf("'ההתקנה מוכנה בתיקייה:'"));
-      expect(single, contains("'הקובץ מוכן:' + #13#10 + SingleName"));
+      expect(
+        single,
+        contains("'הקובץ מוכן:' + #13#10 + DisplayLtr(SingleName)"),
+      );
       expect(
         single.substring(0, single.indexOf("'ההתקנה מוכנה בתיקייה:'")),
         isNot(contains('תיקייה הזאת')),
@@ -2132,6 +2135,64 @@ void main() {
         contains('WorkPage.SetProgress('),
         reason: 'ההרכבה מדווחת התקדמות בבתים',
       );
+    });
+
+    test('$_assistant: עברית מחוץ ל-Msg2Label, נתיבים מבודדים, סיום נגלל', () {
+      final script = _script(_assistant);
+      final progress = _routine(script, 'function OnDownloadProgress(');
+      final downloads = _routine(script, 'function RunDownloads()');
+      final wizard = _routine(script, 'procedure InitializeWizard()');
+
+      // Msg2Label כפוי LTR ועובר MinimizePathName; בעמוד ההורדה Inno כותב אליו.
+      for (final body in [progress, downloads]) {
+        expect(body, isNot(contains('DownloadPage.SetText(')));
+        expect(body, isNot(contains('Msg2Label')));
+      }
+      expect(progress, contains('DownloadStatus.Caption := Status;'));
+      expect(wizard, contains('WorkPage.Msg2Label.Visible := False;'));
+      expect(
+        RegExp(r'WorkPage\.SetText\(').allMatches(script).length,
+        1,
+        reason: 'רק SetWorkText קורא לו, ותמיד עם Msg2 ריק',
+      );
+      expect(
+        _routine(script, 'procedure SetWorkText('),
+        contains("WorkPage.SetText(Msg1, '');"),
+      );
+
+      // התיאור בכותרת הנשברת לשורות; ה-SubItem (שורה אחת) לגודל בלבד.
+      expect(
+        _routine(script, 'procedure RefreshPresetPage('),
+        contains('ItemSubItem[I] := PresetSize[I];'),
+      );
+      expect(
+        _routine(script, 'procedure RefreshCustomPage('),
+        contains('ItemSubItem[N] := HumanSize(CompDownloadSize[I]);'),
+      );
+
+      expect(
+        _routine(script, 'function DisplayLtr('),
+        contains("#\$202A + Text + #\$202C"),
+      );
+      final prepare = _routine(script, 'function PrepareOutput()');
+      expect(prepare, contains('DisplayLtr(OutputDir())'));
+      expect(
+        prepare,
+        contains('JoinNote := JoinNote + JoinCommand(A) + #13#10;'),
+        reason: 'LRE/PDF מועתקים עם הפקודה מהתיבה ושוברים אותה בטרמינל',
+      );
+      expect(downloads, contains("DownloadStatus.Caption := '';"));
+      expect(
+        prepare,
+        contains(r"RevealPath := OutputDir() + '\' + SingleName;"),
+        reason: 'הבידוד לתצוגה בלבד — לא בנתיב שנפתח בסייר',
+      );
+
+      final finished = _routine(script, 'procedure CurPageChanged(');
+      expect(finished, contains('ResultMemo.ReadOnly := True;'));
+      expect(finished, contains('ResultMemo.ScrollBars := ssVertical;'));
+      expect(finished, contains('ResultMemo.Text := ResultText;'));
+      expect(finished, isNot(contains('FinishedLabel.Caption')));
     });
 
     test('$_assistant: עמודי היעד — פלטפורמה, ארכיטקטורה ופורמט', () {
