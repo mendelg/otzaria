@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -380,6 +381,8 @@ class _RtlTextFieldState extends State<RtlTextField> {
       cursorWidth: 1.0, // דק יותר מברירת המחדל (2.0)
       // שקוף בשלב ה"כבוי" של ההבהוב ולאחר שנעצר (ראו ניהול ההבהוב למעלה)
       cursorColor: _cursorVisible ? widget.cursorColor : Colors.transparent,
+      // ברירת המחדל max מציירת בטקסט RTL רב-שורתי כל בחירה עד הקצה השמאלי.
+      selectionWidthStyle: ui.BoxWidthStyle.tight,
     );
 
     // עטיפה בתיקון חיצים אם RTL
