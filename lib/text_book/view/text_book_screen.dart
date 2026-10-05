@@ -98,6 +98,7 @@ import 'package:otzaria/tools/shamor_zachor/models/book_model.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/app_selection_area.dart';
+import 'package:otzaria/widgets/misc/rtl_icon.dart';
 import 'package:otzaria/settings/services/nikud_display_service.dart';
 import 'package:otzaria/utils/link_helpers.dart';
 import 'package:otzaria/text_book/utils/link_processing.dart'
@@ -2131,7 +2132,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
 
   /// בניית תפריט נפתח לבחירת מצב תצוגה
   Widget _buildViewModeDropdown(BuildContext context, TextBookLoaded state) {
-    final iconWidget = Icon(_getViewModeIcon(state));
+    final iconWidget = RtlIcon(_getViewModeIcon(state));
 
     final isSplit = !state.showPageShapeView && state.showSplitView;
     final isBelow = !state.showPageShapeView && !state.showSplitView;
