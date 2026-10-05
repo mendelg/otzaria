@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -453,30 +454,22 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     if (_searchResultsPerLink.isEmpty) return -1;
 
     final linkKey = _getLinkKey(link);
-    final itemResults = _searchResultsPerLink[linkKey] ?? 0;
-    if (itemResults == 0) return -1;
+    if ((_searchResultsPerLink[linkKey] ?? 0) == 0) return -1;
 
     if (!identical(_searchResultOffsetsFor, _orderedLinks)) {
       _searchResultOffsets = null;
       _searchResultOffsetsFor = _orderedLinks;
     }
-    final offsets = _searchResultOffsets ??= () {
-      final result = <String, int>{};
-      var cumulativeIndex = 0;
-      for (final orderedLink in _orderedLinks) {
-        final key = _getLinkKey(orderedLink);
-        result.putIfAbsent(key, () => cumulativeIndex);
-        cumulativeIndex += _searchResultsPerLink[key] ?? 0;
-      }
-      return result;
-    }();
-    final start = offsets[linkKey];
-    if (start == null) return -1;
-
-    final relativeIndex = _currentSearchIndex - start;
-    return (relativeIndex >= 0 && relativeIndex < itemResults)
-        ? relativeIndex
-        : -1;
+    final offsets = _searchResultOffsets ??= commentarySearchOffsets(
+      _orderedLinks.map(_getLinkKey),
+      _searchResultsPerLink,
+    );
+    return commentarySearchRelativeIndex(
+      key: linkKey,
+      currentIndex: _currentSearchIndex,
+      offsets: offsets,
+      countsByKey: _searchResultsPerLink,
+    );
   }
 
   void _handleSearchFocusChange() {
@@ -881,24 +874,16 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   void _publishSearchSnippets() {
     final notifier = widget.externalSearchSnippetsNotifier;
     if (notifier == null || !mounted) return;
-    final result = <CommentarySearchSnippet>[];
-    var globalIndex = 0;
-    for (final link in _orderedLinks) {
-      final key = _getLinkKey(link);
-      final count = _searchResultsPerLink[key] ?? 0;
-      final snippet = _searchSnippetsPerLink[key];
-      if (snippet != null && count > 0) {
-        result.add(
-          CommentarySearchSnippet(
-            path: link.path2,
-            snippet: snippet,
-            globalIndex: globalIndex,
-          ),
-        );
-      }
-      globalIndex += count;
-    }
-    notifier.value = result;
+    notifier.value = orderCommentarySearchSnippets<Link>(
+      items: _orderedLinks,
+      keyOf: _getLinkKey,
+      pathOf: (link) => link.path2,
+      countsByKey: _searchResultsPerLink,
+      snippetsOf: (key, count) {
+        final snippet = _searchSnippetsPerLink[key];
+        return snippet != null && count > 0 ? [snippet] : const [];
+      },
+    );
   }
 
   void _updateSearchResultsCount(Link link, int count) {
@@ -932,9 +917,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       setState(() {
         _searchResultsPerLink.addAll(_pendingCounts);
         _pendingCounts.clear();
-        _totalSearchResults = _searchResultsPerLink.values.fold(
-          0,
-          (sum, count) => sum + count,
+        _totalSearchResults = totalCommentarySearchResults(
+          _searchResultsPerLink,
         );
 
         // Reset current index if out of bounds
