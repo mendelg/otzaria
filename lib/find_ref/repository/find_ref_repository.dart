@@ -2292,6 +2292,11 @@ class FindRefRepository {
   }) async {
     final queryTokens = search.queryTokens;
     final folderMatchLengths = <ReferenceBookHit, int>{};
+    // רק המילה האחרונה עשויה להיות באמצע הקלדה, וראשי-תיבות בגרשיים הם מילה שלמה
+    final quoted = quotedWordsOf(search.rawQuery, _normalizeForMatch);
+    final partialFolderToken = quoted.contains(queryTokens.last)
+        ? -1
+        : queryTokens.length - 1;
     final books = _BookSearch(
       queryTokens: queryTokens,
       visibility: search.visibility,
@@ -2305,6 +2310,7 @@ class FindRefRepository {
         search.visibility,
         source,
         folderMatchLengths,
+        partialFolderToken,
       ),
     );
     final detection = _detectBooks(books, queryTokens);
@@ -2501,6 +2507,7 @@ class FindRefRepository {
     FindRefVisibility visibility,
     BookSource source,
     Map<ReferenceBookHit, int> matchLengths,
+    int partialFolderToken,
   ) {
     final phraseLength = phrase.split(' ').length;
     final found = {for (final hit in hits) hit.bookId};
@@ -2524,6 +2531,8 @@ class FindRefRepository {
           candidate,
           queryTokens,
           queryTokens.length.clamp(0, candidate.length),
+          wholeWords: candidate.length - book.titleTokens.length,
+          partialIndex: partialFolderToken,
         );
         // ההתאמה חייבת לכסות את כל מילות התיקייה שבשם — אחרת 'שות' לבדה
         // הייתה גוררת את כל תוכן התיקייה.
@@ -2552,19 +2561,23 @@ class FindRefRepository {
   }
 
   /// מספר הטוקנים המובילים הארוך ביותר (עד [cap]) שכל אחד מהם תחילית של
-  /// הטוקן שבאותו מקום ב-[nameTokens].
+  /// הטוקן שבאותו מקום ב-[nameTokens]. [wholeWords] הראשונים (מילות התיקייה)
+  /// נדרשים במלואם, חוץ מ-[partialIndex] — אחרת "רא"ש" התאים לכל תיקיית "ראשונים".
   static int? _leadingPrefixMatch(
     List<String> nameTokens,
     List<String> queryTokens,
-    int cap,
-  ) {
+    int cap, {
+    int wholeWords = 0,
+    int partialIndex = -1,
+  }) {
     for (var n = cap; n >= 1; n--) {
       if (n > nameTokens.length) continue;
       var ok = true;
       for (var i = 0; i < n; i++) {
-        if (!bookNameMatchToken(
-          nameTokens[i],
-        ).startsWith(bookNameMatchToken(queryTokens[i]))) {
+        final name = bookNameMatchToken(nameTokens[i]);
+        final query = bookNameMatchToken(queryTokens[i]);
+        final whole = i < wholeWords && i != partialIndex;
+        if (whole ? name != query : !name.startsWith(query)) {
           ok = false;
           break;
         }

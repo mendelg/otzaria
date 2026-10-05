@@ -238,6 +238,21 @@ void main() {
       ]);
     });
 
+    test('מילת תיקייה נדרשת במלואה: "רא"ש" אינו תחילית של "ראשונים"', () async {
+      final repo = _repo(
+        books: [
+          _book(1, 'הלכות ברכות להריטבא', folders: const ['הלכה', 'ראשונים']),
+        ],
+      );
+      expect(await personal(repo, 'רא"ש ברכות'), isEmpty);
+      // מילה אחרונה עשויה להיות באמצע הקלדה, אבל ראשי-תיבות בגרשיים הם מילה שלמה
+      expect(await personal(repo, 'רא"ש'), isEmpty);
+      expect(
+        (await personal(repo, 'ראשונים הלכות ברכות')).map((r) => r.title),
+        contains('הלכות ברכות להריטבא'),
+      );
+    });
+
     test('ספר רשמי קודם לספר אישי כשהרלוונטיות שווה', () async {
       final repo = FindRefRepository(
         dataRepository: MockDataRepository(),
