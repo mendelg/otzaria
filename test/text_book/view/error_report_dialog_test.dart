@@ -188,6 +188,10 @@ void main() {
         'otzaria.200@gmail.com,WikiJewishBooks@gmail.com',
       );
       expect(
+        ErrorReportHelper.emailRecipientsFor('DictaToOtzaria'),
+        'otzaria.200@gmail.com,jewishoffice@gmail.com',
+      );
+      expect(
         ErrorReportHelper.emailRecipientsFor('yam-HaHachmaToOtzaria'),
         'otzaria.200@gmail.com,y025837086@gmail.com',
       );
@@ -661,18 +665,21 @@ void main() {
       expect(result.usedLineFallback, isFalse);
     });
 
-    test('should handle three occurrences in same line by returning full line context', () {
-      final content = ['אמר שלום ואז שלום ושוב שלום'];
+    test(
+      'should handle three occurrences in same line by returning full line context',
+      () {
+        final content = ['אמר שלום ואז שלום ושוב שלום'];
 
-      final result = ErrorReportHelper.resolveSelectionContext(
-        content: content,
-        selectedText: 'שלום',
-        preferredLineNumber: 0,
-      );
+        final result = ErrorReportHelper.resolveSelectionContext(
+          content: content,
+          selectedText: 'שלום',
+          preferredLineNumber: 0,
+        );
 
-      expect(result.usedLineFallback, isTrue);
-      expect(result.contextText, contains('שלום ואז שלום ושוב שלום'));
-    });
+        expect(result.usedLineFallback, isTrue);
+        expect(result.contextText, contains('שלום ואז שלום ושוב שלום'));
+      },
+    );
 
     test('should handle empty selected text gracefully', () {
       final content = ['שורה ראשונה', 'שורה שנייה'];

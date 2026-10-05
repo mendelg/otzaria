@@ -357,6 +357,7 @@ class ErrorReportHelper {
       'wikiSource': '$_fallbackMail,novartza@gmail.com',
       'Pninim': '$_fallbackMail,contact@pninim.org',
       'Tashma': '$_fallbackMail,jewishoffice@gmail.com',
+      'Dicta': '$_fallbackMail,jewishoffice@gmail.com',
       'Ben-Yehuda': '$_fallbackMail,editor@benyehuda.org',
       // רישיון "ים החכמה" מחייב שדיווח על ספר משלהם יגיע גם אליהם.
       'yam-HaHachma': '$_fallbackMail,y025837086@gmail.com',
