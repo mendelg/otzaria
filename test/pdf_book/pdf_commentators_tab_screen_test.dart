@@ -415,6 +415,49 @@ void main() {
     expect(find.widgetWithText(NavTreeTile, 'פרק א'), findsOneWidget);
   });
 
+  testWidgets('בחירת כותרת בעץ הניווט שומרת את החיפוש במפרשים', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final sourceTab = PdfBookTab(
+      book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),
+      pageNumber: 1,
+    );
+    addTearDown(sourceTab.dispose);
+    sourceTab.pdfHeadings = PdfHeadings(
+      bookTitle: 'PDF בדיקה',
+      headingsMap: {'פרק א': 1, 'פרק ב': 10},
+    );
+    sourceTab.currentTitle.value = 'פרק א';
+    final tab = PdfCommentatorsTab(sourceTab: sourceTab);
+    await tester.pumpWidget(_wrap(PdfCommentatorsTabScreen(tab: tab)));
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('חיפוש').first);
+    await tester.pumpAndSettle();
+    final searchField = find.widgetWithText(TextField, 'חיפוש במפרשים...');
+    await tester.enterText(searchField, 'אמר');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ניווט'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NavTreeTile, 'פרק ב'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widgetList<EditableText>(
+            find.byType(EditableText, skipOffstage: false),
+          )
+          .map((field) => field.controller.text),
+      contains('אמר'),
+    );
+  });
+
   // issue #1112 — פערים מול כרטיסיית המפרשים של ספר טקסט.
   group('התאמה לכרטיסיית המפרשים של טקסט (issue #1112)', () {
     PdfBookTab sourceTab() {
