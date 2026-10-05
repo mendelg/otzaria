@@ -34,7 +34,10 @@ import 'package:otzaria/services/data_collection_service.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/utils/file/disk_free_space.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show SemanticRetrievalMode;
+    show
+        SemanticHighlightTarget,
+        SemanticPassageHighlight,
+        SemanticRetrievalMode;
 import 'package:path/path.dart' as p;
 import 'package:seforim_library_updater/seforim_library_updater.dart'
     show PatchDownloadCancelled, PatchDownloadException, PatchNetworkException;
@@ -340,6 +343,22 @@ class SemanticSearchRepository {
       rethrow;
     } finally {
       _activeSearches.remove(handle);
+    }
+  }
+
+  /// מסמן בכל יעד את הקטע הקרוב ל-[query]; רק אחרי חיפוש, ולכן אינו פותח.
+  /// [cancel] מבוטל גם כשה-session נסגר. זורק [SemanticFailure] בכשל.
+  Future<List<SemanticPassageHighlight>> passageHighlights(
+    String query,
+    List<SemanticHighlightTarget> targets,
+    SemanticCancelHandle cancel,
+  ) async {
+    if (targets.isEmpty) return const [];
+    _activeSearches.add(cancel);
+    try {
+      return await _backend.passageHighlights(query, targets, cancel: cancel);
+    } finally {
+      _activeSearches.remove(cancel);
     }
   }
 

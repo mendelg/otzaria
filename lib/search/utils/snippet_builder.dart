@@ -48,11 +48,13 @@ class SnippetBuilder {
   ///
   /// טקסט שעטוף בתג הדגשה ([_highlightTags]) מקבל את [highlightStyle];
   /// שאר הטקסט מקבל את [defaultStyle]. תגי HTML אחרים מנוקים ומוצג רק
-  /// תוכן הטקסט שלהם.
+  /// תוכן הטקסט שלהם. [markStyle], כשניתן, מחליף את [highlightStyle] בתג
+  /// `mark` בלבד — שבו המנוע מסמן קטע לפי עניין.
   static List<InlineSpan> fromHighlightedHtml({
     required String html,
     required TextStyle defaultStyle,
     required TextStyle highlightStyle,
+    TextStyle? markStyle,
   }) {
     final body = html_parser.parse(_withLineBreakMarks(html)).body;
     if (body == null) {
@@ -62,10 +64,10 @@ class SnippetBuilder {
     final spans = <InlineSpan>[];
     _appendHtmlSpans(
       body,
-      highlighted: false,
+      style: defaultStyle,
       spans: spans,
-      defaultStyle: defaultStyle,
       highlightStyle: highlightStyle,
+      markStyle: markStyle ?? highlightStyle,
     );
 
     if (spans.isEmpty) {
@@ -74,32 +76,34 @@ class SnippetBuilder {
     return spans;
   }
 
+  /// [style] הוא הסגנון שהורש; הדגשה חיצונית קובעת גם לתגים שבתוכה.
   static void _appendHtmlSpans(
     dom.Node node, {
-    required bool highlighted,
+    required TextStyle style,
     required List<InlineSpan> spans,
-    required TextStyle defaultStyle,
     required TextStyle highlightStyle,
+    required TextStyle markStyle,
+    bool highlighted = false,
   }) {
     for (final child in node.nodes) {
       if (child is dom.Text) {
         final text = _collapseWhitespace(child.text);
         if (text.isEmpty) continue;
-        spans.add(
-          TextSpan(
-            text: text,
-            style: highlighted ? highlightStyle : defaultStyle,
-          ),
-        );
+        spans.add(TextSpan(text: text, style: style));
       } else if (child is dom.Element) {
-        final isHighlight =
-            highlighted || _highlightTags.contains(child.localName);
+        final tag = child.localName;
+        final opens = !highlighted && _highlightTags.contains(tag);
         _appendHtmlSpans(
           child,
-          highlighted: isHighlight,
+          style: !opens
+              ? style
+              : tag == 'mark'
+              ? markStyle
+              : highlightStyle,
           spans: spans,
-          defaultStyle: defaultStyle,
           highlightStyle: highlightStyle,
+          markStyle: markStyle,
+          highlighted: highlighted || opens,
         );
       }
     }

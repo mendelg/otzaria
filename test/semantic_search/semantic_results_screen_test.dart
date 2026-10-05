@@ -16,10 +16,12 @@ import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
+import 'package:otzaria/semantic_search/bloc/semantic_results_bloc.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/view/widgets/semantic_result_card.dart';
 import 'package:otzaria/semantic_search/services/semantic_dwell_binding.dart';
 import 'package:otzaria/search/view/full_text_settings_widgets.dart';
+import 'package:otzaria/search/view/search_results_layout.dart';
 import 'package:otzaria/semantic_search/view/semantic_search_results_screen.dart';
 import 'package:otzaria/semantic_search/view/widgets/semantic_facet_filtering.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
@@ -30,6 +32,7 @@ import 'package:otzaria/tabs/bloc/tabs_event.dart';
 import 'package:otzaria/tabs/bloc/tabs_state.dart';
 import 'package:otzaria/tabs/models/semantic_search_tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/theme/app_surfaces.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
     show SemanticResultSource;
 
@@ -171,6 +174,149 @@ void main() {
     expect(find.text(kSemanticSourceBothLabel), findsWidgets);
     expect(find.text(kSemanticSourceSemanticLabel), findsOneWidget);
     expect(find.text(kSemanticSourceLexicalLabel), findsOneWidget);
+  });
+
+  testWidgets('קטע לפי עניין מסומן ברקע בהיר, בלי הדגשה מודגשת', (
+    tester,
+  ) async {
+    final items = [
+      resultItem(1),
+      resultItem(2, source: SemanticResultSource.semantic, html: 'בלי סימון'),
+    ];
+    final source = FakeResultsSource(items: items)
+      ..highlighter = (items, _) async => markAll(items);
+    await pumpScreen(tester, injectedSource: source);
+
+    final card = tester.widget<SemanticResultCard>(
+      find.byKey(const ValueKey('semantic-result-1')),
+    );
+    final spans = card.snippetSpans.whereType<TextSpan>().toList();
+    final mark = spans.singleWhere((s) => s.text == 'הקטע הקרוב 2');
+    final plain = spans.singleWhere((s) => s.text == 'לפני ');
+    final context = tester.element(find.byType(SemanticResultCard).first);
+    expect(
+      mark.style?.backgroundColor,
+      AppSurfaces.semanticPassageHighlight(Theme.of(context).colorScheme),
+    );
+    expect(mark.style?.fontWeight, plain.style?.fontWeight);
+    expect(mark.style?.fontSize, plain.style?.fontSize);
+    expect(mark.style?.color, plain.style?.color);
+    // התאמה מילולית אינה מסומנת לפי עניין.
+    expect(source.highlightCalls.single.items, [items[1]]);
+  });
+
+  testWidgets('סימון והצבעה בונים רק את הכרטיסים, לא את מסגרת המסך', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final items = [
+      resultItem(1),
+      resultItem(2, source: SemanticResultSource.semantic, html: 'בלי סימון'),
+    ];
+    final source = FakeResultsSource(items: items)
+      ..highlighter = (items, _) async {
+        await gate.future;
+        return markAll(items);
+      };
+    await pumpScreen(tester, injectedSource: source);
+    final layout = tester.widget(find.byType(SearchResultsLayout));
+
+    gate.complete();
+    await settle(tester);
+    await tester.tap(find.byKey(const ValueKey('semantic-like-1')));
+    await settle(tester);
+
+    expect(
+      identical(tester.widget(find.byType(SearchResultsLayout)), layout),
+      isTrue,
+    );
+    final card = tester.widget<SemanticResultCard>(
+      find.byKey(const ValueKey('semantic-result-1')),
+    );
+    expect(
+      card.snippetSpans.whereType<TextSpan>().map((s) => s.text),
+      contains('הקטע הקרוב 2'),
+    );
+    expect(
+      tester
+          .widget<SemanticResultCard>(
+            find.byKey(const ValueKey('semantic-result-0')),
+          )
+          .vote,
+      SearchFeedbackVote.like,
+    );
+  });
+
+  test('מסגרת המסך נבנית מחדש על כל שינוי אחר', () {
+    final base = SemanticResultsState(
+      status: SemanticResultsStatus.loaded,
+      items: [resultItem(1)],
+    );
+    expect(
+      semanticLayoutNeedsRebuild(
+        base,
+        base.copyWith(
+          passageHighlights: {0: '<mark>א</mark>'},
+          votes: {0: SearchFeedbackVote.like},
+        ),
+      ),
+      isFalse,
+    );
+    expect(
+      semanticLayoutNeedsRebuild(
+        base,
+        base.copyWith(items: [resultItem(1), resultItem(2)]),
+      ),
+      isTrue,
+    );
+    expect(
+      semanticLayoutNeedsRebuild(base, base.copyWith(isDebugPreview: true)),
+      isTrue,
+    );
+    expect(
+      semanticLayoutNeedsRebuild(
+        base,
+        base.copyWith(status: SemanticResultsStatus.loading),
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('העתקה מעתיקה את הקטע המוצג, גם כשהוא מסומן', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final items = [
+      resultItem(1),
+      resultItem(2, source: SemanticResultSource.semantic, html: 'בלי סימון'),
+    ];
+    final source = FakeResultsSource(items: items)
+      ..highlighter = (items, _) async => markAll(items);
+    await pumpScreen(tester, injectedSource: source);
+
+    tester
+        .widget<SemanticResultCard>(
+          find.byKey(const ValueKey('semantic-result-1')),
+        )
+        .onCopy();
+    await settle(tester);
+
+    expect(copied, contains('לפני הקטע הקרוב 2 אחרי'));
+    expect(copied, isNot(contains('בלי סימון')));
+    await tester.pump(const Duration(seconds: 7));
   });
 
   testWidgets('אהבתי, לחיצה חוזרת מבטלת; לא אהבתי', (tester) async {

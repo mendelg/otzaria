@@ -151,7 +151,7 @@ void main() {
   group('פרטיות התשובה', () {
     SemanticResultsPage page(String? reason) => SemanticResultsPage(
       items: const [],
-      pageableTotal: 0,
+      hasMore: false,
       executedMode: 'lexicalOnly',
       semanticAvailable: false,
       fallbackReason: reason,
