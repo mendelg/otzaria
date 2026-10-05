@@ -253,4 +253,8 @@ const aboutAdditionalSources = <Map<String, String>>[
     'logo': 'assets/logo_books/yam_hahachma_logo.png',
     'logoOriginalColor': 'true',
   },
+  {
+    'name': 'מכון בית אהרן וישראל',
+    'url': 'https://machon.co.il/',
+  },
 ];

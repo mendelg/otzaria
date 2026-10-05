@@ -69,6 +69,17 @@ void main() {
       expect(info.logo, isEmpty);
     });
 
+    test(
+      'should resolve the BeitAharonVeYisraelToOtzaria source as stored in DB',
+      () {
+        final info = getSourceDisplayInfo('BeitAharonVeYisraelToOtzaria');
+
+        expect(info.text, equals('מכון בית אהרן וישראל'));
+        expect(info.url, equals('https://machon.co.il/'));
+        expect(info.logo, isEmpty);
+      },
+    );
+
     test('unknown sources fall back to the raw name without a logo', () {
       final info = getSourceDisplayInfo('SomeNewSourceToOtzaria');
 
@@ -139,6 +150,25 @@ void main() {
       expect(isWikiJewishBooksSource('wikisourceToOtzaria'), isFalse);
       expect(isWikiJewishBooksSource(''), isFalse);
       expect(isWikiJewishBooksSource(null), isFalse);
+    });
+  });
+
+  group('isBeitAharonVeYisraelSource', () {
+    test(
+      'should detect the BeitAharonVeYisraelToOtzaria source as stored in DB',
+      () {
+        expect(
+          isBeitAharonVeYisraelSource('BeitAharonVeYisraelToOtzaria'),
+          isTrue,
+        );
+        expect(isBeitAharonVeYisraelSource('Beit-Aharon-VeYisrael'), isTrue);
+      },
+    );
+
+    test('should return false for other or empty sources', () {
+      expect(isBeitAharonVeYisraelSource('Sefaria'), isFalse);
+      expect(isBeitAharonVeYisraelSource(''), isFalse);
+      expect(isBeitAharonVeYisraelSource(null), isFalse);
     });
   });
 }
