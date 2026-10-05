@@ -1254,32 +1254,23 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       controller: _searchController,
       hintText: 'חפש בתוך המפרשים המוצגים...',
       icon: OtzariaIcons.search_in_the_library_24_regular,
+      // Enter moves to the next match and keeps focus in the field; selecting
+      // all on focus would erase the query on the next key.
       selectAllOnFocus: false,
       trailingActions: [
         if (_searchQuery.isNotEmpty && _totalSearchResults > 1) ...[
-          OtzariaSearchAction.resultCounter(
-            current: _currentSearchIndex + 1,
-            total: _totalSearchResults,
-            context: context,
-          ),
+          if (_currentSearchIndex >= 0)
+            OtzariaSearchAction.resultCounter(
+              current: _currentSearchIndex + 1,
+              total: _totalSearchResults,
+              context: context,
+            ),
           OtzariaSearchAction.prevResult(
-            onPressed: _currentSearchIndex > 0
-                ? () {
-                    setState(() {
-                      _currentSearchIndex--;
-                    });
-                    _scrollToSearchResult();
-                  }
-                : null,
+            onPressed: _currentSearchIndex > 0 ? navigateSearchPrev : null,
           ),
           OtzariaSearchAction.nextResult(
             onPressed: _currentSearchIndex < _totalSearchResults - 1
-                ? () {
-                    setState(() {
-                      _currentSearchIndex++;
-                    });
-                    _scrollToSearchResult();
-                  }
+                ? navigateSearchNext
                 : null,
           ),
         ],
@@ -1292,7 +1283,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       onChanged: (value) {
         setState(() {
           _searchQuery = value;
-          _currentSearchIndex = 0;
+          // No current match until the first Enter, so it lands on the first.
+          _currentSearchIndex = -1;
           if (value.isEmpty) {
             _searchResultsPerLink.clear();
             _searchSnippetsPerLink.clear();
@@ -1300,6 +1292,10 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           }
         });
         _scheduleSearchCompute();
+      },
+      onSubmitted: (_) {
+        navigateSearchNext();
+        _searchFocusNode.requestFocus();
       },
     );
   }

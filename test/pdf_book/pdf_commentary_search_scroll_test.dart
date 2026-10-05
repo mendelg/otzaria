@@ -97,7 +97,7 @@ Future<void> main() async {
             .first,
       );
       final next = nextButton.onPressed!;
-      for (var i = 0; i < 28; i++) {
+      for (var i = 0; i < 29; i++) {
         next();
       }
       await tester.pump();
@@ -113,10 +113,55 @@ Future<void> main() async {
         reason: 'הגלילה העדינה צריכה להביא את המפרש של התוצאה לתצוגה',
       );
     }, skip: !engineReady);
+
+    testWidgets('Enter בשדה החיפוש עובר לתוצאה הבאה', (tester) async {
+      final tab = _tab(index2: 2);
+      addTearDown(tab.dispose);
+
+      await tester.pumpWidget(
+        _wrap(
+          PdfCommentaryPanel(
+            tab: tab,
+            linksCount: tab.links.length,
+            openBookCallback: (_) {},
+            fontSize: 16,
+            commentaryGroupsLoader: (links) async => [
+              for (final link in links)
+                LinkGroup(
+                  bookTitle: link.path2.replaceAll('.txt', ''),
+                  links: [link],
+                ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(FluentIcons.search_24_regular).first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'עמק');
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('/$_groupCount'), findsNothing);
+
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('1/$_groupCount'), findsOneWidget);
+
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2/$_groupCount'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+        isTrue,
+      );
+    }, skip: !engineReady);
   });
 }
 
-PdfBookTab _tab() {
+/// [index2] keeps each test's links apart in the static content cache: a
+/// future cached by an earlier test never completes in a later one.
+PdfBookTab _tab({int index2 = 1}) {
   final tab = PdfBookTab(
     book: PdfBook(title: 'ספר בדיקה', path: '/books/ספר בדיקה.pdf'),
     pageNumber: 1,
@@ -129,7 +174,7 @@ PdfBookTab _tab() {
         heRef: _title(i),
         index1: 12,
         path2: '${_title(i)}.txt',
-        index2: 1,
+        index2: index2,
         connectionType: 'COMMENTARY',
         targetCategoryId: 1,
         targetFileType: 'txt',
