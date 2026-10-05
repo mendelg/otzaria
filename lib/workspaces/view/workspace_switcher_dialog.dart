@@ -27,6 +27,7 @@ class WorkspaceSwitcherDialog extends StatefulWidget {
 
 class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
   final TextEditingController _textFieldController = TextEditingController();
+  bool _switchPending = false;
 
   @override
   void initState() {
@@ -198,12 +199,20 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
         children: [
           InkWell(
             onTap: () async {
+              if (_switchPending) return;
+              _switchPending = true;
               // הכרטיסיות נשמרות לשולחן, אך מצב ה-JS של תוסף אינו נשמר איתן.
-              final tabsState = context.read<TabsBloc>().state;
+              final tabsBloc = context.read<TabsBloc>();
               final workspaceBloc = context.read<WorkspaceBloc>();
               final navigationBloc = context.read<NavigationBloc>();
               final navigator = Navigator.of(context);
-              if (!await confirmCloseTabs(context, tabsState.tabs)) return;
+              final route = ModalRoute.of(context);
+              if (!await confirmCloseTabs(context, tabsBloc.state.tabs)) {
+                _switchPending = false;
+                return;
+              }
+              if (!context.mounted || route?.isCurrent != true) return;
+              final tabsState = tabsBloc.state;
               workspaceBloc.add(
                 SwitchToWorkspace(
                   targetWorkspaceId: workspace.id,
@@ -212,16 +221,22 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
                   // החלונית הפעילה נשמרת כצד: שולחן עבודה משכפל את
                   // הטאבים, וזהות האובייקט אובדת ממילא.
                   currentActivePaneToSave: tabsState.activePaneSide,
+                  onCompleted: (hasTabs) {
+                    _switchPending = false;
+                    if (hasTabs == null ||
+                        !context.mounted ||
+                        route?.isCurrent != true) {
+                      return;
+                    }
+                    navigationBloc.add(
+                      NavigateToScreen(
+                        hasTabs ? Screen.reading : Screen.library,
+                      ),
+                    );
+                    navigator.pop();
+                  },
                 ),
               );
-              // כמו בעליית התוכנה: שולחן עם ספרים נפתח בעיון, ריק — בספרייה.
-              final hasBooks = isActive
-                  ? tabsState.tabs.isNotEmpty
-                  : workspace.tabs.isNotEmpty;
-              navigationBloc.add(
-                NavigateToScreen(hasBooks ? Screen.reading : Screen.library),
-              );
-              navigator.pop();
             },
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -353,9 +368,7 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
   }
 }
 
-/// שורת שם השולחן עם מצב עריכה. המצב מוחזק ב-State (ולא במשתני closure בתוך
-/// Builder) כדי שלא יתאפס ב-rebuild שגורמת פתיחת המקלדת — איפוס כזה היה מסיר
-/// את שדה הקלט וסוגר את המקלדת מיד אחרי שנפתחה.
+/// מצב העריכה נשמר ב-State כדי שפתיחת המקלדת לא תסגור את שדה הקלט.
 class _WorkspaceNameField extends StatefulWidget {
   const _WorkspaceNameField({required this.workspace});
 

@@ -59,11 +59,15 @@ class SwitchToWorkspace extends WorkspaceEvent {
   /// צד החלונית הפעילה לשמירה — ראו [Workspace.activePane].
   final String? currentActivePaneToSave;
 
+  /// נקרא בסיום: האם נפתחו כרטיסיות, או null אם המעבר לא הצליח.
+  final void Function(bool? hasTabs)? onCompleted;
+
   const SwitchToWorkspace({
     required this.targetWorkspaceId,
     required this.currentTabsToSave,
     required this.currentTabIndexToSave,
     this.currentActivePaneToSave,
+    this.onCompleted,
   });
 
   @override
@@ -72,6 +76,7 @@ class SwitchToWorkspace extends WorkspaceEvent {
     currentTabsToSave,
     currentTabIndexToSave,
     currentActivePaneToSave,
+    onCompleted,
   ];
 }
 

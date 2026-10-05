@@ -14,17 +14,7 @@ import 'package:otzaria/workspaces/workspace.dart';
 import 'package:otzaria/workspaces/workspace_repository.dart';
 import 'package:otzaria/tabs/models/tab.dart';
 
-/// Bloc for managing workspaces.
-///
-/// **Key architectural change:** This Bloc no longer holds a reference to TabsBloc.
-/// Instead, the UI acts as a coordinator:
-/// - When switching workspaces, the UI passes current tab data via events
-/// - The UI listens to state changes and updates TabsBloc accordingly
-///
-/// This decoupling enables:
-/// - Unit testing in isolation
-/// - Clear data flow
-/// - No circular dependencies
+/// מנהל שולחנות עבודה; ה-UI מוסר את הכרטיסיות החיות ומחליף אותן בעת מעבר.
 class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
   final WorkspaceRepository _repository;
 
@@ -209,18 +199,11 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
       return w;
     }).toList();
 
-    // ⚠️ **השמירה קודמת לחשיפה.** החלפת הכרטיסיות החיות משחררת את הכרטיסיות
-    // של השולחן הנעזב, ולכן כשל שמירה אחריה מוחק אותן לצמיתות.
-    final List<Workspace> saved;
+    // החלפת הכרטיסיות משחררת את הקודמות; כשל שמירה חייב להקדים אותה.
+    List<Workspace>? saved;
+    bool? hasTabs;
     try {
       saved = await _repository.mutateWorkspaces(stash);
-    } catch (e) {
-      UiSnack.showError(NotesMessages.workspaceSwitchFailed);
-      emit(state.copyWith(error: 'Failed to switch workspace: $e'));
-      return;
-    }
-
-    try {
       // 2. Get the target workspace, from the authoritative list.
       //
       // ⚠️ `firstWhereOrNull`: השולחן יכול להיעלם בין בניית התפריט
@@ -263,6 +246,7 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
         ),
       );
       _warnIfOpenElsewhere(event.targetWorkspaceId);
+      hasTabs = targetWorkspace.tabs.isNotEmpty;
     } catch (e) {
       UiSnack.showError(NotesMessages.workspaceSwitchFailed);
       emit(
@@ -271,6 +255,8 @@ class WorkspaceBloc extends Bloc<WorkspaceEvent, WorkspaceState> {
           error: 'Failed to switch workspace: $e',
         ),
       );
+    } finally {
+      event.onCompleted?.call(hasTabs);
     }
   }
 
