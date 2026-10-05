@@ -11,6 +11,7 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/pdf_book/view/pdf_commentary_panel.dart';
 import 'package:otzaria/widgets/commentary/commentary_content.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_event.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
@@ -24,7 +25,7 @@ import '../helpers/memory_settings_cache.dart';
 
 // כותרות ייחודיות: מטמון התוכן של Link סטטי ומשותף לכל הבדיקות.
 const _commentatorPrefix = 'מפרש רשימה עצלה PDF';
-const _groupCount = 1;
+const _groupCount = 60;
 
 // ריפוד באפסים: מיון הקישורים לפי כותרת שווה למיון המספרי.
 String _title(int i) => '$_commentatorPrefix ${i.toString().padLeft(2, "0")}';
@@ -73,7 +74,87 @@ void main() {
       expect(built, greaterThan(0));
       expect(built, lessThan(40));
     });
+
+    testWidgets('"כווץ הכל" ו"הרחב הכל" משאירים בתצוגה את הקבוצה העליונה', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(600, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final tab = _manyGroupsTab(groups: 60, perGroup: 5);
+      addTearDown(tab.dispose);
+      await tester.pumpWidget(
+        _wrap(
+          PdfCommentaryPanel(
+            tab: tab,
+            linksCount: tab.links.length,
+            openBookCallback: (_) {},
+            fontSize: 16,
+            commentaryGroupsLoader: (links) async => [
+              for (var g = 1; g <= 60; g++)
+                LinkGroup(
+                  bookTitle: _title(g),
+                  links: [
+                    for (final link in links)
+                      if (link.path2 == '${_title(g)}.txt') link,
+                  ],
+                ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+        find.text(_title(20)),
+        find.byType(ScrollablePositionedList).first,
+        const Offset(0, -300),
+      );
+      await tester.pumpAndSettle();
+
+      tester
+          .state<PdfCommentaryPanelState>(find.byType(PdfCommentaryPanel))
+          .toggleAllExpanded();
+      await tester.pumpAndSettle();
+
+      expect(find.text(_title(20)).hitTestable(), findsOneWidget);
+
+      tester
+          .state<PdfCommentaryPanelState>(find.byType(PdfCommentaryPanel))
+          .toggleAllExpanded();
+      await tester.pumpAndSettle();
+
+      expect(find.text(_title(20)).hitTestable(), findsOneWidget);
+    });
   });
+}
+
+/// [groups] commentators with [perGroup] commentaries each.
+PdfBookTab _manyGroupsTab({required int groups, required int perGroup}) {
+  final tab = PdfBookTab(
+    book: PdfBook(title: 'ספר בדיקה', path: '/books/ספר בדיקה.pdf'),
+    pageNumber: 1,
+  );
+  tab.currentTextLineNumber = 10;
+  tab.currentTextLineNumberEnd = 40;
+  tab.links = [
+    for (var g = 1; g <= groups; g++)
+      for (var i = 1; i <= perGroup; i++)
+        Link(
+          // Unlike the group header, so the header text is found once.
+          heRef: '${_title(g)}, $i',
+          index1: 12,
+          path2: '${_title(g)}.txt',
+          index2: i,
+          connectionType: 'COMMENTARY',
+          targetCategoryId: 1,
+          targetFileType: 'txt',
+        ),
+  ];
+  tab.activeCommentators = {for (var g = 1; g <= groups; g++) _title(g)};
+  return tab;
 }
 
 PdfCommentaryPanel _panel(PdfBookTab tab) => PdfCommentaryPanel(

@@ -822,6 +822,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   /// מרחיב/מכווץ את כל קבוצות המפרשים (להפעלה מסרגל הכלים של הכרטיסייה).
   void toggleAllExpanded() {
+    // Toggling adds or removes items above the view, so the list index would
+    // land elsewhere. Keep the group that was on top in view instead.
+    final anchorTitle = _topVisibleGroupTitle();
     setState(() {
       final nextExpanded = !_allExpanded;
       _allExpanded = nextExpanded;
@@ -833,6 +836,23 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       }
     });
     widget.externalAllExpandedNotifier?.value = _allExpanded;
+    if (anchorTitle == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_itemScrollController.isAttached) return;
+      final index = _flatItems.indexWhere(
+        (item) => item.link == null && item.group.bookTitle == anchorTitle,
+      );
+      if (index >= 0) _itemScrollController.jumpTo(index: index);
+    });
+  }
+
+  String? _topVisibleGroupTitle() {
+    final visible = _itemPositionsListener.itemPositions.value.where(
+      (position) => position.itemTrailingEdge > 0,
+    );
+    if (visible.isEmpty) return null;
+    final top = visible.reduce((a, b) => a.index <= b.index ? a : b).index;
+    return top < _flatItems.length ? _flatItems[top].group.bookTitle : null;
   }
 
   void _scheduleSearchCompute() {
