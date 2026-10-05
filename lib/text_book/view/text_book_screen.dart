@@ -960,12 +960,8 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   Future<void> _checkAltTitles() async {
     try {
       final textBookBloc = context.read<TextBookBloc>();
-      final structures = await DatabaseLibraryProvider.instance
-          .getAlternativeStructuresForBook(widget.tab.book);
-      final dibburim = await loadDibburimForBook(widget.tab.book);
-
-      if (!mounted) return;
-
+      // טאב משוחזר נבנה לפני שהמסד ומיפוי הספר לספק מוכנים —
+      // טעינת התוכן מכינה אותם, ולכן השאילתות רק אחריה.
       final currentState = textBookBloc.state;
       final TextBookLoaded state;
       if (currentState is TextBookLoaded) {
@@ -977,6 +973,11 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
             .first;
         if (!mounted) return;
       }
+      final structures = await DatabaseLibraryProvider.instance
+          .getAlternativeStructuresForBook(widget.tab.book);
+      final dibburim = await loadDibburimForBook(widget.tab.book);
+      if (!mounted) return;
+
       final usableDibburim =
           hasDibburimEntries(
             state.tableOfContents,
