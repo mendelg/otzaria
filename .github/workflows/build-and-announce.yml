@@ -1141,7 +1141,9 @@ jobs:
           bash tool/release/download_library_db.sh full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
-          curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
+          # lexical-v2.db הוא המילון המתוקן; lexical.db קפוא לגרסאות ישנות של התוכנה.
+          curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical-v2.db -o full_installer/library_db/lexical.db \
+            || curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
 
       # תוספים מצורפים לחבילות — הרשימה ב-lib/plugins/services/bundled_plugin_ids.dart
       # (רשימה ריקה = השלב לא עושה דבר). ראה docs/bundled_plugins.md.
@@ -1981,7 +1983,9 @@ jobs:
           bash tool/release/download_library_db.sh full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
-          curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
+          # lexical-v2.db הוא המילון המתוקן; lexical.db קפוא לגרסאות ישנות של התוכנה.
+          curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical-v2.db -o full_installer/library_db/lexical.db \
+            || curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
 
       # תוספים מצורפים — במובייל אין "ליד ה-executable", לכן הארכיונים נארזים
       # כ-assets בתוך ה-APK והאפליקציה רושמת אותם משם (docs/bundled_plugins.md).
@@ -2177,7 +2181,9 @@ jobs:
           bash tool/release/download_library_db.sh full_installer/library_db/seforim.db.zst
           curl -L --fail https://github.com/Otzaria/otzar-HB_catalog/releases/latest/download/otzar-HB_catalog.db.zst -o full_installer/library_db/otzar-HB_catalog.db.zst
           curl -L --fail https://github.com/Otzaria/otzaria-library/releases/latest/download/talmud_bavli_latest.tar.zst -o full_installer/library_db/talmud_bavli_latest.tar.zst
-          curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
+          # lexical-v2.db הוא המילון המתוקן; lexical.db קפוא לגרסאות ישנות של התוכנה.
+          curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical-v2.db -o full_installer/library_db/lexical.db \
+            || curl -L --fail https://github.com/Otzaria/SeforimMagicIndexer/releases/latest/download/lexical.db -o full_installer/library_db/lexical.db
 
       - name: Verify Universal Binary
         run: |

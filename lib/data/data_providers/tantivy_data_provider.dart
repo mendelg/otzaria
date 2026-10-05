@@ -246,6 +246,25 @@ class TantivyDataProvider {
     }
   }
 
+  /// מריץ את [replace] כשהמנוע אינו מחזיק את המילון — Windows חוסם החלפת
+  /// קובץ פתוח — ואחריו טוען אותו מחדש, כדי שגם ב-POSIX ייקרא הקובץ החדש.
+  Future<void> replaceMagicDictionaryDetached(
+    Future<void> Function() replace,
+  ) async {
+    // אינדוקס נועל את המנוע לכתיבה והקריאה הסינכרונית הייתה מקפיאה את הממשק;
+    // ב-Windows ההחלפה תיכשל אז, והעותק הממתין יותקן בפתיחת המנוע הבאה.
+    if (isIndexing.value) return replace();
+    final searchEngine = await engine;
+    final dictPath = await AppPaths.getMagicDictionaryPath();
+    // פתיחת נתיב שאינו קיים נכשלת, והמנוע משחרר את המילון הקודם.
+    searchEngine.setMagicDictionaryPath(path: '$dictPath.detached');
+    try {
+      await replace();
+    } finally {
+      await _attachMagicDictionary(searchEngine);
+    }
+  }
+
   /// האם החיפוש המקורב משתמש כרגע בהרחבה מורפולוגית (מילון טעון).
   Future<bool> get hasMagicDictionary async =>
       (await engine).hasMagicDictionary();
@@ -353,7 +372,9 @@ class TantivyDataProvider {
     void Function(double progress)? onProgress,
     required bool force,
   }) async {
-    final downloader = MagicDictionaryDownloader();
+    final downloader = MagicDictionaryDownloader(
+      aroundReplace: replaceMagicDictionaryDetached,
+    );
     try {
       final ok = await downloader.ensureLatest(
         onProgress: onProgress,
@@ -455,7 +476,11 @@ class TantivyDataProvider {
         ),
       );
 
-      // טעינת מילון מורפולוגי לחיפוש המקורב (best-effort, לא חוסם).
+      // טעינת מילון מורפולוגי לחיפוש המקורב (best-effort, לא חוסם). עותק
+      // ממתין מותקן לפני הטעינה, כשהקובץ עוד אינו פתוח.
+      await MagicDictionaryDownloader.installStagedBeforeAttach(
+        await AppPaths.getMagicDictionaryPath(),
+      );
       await _attachMagicDictionary(engine);
 
       // מילוני החיפוש המתקדם: תרגום ארמי + ראשי-תיבות (best-effort).

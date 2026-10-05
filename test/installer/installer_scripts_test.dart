@@ -1197,6 +1197,39 @@ void main() {
       );
     });
 
+    // lexical.db ב-release קפוא לגרסאות ישנות; המילון המתוקן הוא lexical-v2.db.
+    test('המילון נלקח מ-lexical-v2.db, ו-lexical.db רק כגיבוי', () {
+      final script = File(
+        'installer/download_full_installer_assets.ps1',
+      ).readAsStringSync();
+      expect(
+        script.indexOf(r'$lexicalBase/lexical-v2.db'),
+        allOf(
+          isNonNegative,
+          lessThan(script.indexOf(r'$lexicalBase/lexical.db')),
+        ),
+      );
+
+      for (final entry in const {
+        '.github/workflows/build-and-announce.yml':
+            'SeforimMagicIndexer/releases/latest/download/lexical.db',
+        '.github/workflows/installer-screenshots.yml':
+            'fetch SeforimMagicIndexer lexical.db',
+      }.entries) {
+        final lines = File(entry.key).readAsLinesSync();
+        final fallbacks = lines.where((l) => l.contains(entry.value));
+        expect(fallbacks, isNotEmpty, reason: entry.key);
+        for (final line in fallbacks) {
+          expect(line.trim(), startsWith('||'), reason: entry.key);
+        }
+        expect(
+          lines.where((l) => l.contains('/lexical-v2.db')).length,
+          fallbacks.length,
+          reason: entry.key,
+        );
+      }
+    });
+
     for (final entry in const {
       'Create Linux FULL portable bundle': 'sha256sum',
       'Create macOS FULL portable bundle': 'shasum -a 256',

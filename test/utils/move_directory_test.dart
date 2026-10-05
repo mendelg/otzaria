@@ -179,6 +179,11 @@ void main() {
       await File(
         p.join(source, DatabaseConstants.lexicalDatabaseFileName),
       ).writeAsString('lexical');
+      // סימון הגרסה והעותק הממתין — בלעדיהם המילון היה מורד שוב.
+      const sidecars = ['lexical.db.version', 'lexical.db.next'];
+      for (final name in sidecars) {
+        await File(p.join(source, name)).writeAsString(name);
+      }
       await File(p.join(source, 'my_notes.txt')).writeAsString('נשאר');
 
       await moveDirectory(
@@ -197,6 +202,9 @@ void main() {
         ).exists(),
         isTrue,
       );
+      for (final name in sidecars) {
+        expect(await File(p.join(dest, name)).exists(), isTrue, reason: name);
+      }
       expect(await File(p.join(dest, 'my_notes.txt')).exists(), isFalse);
       expect(await File(p.join(source, 'my_notes.txt')).exists(), isTrue);
     });
