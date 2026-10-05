@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/links.dart';
-import 'package:otzaria/text_book/text_book_repository.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
 
 Link _link({
   int? index1End,

@@ -4,7 +4,7 @@ import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/printing/view/printing_screen.dart';
-import 'package:otzaria/text_book/text_book_repository.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
 
 class _StubRepository extends Mock implements TextBookRepository {
   List<Link> links = const [];

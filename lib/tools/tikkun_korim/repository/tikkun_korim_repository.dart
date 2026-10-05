@@ -7,7 +7,7 @@ import 'dart:isolate';
 import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
 import 'package:otzaria/models/books.dart';
-import 'package:otzaria/text_book/text_book_repository.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
 import 'package:otzaria/tools/tikkun_korim/engine/stam_width_model.dart';
 import 'package:otzaria/tools/tikkun_korim/models/tikkun_models.dart';
 import 'package:otzaria/tools/tikkun_korim/repository/tikkun_contracts.dart';

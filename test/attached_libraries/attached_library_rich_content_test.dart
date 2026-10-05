@@ -21,7 +21,7 @@ import 'package:otzaria/plugins/services/plugin_ref_line_resolver.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
-import 'package:otzaria/text_book/text_book_repository.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
 import 'package:otzaria/text_book/utils/dibburim_structure.dart';
 import 'package:otzaria/book_common/utils/default_commentators.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
