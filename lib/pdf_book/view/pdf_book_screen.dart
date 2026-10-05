@@ -1299,13 +1299,11 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   /// מחזיר שני ערכי כותרת לעמוד נתון:
   /// - [single] משמש כמפתח לחיפוש בכותרות (תמיד עמוד יחיד)
   /// - [display] משמש להצגה למשתמש (שני עמודי הספירייד בתצוגת ספר, אם הם שונים)
-  Future<({String single, String display})> _resolveTitlesForPage(
-    int pageNumber,
-  ) async {
+  ({String single, String display}) _titlesForPage(int pageNumber) {
     final outline = widget.tab.outline.value ?? const <PdfOutlineNode>[];
     final bookTitle = widget.tab.book.title;
     final range = _spreadPageRangeFor(pageNumber);
-    final firstTitle = await refFromPageNumber(
+    final firstTitle = referenceFromPageNumber(
       range.startPage,
       outline,
       bookTitle,
@@ -1314,7 +1312,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     if (!spans) {
       return (single: firstTitle, display: firstTitle);
     }
-    final secondTitle = await refFromPageNumber(
+    final secondTitle = referenceFromPageNumber(
       range.startPage + 1,
       outline,
       bookTitle,
@@ -3735,8 +3733,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     // הסתיימה, אין טעם לכתוב metadata של עמוד ישן — `_onPdfViewerControllerUpdate`
     // כבר טיפל בעמוד החדש, ועדכון נוסף ידרוס אותו.
     if (!mounted || !_isPageStillCurrent(targetPage)) return;
-    final titles = await _resolveTitlesForPage(targetPage);
-    if (!mounted || !_isPageStillCurrent(targetPage)) return;
+    final titles = _titlesForPage(targetPage);
     widget.tab.currentTitle.value = titles.display;
     final resolved = await _resolveTextLineNumberForPage(
       targetPage,
@@ -3855,7 +3852,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       final currentPage = widget.tab.pdfViewerController.isReady
           ? (widget.tab.pdfViewerController.pageNumber ?? widget.tab.pageNumber)
           : widget.tab.pageNumber;
-      final currentTitles = await _resolveTitlesForPage(currentPage);
+      final currentTitles = _titlesForPage(currentPage);
       if (!mounted) return;
       widget.tab.currentTitle.value = currentTitles.display;
       final resolved = await _resolveTextLineNumberForPage(
@@ -3937,7 +3934,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   PdfLayoutMode? _lastObservedLayoutMode;
   int _lastComputedForPage = -1;
 
-  /// פתרון הכותרת, מספר השורה והקישורים ניגש ל-DB — נדחה עד שהגלילה נרגעת.
+  /// פתרון מספר השורה והקישורים ניגש ל-DB — נדחה עד שהגלילה נרגעת.
   static const Duration _kPageMetadataDebounce = Duration(milliseconds: 150);
   Timer? _pageMetadataTimer;
   int? _initialPageNumber; // שמירת מספר העמוד ההתחלתי
@@ -4062,11 +4059,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     widget.tab.pageNumber = newPage;
     _lastComputedForPage = newPage;
 
-    final immediateRange = _spreadPageRangeFor(newPage);
-    widget.tab.currentTitle.value =
-        immediateRange.endPageExclusive - immediateRange.startPage > 1
-        ? 'עמודים ${immediateRange.startPage}-${immediateRange.endPageExclusive - 1}'
-        : 'עמוד $newPage';
+    widget.tab.currentTitle.value = _titlesForPage(newPage).display;
 
     _pageMetadataTimer?.cancel();
     _pageMetadataTimer = Timer(
@@ -4078,10 +4071,9 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   Future<void> _resolvePageMetadata(int page) async {
     if (!mounted) return;
     final tourCubit = context.read<TourCubit>();
-    final titles = await _resolveTitlesForPage(page);
-    if (!mounted || page != _lastComputedForPage) return;
+    final titles = _titlesForPage(page);
+    // ה-outline עשוי להגיע אחרי מעבר העמוד; מחשבים שוב כשהגלילה נרגעת.
     widget.tab.currentTitle.value = titles.display;
-
     final resolved = await _resolveTextLineNumberForPage(
       page,
       resolvedTitle: titles.single,
@@ -4167,7 +4159,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     final currentPage = widget.tab.pdfViewerController.isReady
         ? (widget.tab.pdfViewerController.pageNumber ?? widget.tab.pageNumber)
         : widget.tab.pageNumber;
-    final titles = await _resolveTitlesForPage(currentPage);
+    final titles = _titlesForPage(currentPage);
     if (!mounted) return;
     widget.tab.currentTitle.value = titles.display;
     final resolved = await _resolveTextLineNumberForPage(
