@@ -72,8 +72,11 @@ void main() {
     );
     repository = _ServiceRepository();
     bloc = PersonalNotesBloc(repository: repository);
+    final loaded = bloc.stream.firstWhere(
+      (state) => state.bookId == 'רש"י' && !state.isLoading,
+    );
     bloc.add(const LoadPersonalNotes('רש"י'));
-    await pumpEventQueue();
+    await loaded;
   });
 
   tearDown(() async {
@@ -138,19 +141,29 @@ void main() {
     expect(find.text('תוכן ההערה'), findsNothing);
 
     await tester.runAsync(() async {
+      final refreshed = bloc.stream.firstWhere(
+        (state) => state.locatedNotes.any((note) => note.id == 'note'),
+      );
       await database.batchInsertNotes([_note()]);
-      await pumpEventQueue();
+      await refreshed;
     });
     await tester.pumpAndSettle();
     expect(find.text('תוכן ההערה'), findsOneWidget);
+    expect(bloc.state.locatedNotes.map((note) => note.id), ['note']);
+    expect(bloc.state.errorMessage, isNull);
 
     await tester.runAsync(() async {
+      final refreshed = bloc.stream.firstWhere(
+        (state) => state.locatedNotes.isEmpty,
+      );
       await database.deleteBookNotes('רש"י');
-      await pumpEventQueue();
+      await refreshed;
     });
     await tester.pumpAndSettle();
     expect(find.text('תוכן ההערה'), findsNothing);
     expect(find.text('הערות על המפרשים המוצגים'), findsNothing);
+    expect(bloc.state.locatedNotes, isEmpty);
+    expect(bloc.state.errorMessage, isNull);
     await tester.pumpWidget(const SizedBox());
   });
 }
