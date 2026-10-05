@@ -312,11 +312,8 @@ class CommentaryListBaseState extends State<CommentaryListBase>
   final GlobalKey<SelectionAreaState> _selectionAreaKey = GlobalKey();
   bool _showCommentatorsFilter = false; // האם להציג את מסך בחירת המפרשים
   bool _filterWasAutoOpened = false; // האם מסך הסינון נפתח אוטומטית (לא ידנית)
-  // latch חד-פעמי: מסמן שהפתיחה האוטומטית דרך onFilterOpenRequested כבר נשלחה.
-  // בלעדיו הקולבק היה נקרא בכל rebuild שבו עדיין אין מפרשים נבחרים (כי המסלול
-  // הזה אינו משנה את _showCommentatorsFilter), מה שמציף את ההורה ב-side effect
-  // ועלול ליצור לולאת rebuild. מתאפס כשהבחירה אינה ריקה — כדי שריקון עתידי
-  // יפתח שוב את הבחירה.
+  // הבקשה אינה בונה מחדש, ולכן זוכרים שנשלחה עד שנבחרו מפרשים,
+  // כדי לא להציף את ההורה בזמן שהבחירה ריקה.
   bool _autoFilterOpenNotified = false;
   bool _userInteractedWithFilter =
       false; // האם המשתמש בחר בעצמו בתוך פאנל הסינון
@@ -344,8 +341,9 @@ class CommentaryListBaseState extends State<CommentaryListBase>
 
   String _getLinkKey(Link link) => commentaryLinkKey(link);
 
-  // רשימה של כל ה-links לפי סדר הופעתם (נבנית מחדש בכל build)
+  // סדר הקישורים המוצגים, שעליו מבוססים היסטי החיפוש.
   List<Link> _orderedLinks = [];
+  Map<String, int>? _searchResultOffsets;
 
   /// היעד שממתין לגלילה: שם המפרש, ואופציונלית מפתח הקטע המדויק.
   ({String title, String? linkKey})? _pendingScrollTarget;
@@ -533,7 +531,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     return commentarySearchRelativeIndex(
       key: linkKey,
       currentIndex: _currentSearchIndexNotifier.value,
-      offsets: commentarySearchOffsets(
+      offsets: _searchResultOffsets ??= commentarySearchOffsets(
         _orderedLinks.map(_getLinkKey),
         _searchResultsPerLink,
       ),
@@ -599,6 +597,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     _currentSearchIndexNotifier.value = 0;
     _totalSearchResultsNotifier.value = 0;
     _searchResultsPerLink.clear();
+    _searchResultOffsets = null;
     _pendingCounts.clear();
     _scheduleSearchCompute();
   }
@@ -618,6 +617,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       _currentSearchIndexNotifier.value = 0;
       _totalSearchResultsNotifier.value = 0;
       _searchResultsPerLink.clear();
+      _searchResultOffsets = null;
       _pendingCounts.clear();
       _linkKeyToPath.clear();
       _searchSnippetsPerLink.clear();
@@ -655,6 +655,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     _currentSearchIndexNotifier.value = 0;
     _totalSearchResultsNotifier.value = 0;
     _searchResultsPerLink.clear();
+    _searchResultOffsets = null;
     _pendingCounts.clear();
     setState(() => _showSearchField = false);
   }
@@ -857,6 +858,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                             _currentSearchIndexNotifier.value = -1;
                             _totalSearchResultsNotifier.value = 0;
                             _searchResultsPerLink.clear();
+                            _searchResultOffsets = null;
                             _pendingCounts.clear();
                             _scheduleSearchCompute();
                           }
@@ -1587,6 +1589,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
     // הפעלת הטיימר
     _searchUpdateDebounce = Timer(const Duration(milliseconds: 150), () {
       if (!mounted) return;
+      _searchResultOffsets = null;
       _searchResultsPerLink.addAll(_pendingCounts);
       _pendingCounts.clear();
       _totalSearchResultsNotifier.value = totalCommentarySearchResults(
@@ -2008,6 +2011,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
 
                   // שומר את הסדר של ה-links לצורך חישוב אינדקס החיפוש
                   _orderedLinks = data;
+                  _searchResultOffsets = null;
                   if (_pendingScrollTarget != null) {
                     _schedulePendingCommentatorScroll();
                   }
