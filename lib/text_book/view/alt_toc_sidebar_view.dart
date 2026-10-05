@@ -272,9 +272,8 @@ class _AltTocSidebarViewState extends State<AltTocSidebarView>
           ];
           _isLoading = false;
 
-          // מבנה יחיד נפתח כברירת מחדל; הדיבורים נשארים מכווצים עד לחיצה.
-          if (_structures.length == 1 &&
-              _structures.single.id != kDibburimStructureId) {
+          // מבנה יחיד נפתח לרמה הראשונה בלבד; הדיבורים שבו נפתחים בלחיצה.
+          if (_structures.length == 1) {
             _toggleStructure(_structures.first);
           }
         });
