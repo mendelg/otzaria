@@ -3320,11 +3320,16 @@ extension BookAcronymRepository on SeforimRepository {
     if (!(await _capabilities).hasToc) return _TocBookCache.empty;
 
     final db = await _database.database;
+    // ספר חיצוני (קובץ בתיקייה אישית) שומר את המיקום ב-tocEntry.lineIndex.
+    final tocLineIndex = (await _capabilities).hasTocEntryLineIndex
+        ? 't.lineIndex'
+        : 'NULL';
 
     final rawRows = db
         .select(
           '''
-        SELECT t.id, tt.text, t.level, t.textId, t.lineId, t.parentId
+        SELECT t.id, tt.text, t.level, t.textId, t.lineId, t.parentId,
+               $tocLineIndex
         FROM tocEntry t
         JOIN tocText tt ON t.textId = tt.id
         WHERE t.bookId = ?
@@ -3351,11 +3356,8 @@ extension BookAcronymRepository on SeforimRepository {
           textId: r[3] as int,
           lineId: r[4] as int?,
           parentId: r[5] as int?,
-          // שורה חסרה (lineId שאינו קיים) נופלת ל-lineId עצמו, כפי שעשה
-          // ה-COALESCE על ה-LEFT JOIN.
-          lineIndex: r[4] == null
-              ? null
-              : (lineIndexes[r[4] as int] ?? r[4] as int),
+          // כמו COALESCE(l.lineIndex, t.lineIndex, t.lineId) ב-TocQueries.sq.
+          lineIndex: lineIndexes[r[4]] ?? r[6] as int? ?? r[4] as int?,
         ),
     ];
     // כמו `ORDER BY lineIndex, level` (NULL ראשון), ו-`id` שובר שוויון.
