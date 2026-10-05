@@ -1812,11 +1812,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
         icon: FluentIcons.zoom_in_24_regular,
         tooltip: 'הגדל את גודל הטקסט',
         actionId: ToolbarActionId.zoomIn,
-        onPressed: () async {
-          final newSize = min(50.0, state.fontSize + 3);
-          context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-          await savePerBookDisplaySettings(context, state, fontSize: newSize);
-        },
+        onPressed: () => _stepFontSize(context, state, larger: true),
       ),
 
       // 6) Zoom Out Button
@@ -1825,11 +1821,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
         icon: FluentIcons.zoom_out_24_regular,
         tooltip: 'הקטן את גודל הטקסט',
         actionId: ToolbarActionId.zoomOut,
-        onPressed: () async {
-          final newSize = max(15.0, state.fontSize - 3);
-          context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-          await savePerBookDisplaySettings(context, state, fontSize: newSize);
-        },
+        onPressed: () => _stepFontSize(context, state, larger: false),
       ),
     ];
   }
@@ -2243,11 +2235,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
           'הגדל את גודל הטקסט (${ShortcutHelper.formatShortcutForDisplay('ctrl++')})',
       icon: FluentIcons.zoom_in_24_regular,
       compact: isCompact,
-      onPressed: () async {
-        final newSize = min(50.0, state.fontSize + 3);
-        context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-        await savePerBookDisplaySettings(context, state, fontSize: newSize);
-      },
+      onPressed: () => _stepFontSize(context, state, larger: true),
     );
   }
 
@@ -2258,11 +2246,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
           'הקטן את גודל הטקסט (${ShortcutHelper.formatShortcutForDisplay('ctrl+-')})',
       icon: FluentIcons.zoom_out_24_regular,
       compact: isCompact,
-      onPressed: () async {
-        final newSize = max(15.0, state.fontSize - 3);
-        context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-        await savePerBookDisplaySettings(context, state, fontSize: newSize);
-      },
+      onPressed: () => _stepFontSize(context, state, larger: false),
     );
   }
 
@@ -3039,6 +3023,26 @@ int _itemIndexForSourceLine(TextBookLoaded state, int lineIndex) =>
 //   context.read<TextBookBloc>().add(OpenFullFileEditor());
 // }
 
+/// Steps the text size by 3 within 15 to 50 and saves it for the book.
+Future<void> _stepFontSize(
+  BuildContext context,
+  TextBookLoaded state, {
+  required bool larger,
+}) => _setFontSize(
+  context,
+  state,
+  larger ? min(50.0, state.fontSize + 3) : max(15.0, state.fontSize - 3),
+);
+
+Future<void> _setFontSize(
+  BuildContext context,
+  TextBookLoaded state,
+  double size,
+) {
+  context.read<TextBookBloc>().add(UpdateFontSize(size));
+  return savePerBookDisplaySettings(context, state, fontSize: size);
+}
+
 bool _handleGlobalKeyEvent(
   KeyEvent event,
   BuildContext context,
@@ -3288,9 +3292,7 @@ bool _handleGlobalKeyEvent(
   );
   if (zoomInShortcut != null &&
       ShortcutHelper.matchesShortcut(event, zoomInShortcut)) {
-    final newSize = min(50.0, state.fontSize + 3);
-    context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-    savePerBookDisplaySettings(context, state, fontSize: newSize);
+    _stepFontSize(context, state, larger: true);
     return true;
   }
 
@@ -3299,9 +3301,7 @@ bool _handleGlobalKeyEvent(
   );
   if (zoomOutShortcut != null &&
       ShortcutHelper.matchesShortcut(event, zoomOutShortcut)) {
-    final newSize = max(15.0, state.fontSize - 3);
-    context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-    savePerBookDisplaySettings(context, state, fontSize: newSize);
+    _stepFontSize(context, state, larger: false);
     return true;
   }
 
@@ -3310,8 +3310,7 @@ bool _handleGlobalKeyEvent(
   );
   if (zoomResetShortcut != null &&
       ShortcutHelper.matchesShortcut(event, zoomResetShortcut)) {
-    context.read<TextBookBloc>().add(const UpdateFontSize(25.0));
-    savePerBookDisplaySettings(context, state, fontSize: 25.0);
+    _setFontSize(context, state, 25.0);
     return true;
   }
 
