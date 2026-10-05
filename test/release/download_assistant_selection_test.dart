@@ -467,6 +467,121 @@ void main() {
     });
   });
 
+  group('הבחירה האישית', () {
+    final manifest = buildFixtureManifest();
+    final large = buildLargeFullFixtureManifest();
+    final components = (manifest['components'] as List)
+        .cast<Map<String, Object?>>();
+    String typeOf(String id) =>
+        components.firstWhere((c) => c['id'] == id)['type'] as String;
+    String describe(CustomChoice c) =>
+        '${c.id}${c.locked ? ':locked' : ''}'
+        '${c.group.isEmpty ? '' : ':${c.group}'}';
+
+    test('גרסה ניידת אינה מוצגת בשום יעד', () {
+      for (final target in [...kFixtureTargets, ...kLargeFullTargets]) {
+        for (final m in [manifest, large]) {
+          expect(
+            customChoices(m, target).map((c) => typeOf(c.id)),
+            isNot(contains('application-portable')),
+            reason: '${target.toJson()}',
+          );
+        }
+      }
+    });
+
+    test('Windows: מתקין נעול, ספרייה, אינדקס וחיפוש חכם — בלי FULL', () {
+      for (final (target, installer) in [
+        (kFixtureTargets[0], 'otzaria-windows-x64'),
+        (kFixtureTargets[1], 'otzaria-windows-arm64'),
+      ]) {
+        for (final m in [manifest, large]) {
+          expect(customChoices(m, target).map(describe), [
+            '$installer:locked',
+            'library-full',
+            'library-index',
+            'semantic-model-windows',
+            'semantic-vectors-windows',
+          ], reason: '${target.toJson()}');
+        }
+      }
+    });
+
+    test('Linux, macOS ו-Android: המתקין והחבילה המלאה הם בחירה אחת', () {
+      final expected = {
+        3: ['otzaria-linux-deb-x64', 'otzaria-linux-full-x64'],
+        4: ['otzaria-linux-rpm-x64', 'otzaria-linux-full-x64'],
+        6: ['otzaria-linux-deb-arm64', 'otzaria-linux-full-arm64'],
+        2: ['otzaria-macos', 'otzaria-macos-full'],
+        9: ['otzaria-android', 'otzaria-android-full'],
+      };
+      for (final MapEntry(key: index, value: ids) in expected.entries) {
+        final choices = customChoices(manifest, kFixtureTargets[index]);
+        expect(
+          choices.where((c) => c.group.isNotEmpty).map((c) => c.id),
+          ids,
+          reason: '${kFixtureTargets[index].toJson()}',
+        );
+        expect(choices.any((c) => c.locked), isFalse);
+        expect(
+          choices.map((c) => typeOf(c.id)),
+          isNot(anyOf(contains('library'), contains('library-index'))),
+        );
+      }
+    });
+
+    test('Linux בלי מנהל חבילות: החבילה המלאה לבדה, נעולה', () {
+      expect(customChoices(manifest, kFixtureTargets[5]).map(describe), [
+        'otzaria-linux-full-x64:locked',
+        'semantic-model-linux',
+        'semantic-vectors-linux',
+      ]);
+    });
+
+    test('האינדקס גורר את הספרייה ואת המתקין', () {
+      for (final target in kLargeFullTargets) {
+        expect(withDependencies(manifest, ['library-index'], target), [
+          target.architecture == 'x64'
+              ? 'otzaria-windows-x64'
+              : 'otzaria-windows-arm64',
+          'library-full',
+          'library-index',
+        ]);
+      }
+    });
+
+    test('"מלאה" לעולם אינה כוללת את האינדקס', () {
+      for (final (m, targets) in [
+        (manifest, kFixtureTargets),
+        (large, kLargeFullTargets),
+      ]) {
+        for (final target in targets) {
+          for (final preset in buildPresets(m, target)) {
+            expect(
+              preset.members,
+              isNot(contains('library-index')),
+              reason: '${target.toJson()} ${preset.id}',
+            );
+          }
+        }
+      }
+    });
+
+    test('FULL של 4 GiB: "מלאה" היא המתקין הרגיל והספרייה בלבד', () {
+      for (final target in kLargeFullTargets) {
+        final installer = target.architecture == 'x64'
+            ? 'otzaria-windows-x64'
+            : 'otzaria-windows-arm64';
+        expect(buildPresets(large, target).first.members, [
+          installer,
+          'library-full',
+          'semantic-model-windows',
+          'semantic-vectors-windows',
+        ]);
+      }
+    });
+  });
+
   test('שם תת-התיקייה נושא את שם הפלטפורמה', () {
     expect(outputSubfolderName('windows'), 'אוצריא להתקנה ל-Windows');
     expect(outputSubfolderName('linux'), 'אוצריא להתקנה ל-Linux');

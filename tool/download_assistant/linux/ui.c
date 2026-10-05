@@ -230,11 +230,12 @@ static GPtrArray *selected_ids(Ui *ui) {
     return otz_with_dependencies(ui->manifest, preset->members, &target);
   }
   g_autoptr(GPtrArray) checked = g_ptr_array_new();
-  for (guint i = 0; i < ui->manifest->components->len; i++) {
-    const OtzComponent *component = g_ptr_array_index(ui->manifest->components, i);
-    if (g_hash_table_contains(ui->custom_checked, component->id) &&
-        otz_component_is_offered(ui->manifest, component, &target))
-      g_ptr_array_add(checked, component->id);
+  g_autoptr(GPtrArray) choices = otz_custom_choices(ui->manifest, &target);
+  for (guint i = 0; i < choices->len; i++) {
+    const OtzCustomChoice *choice = g_ptr_array_index(choices, i);
+    if (choice->locked ||
+        g_hash_table_contains(ui->custom_checked, choice->component->id))
+      g_ptr_array_add(checked, choice->component->id);
   }
   return otz_with_dependencies(ui->manifest, checked, &target);
 }
@@ -378,27 +379,67 @@ static void update_custom_complete(Ui *ui) {
   set_complete(ui, PAGE_CUSTOM, any);
 }
 
+static GtkWidget *custom_button(Ui *ui, const char *id) {
+  g_autoptr(GList) children =
+      gtk_container_get_children(GTK_CONTAINER(ui->custom_list));
+  for (GList *item = children; item != NULL; item = item->next) {
+    const char *button_id = g_object_get_data(G_OBJECT(item->data), "component-id");
+    if (button_id != NULL && strcmp(button_id, id) == 0) return item->data;
+  }
+  return NULL;
+}
+
+/* A checked row checks what it depends on; a cleared row clears what depends
+ * on it (the index and the library). */
 static void on_custom_toggled(GtkToggleButton *button, Ui *ui) {
   const char *id = g_object_get_data(G_OBJECT(button), "component-id");
-  if (gtk_toggle_button_get_active(button))
+  gboolean active = gtk_toggle_button_get_active(button);
+  if (active)
     g_hash_table_add(ui->custom_checked, g_strdup(id));
   else
     g_hash_table_remove(ui->custom_checked, id);
+  const OtzComponent *component = otz_manifest_find(ui->manifest, id);
+  for (guint i = 0; component != NULL && i < ui->manifest->components->len; i++) {
+    const OtzComponent *other = g_ptr_array_index(ui->manifest->components, i);
+    gboolean linked =
+        active ? otz_string_array_contains(component->depends_on, other->id)
+               : otz_string_array_contains(other->depends_on, id);
+    GtkWidget *row = linked ? custom_button(ui, other->id) : NULL;
+    if (row != NULL && gtk_widget_get_sensitive(row))
+      gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(row), active);
+  }
   update_custom_complete(ui);
 }
 
+/* The installer is locked when it has no alternative; with the full bundle as
+ * an alternative the two are radio buttons, so only one of them downloads. */
 static void prepare_custom(Ui *ui) {
   OtzTarget target = current_target(ui);
   clear_container(ui->custom_list);
   g_autoptr(GPtrArray) choices = otz_custom_choices(ui->manifest, &target);
+  const OtzComponent *radio_pick = NULL;
   for (guint i = 0; i < choices->len; i++) {
-    const OtzComponent *component = g_ptr_array_index(choices, i);
-    g_autofree char *size = otz_human_size(
-        otz_custom_choice_size(ui->manifest, component, &target));
-    g_autofree char *caption =
-        g_strdup_printf("%s — %s%s", component->name, size,
-                        component->required ? " (נדרש)" : "");
-    GtkWidget *check = gtk_check_button_new();
+    const OtzCustomChoice *choice = g_ptr_array_index(choices, i);
+    if (*choice->group == '\0') continue;
+    if (g_hash_table_contains(ui->custom_checked, choice->component->id)) {
+      radio_pick = choice->component;
+      break;
+    }
+    if (radio_pick == NULL || (strcmp(radio_pick->type, "application") != 0 &&
+                               strcmp(choice->component->type, "application") == 0))
+      radio_pick = choice->component;
+  }
+  GSList *group = NULL;
+  for (guint i = 0; i < choices->len; i++) {
+    const OtzCustomChoice *choice = g_ptr_array_index(choices, i);
+    const OtzComponent *component = choice->component;
+    gboolean radio = *choice->group != '\0';
+    g_autofree char *size = otz_human_size(otz_custom_choice_size(ui->manifest, component, &target));
+    g_autofree char *caption = g_strdup_printf(
+        "%s — %s%s", component->name, size,
+        choice->locked || (component->required && !radio) ? " (נדרש)" : "");
+    GtkWidget *check = radio ? gtk_radio_button_new(group) : gtk_check_button_new();
+    if (radio) group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(check));
     GtkWidget *text = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     GtkWidget *title = gtk_label_new(NULL);
     set_rtl_text(title, caption);
@@ -418,9 +459,18 @@ static void prepare_custom(Ui *ui) {
     gtk_container_add(GTK_CONTAINER(check), text);
     g_object_set_data_full(G_OBJECT(check), "component-id",
                            g_strdup(component->id), g_free);
-    gtk_toggle_button_set_active(
-        GTK_TOGGLE_BUTTON(check),
-        g_hash_table_contains(ui->custom_checked, component->id));
+    gboolean active = radio ? component == radio_pick
+                            : choice->locked ||
+                                  g_hash_table_contains(ui->custom_checked,
+                                                        component->id);
+    if (radio) {
+      if (active)
+        g_hash_table_add(ui->custom_checked, g_strdup(component->id));
+      else
+        g_hash_table_remove(ui->custom_checked, component->id);
+    }
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check), active);
+    gtk_widget_set_sensitive(check, !choice->locked);
     g_signal_connect(check, "toggled", G_CALLBACK(on_custom_toggled), ui);
     gtk_box_pack_start(GTK_BOX(ui->custom_list), check, FALSE, FALSE, 0);
   }

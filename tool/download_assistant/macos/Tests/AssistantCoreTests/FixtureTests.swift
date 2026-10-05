@@ -85,15 +85,21 @@ final class FixtureTests: XCTestCase {
         try checkTargets(large.manifest, targets)
     }
 
-    /// ספרייה שנבחרה לבדה מגיעה עם המתקין שקורא אותה; ב-ARM64 אין מי שיתקין אותה.
+    /// אינדקס שנבחר לבדו מגיע עם הספרייה ועם המתקין שקורא את שניהם, ב-x64 וב-ARM64.
     func testLibraryBringsItsInstaller() throws {
         let x64 = AssistantTarget(platform: "windows", architecture: "x64")
         XCTAssertEqual(
-            withDependencies(manifest, ["library-full-indexed"], x64),
-            ["otzaria-windows-x64", "library-full-indexed"]
+            withDependencies(manifest, ["library-index"], x64),
+            ["otzaria-windows-x64", "library-full", "library-index"]
         )
-        let library = try XCTUnwrap(manifest.components.first { $0.id == "library-full-indexed" })
-        XCTAssertFalse(componentIsOffered(manifest, library, AssistantTarget(platform: "windows", architecture: "arm64")))
+        let arm64 = AssistantTarget(platform: "windows", architecture: "arm64")
+        XCTAssertEqual(
+            withDependencies(manifest, ["library-index"], arm64),
+            ["otzaria-windows-arm64", "library-full", "library-index"]
+        )
+        let library = try XCTUnwrap(manifest.components.first { $0.id == "library-full" })
+        XCTAssertFalse(componentIsOffered(
+            manifest, library, AssistantTarget(platform: "linux", architecture: "x64", packageFormat: "deb")))
     }
 
     private func checkTargets(_ manifest: ReleaseManifest, _ targets: [[String: Any]]) throws {
@@ -111,13 +117,14 @@ final class FixtureTests: XCTestCase {
                 entry["offeredComponents"] as? [String], label
             )
 
-            let expectedChoices = try XCTUnwrap(entry["customChoices"] as? [[String: Any]], label)
-            let choices = customChoices(manifest, target)
-            XCTAssertEqual(choices.map { $0.id }, expectedChoices.map { $0["id"] as? String ?? "" }, label)
-            XCTAssertEqual(
-                choices.map { customChoiceSize(manifest, $0, target) },
-                expectedChoices.map { ($0["downloadSize"] as? NSNumber)?.int64Value ?? -1 }, label
-            )
+            let expectedCustom = try XCTUnwrap(entry["customChoices"] as? [[String: Any]])
+            let custom = customChoices(manifest, target)
+            XCTAssertEqual(custom.map { $0.component.id }, expectedCustom.map { $0["id"] as? String ?? "" }, label)
+            for (choice, want) in zip(custom, expectedCustom) {
+                XCTAssertEqual(customChoiceSize(manifest, choice.component, target), (want["downloadSize"] as? NSNumber)?.int64Value, label)
+                XCTAssertEqual(choice.locked, want["locked"] as? Bool, label)
+                XCTAssertEqual(choice.group, want["group"] as? String, label)
+            }
 
             let expectedPresets = try XCTUnwrap(entry["presets"] as? [[String: Any]])
             let presets = buildPresets(manifest, target)

@@ -1356,13 +1356,6 @@ begin
     Result := False;
 end;
 
-{ שורה בבחירה האישית: מוצע, ואינו חלק של רכיב אחר — החלק מגיע איתו דרך
-  dependsOn שלו. }
-function IsCustomChoice(Index: Integer): Boolean;
-begin
-  Result := ComponentIsOffered(Index) and (CompPartOf[Index] = '');
-end;
-
 { גודל השורה של רכיב בבחירה האישית: הוא והחלקים המוצעים שלו (partOf). }
 function CustomChoiceSize(Index: Integer): Int64;
 var
@@ -1552,6 +1545,50 @@ begin
       MembersContain(PresetMembers[Index], CompId[I]);
 end;
 
+{ ===================== הבחירה האישית (customChoices) ===================== }
+
+function IsInstallerType(const CompTypeValue: String): Boolean;
+begin
+  Result := (CompTypeValue = 'application') or
+    (CompTypeValue = 'application-bundle');
+end;
+
+{ המתקין הרגיל פורס ביעד ספרייה שלצדו — ואז החבילה המלאה מיותרת. }
+function InstallerTakesLibrary(): Boolean;
+var
+  I, Idx: Integer;
+begin
+  Result := False;
+  for I := 0 to GetArrayLength(CompId) - 1 do
+    if ComponentIsOffered(I) then
+    begin
+      Idx := InstallerFor(I);
+      if (Idx >= 0) and (CompType[Idx] = 'application') then
+        Result := True;
+    end;
+end;
+
+{ שורה בבחירה האישית: מוצע, לא גרסה ניידת, ולא חבילה מלאה כשהמתקין הרגיל
+  פורס ספרייה. }
+function IsCustomChoice(Index: Integer; TakesLibrary: Boolean): Boolean;
+begin
+  Result := ComponentIsOffered(Index) and (CompPartOf[Index] = '') and
+    (CompType[Index] <> 'application-portable') and
+    not (TakesLibrary and (CompType[Index] = 'application-bundle'));
+end;
+
+{ יותר מדרך אחת להתקין את התוכנה: בחירה אחת-מתוך, כדי שלא יורדו שתיהן. }
+function CustomInstallersAreRadio(TakesLibrary: Boolean): Boolean;
+var
+  I, N: Integer;
+begin
+  N := 0;
+  for I := 0 to GetArrayLength(CompId) - 1 do
+    if IsCustomChoice(I, TakesLibrary) and IsInstallerType(CompType[I]) then
+      N := N + 1;
+  Result := N > 1;
+end;
+
 { ========================= צורת הפלט ========================= }
 
 { יעד Windows: רק exe מתחת ל-4 GiB — ארכיון נשאר חלקים, כי המתקין שצורך
@@ -1640,6 +1677,7 @@ var
   Platforms, Archs, Formats, Names: TArrayOfString;
   P, A, F, I, J: Integer;
   Text, Line: String;
+  TakesLibrary, Radio: Boolean;
 begin
   Text := '';
   Platforms := PlatformChoices();
@@ -1678,10 +1716,21 @@ begin
             Line := Line + CompId[I] + ',';
         Text := Text + 'target ' + TargetPlatform + '/' + TargetArchitecture +
           '/' + TargetFormat + ' offered=' + Line + #10;
+        { id:size:locked:group — כמו customChoices ב-expected-selections.json. }
+        TakesLibrary := InstallerTakesLibrary();
+        Radio := CustomInstallersAreRadio(TakesLibrary);
         Line := '';
         for I := 0 to GetArrayLength(CompId) - 1 do
-          if IsCustomChoice(I) then
-            Line := Line + CompId[I] + ':' + IntToStr(CustomChoiceSize(I)) + ',';
+          if IsCustomChoice(I, TakesLibrary) then
+          begin
+            Line := Line + CompId[I] + ':' + IntToStr(CustomChoiceSize(I)) + ':';
+            if IsInstallerType(CompType[I]) and not Radio then
+              Line := Line + 'locked';
+            Line := Line + ':';
+            if IsInstallerType(CompType[I]) and Radio then
+              Line := Line + 'application';
+            Line := Line + ',';
+          end;
         Text := Text + 'custom ' + Line + #10;
         BuildPresets();
         for I := 0 to GetArrayLength(PresetId) - 1 do
@@ -1727,29 +1776,69 @@ begin
     PresetPage.SelectedValueIndex := DefaultIndex(PresetId, 'basic');
 end;
 
+{ המתקין נעול כשאין לו חלופה; עם חלופה (חבילה מלאה) — כפתורי רדיו. }
 procedure RefreshCustomPage();
 var
-  I, N: Integer;
-  Extra: String;
+  I, N, PickRow: Integer;
+  TakesLibrary, Radio, Locked: Boolean;
+  Caption: String;
 begin
   CustomPage.CheckListBox.Items.Clear;
   SetArrayLength(CustomIndex, 0);
+  TakesLibrary := InstallerTakesLibrary();
+  Radio := CustomInstallersAreRadio(TakesLibrary);
+  PickRow := -1;
   N := 0;
   for I := 0 to GetArrayLength(CompId) - 1 do
   begin
-    if not IsCustomChoice(I) then
+    if not IsCustomChoice(I, TakesLibrary) then
       Continue;
-    if CompRequired[I] then
-      Extra := ' (נדרש)'
+    Locked := IsInstallerType(CompType[I]) and not Radio;
+    Caption := CompName[I];
+    if Locked or (CompRequired[I] and not IsInstallerType(CompType[I])) then
+      Caption := Caption + ' (נדרש)';
+    if IsInstallerType(CompType[I]) and Radio then
+    begin
+      { הבחירה נקבעת בסוף: הוספת רדיו ראשון מסמנת אותו מעצמה. }
+      CustomPage.CheckListBox.AddRadioButton(OptionCaption(Caption, CompDesc[I]),
+        HumanSize(CustomChoiceSize(I)), 0, False, True, nil);
+      if PickRow < 0 then
+        PickRow := N
+      else if not CompSelected[CustomIndex[PickRow]] and (CompSelected[I] or
+         ((CompType[CustomIndex[PickRow]] <> 'application') and
+         (CompType[I] = 'application'))) then
+        PickRow := N;
+    end
     else
-      Extra := '';
-    CustomPage.Add(OptionCaption(CompName[I] + Extra, CompDesc[I]));
-    CustomPage.CheckListBox.ItemSubItem[N] := HumanSize(CustomChoiceSize(I));
-    CustomPage.Values[N] := CompSelected[I] or CompRequired[I];
+      CustomPage.CheckListBox.AddCheckBox(OptionCaption(Caption, CompDesc[I]),
+        HumanSize(CustomChoiceSize(I)), 0,
+        CompSelected[I] or CompRequired[I] or Locked, not Locked, False, False, nil);
     SetArrayLength(CustomIndex, N + 1);
     CustomIndex[N] := I;
     N := N + 1;
   end;
+  if PickRow >= 0 then
+    CustomPage.Values[PickRow] := True;
+end;
+
+{ רכיב שסומן מסמן את תלויותיו, ורכיב שבוטל מבטל את מי שתלוי בו (אינדקס←ספרייה). }
+procedure CustomChoiceClicked(Sender: TObject);
+var
+  Row, J: Integer;
+begin
+  Row := CustomPage.CheckListBox.ItemIndex;
+  if (Row < 0) or (Row >= GetArrayLength(CustomIndex)) then
+    exit;
+  for J := 0 to GetArrayLength(CustomIndex) - 1 do
+    if J <> Row then
+    begin
+      if CustomPage.Values[Row] and MembersContain(CompDependsOn[CustomIndex[Row]],
+         CompId[CustomIndex[J]]) then
+        CustomPage.Values[J] := True
+      else if not CustomPage.Values[Row] and
+         MembersContain(CompDependsOn[CustomIndex[J]], CompId[CustomIndex[Row]]) then
+        CustomPage.Values[J] := False;
+    end;
 end;
 
 { "3 דקות", "שעה ו-10 דקות" — בלי שניות מדויקות, שממילא אינן יציבות. }
@@ -1962,6 +2051,7 @@ begin
     'סמן את הרכיבים שברצונך להוריד.',
     'ליד כל רכיב מופיע גודל ההורדה שלו.',
     False, True);
+  CustomPage.CheckListBox.OnClickCheck := @CustomChoiceClicked;
 
   DefaultBase := AssistantDir();
   FolderNote := '';

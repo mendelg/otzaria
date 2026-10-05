@@ -79,10 +79,10 @@ dart run tool/release/generate_release_manifest.dart \
       ]
     },
     {
-      "id": "library-full-indexed",
+      "id": "library-full",
       "type": "library",
-      "installedBy": ["otzaria-windows-x64"], // מי שקורא אותו מהתיקייה
-      "downloadSize": 4200000000,           // סכום החלקים
+      "installedBy": ["otzaria-windows-x64", "otzaria-windows-arm64"], // מי שקורא אותו מהתיקייה
+      "downloadSize": 3200000000,           // סכום החלקים
       "compatibility": {                    // מפה גנרית; מפתחות מה-provenance
         "libraryReleaseTag": "v27",
         "seforimDbZstSha256": "…",
@@ -94,16 +94,15 @@ dart run tool/release/generate_release_manifest.dart \
           "kind": "split",
           "repository": "Otzaria/otzaria",
           "releaseTag": "0.9.97+789",
-          "name": "otzaria-0.9.97-library-full-indexed.tar.zst", // הקובץ השלם
-          "size": 4200000000,               // גודל ו-hash של הקובץ השלם
+          "name": "otzaria-0.9.97-library.tar.zst", // הקובץ השלם
+          "size": 3200000000,               // גודל ו-hash של הקובץ השלם
           "sha256": "…",
           "manifestAsset": "otzaria-…tar.zst.manifest.json",
           "partSizeLimit": 1992294400,
           "githubAssetLimit": 2147483648,
           "parts": [                        // מסודרים; כל חלק הוא נכס ב-release
             { "name": "…part-000", "size": 1992294400, "sha256": "…" },
-            { "name": "…part-001", "size": 1992294400, "sha256": "…" },
-            { "name": "…part-002", "size": 215411200,  "sha256": "…" }
+            { "name": "…part-001", "size": 1207705600, "sha256": "…" }
           ]
         }
       ]
@@ -128,7 +127,9 @@ dart run tool/release/generate_release_manifest.dart \
 * **`installedBy`** (אופציונלי) — הרכיבים שמתקינים את הרכיב הזה: מתקין שקורא
   אותו מהתיקייה שלצדו. **רכיב מסוג `library` חייב לשאת אותו**, כל מזהה בו קיים
   במניפסט, ומתקין שמופיע בו אינו נושא `installedBy` בעצמו (אין שרשראות) — נאכף
-  באימות. הגנרטור משמיט רכיב שאף מתקין שלו לא נבנה, כמו רכיב שנכסיו חסרים.
+  באימות. הגנרטור משמיט רכיב שאף מתקין שלו לא נבנה, או שאחת מתלויות ה-`dependsOn`
+  שלו לא נבנתה (אינדקס בלי ספרייה), כמו רכיב שנכסיו חסרים. הכלל חל גם על
+  `library-index` (`kInstalledByRequiredTypes`).
   המשמעות למסייעים בפרק "ההצעות" שבחוזה המשותף.
 * **שדות הסינון** `platform`, `architecture` ו-`packageFormat` אופציונליים,
   ואם קיימים — מחרוזת לא ריקה (נאכף). המשמעות שלהם בפרק "חוזה משותף".
@@ -331,13 +332,21 @@ macOS ו-Linux מריצים בבדיקות שלהם את שני המניפסטי
 | macOS | `otzaria-macos.dmg` | — | `otzaria-macos-full.tar.zst` |
 | Android | ה-APK | — | `otzaria-android-full.zip`, ומעל הסף `otzaria-android-full-partN.zip` |
 
-`library-full-indexed` הוא `any` בשדות הסינון, אבל `installedBy` שלו הוא
-`otzaria-windows-x64` — המתקין הרגיל של x64 הוא היחיד שקורא את החלקים לצדו
-(`PrepareIndexedLibrary` ב-`otzaria.iss`, הפרק "המתקין הרגיל וחלקי הספרייה
-המאונדקסת" למטה). לכן הוא מוצע רק ל-Windows x64. מתקין ה-FULL ומתקין ה-ARM64
-אינם נוגעים בחלקים, ומסך הייבוא של התוכנה אינו קורא את הארכיון הזה (`.zst` נקרא
-שם כ-`seforim.db` דחוס, והאינדקס אינו מיובא כלל) — כך שבשום יעד אחר אין מי
-שיתקין אותו. אין מתקין מאונדקס נפרד (issue #1890). `otzaria-macos.zip` אינו רכיב — הוא ערוץ העדכון הפנימי. לכל חבילה מלאה יש גם תבנית `split`, כמו ל-Windows FULL, כדי שלא תיעלם
+**הספרייה והאינדקס** — שני רכיבים, `any` בשדות הסינון:
+
+| רכיב | `type` | נכס | `dependsOn` | `installedBy` |
+|---|---|---|---|---|
+| `library-full` ("ספרייה מלאה") | `library` | `otzaria-<ver>-library.tar.zst` בחלקים — `books/` | — | `otzaria-windows-x64`, `otzaria-windows-arm64` |
+| `library-index` ("אינדקס חיפוש מוכן (למחשבים חלשים)") | `library-index` | `otzaria-<ver>-library-index.tar.zst` בחלקים — `index/` עם `.otzaria_prebuilt_index` | `library-full` | אותם מתקינים |
+
+בדרך כלל מורידים את הספרייה בלבד, והתוכנה בונה את האינדקס בעצמה אחרי ההתקנה;
+האינדקס מיועד למחשב חלש, ושמו ותיאורו אומרים זאת. הוא נושא סוג משלו כדי ש"מלאה"
+(שאוספת `library`) לא תכלול אותו. רק המתקינים הרגילים של Windows פורסים את החלקים
+שלצדם (`PrepareLibraryParts` ב-`otzaria.iss`, הפרק "המתקין הרגיל וחלקי הספרייה"
+למטה), ולכן שניהם מוצעים רק ל-Windows. מתקין ה-FULL אינו נוגע בהם, ומסך הייבוא של
+התוכנה אינו קורא אותם — עד שתהיה בתוכנה תמיכה בייבוא ספרייה, ב-Linux, ב-macOS
+וב-Android אין מי שיתקין אותם. אין מתקין מאונדקס נפרד (issue #1890).
+`otzaria-macos.zip` אינו רכיב — הוא ערוץ העדכון הפנימי. לכל חבילה מלאה יש גם תבנית `split`, כמו ל-Windows FULL, כדי שלא תיעלם
 מהמניפסט ביום שתחצה את הסף; ל-Android — תבנית כרכים (`volumes`).
 
 ### בחירת היעד
@@ -396,22 +405,54 @@ macOS ו-Linux מריצים בבדיקות שלהם את שני המניפסטי
 
 **Windows ARM64.** "מלאה" היא `otzaria-windows-full-arm64`
 (`otzaria-<ver>-windows_arm64-full.exe`, מתקין ARM64 נייטיבי עם הספרייה). כל עוד
-הנכס אינו ב-release אין ל-ARM64 "מלאה" — רק "בסיסית". הספרייה המאונדקסת אינה
-מוצעת שם, והמסייע אינו נופל למתקין x64: `otzaria_full.iss` הוא
-`x64compatible` ורץ באמולציה, אבל תוספים (WebView2 במסלול composition) אינם
-עובדים באוצריא x64 על ARM, ומשתמש ARM מקבל ממילא את המתקין הנייטיבי.
+הנכס אינו ב-release, "מלאה" היא המתקין הרגיל של ARM64 עם הספרייה — מתקין ה-ARM64
+הרגיל פורס את החלקים בדיוק כמו של x64. המסייע אינו נופל למתקין x64:
+`otzaria_full.iss` הוא `x64compatible` ורץ באמולציה, אבל תוספים (WebView2 במסלול
+composition) אינם עובדים באוצריא x64 על ARM, ומשתמש ARM מקבל ממילא את המתקין
+הנייטיבי.
 
 **מתקין FULL של 4 GiB ומעלה.** הוא נשאר חלקים (`shouldAssembleSplitAsset`) ואינו
 רץ, ולכן אינו מוצע. בלי חבילה מוצעת, "מלאה" היא ענף "התוכנה עם הספרייה" של
-`buildPresets`: ב-x64 — המתקין הרגיל (`otzaria-windows-x64`) יחד עם
-`library-full-indexed` ונתוני החיפוש החכם. התוצאה היא תיקייה ובה המתקין הרגיל
-וחלקי הספרייה המאונדקסת, שהוא מאמת ופורס בלי אינטרנט. אין כאן קוד ייעודי — זו
-אותה גזירה של כל יעד בלי חבילה; ספרייה בלי אינדקס בחלקים אינה רכיב במניפסט, ולכן
-זו החלופה היחידה ש-Windows יכול להריץ. ב-ARM64 — "בסיסית" בלבד.
+`buildPresets`: המתקין הרגיל של אותה ארכיטקטורה יחד עם `library-full` ונתוני
+החיפוש החכם — **בלי האינדקס**, שאינו מסוג `library`. התוצאה היא תיקייה ובה המתקין
+הרגיל וחלקי הספרייה, שהוא מאמת ופורס בלי אינטרנט. אין כאן קוד ייעודי — זו אותה
+גזירה של כל יעד בלי חבילה.
 
 **"מלאה" כשמתקין ה-FULL רץ** נשארת `otzaria-windows-full` בלי אינדקס:
-`library-full-indexed` אינו ב-`installedBy` שלה, ולכן אינו מצטרף אליה. האינדקס
-מוצע בבחירה האישית, והסגירה מוסיפה לו את המתקין הרגיל.
+`library-full` ו-`library-index` אינם ב-`installedBy` שלה, ולכן אינם מצטרפים
+אליה.
+
+### הבחירה האישית
+
+רק הדרך להתקין את התוכנה ורכיבי הרשות — לא מתקינים נוספים. ההגדרה המדויקת היא
+`customChoices` במימוש הייחוס, ו-`expected-selections*.json` נושאים אותה לכל יעד
+(`{id, downloadSize, locked, group}`), כך ששלושת המסייעים נבדקים מולה:
+
+1. **רכיבים מוצעים בלבד**, בסדר המניפסט, **בלי `application-portable`** בשום
+   פלטפורמה — הגרסה הניידת היא צורה חלופית של אותה תוכנה. (`portable` כפורמט
+   חבילה ב-Linux לא השתנה: זו ההפצה הלא-מוכרת, שמקבלת את חבילת ה-FULL.)
+2. **כשהמתקין הרגיל פורס ספרייה שלצדו** (יש רכיב מוצע ש-`installerFor` שלו מסוג
+   `application`) — החבילה המלאה אינה מוצגת, והמתקין **נעול** (`locked`: מסומן,
+   "(נדרש)", אי אפשר לבטל). ב-Windows x64 וב-ARM64: המתקין הרגיל, "ספרייה מלאה",
+   "אינדקס חיפוש מוכן (למחשבים חלשים)" והחיפוש החכם.
+3. **אחרת**, כשיש יותר מדרך אחת להתקין את התוכנה (`application` ו-
+   `application-bundle`) — הן קבוצת רדיו (`group: "application"`), כדי שלא יורדו
+   שתיהן: Linux DEB/RPM, macOS ו-Android — "מתקין" או "מתקין עם הספרייה". דרך אחת
+   בלבד (Linux בלי מנהל חבילות: חבילת ה-FULL) — נעולה.
+4. שאר הרכיבים (החיפוש החכם) — תיבות סימון.
+
+ברירת המחדל ברדיו היא מה שסומן בהצעה שקדמה, ובלעדיה המתקין (`application`).
+סימון שורה מסמן את ה-`dependsOn` שלה, וביטול שורה מבטל את מי שתלוי בה — אינדקס
+מסמן את הספרייה, וביטול הספרייה מבטל את האינדקס. הסגירה (`withDependencies`)
+חלה בכל מקרה גם על הבחירה האישית.
+
+**האיחוד עם `partOf` (PR #1889).** שם הפונקציה והשדה זהים (`customChoices`), ו-
+#1889 מוסיף להם שני דברים: רכיב עם `partOf` אינו שורה, וגודלו נוסף ל-
+`downloadSize` של השלם. באיחוד המסנן של שורה הוא שלושת התנאים יחד (מוצע, לא נייד
+ולא חבילה מיותרת, ובלי `partOf`), והשדות `locked`/`group` נשארים. ב-Inno —
+`IsCustomChoice` מקבל את תנאי ה-`partOf` ו-`CustomChoiceSize` מחליף את
+`CompDownloadSize[I]`; שורת ה-`custom` ב-`DevSelectionDump` היא
+`id:size:locked:group`.
 
 ### הפלט
 
@@ -433,7 +474,7 @@ macOS ו-Linux מריצים בבדיקות שלהם את שני המניפסטי
   כזה) החלקים נשארים, ועמוד הסיום מציג את פקודת החיבור (`cat …part-* > <שם>`).
 * **סיום** — הניסוח נגזר ממספר הקבצים שנוצרו בפועל, כמו ב-Windows. בתיקייה
   של כמה קבצים הוא נוקב בשם ה-exe שמפעילים (המתקין הרגיל לצד חלקי הספרייה
-  המאונדקסת), ובהיעדרו — "קובץ ההתקנה". תיבת "הצג את
+  והאינדקס), ובהיעדרו — "קובץ ההתקנה". תיבת "הצג את
   הקובץ/התיקייה שהוכנו" **מסומנת מראש**: Windows `explorer /select`; macOS
   `NSWorkspace.activateFileViewerSelecting`; Linux
   `org.freedesktop.FileManager1.ShowItems` ב-D-Bus (GDBus, חלק מ-GIO), ובכישלון
@@ -602,7 +643,7 @@ ISCC installer\download_assistant.iss     # -> installer\Otzaria-Download-Assist
 `ComponentIsRunnable` (אין exe של 4 GiB ומעלה) ואת `InstallerFor`, וכל רשימה
 שהמשתמש רואה — ההצעות, `CollectByTypes`, הבחירה האישית — נבנית ממנו. `PlatformChoices`,
 `ArchitectureChoices`, `PackageFormatChoices`, `BuildPresets`,
-`ShouldAssembleSingleFile`, `OutputSubFolderName` ו-`PlannedOutputNames` הם
+`ShouldAssembleSingleFile`, `OutputSubFolderName`, `PlannedOutputNames` ו-`IsCustomChoice` הם
 התרגום של הפונקציות באותו שם ב-`download_assistant_selection.dart`.
 
 **אימות מול הייחוס — הגדרות פיתוח.** Inno אינו מריץ בדיקות, ולכן יש שתי הגדרות
@@ -616,7 +657,8 @@ ISCC /DDevManifestFile=C:\...\fixtures\release-manifest.json `
 `DevManifestFile` קורא את המניפסט מקובץ מקומי במקום מ-GitHub (גם להרצה אמיתית
 מול מניפסט שנבנה ידנית). `DevSelectionDump` מריץ את כללי הבחירה של הסקריפט
 עצמו על כל יעד, כותב את הרכיבים המתאימים, ההצעות, קובצי הפלט ותת-התיקייה לקובץ,
-ויוצא בלי אשף — להשוואה מול `expected-selections.json`. כל עשרת היעדים תואמים,
+ויוצא בלי אשף — להשוואה מול `expected-selections.json`, כולל שורות הבחירה
+האישית (`custom id:size:locked:group`). כל עשרת היעדים תואמים,
 וגם שני היעדים של `expected-selections-large-full.json` (הרצה שנייה עם
 `DevManifestFile` של הווריאנט).
 
@@ -722,10 +764,10 @@ ISCC /DDevManifestFile=C:\...\fixtures\release-manifest.json `
   קובץ כזה. החלקים נשארים כפי שהם בתיקיית היעד; ביעד שאינו Windows עמוד הסיום
   מציג את פקודת החיבור (`cat <שם>.part-* > <שם>`). **exe** כזה אינו מוצע כלל
   (`ComponentIsRunnable`) — חלקים של מתקין שאי אפשר להריץ אינם התקנה, ו"מלאה"
-  עוברת למתקין הרגיל עם חלקי הספרייה המאונדקסת (פרק "ההצעות" בחוזה המשותף).
+  עוברת למתקין הרגיל עם חלקי הספרייה (פרק "ההצעות" בחוזה המשותף).
 * **יעד Windows, נכס שאינו `.exe`** (למשל `…tar.zst` של הספרייה) אינו מורכב:
   המתקין שצורך אותו מצפה למצוא את **החלקים** לצדו, בדיוק כפי ש-`otzaria.iss`
-  קורא אותם (`PrepareIndexedLibrary`).
+  קורא אותם (`PrepareLibraryParts`).
 
 `otzaria-<ver>-windows-full.exe` שוקל 2,012,390,081 בתים — ‎93.7%‎ ממגבלת ה-2
 GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל בדיוק בענף "מרכיבים": `.exe`
@@ -735,7 +777,7 @@ GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל 
 ### תוצאה במחשב המנותק
 
 תיקיית היעד מכילה קובצי הפעלה בלבד — או, כשמתקין ה-FULL גדול מכדי לרוץ, את
-המתקין הרגיל ולצדו חלקי הספרייה המאונדקסת שהוא קורא.
+המתקין הרגיל ולצדו חלקי הספרייה (ואם נבחר — האינדקס) שהוא קורא.
 אין צורך באינטרנט, ב-7-Zip, ב-PowerShell או בקובץ נוסף כלשהו לצידם.
 
 **לאן נשמר.** ברירת המחדל היא התיקייה שממנה הופעל המסייע
@@ -902,49 +944,83 @@ Linux ARM64 — הטבלה ב"נכסי המסייעים") כל אחד בנפרד
 `test/installer/installer_scripts_test.dart` ("מתקין FULL ל-Windows ARM64") ו-
 `test/installer/release_packaging_test.dart` ("מתקין FULL ל-ARM64 בשחרור").
 
-### המתקין הרגיל וחלקי הספרייה המאונדקסת
+### המתקין הרגיל וחלקי הספרייה
 
-`otzaria-<ver>-windows.exe` (x64) פורס את `library-full-indexed` כשהחלקים
-`otzaria-<ver>-library-full-indexed.tar.zst.part-NNN` יושבים לצדו. הוא **אינו
-מוריד** אותם; בלעדיהם ההתקנה רגילה לגמרי, כולל העדכון השקט.
+`otzaria-<ver>-windows.exe` (x64) ו-`otzaria-<ver>-windows_arm64.exe` פורסים את
+`library-full` כשהחלקים `otzaria-<ver>-library.tar.zst.part-NNN` יושבים לצדם, ואת
+`library-index` כשגם `otzaria-<ver>-library-index.tar.zst.part-NNN` שם. הם **אינם
+מורידים** אותם; בלעדיהם ההתקנה רגילה לגמרי, כולל העדכון השקט.
 
-* **בנייה** — ה-job `build_windows_installer` (אחרי `build_windows` ו-`build_linux`)
-  פורס את `otzaria-windows.zip` לתיקיית הבנייה בלי `portable.marker`, מניח
-  ב-`installer\` את מניפסט החלקים (`indexed_library.manifest.json`) ואת `zstd.exe`
-  ו-`7za.exe` מ-`build_windows`, ומקמפל את `otzaria.iss`. ה-ISPP מגדיר
-  `IndexedLibraryParts` רק כשהמניפסט קיים וב-x64 — בנייה מקומית, ARM64, וריצה
-  ש-`build_linux` נכשל בה, מקבלות מתקין בלי הקוד הזה. `build_windows` בונה את
-  מתקין ה-FULL בלבד.
+* **נכסים** — ב-`build_linux` (x86_64, אחרי `fetch_prebuilt_library_index.sh`)
+  `pack_library_asset` אורז את `books/` ואת `index/` (עם `.otzaria_prebuilt_index`)
+  לשני ארכיונים, כל אחד **תמיד בחלקים** (`split_release_asset.sh`, גם מתחת לסף:
+  המתקין מזהה נכס לפי `part-000`), ומעלה אותם כ-`otzaria-library-parts` ואת שני
+  המניפסטים כ-`otzaria-library-manifests`. אינדקס SeforimLibrary
+  (`otzaria-library-index.tar.zst`) אינו מקושר ישירות: שמו חסר גרסה, ולכן חלקים
+  ישנים לצד מתקין חדש היו נכשלים באימות במקום להיות מושמטים, והוא חסר את הסמן.
+  `library-full-indexed` (ספרייה ואינדקס בארכיון אחד) **הוסר**: שני הנכסים
+  החדשים מכסים אותו, והשארתו הייתה מכפילה כ-3 GB בעמוד ה-release. מסייע 0.9.98
+  שקורא את המניפסט החדש אינו נשבר — רכיב חסר פשוט אינו מוצע, `library-full` הוא
+  `library` רגיל עם `installedBy`, ו-`library-index` הוא סוג לא מוכר שמוצע רק
+  בבחירה האישית ונסגר עם הספרייה והמתקין.
+* **בנייה** — ה-job `build_windows_installer` (אחרי `build_windows`,
+  `build_windows_arm64` ו-`build_linux`) פורס את `otzaria-windows.zip` ואת
+  `otzaria-windows_arm64.zip` לתיקיות הבנייה בלי `portable.marker`, מניח ב-
+  `installer\` את `library.manifest.json`, `library_index.manifest.json`,
+  `zstd.exe` ו-`7za.exe` (של x64, מ-`build_windows`), ומקמפל את `otzaria.iss` לשתי
+  הארכיטקטורות (ISCC רק אורז, ולכן גם ARM64 נבנה על x64). ה-ISPP מגדיר
+  `LibraryParts` רק כשמניפסט הספרייה קיים, ו-`LibraryIndexParts` רק כשגם מניפסט
+  האינדקס קיים — בנייה מקומית וריצה ש-`build_linux` נכשל בה מקבלות מתקין בלי הקוד
+  הזה. `build_windows` בונה את מתקין ה-FULL בלבד, ו-`build_windows_arm64` את ה-FULL
+  של ARM64 ואת ה-ZIP.
+* **ARM64** — אותם `zstd.exe`/`7za.exe` של x64: ל-`facebook/zstd` אין בינארי
+  Windows ARM64, ו-Windows 11 על ARM מריץ x64 באמולציה (כמו מתקין ה-FULL של ARM64
+  והעדכון המצומצם). Windows 10 על ARM מאמלץ רק x86, ולכן כשיש חלקים לצד המתקין
+  והגרסה מתחת ל-10.0.22000 — הודעה ועצירה לפני ההתקנה; בלי חלקים המתקין ממשיך
+  לרוץ שם כרגיל (אין `MinVersion`).
 * **זיהוי** — ב-`NextButtonClick(wpReady)`, שנקרא גם בהתקנה שקטה. בדיקה אחת של
-  `FileExists` על `.part-000` שליד `{srcexe}`; בלעדיו יוצאים מיד — בלי חילוץ קבצים
-  זמניים ובלי PowerShell.
-* **אימות** — המניפסט המוטמע נקרא ב-`read_indexed_library_manifest.ps1` ושם
-  הארכיון מושווה לגרסת המתקין; `assemble_split_asset.ps1` מחבר את החלקים ל-`{tmp}`
-  ומאמת SHA-256 של כל חלק ושל הארכיון. חלק חסר או פגום עוצר את ההתקנה עם הודעה
-  שמציעה להכין את התיקייה מחדש, או להעביר את המתקין כדי להתקין את התוכנה בלבד.
+  `FileExists` על `.part-000` של הספרייה שליד `{srcexe}`; בלעדיו יוצאים מיד — בלי
+  חילוץ קבצים זמניים ובלי PowerShell.
+* **אינדקס בלי ספרייה** — מתעלמים ממנו, עם שורת לוג בלבד. המסייע מוריד אותו תמיד
+  עם הספרייה (`dependsOn`), והמתקין אינו יכול לוודא שהוא מתאים לספרייה שכבר מותקנת;
+  התוכנה בונה אינדקס בעצמה ממילא.
+* **אימות** — כל מניפסט מוטמע נקרא ב-`read_split_manifest.ps1` ושם הארכיון מושווה
+  לגרסת המתקין; `assemble_split_asset.ps1` מחבר את החלקים ל-`{tmp}` ומאמת SHA-256
+  של כל חלק ושל הארכיון — קודם הספרייה, ואז האינדקס. חלק חסר או פגום באחד מהם
+  עוצר את ההתקנה עם הודעה שמציעה להכין את התיקייה מחדש, או להעביר את המתקין כדי
+  להתקין את התוכנה בלבד. ההודעות הן `SuppressibleMsgBox`, ולכן התקנה שקטה עם
+  `/SUPPRESSMSGBOXES` אינה נתקעת עליהן.
 * **פריסה** — ב-`ssPostInstall`, אחרי ש-`[Dirs]` נתנה למשתמשים הרשאה על תיקיית
-  הנתונים: `zstd` ואז `7za` ל-staging ליד תיקיית הספרייה, בדיקת `seforim.db`
-  ו-`.otzaria_prebuilt_index`, והחלפת `books` ו-`index` הצמודה רק אחרי חילוץ מלא.
-  היעד: הספרייה הקיימת של המשתמש (`GetCustomLibraryPath` + `IsOtzariaBooksFolder`),
-  אחרת `GetDataDir\books`, ובהתקנה ניידת `{app}\otzaria_data\books`. האפליקציה
-  מוצאת את `index` הצמודה לפי `.otzaria_prebuilt_index`.
-* **שטח דיסק** — בשיא: הארכיון המורכב ב-`{tmp}`, ה-tar שנפתח ממנו, ואז ה-tar
-  והספרייה ב-staging. הארכיון נמחק מיד אחרי `zstd` וה-tar אחרי `7za`. אין בדיקה
-  מראש; כשל מוצג עם הסבר (`FriendlyErrorHint`).
+  הנתונים: `zstd` ואז `7za` של כל ארכיון ל-staging ליד תיקיית הספרייה, בדיקת
+  `seforim.db` (ו-`.otzaria_prebuilt_index` כשיש אינדקס), והחלפת `books` (ו-`index`
+  הצמודה, כשיש אינדקס) רק אחרי חילוץ מלא. בלי אינדקס, `index` הקיימת אינה נוגעת —
+  כמו במתקין ה-FULL. היעד: הספרייה הקיימת של המשתמש (`GetCustomLibraryPath` +
+  `IsOtzariaBooksFolder`), אחרת `GetDataDir\books`, ובהתקנה ניידת
+  `{app}\otzaria_data\books`. האפליקציה מוצאת את `index` הצמודה לפי
+  `.otzaria_prebuilt_index`.
+* **שטח דיסק** — בשיא: שני הארכיונים המורכבים ב-`{tmp}`, ה-tar שנפתח מאחד מהם,
+  ואז ה-tar והספרייה ב-staging. כל ארכיון נמחק מיד אחרי `zstd` וה-tar אחרי `7za`.
+  אין בדיקה מראש; כשל מוצג עם הסבר (`FriendlyErrorHint`).
 * **כשל בפריסה** אינו מבטל את התקנת התוכנה (`Abort` אינו פועל ב-`ssPostInstall`):
-  ההודעה אומרת שהתוכנה הותקנה והספרייה לא, והספרייה הקודמת נשארת במקומה.
+  ההודעה אומרת שהתוכנה הותקנה והספרייה לא, והספרייה הקודמת נשארת במקומה. כשההודעה
+  מושתקת (`/SUPPRESSMSGBOXES`) המתקין יוצא בקוד 9 (`GetCustomSetupExitCode`), ולא 0.
 * **השקה שקטה** — רשומת `[Run]` רצה לפני `ssPostInstall`, ולכן כשהוכנה ספרייה
   `ShouldLaunchAppAfterSilentInstall` מחזיר False, ואוצריא נפתחת בסוף הפריסה.
-* **גודל** — `zstd.exe` ו-`7za.exe` מוסיפים כ-1.1 MB דחוסים למתקין (ארטיפקט הכלים
+* **גודל** — `zstd.exe` ו-`7za.exe` מוסיפים כ-1.1 MB דחוסים לכל מתקין (ארטיפקט הכלים
   ב-CI שוקל 1,176,819 בתים ב-ZIP).
+* **עמוד הסיום של המסייע** — `outputNote` של `library-full` ("מתקין אוצריא שבתיקייה
+  פורס את הספרייה מהחלקים שלצדו בזמן ההתקנה, בלי אינטרנט.") ושל `library-index`
+  ("אינדקס החיפוש המוכן נפרס יחד עם הספרייה, ולכן התוכנה אינה בונה אותו אחרי
+  ההתקנה.").
 
 בדיקות: `test/installer/installer_scripts_test.dart`, הקבוצה "חלקי הספרייה
-המאונדקסת לצד המתקין הרגיל".
+והאינדקס לצד המתקין הרגיל".
 
 ### הערות השחרור
 
-החלקים של `library-full-indexed` עולים כנכסים ואינם מקושרים: בפרק Windows יש
-שורה אחת שמפנה למסייע ההורדה.
+החלקים של `library-full` ושל `library-index` עולים כנכסים ואינם מקושרים
+(`*-library.tar.zst.part-*|*-library-index.tar.zst.part-*`): בפרק Windows יש
+שורה אחת שמפנה למסייע ההורדה (בחירה אישית) — הספרייה, ולמחשב חלש גם האינדקס.
 
 המסייעים מקושרים במקטע נפרד בסופן, "## כלי עזר": משפט הסבר אחד שאינו משתמע
 לשתי פנים ("מסייע הורדה — כלי עזר להורדת אוצריא ולהכנת התקנה למחשב ללא אינטרנט.

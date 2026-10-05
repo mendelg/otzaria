@@ -139,30 +139,68 @@ bool componentIsOffered(
   return installerFor(manifest, component, target) != null;
 }
 
-/// שורה בבחירה האישית: רכיב, והגודל שלו יחד עם החלקים שלו.
-typedef CustomChoice = ({String id, int downloadSize});
+/// קבוצת הבחירה-אחת-מתוך בבחירה האישית: הדרכים החלופיות להתקין את התוכנה.
+const String kApplicationChoiceGroup = 'application';
 
-/// השורות בבחירה האישית, בסדר המניפסט. רכיב עם `partOf` אינו שורה משלו: הוא
-/// מגיע עם הרכיב שהוא חלק ממנו (דרך `dependsOn` שלו), וגודלו נוסף לשורה של זה.
+/// שורה בבחירה האישית. [locked] — מסומנת תמיד ואי אפשר לבטל אותה; [group] —
+/// שורות עם אותה קבוצה הן בחירה אחת-מתוך (רדיו), '' — תיבת סימון.
+typedef CustomChoice = ({
+  String id,
+  int downloadSize,
+  bool locked,
+  String group,
+});
+
+Map<String, Object> customChoiceToJson(CustomChoice choice) => {
+  'id': choice.id,
+  'downloadSize': choice.downloadSize,
+  'locked': choice.locked,
+  'group': choice.group,
+};
+
+/// השורות בבחירה האישית, בסדר המניפסט: הדרך להתקין את התוכנה ורכיבי הרשות.
+///
+/// גרסה ניידת אינה מוצגת — היא צורה חלופית של אותה תוכנה. כשהמתקין הרגיל
+/// פורס ספרייה שלצדו, החבילה המלאה מיותרת ואינה מוצגת, והמתקין נעול. אחרת
+/// התוכנה והחבילה המלאה הן בחירה אחת-מתוך, כדי שלא יורדו שתיהן.
 List<CustomChoice> customChoices(
   Map<String, Object?> manifest,
   AssistantTarget target,
 ) {
+  final byId = {for (final c in _components(manifest)) c['id']: c};
   final offered = [
     for (final component in _components(manifest))
-      if (componentIsOffered(manifest, component, target)) component,
+      if (componentIsOffered(manifest, component, target) &&
+          _field(component, 'type') != 'application-portable')
+        component,
   ];
-  return [
+  final installerTakesLibrary = offered.any((component) {
+    final installer = installerFor(manifest, component, target);
+    return installer != null &&
+        _field(byId[installer]!, 'type') == 'application';
+  });
+  final rows = [
     for (final component in offered)
-      if (_field(component, 'partOf').isEmpty)
-        (
-          id: component['id'] as String,
-          downloadSize: offered
-              .where(
-                (c) => c == component || _field(c, 'partOf') == component['id'],
-              )
-              .fold(0, (sum, c) => sum + (c['downloadSize'] as int)),
-        ),
+      if (_field(component, 'partOf').isEmpty &&
+          !(installerTakesLibrary &&
+              _field(component, 'type') == 'application-bundle'))
+        component,
+  ];
+  bool isInstaller(Map<String, Object?> c) =>
+      const {'application', 'application-bundle'}.contains(_field(c, 'type'));
+  final radio = rows.where(isInstaller).length > 1;
+  return [
+    for (final component in rows)
+      (
+        id: component['id'] as String,
+        downloadSize: offered
+            .where(
+              (c) => c == component || _field(c, 'partOf') == component['id'],
+            )
+            .fold(0, (sum, c) => sum + (c['downloadSize'] as int)),
+        locked: isInstaller(component) && !radio,
+        group: isInstaller(component) && radio ? kApplicationChoiceGroup : '',
+      ),
   ];
 }
 

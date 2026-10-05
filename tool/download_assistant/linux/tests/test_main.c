@@ -153,16 +153,20 @@ static void check_fixtures(const char *manifest_name, const char *expected_name)
     }
     assert_strings(offered, otz_json_get(entry, "offeredComponents"), label);
 
-    g_autoptr(GPtrArray) choices = otz_custom_choices(manifest, &target);
-    const OtzJson *expected_choices = otz_json_get(entry, "customChoices");
-    g_assert_cmpuint(choices->len, ==, otz_json_array_length(expected_choices));
-    for (guint c = 0; c < choices->len; c++) {
-      const OtzComponent *choice = g_ptr_array_index(choices, c);
-      const OtzJson *want = otz_json_array_get(expected_choices, c);
-      gint64 size = 0;
-      g_assert_cmpstr(choice->id, ==, otz_json_get_string(want, "id"));
+    g_autoptr(GPtrArray) custom = otz_custom_choices(manifest, &target);
+    const OtzJson *expected_custom = otz_json_get(entry, "customChoices");
+    g_assert_cmpuint(custom->len, ==, otz_json_array_length(expected_custom));
+    for (guint c = 0; c < custom->len; c++) {
+      const OtzCustomChoice *choice = g_ptr_array_index(custom, c);
+      const OtzJson *want = otz_json_array_get(expected_custom, c);
+      gint64 size = -1;
+      g_assert_cmpstr(choice->component->id, ==, otz_json_get_string(want, "id"));
       g_assert_true(otz_json_get_int(want, "downloadSize", &size));
-      g_assert_cmpint(otz_custom_choice_size(manifest, choice, &target), ==, size);
+      g_assert_cmpint(otz_custom_choice_size(manifest, choice->component, &target), ==, size);
+      const OtzJson *locked = otz_json_get(want, "locked");
+      g_assert_nonnull(locked);
+      g_assert_cmpint(choice->locked, ==, locked->boolean);
+      g_assert_cmpstr(choice->group, ==, otz_json_get_string(want, "group"));
     }
 
     g_autoptr(GPtrArray) presets = otz_build_presets(manifest, &target);
@@ -192,14 +196,14 @@ static void test_fixtures(void) {
 }
 
 /* The Windows FULL installer reached 4 GiB: it cannot run, so "full" falls
- * back to the regular installer and the indexed library parts it reads. */
+ * back to the regular installer and the library parts it reads. */
 static void test_fixtures_large_full(void) {
   check_fixtures("release-manifest-large-full.json",
                  "expected-selections-large-full.json");
 }
 
-/* A library picked on its own in the custom list comes with the installer
- * that reads it; on ARM64 nothing installs it, so it is not offered at all. */
+/* The index picked on its own in the custom list comes with the library it
+ * depends on and the installer that reads both, on x64 and on ARM64. */
 static void test_library_brings_its_installer(void) {
   gsize length;
   g_autofree char *text = read_fixture("release-manifest.json", &length);
@@ -207,15 +211,21 @@ static void test_library_brings_its_installer(void) {
   g_autoptr(OtzManifest) manifest = otz_manifest_parse(text, length, &error);
   g_assert_no_error(error);
   g_autoptr(GPtrArray) picked = g_ptr_array_new();
-  g_ptr_array_add(picked, (gpointer) "library-full-indexed");
+  g_ptr_array_add(picked, (gpointer) "library-index");
   OtzTarget x64 = {"windows", "x64", ""};
   g_autoptr(GPtrArray) closed = otz_with_dependencies(manifest, picked, &x64);
-  g_assert_cmpuint(closed->len, ==, 2);
+  g_assert_cmpuint(closed->len, ==, 3);
   g_assert_cmpstr(g_ptr_array_index(closed, 0), ==, "otzaria-windows-x64");
-  g_assert_cmpstr(g_ptr_array_index(closed, 1), ==, "library-full-indexed");
+  g_assert_cmpstr(g_ptr_array_index(closed, 1), ==, "library-full");
+  g_assert_cmpstr(g_ptr_array_index(closed, 2), ==, "library-index");
   OtzTarget arm64 = {"windows", "arm64", ""};
+  g_autoptr(GPtrArray) closed_arm =
+      otz_with_dependencies(manifest, picked, &arm64);
+  g_assert_cmpuint(closed_arm->len, ==, 3);
+  g_assert_cmpstr(g_ptr_array_index(closed_arm, 0), ==, "otzaria-windows-arm64");
+  OtzTarget deb = {"linux", "x64", "deb"};
   g_assert_false(otz_component_is_offered(
-      manifest, otz_manifest_find(manifest, "library-full-indexed"), &arm64));
+      manifest, otz_manifest_find(manifest, "library-full"), &deb));
 }
 
 #define TEST_ASSET(name)                                                     \

@@ -185,26 +185,34 @@ struct AssistantView: View {
     private var customPage: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ליד כל רכיב מופיע גודל ההורדה שלו.").foregroundColor(.secondary)
-            ForEach(model.customChoices, id: \.id) { component in
-                Toggle(isOn: Binding(
-                    get: { model.customChecked.contains(component.id) },
-                    set: { checked in
-                        if checked {
-                            model.customChecked.insert(component.id)
-                        } else {
-                            model.customChecked.remove(component.id)
+            // המתקין והחבילה המלאה — רדיו; מתקין בלי חלופה — נעול.
+            ForEach(model.customChoices, id: \.component.id) { choice in
+                let component = choice.component
+                let title = "\(component.name) — \(humanSize(model.customChoiceSize(component)))"
+                    + (choice.locked || (component.required && choice.group.isEmpty) ? " (נדרש)" : "")
+                if choice.group.isEmpty {
+                    Toggle(isOn: Binding(
+                        get: { choice.locked || model.customChecked.contains(component.id) },
+                        set: { model.setCustom(component.id, $0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\u{200F}" + title)
+                            if !component.description.isEmpty {
+                                Text("\u{200F}" + component.description).font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(component.name) — \(humanSize(model.customChoiceSize(component)))\(component.required ? " (נדרש)" : "")")
-                        if !component.description.isEmpty {
-                            Text(component.description).font(.caption).foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(choice.locked)
+                } else {
+                    ChoiceRow(
+                        title: title,
+                        subtitle: component.description.isEmpty ? nil : component.description,
+                        selected: model.customChecked.contains(component.id)
+                    ) { model.setCustom(component.id, true) }
                 }
-                .toggleStyle(.checkbox)
             }
         }
     }

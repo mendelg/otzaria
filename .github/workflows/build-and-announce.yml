@@ -461,8 +461,8 @@ jobs:
           Compress-Archive -Path build\windows\x64\runner\Release\zstd.exe -Update -DestinationPath otzaria-windows.zip
           Write-Host "zstd.exe staged for differential updates"
 
-      # המתקין הרגיל נבנה ב-build_windows_installer: הוא מטמיע את מניפסט חלקי
-      # הספרייה המאונדקסת, שנבנים ב-build_linux.
+      # המתקין הרגיל נבנה ב-build_windows_installer: הוא מטמיע את מניפסטי חלקי
+      # הספרייה והאינדקס, שנבנים ב-build_linux.
       - name: Build Inno Setup installer
         shell: pwsh
         run: |
@@ -763,19 +763,8 @@ jobs:
         shell: pwsh
         run: .\installer\download_bundled_plugins.ps1 -Platform windows
 
-      - name: Build Inno Setup installer (ARM64)
-        shell: pwsh
-        run: |
-          & "$env:ISCC" /DAppArch=arm64 installer\otzaria.iss
-          if ($LASTEXITCODE -ne 0) {
-            throw "ARM64 installer build failed"
-          }
-
-      - name: Upload Windows ARM64 installer
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: otzaria-windows-arm64-installer
-          path: installer/otzaria-*-windows_arm64.exe
+      # המתקין הרגיל של ARM64 נבנה ב-build_windows_installer, עם מניפסטי חלקי
+      # הספרייה מ-build_linux.
 
       - name: Upload Windows ARM64 ZIP
         uses: actions/upload-artifact@v7.0.1
@@ -1604,12 +1593,13 @@ jobs:
           }
           if [ "${{ matrix.arch }}" = "aarch64" ]; then
             pack_full_bundle otzaria-linux-full-arm64.tar.zst
-            # הספרייה המאונדקסת חוצת-פלטפורמות — עותק אחד נבנה ב-x86_64 בלבד.
+            # חלקי הספרייה והאינדקס חוצי-פלטפורמות — עותק אחד נבנה ב-x86_64 בלבד.
             exit 0
           fi
           pack_full_bundle otzaria-linux-full.tar.zst
 
-          # חבילת ספרייה נוספת עם אינדקס חיפוש מוכן. האינדקס אינו נבנה כאן:
+          # הספרייה ואינדקס החיפוש המוכן, כשני נכסים נפרדים שהמתקינים הרגילים של
+          # Windows פורסים מהחלקים שלצדם. האינדקס אינו נבנה כאן:
           # הוא נבנה פעם אחת אחרי שחרור הספרייה, ב-build-library-index.yml
           # שבמאגר SeforimLibrary, ומאוחסן כנכס על אותו release. בנייתו כאן
           # עלתה 118 דקות מול 12 דקות לאותה חבילה בלעדיה (ריצה 34779834547),
@@ -1620,14 +1610,14 @@ jobs:
           # אותם מאז 9b67127, כי הטקסט שלהם כבר באינדקס מה-DB. הם כן נוכחים
           # בבניית האינדקס בצד השני, כי catalogueOrder הוא מיקום בעץ הקטלוג
           # כולו; הסקריפט מאמת שזה אותו ארכיון תלמוד בדיוק.
-          INDEXED_LIBRARY_ROOT="$GITHUB_WORKSPACE/full_installer/otzaria-library-full-indexed"
-          mkdir -p "$INDEXED_LIBRARY_ROOT"
-          cp -al "$GITHUB_WORKSPACE/$BUNDLE_ROOT/אוצריא" "$INDEXED_LIBRARY_ROOT/books"
-          # בחבילה הכללית המשתמש בוחר את books ידנית; marker של bundle צמוד
-          # לאפליקציה היה גורם לנתיב להיחשב לא-ידני בעלייה הבאה.
-          BUNDLED_MARKER="$INDEXED_LIBRARY_ROOT/books/.otzaria_bundled_library"
+          LIBRARY_ROOT="$GITHUB_WORKSPACE/full_installer/otzaria-library"
+          mkdir -p "$LIBRARY_ROOT"
+          cp -al "$GITHUB_WORKSPACE/$BUNDLE_ROOT/אוצריא" "$LIBRARY_ROOT/books"
+          # המתקין פורס את books לנתיב הספרייה; marker של bundle צמוד לאפליקציה
+          # היה גורם לנתיב להיחשב לא-ידני בעלייה הבאה.
+          BUNDLED_MARKER="$LIBRARY_ROOT/books/.otzaria_bundled_library"
           case "$BUNDLED_MARKER" in
-            "$GITHUB_WORKSPACE/full_installer/otzaria-library-full-indexed/books/.otzaria_bundled_library") ;;
+            "$GITHUB_WORKSPACE/full_installer/otzaria-library/books/.otzaria_bundled_library") ;;
             *) echo "::error::Unexpected bundled marker path: $BUNDLED_MARKER"; exit 1 ;;
           esac
           [ ! -L "$BUNDLED_MARKER" ] || { echo "::error::Bundled marker must not be a symlink"; exit 1; }
@@ -1638,7 +1628,7 @@ jobs:
           fetch_status=0
           PREBUILT_INDEX_REBUILD_TAG_FILE="$rebuild_tag_file" \
             bash tool/release/fetch_prebuilt_library_index.sh \
-              "$INDEXED_LIBRARY_ROOT/index" \
+              "$LIBRARY_ROOT/index" \
               full_installer/library_db/seforim.db.zst \
               full_installer/library_db/talmud_bavli_latest.tar.zst \
               pubspec.lock || fetch_status=$?
@@ -1660,35 +1650,27 @@ jobs:
             fi
           fi
           [ "$fetch_status" = 0 ] || exit "$fetch_status"
-          touch "$INDEXED_LIBRARY_ROOT/index/.otzaria_prebuilt_index"
-
-          cat > "$INDEXED_LIBRARY_ROOT/README.txt" << 'EOF'
-          Otzaria indexed FULL library
-
-          Extract the complete multipart archive and choose its books directory in Otzaria.
-          Keep books and index next to each other; the application resolves this layout automatically.
-          The package includes a prebuilt search index, so no indexing runs after
-          installation. The bundled Talmud Bavli scans are searchable through the
-          text of the same tractates, which the index covers.
-          EOF
+          touch "$LIBRARY_ROOT/index/.otzaria_prebuilt_index"
 
           VERSION=$(awk '/^version:/ {split($2, v, "+"); print v[1]; exit}' pubspec.yaml)
-          INDEXED_ARCHIVE="otzaria-${VERSION}-library-full-indexed.tar.zst"
-          tar -C full_installer -cf - otzaria-library-full-indexed \
-            | zstd -19 -T0 -o "$INDEXED_ARCHIVE"
-          mkdir -p indexed-release-parts
-          tool/release/split_release_asset.sh \
-            "$INDEXED_ARCHIVE" indexed-release-parts 1992294400
-          cp tool/release/assemble_split_asset.sh indexed-release-parts/
-          cp tool/release/assemble_split_asset.ps1 indexed-release-parts/
-
-          # קובץ-הביניים השלם עלול להיות גדול מ-2 GiB; רק החלקים עולים כ-assets.
-          case "$INDEXED_ARCHIVE" in
-            otzaria-*-library-full-indexed.tar.zst) ;;
-            *) echo "::error::Unexpected indexed archive path: $INDEXED_ARCHIVE"; exit 1 ;;
-          esac
-          [ -f "$INDEXED_ARCHIVE" ] || { echo "::error::Indexed archive is missing"; exit 1; }
-          rm -f -- "$INDEXED_ARCHIVE"
+          mkdir -p library-release-parts
+          cp tool/release/assemble_split_asset.sh library-release-parts/
+          cp tool/release/assemble_split_asset.ps1 library-release-parts/
+          # תמיד בחלקים, גם מתחת לסף: המתקין מזהה את הנכס לפי part-000 שלצדו.
+          pack_library_asset() { # pack_library_asset <archive> <books|index>
+            case "$1" in
+              "otzaria-${VERSION}-library.tar.zst"|"otzaria-${VERSION}-library-index.tar.zst") ;;
+              *) echo "::error::Unexpected library archive path: $1"; exit 1 ;;
+            esac
+            tar -C "$LIBRARY_ROOT" -cf - "$2" | zstd -19 -T0 -o "$1"
+            tool/release/split_release_asset.sh "$1" "library-release-split/$2" 1992294400
+            mv "library-release-split/$2"/* library-release-parts/
+            # קובץ-הביניים השלם עלול להיות גדול מ-2 GiB; רק החלקים עולים כ-assets.
+            [ -f "$1" ] || { echo "::error::Library archive is missing: $1"; exit 1; }
+            rm -f -- "$1"
+          }
+          pack_library_asset "otzaria-${VERSION}-library.tar.zst" books
+          pack_library_asset "otzaria-${VERSION}-library-index.tar.zst" index
 
       # נסרק app של חבילת ה-FULL — העץ שהמשתמש פורס. portable.marker הוסר ממנו.
       - name: Generate application file manifest (Linux)
@@ -1720,21 +1702,21 @@ jobs:
           name: otzaria-linux-full${{ matrix.arch == 'aarch64' && '-arm64' || '' }}
           path: otzaria-linux-full${{ matrix.arch == 'aarch64' && '-arm64' || '' }}.tar.zst
 
-      - name: Upload indexed FULL library parts
+      - name: Upload library and search index parts
         if: matrix.target == 'full' && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: otzaria-library-full-indexed
-          path: indexed-release-parts/*
+          name: otzaria-library-parts
+          path: library-release-parts/*
           compression-level: 0
           if-no-files-found: error
 
-      - name: Upload indexed FULL manifest for installer build
+      - name: Upload library manifests for installer build
         if: matrix.target == 'full' && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: otzaria-library-full-indexed-manifest
-          path: indexed-release-parts/*.manifest.json
+          name: otzaria-library-manifests
+          path: library-release-parts/*.manifest.json
           if-no-files-found: error
 
       # כלי עזר, לא רכיב של הגרסה: כישלון כאן לא יפיל את שחרור אוצריא.
@@ -2452,15 +2434,15 @@ jobs:
           path: ${{ runner.temp }}/download-assistant-macos/Otzaria-Download-Assistant-macos.zip
           if-no-files-found: warn
 
-  # המתקין הרגיל של x64 נבנה כאן ולא ב-build_windows: הוא מטמיע את מניפסט חלקי
-  # הספרייה המאונדקסת מ-build_linux. כש-build_linux לא הצליח, הוא נבנה בלי התמיכה בהם.
+  # המתקינים הרגילים (x64 ו-ARM64; ISCC רק אורז) מטמיעים את מניפסטי חלקי הספרייה
+  # והאינדקס מ-build_linux. כש-build_linux לא הצליח, הם נבנים בלי התמיכה בהם.
   build_windows_installer:
     if: >-
       !cancelled() &&
       github.event_name != 'release' &&
       github.event_name != 'pull_request' &&
       needs.build_windows.result == 'success'
-    needs: [bump_version, build_windows, build_linux]
+    needs: [bump_version, build_windows, build_windows_arm64, build_linux]
     runs-on: windows-2022
 
     steps:
@@ -2481,11 +2463,18 @@ jobs:
           name: otzaria-windows-installer-tools
           path: installer-inputs/tools
 
-      - name: Download indexed library manifest
+      - name: Download Windows ARM64 app bundle
+        if: needs.build_windows_arm64.result == 'success'
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: otzaria-windows-arm64-zip
+          path: installer-inputs/windows-arm64
+
+      - name: Download library manifests
         if: needs.build_linux.result == 'success'
         uses: actions/download-artifact@v8.0.1
         with:
-          name: otzaria-library-full-indexed-manifest
+          name: otzaria-library-manifests
           path: installer-inputs/library
 
       - name: Install Inno Setup
@@ -2497,28 +2486,37 @@ jobs:
           if (-not $iscc) { throw 'ISCC.exe not found after installation' }
           "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      # ה-ZIP הוא תיקיית הבנייה של build_windows (כולל zstd וחותם השחרור) ועוד
-      # portable.marker, שאסור שיגיע להתקנה רגילה.
+      # כל ZIP הוא תיקיית הבנייה של ה-job שלו ועוד portable.marker, שאסור בהתקנה רגילה.
+      # zstd ו-7za של x64 משמשים גם את ARM64 (אמולציה; otzaria.iss חוסם שם Windows 10).
       - name: Prepare regular installer inputs
         shell: pwsh
         env:
           LINUX_RESULT: ${{ needs.build_linux.result }}
+          ARM64_RESULT: ${{ needs.build_windows_arm64.result }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = Get-ChildItem installer-inputs\windows\*.zip | Select-Object -First 1
-          if (-not $zip) { throw 'Windows app bundle is missing' }
-          $releaseDir = 'build\windows\x64\runner\Release'
-          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $releaseDir -Force
-          Remove-Item "$releaseDir\portable.marker" -Force -ErrorAction SilentlyContinue
+          $bundles = @(@{ Dir = 'installer-inputs\windows'; Arch = 'x64' })
+          if ($env:ARM64_RESULT -eq 'success') {
+            $bundles += @{ Dir = 'installer-inputs\windows-arm64'; Arch = 'arm64' }
+          }
+          foreach ($bundle in $bundles) {
+            $zip = Get-ChildItem "$($bundle.Dir)\*.zip" | Select-Object -First 1
+            if (-not $zip) { throw "Windows $($bundle.Arch) app bundle is missing" }
+            $releaseDir = "build\windows\$($bundle.Arch)\runner\Release"
+            New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+            Expand-Archive -LiteralPath $zip.FullName -DestinationPath $releaseDir -Force
+            Remove-Item "$releaseDir\portable.marker" -Force -ErrorAction SilentlyContinue
+          }
 
-          $manifests = @(Get-ChildItem installer-inputs\library\*library-full-indexed*.manifest.json -ErrorAction SilentlyContinue)
+          $library = @(Get-ChildItem installer-inputs\library\*-library.tar.zst.manifest.json -ErrorAction SilentlyContinue)
+          $index = @(Get-ChildItem installer-inputs\library\*-library-index.tar.zst.manifest.json -ErrorAction SilentlyContinue)
           if ($env:LINUX_RESULT -ne 'success') {
-            Write-Host "::warning::build_linux did not succeed - the regular installer is built without indexed library support"
-          } elseif ($manifests.Count -ne 1) {
-            throw "Expected one indexed library manifest, found $($manifests.Count)"
+            Write-Host "::warning::build_linux did not succeed - the regular installers are built without library support"
+          } elseif ($library.Count -ne 1 -or $index.Count -ne 1) {
+            throw "Expected one library and one index manifest, found $($library.Count) and $($index.Count)"
           } else {
-            Copy-Item $manifests[0].FullName installer\indexed_library.manifest.json -Force
+            Copy-Item $library[0].FullName installer\library.manifest.json -Force
+            Copy-Item $index[0].FullName installer\library_index.manifest.json -Force
             Copy-Item installer-inputs\tools\zstd.exe installer\zstd.exe -Force
             Copy-Item installer-inputs\tools\7za.exe installer\7za.exe -Force
           }
@@ -2536,11 +2534,27 @@ jobs:
             throw 'Regular installer build failed'
           }
 
+      - name: Build regular installer (ARM64)
+        if: needs.build_windows_arm64.result == 'success'
+        shell: pwsh
+        run: |
+          & "$env:ISCC" /DAppArch=arm64 installer\otzaria.iss
+          if ($LASTEXITCODE -ne 0) {
+            throw 'ARM64 installer build failed'
+          }
+
       - name: Upload Windows installer (regular)
         uses: actions/upload-artifact@v7.0.1
         with:
           name: otzaria-windows-installer
           path: installer/otzaria-*-windows.exe
+
+      - name: Upload Windows ARM64 installer
+        if: needs.build_windows_arm64.result == 'success'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: otzaria-windows-arm64-installer
+          path: installer/otzaria-*-windows_arm64.exe
 
   create_release:
     if: >-
@@ -2683,9 +2697,9 @@ jobs:
             cp artifacts/otzaria-linux-full/*.tar.zst release-files/ || true
           fi
 
-          # Indexed FULL library parts — the regular Windows installer reads them next to it
-          if [ -d "artifacts/otzaria-library-full-indexed" ]; then
-            cp artifacts/otzaria-library-full-indexed/* release-files/ || true
+          # Library and search index parts — the regular Windows installers read them next to them
+          if [ -d "artifacts/otzaria-library-parts" ]; then
+            cp artifacts/otzaria-library-parts/* release-files/ || true
           fi
           
           # Android APK
@@ -2853,7 +2867,7 @@ jobs:
           linux_full_parts=()
           linux_full_support=()
           assemble_scripts=()
-          indexed_library_parts=()
+          library_parts=()
           mac_dmg=()
           mac_full=()
           mac_full_parts=()
@@ -2896,8 +2910,8 @@ jobs:
                 windows_arm64_full+=("$file")
                 ;;
               # לא מקושרים: מסייע ההורדה מוריד אותם, והמתקין הרגיל קורא אותם לצדו.
-              *library-full-indexed*.part-*)
-                indexed_library_parts+=("$file")
+              *-library.tar.zst.part-*|*-library-index.tar.zst.part-*)
+                library_parts+=("$file")
                 ;;
               assemble_split_asset.sh|assemble_split_asset.ps1)
                 assemble_scripts+=("$file")
@@ -3010,8 +3024,8 @@ jobs:
               printf "\n" >> release-body.md
             fi
 
-            if [ ${#indexed_library_parts[@]} -gt 0 ]; then
-              printf "> ספרייה מלאה עם אינדקס חיפוש מוכן מכינים במסייע ההורדה שבסוף העמוד (בחירה אישית).\n\n" >> release-body.md
+            if [ ${#library_parts[@]} -gt 0 ]; then
+              printf "> את הספרייה המלאה לצד המתקין הרגיל (ולמחשב חלש — גם אינדקס חיפוש מוכן) מכינים במסייע ההורדה שבסוף העמוד (בחירה אישית).\n\n" >> release-body.md
             fi
           fi
 

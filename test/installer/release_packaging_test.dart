@@ -53,7 +53,7 @@ void main() {
       '-NoLogo',
       '-NoProfile',
       '-File',
-      'installer/read_indexed_library_manifest.ps1',
+      'installer/read_split_manifest.ps1',
       '-ManifestPath',
       manifestFile.path,
       '-OutputPath',
@@ -75,7 +75,7 @@ void main() {
       p.join(temp.path, 'embedded-manifest'),
     )..createSync();
     final embeddedManifest = File(
-      p.join(embeddedManifestDirectory.path, 'indexed_library.manifest.json'),
+      p.join(embeddedManifestDirectory.path, 'library.manifest.json'),
     );
     manifestFile.copySync(embeddedManifest.path);
     final powerShellOutput = p.join(temp.path, 'reassembled-pwsh.tar.zst');
@@ -125,19 +125,21 @@ void main() {
     expect(workflow, isNot(contains('build-release-index')));
     expect(workflow, contains('tool/release/fetch_prebuilt_library_index.sh'));
     expect(workflow, contains('otzaria-index-inputs'));
-    expect(workflow, contains('otzaria-library-full-indexed'));
+    expect(workflow, contains('otzaria-library-parts'));
+    expect(workflow, isNot(contains('library-full-indexed')));
     expect(workflow, contains('1992294400'));
     expect(workflow, contains('split_release_asset.sh'));
     expect(workflow, contains('compression-level: 0'));
     // המתקין הרגיל מטמיע את המניפסט; אין יותר מתקין מאונדקס נפרד.
     expect(workflow, isNot(contains('IndexedSplitFull')));
     expect(workflow, isNot(contains('windows-full-indexed')));
-    expect(workflow, contains(r'installer\indexed_library.manifest.json'));
+    expect(workflow, contains(r'installer\library.manifest.json'));
+    expect(workflow, contains(r'installer\library_index.manifest.json'));
     expect(
       workflow,
       contains(
         'cp -al "\$GITHUB_WORKSPACE/\$BUNDLE_ROOT/אוצריא" '
-        '"\$INDEXED_LIBRARY_ROOT/books"',
+        '"\$LIBRARY_ROOT/books"',
       ),
     );
   });

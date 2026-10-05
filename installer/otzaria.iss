@@ -28,16 +28,20 @@
   #define AppArch "x64"
 #endif
 
-; חלקי הספרייה המאונדקסת שמסייע ההורדה מכין לצד המתקין (x64 בלבד). ה-workflow
-; מניח כאן את המניפסט שלהם; בבנייה בלעדיו המתקין אינו מכיר אותם כלל.
-#if AppArch == "x64" && FileExists(AddBackslash(SourcePath) + "indexed_library.manifest.json")
-  #define IndexedLibraryParts
-  #define IndexedArchiveName "otzaria-" + MyAppVersion + "-library-full-indexed.tar.zst"
+; חלקי הספרייה ואינדקס החיפוש שמסייע ההורדה מכין לצד המתקין. ה-workflow מניח
+; כאן את המניפסטים שלהם; בבנייה בלעדיהם המתקין אינו מכיר אותם כלל.
+#if FileExists(AddBackslash(SourcePath) + "library.manifest.json")
+  #define LibraryParts
+  #define LibraryArchiveName "otzaria-" + MyAppVersion + "-library.tar.zst"
+  #if FileExists(AddBackslash(SourcePath) + "library_index.manifest.json")
+    #define LibraryIndexParts
+    #define IndexArchiveName "otzaria-" + MyAppVersion + "-library-index.tar.zst"
+  #endif
   #if FileExists(AddBackslash(SourcePath) + "zstd.exe") == 0
-    #error zstd.exe must sit next to otzaria.iss to unpack the indexed library parts
+    #error zstd.exe must sit next to otzaria.iss to unpack the library parts
   #endif
   #if FileExists(AddBackslash(SourcePath) + "7za.exe") == 0
-    #error 7za.exe must sit next to otzaria.iss to unpack the indexed library parts
+    #error 7za.exe must sit next to otzaria.iss to unpack the library parts
   #endif
 #endif
 
@@ -160,10 +164,13 @@ Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: Shoul
 Name: "hebrew"; MessagesFile: "compiler:Languages\Hebrew.isl"
 
 [Files]
-#ifdef IndexedLibraryParts
+#ifdef LibraryParts
 ; ראשונים בכוונה: ב-SolidCompression חילוץ קובץ זמני מפענח את כל מה שלפניו.
-Source: "indexed_library.manifest.json"; Flags: dontcopy
-Source: "read_indexed_library_manifest.ps1"; Flags: dontcopy
+Source: "library.manifest.json"; Flags: dontcopy
+#ifdef LibraryIndexParts
+Source: "library_index.manifest.json"; Flags: dontcopy
+#endif
+Source: "read_split_manifest.ps1"; Flags: dontcopy
 Source: "..\tool\release\assemble_split_asset.ps1"; Flags: dontcopy
 Source: "zstd.exe"; Flags: dontcopy
 Source: "7za.exe"; Flags: dontcopy
@@ -219,11 +226,10 @@ var
   DeleteUserDataOnUninstall: Boolean;
   // נתיב ספרייה מותאם מה-prefs; איפוס הגדרות מדלג עליו כדי לא למחוק ספרים.
   ProtectedLibraryPath: String;
-#ifdef IndexedLibraryParts
-  IndexedPartNames: TArrayOfString;
-  IndexedPartHashes: TArrayOfString;
-  // הארכיון שהורכב ואומת מהחלקים; ריק = התקנה רגילה בלי ספרייה.
-  IndexedPreparedArchivePath: String;
+#ifdef LibraryParts
+  // הארכיונים שהורכבו ואומתו מהחלקים; ריק = אין (בלי ספרייה — התקנה רגילה).
+  PreparedLibraryArchive, PreparedIndexArchive: String;
+  LibraryNotInstalled: Boolean;
 #endif
 
 // משמש גם את Uninstallable/CreateUninstallRegKey וגם רשומות Check.
@@ -512,9 +518,9 @@ end;
 function ShouldLaunchAppAfterSilentInstall(): Boolean;
 begin
   Result := WizardSilent and (ExpandConstant('{param:NOLAUNCH|0}') <> '1');
-#ifdef IndexedLibraryParts
-  // רשומת [Run] רצה לפני ssPostInstall; עם ספרייה מאונדקסת ההשקה היא אחרי הפריסה.
-  Result := Result and (IndexedPreparedArchivePath = '');
+#ifdef LibraryParts
+  // רשומת [Run] רצה לפני ssPostInstall; עם ספרייה ההשקה היא אחרי הפריסה.
+  Result := Result and (PreparedLibraryArchive = '');
 #endif
 end;
 
@@ -719,7 +725,7 @@ begin
          'או חזור ובחר התקנה רגילה.', mbError, MB_OK);
 end;
 
-#ifdef IndexedLibraryParts
+#ifdef LibraryParts
 // מריץ קובץ ולוכד את הפלט שלו, כדי להציג בכשל את השגיאה האמיתית ולא רק קוד יציאה.
 function RunAndCaptureErrors(const Exe, Params: String;
   var ResultCode: Integer; var CapturedOutput: String): Boolean;
@@ -740,8 +746,8 @@ begin
       CapturedOutput := CapturedOutput + Output.StdOut[I] + #13#10;
 end;
 
-function ParseIndexedManifestLine(const Line, ExpectedKind: String;
-  var FileName, FileHash: String): Boolean;
+function ParseSplitManifestLine(const Line, ExpectedKind: String;
+  var FileName: String): Boolean;
 var
   FirstSeparator, SecondSeparator: Integer;
 begin
@@ -758,22 +764,24 @@ begin
     exit;
   FileName := Copy(Line, FirstSeparator + 1,
     SecondSeparator - FirstSeparator - 1);
-  FileHash := Copy(Line, SecondSeparator + 1, Length(Line));
-  Result := (FileName <> '') and (Length(FileHash) = 64);
+  Result := (FileName <> '') and
+    (Length(Copy(Line, SecondSeparator + 1, Length(Line))) = 64);
 end;
 
-function ReadIndexedManifest(const ManifestPath: String): Boolean;
+// שמות החלקים מהמניפסט המוטמע; שם הארכיון חייב להיות של גרסת המתקין.
+function ReadSplitManifest(const ManifestPath, ExpectedArchive: String;
+  var PartNames: TArrayOfString): Boolean;
 var
   PowerShellPath, ParserPath, OutputPath, Params, CapturedOutput: String;
-  ArchiveName, ArchiveHash: String;
+  ArchiveName: String;
   Lines: TArrayOfString;
   ResultCode, I: Integer;
 begin
   Result := False;
-  ExtractTemporaryFile('read_indexed_library_manifest.ps1');
+  ExtractTemporaryFile('read_split_manifest.ps1');
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
-  ParserPath := ExpandConstant('{tmp}\read_indexed_library_manifest.ps1');
-  OutputPath := ExpandConstant('{tmp}\indexed-library-manifest.txt');
+  ParserPath := ExpandConstant('{tmp}\read_split_manifest.ps1');
+  OutputPath := ManifestPath + '.txt';
   DeleteFile(OutputPath);
   Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     ParserPath + '" -ManifestPath "' + ManifestPath + '" -OutputPath "' +
@@ -782,45 +790,43 @@ begin
   if (not RunAndCaptureErrors(PowerShellPath, Params, ResultCode,
       CapturedOutput)) or (ResultCode <> 0) then
   begin
-    Log('Indexed manifest parsing failed: ' + CapturedOutput);
+    Log('Split manifest parsing failed: ' + CapturedOutput);
     exit;
   end;
   if (not LoadStringsFromFile(OutputPath, Lines)) or
     (GetArrayLength(Lines) < 2) then
   begin
-    Log('Indexed manifest parser returned no parts');
+    Log('Split manifest parser returned no parts');
     exit;
   end;
-  if not ParseIndexedManifestLine(Lines[0], 'archive', ArchiveName,
-      ArchiveHash) then
+  if not ParseSplitManifestLine(Lines[0], 'archive', ArchiveName) then
     exit;
-  if CompareText(ArchiveName, '{#IndexedArchiveName}') <> 0 then
+  if CompareText(ArchiveName, ExpectedArchive) <> 0 then
   begin
-    Log('Unexpected indexed archive name: ' + ArchiveName);
+    Log('Unexpected archive name: ' + ArchiveName);
     exit;
   end;
 
-  SetArrayLength(IndexedPartNames, GetArrayLength(Lines) - 1);
-  SetArrayLength(IndexedPartHashes, GetArrayLength(Lines) - 1);
+  SetArrayLength(PartNames, GetArrayLength(Lines) - 1);
   for I := 1 to GetArrayLength(Lines) - 1 do
-    if not ParseIndexedManifestLine(Lines[I], 'part',
-      IndexedPartNames[I - 1], IndexedPartHashes[I - 1]) then
+    if not ParseSplitManifestLine(Lines[I], 'part', PartNames[I - 1]) then
       exit;
   Result := True;
 end;
 
-function LocalIndexedPartsAreComplete(const PartsDir: String): Boolean;
+function LocalPartsAreComplete(const PartsDir: String;
+  const PartNames: TArrayOfString): Boolean;
 var
   I: Integer;
   PartPath: String;
 begin
   Result := False;
-  for I := 0 to GetArrayLength(IndexedPartNames) - 1 do
+  for I := 0 to GetArrayLength(PartNames) - 1 do
   begin
-    PartPath := AddBackslash(PartsDir) + IndexedPartNames[I];
+    PartPath := AddBackslash(PartsDir) + PartNames[I];
     if not FileExists(PartPath) then
     begin
-      Log('Local indexed part is missing: ' + PartPath);
+      Log('Local part is missing: ' + PartPath);
       exit;
     end;
   end;
@@ -828,16 +834,16 @@ begin
 end;
 
 // מחבר את החלקים לארכיון אחד ב-{tmp} ומאמת כל חלק ואת הארכיון מול ה-SHA-256 שבמניפסט.
-function AssembleIndexedArchive(const ManifestPath, PartsDir: String): Boolean;
+function AssembleSplitArchive(const ManifestPath, PartsDir,
+  ArchivePath: String): Boolean;
 var
-  PowerShellPath, AssemblerPath, ArchivePath, Params, CapturedOutput: String;
+  PowerShellPath, AssemblerPath, Params, CapturedOutput: String;
   ResultCode: Integer;
 begin
   Result := False;
   ExtractTemporaryFile('assemble_split_asset.ps1');
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   AssemblerPath := ExpandConstant('{tmp}\assemble_split_asset.ps1');
-  ArchivePath := ExpandConstant('{tmp}\{#IndexedArchiveName}');
   DeleteFile(ArchivePath);
   // "E:\" בשורש כונן היה הופך את ה-\" למרכאה מילולית; "E:\." שקול ובטוח.
   Params := '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
@@ -847,64 +853,108 @@ begin
   if (not RunAndCaptureErrors(PowerShellPath, Params, ResultCode,
       CapturedOutput)) or (ResultCode <> 0) then
   begin
-    Log('Indexed archive assembly failed: ' + CapturedOutput);
+    Log('Archive assembly failed: ' + CapturedOutput);
     DeleteFile(ArchivePath);
     exit;
   end;
-  IndexedPreparedArchivePath := ArchivePath;
   Result := True;
 end;
 
-// בלי החלק הראשון לצד המתקין זו התקנה רגילה: בדיקת קובץ אחת, בלי PowerShell.
-function PrepareIndexedLibrary(): Boolean;
+// מאמת ומרכיב ארכיון אחד ([What] — שמו למשתמש); כשל מוצג ועוצר את ההתקנה.
+function PrepareSplitArchive(const ManifestFile, ArchiveName, What,
+  SourceDir: String; var ArchivePath: String): Boolean;
 var
-  SourceDir, ManifestPath: String;
+  ManifestPath: String;
+  PartNames: TArrayOfString;
+begin
+  Result := False;
+  ExtractTemporaryFile(ManifestFile);
+  ManifestPath := ExpandConstant('{tmp}\') + ManifestFile;
+  if not ReadSplitManifest(ManifestPath, ArchiveName, PartNames) then
+  begin
+    SuppressibleMsgBox('קובץ רשימת החלקים של ' + What + ' שבתוך המתקין אינו תקין.',
+      mbCriticalError, MB_OK, IDOK);
+    exit;
+  end;
+  if not LocalPartsAreComplete(SourceDir, PartNames) then
+  begin
+    SuppressibleMsgBox('בתיקייה של המתקין חסרים חלקים של ' + What + '.' + #13#10#13#10 +
+      'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את ' +
+      'המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.',
+      mbCriticalError, MB_OK, IDOK);
+    exit;
+  end;
+  if not AssembleSplitArchive(ManifestPath, SourceDir,
+    ExpandConstant('{tmp}\') + ArchiveName) then
+  begin
+    SuppressibleMsgBox('אימות החלקים של ' + What + ' נכשל: אחד הקבצים פגום, ' +
+      'או שאין מספיק מקום פנוי בדיסק.' + #13#10#13#10 +
+      'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את המתקין לתיקייה ' +
+      'אחרת כדי להתקין את התוכנה בלבד.', mbCriticalError, MB_OK, IDOK);
+    exit;
+  end;
+  ArchivePath := ExpandConstant('{tmp}\') + ArchiveName;
+  Result := True;
+end;
+
+// בלי החלק הראשון של הספרייה לצד המתקין זו התקנה רגילה: בדיקת קובץ אחת, בלי PowerShell.
+function PrepareLibraryParts(): Boolean;
+var
+  SourceDir: String;
   ProgressPage: TOutputProgressWizardPage;
 begin
   Result := True;
-  if IndexedPreparedArchivePath <> '' then
+  if PreparedLibraryArchive <> '' then
     exit;
   SourceDir := ExtractFileDir(ExpandConstant('{srcexe}'));
-  if not FileExists(AddBackslash(SourceDir) + '{#IndexedArchiveName}.part-000') then
+  if not FileExists(AddBackslash(SourceDir) + '{#LibraryArchiveName}.part-000') then
+  begin
+#ifdef LibraryIndexParts
+    // המסייע מוריד אינדקס רק עם הספרייה; אינדקס לבד אינו מותאם בהכרח לספרייה המותקנת.
+    if FileExists(AddBackslash(SourceDir) + '{#IndexArchiveName}.part-000') then
+      Log('Search index parts without library parts are ignored');
+#endif
     exit;
+  end;
 
   Result := False;
-  Log('Indexed library parts found next to the installer');
-  ExtractTemporaryFile('indexed_library.manifest.json');
-  ManifestPath := ExpandConstant('{tmp}\indexed_library.manifest.json');
-  if not ReadIndexedManifest(ManifestPath) then
+  Log('Library parts found next to the installer');
+#if AppArch == "arm64"
+  // zstd ו-7za שבמתקין הם x64, ו-Windows 10 על ARM מאמלץ רק x86.
+  if GetWindowsVersion < $0A0055F0 then
   begin
-    MsgBox('קובץ רשימת חלקי הספרייה שבתוך המתקין אינו תקין.',
-      mbCriticalError, MB_OK);
+    SuppressibleMsgBox('פריסת הספרייה מהחלקים שליד המתקין דורשת Windows 11 במחשב ARM.' + #13#10#13#10 +
+      'העבירו את המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.',
+      mbCriticalError, MB_OK, IDOK);
     exit;
   end;
-  if not LocalIndexedPartsAreComplete(SourceDir) then
-  begin
-    MsgBox('בתיקייה של המתקין חסרים חלקים של הספרייה המאונדקסת.' + #13#10#13#10 +
-      'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את ' +
-      'המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.',
-      mbCriticalError, MB_OK);
-    exit;
-  end;
-
+#endif
   ProgressPage := nil;
   if not WizardSilent then
   begin
-    ProgressPage := CreateOutputProgressPage('מכין את הספרייה המאונדקסת',
+    ProgressPage := CreateOutputProgressPage('מכין את הספרייה',
       'בודק את חלקי הספרייה שליד המתקין. הבדיקה עשויה להימשך כמה דקות.');
     ProgressPage.Show;
   end;
   try
-    Result := AssembleIndexedArchive(ManifestPath, SourceDir);
+    Result := PrepareSplitArchive('library.manifest.json',
+      '{#LibraryArchiveName}', 'הספרייה', SourceDir, PreparedLibraryArchive);
+#ifdef LibraryIndexParts
+    if Result and FileExists(AddBackslash(SourceDir) +
+      '{#IndexArchiveName}.part-000') then
+      Result := PrepareSplitArchive('library_index.manifest.json',
+        '{#IndexArchiveName}', 'אינדקס החיפוש', SourceDir, PreparedIndexArchive);
+#endif
   finally
     if ProgressPage <> nil then
       ProgressPage.Hide;
   end;
   if not Result then
-    MsgBox('אימות חלקי הספרייה המאונדקסת נכשל: אחד הקבצים פגום, ' +
-      'או שאין מספיק מקום פנוי בדיסק.' + #13#10#13#10 +
-      'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את המתקין לתיקייה ' +
-      'אחרת כדי להתקין את התוכנה בלבד.', mbCriticalError, MB_OK);
+  begin
+    if PreparedLibraryArchive <> '' then
+      DeleteFile(PreparedLibraryArchive);
+    PreparedLibraryArchive := '';
+  end;
 end;
 #endif
 
@@ -919,11 +969,11 @@ var
   Launched: Boolean;
 begin
   Result := True;
-#ifdef IndexedLibraryParts
+#ifdef LibraryParts
   // גם בהתקנה שקטה Inno "לוחץ" Next כאן, ו-False עוצר אותה לפני תחילת ההתקנה.
   if CurPageID = wpReady then
   begin
-    Result := PrepareIndexedLibrary();
+    Result := PrepareLibraryParts();
     exit;
   end;
 #endif
@@ -1559,7 +1609,7 @@ begin
                 ExpandConstant('{param:MERGETASKS|}'))) > 0;
 end;
 
-#ifdef IndexedLibraryParts
+#ifdef LibraryParts
 // ממפה שגיאות נפוצות של zstd/7za (תמיד באנגלית) להסבר קצר; '' כשלא זוהו.
 function FriendlyErrorHint(const ErrOutput: String): String;
 var
@@ -1575,74 +1625,93 @@ begin
     Result := 'קובץ היעד נעול על ידי תהליך אחר. סגור את אוצריא ותוכנות אחרות שעשויות להשתמש בקבצים ונסה שוב.';
 end;
 
-procedure IndexedLibraryFailed(const Message, ErrOutput: String);
+procedure LibraryInstallFailed(const Message, ErrOutput: String);
 var
   Hint: String;
 begin
-  Log('Indexed library was not installed: ' + Message + ' ' + ErrOutput);
+  Log('Library was not installed: ' + Message + ' ' + ErrOutput);
+  LibraryNotInstalled := True;
   Hint := FriendlyErrorHint(ErrOutput);
   if Hint <> '' then
     Hint := #13#10#13#10 + Hint;
-  MsgBox(Message + ' התוכנה הותקנה, אבל הספרייה לא.' + Hint + #13#10#13#10 +
-    ErrOutput, mbCriticalError, MB_OK);
+  SuppressibleMsgBox(Message + ' התוכנה הותקנה, אבל הספרייה לא.' + Hint + #13#10#13#10 +
+    ErrOutput, mbCriticalError, MB_OK, IDOK);
 end;
 
-// מחליף את books ואת index הצמודה רק אחרי חילוץ מלא ל-staging; כשל משאיר את הקיימים.
-procedure ExtractIndexedLibraryArchive(const BooksPath: String);
-var
-  TarPath, LibraryRoot, StagingRoot, PackageRoot: String;
-  SourceBooks, SourceIndex, TargetIndex, BooksBackup, IndexBackup: String;
-  ZstdPath, SevenZipPath, Params, ErrOutput: String;
-  ResultCode: Integer;
-  BooksBackedUp, IndexBackedUp, NewBooksMoved: Boolean;
+// עם /SUPPRESSMSGBOXES ההודעה נבלעת; קוד היציאה מסמן שהתוכנה הותקנה והספרייה לא.
+function GetCustomSetupExitCode(): Integer;
 begin
-  TarPath := ExpandConstant('{tmp}\otzaria-indexed-library.tar');
+  Result := 0;
+  if LibraryNotInstalled then
+    Result := 9;
+end;
+
+// zstd ואז 7za אל [Dest]. כל ארכיון נמחק מיד אחרי שנפתח, כדי לפנות מקום.
+function UnpackArchive(const ArchivePath, Dest: String;
+  var ErrOutput: String): Boolean;
+var
+  TarPath, Params: String;
+  ResultCode: Integer;
+begin
+  Result := False;
+  TarPath := ExpandConstant('{tmp}\otzaria-library.tar');
+  DeleteFile(TarPath);
+  Params := '-d -f -T0 "' + ArchivePath + '" -o "' + TarPath + '"';
+  if (not RunAndCaptureErrors(ExpandConstant('{tmp}\zstd.exe'), Params,
+      ResultCode, ErrOutput)) or (ResultCode <> 0) then
+  begin
+    DeleteFile(TarPath);
+    exit;
+  end;
+  DeleteFile(ArchivePath);
+  Params := 'x -y "' + TarPath + '" "-o' + Dest + '"';
+  Result := RunAndCaptureErrors(ExpandConstant('{tmp}\7za.exe'), Params,
+    ResultCode, ErrOutput) and (ResultCode = 0);
+  DeleteFile(TarPath);
+end;
+
+// מחליף את books (ואת index הצמודה, כשהוכן אינדקס) רק אחרי חילוץ מלא ל-staging;
+// כשל משאיר את הקיימים. בלי אינדקס — index הקיימת אינה נוגעת, כמו במתקין ה-FULL.
+procedure ExtractLibraryArchives(const BooksPath: String);
+var
+  LibraryRoot, StagingRoot, SourceBooks, SourceIndex, TargetIndex: String;
+  BooksBackup, IndexBackup, ErrOutput: String;
+  WithIndex, BooksBackedUp, IndexBackedUp, NewBooksMoved: Boolean;
+begin
+  WithIndex := PreparedIndexArchive <> '';
   LibraryRoot := ExtractFileDir(BooksPath);
-  StagingRoot := LibraryRoot + '\.otzaria-indexed-install';
-  PackageRoot := StagingRoot + '\otzaria-library-full-indexed';
-  SourceBooks := PackageRoot + '\books';
-  SourceIndex := PackageRoot + '\index';
+  StagingRoot := LibraryRoot + '\.otzaria-library-install';
+  SourceBooks := StagingRoot + '\books';
+  SourceIndex := StagingRoot + '\index';
   TargetIndex := LibraryRoot + '\index';
   BooksBackup := LibraryRoot + '\.otzaria-books-backup';
   IndexBackup := LibraryRoot + '\.otzaria-index-backup';
   ExtractTemporaryFile('zstd.exe');
   ExtractTemporaryFile('7za.exe');
-  ZstdPath := ExpandConstant('{tmp}\zstd.exe');
-  SevenZipPath := ExpandConstant('{tmp}\7za.exe');
 
   ForceDirectories(LibraryRoot);
   DelTree(StagingRoot, True, True, True);
-  DeleteFile(TarPath);
   ForceDirectories(StagingRoot);
 
-  Params := '-d -f -T0 "' + IndexedPreparedArchivePath + '" -o "' +
-    TarPath + '"';
-  if (not RunAndCaptureErrors(ZstdPath, Params, ResultCode, ErrOutput)) or
-    (ResultCode <> 0) then
-  begin
-    DeleteFile(TarPath);
-    IndexedLibraryFailed('פתיחת ארכיון הספרייה נכשלה.', ErrOutput);
-    exit;
-  end;
-  // השלב הבא כותב עוד עותק בגודל הספרייה — מפנים מקום כבר עכשיו.
-  DeleteFile(IndexedPreparedArchivePath);
-
-  Params := 'x -y "' + TarPath + '" "-o' + StagingRoot + '"';
-  if (not RunAndCaptureErrors(SevenZipPath, Params, ResultCode, ErrOutput)) or
-    (ResultCode <> 0) then
-  begin
-    DeleteFile(TarPath);
-    DelTree(StagingRoot, True, True, True);
-    IndexedLibraryFailed('חילוץ הספרייה והאינדקס נכשל.', ErrOutput);
-    exit;
-  end;
-  DeleteFile(TarPath);
-
-  if (not FileExists(SourceBooks + '\seforim.db')) or
-    (not FileExists(SourceIndex + '\.otzaria_prebuilt_index')) then
+  if not UnpackArchive(PreparedLibraryArchive, StagingRoot, ErrOutput) then
   begin
     DelTree(StagingRoot, True, True, True);
-    IndexedLibraryFailed('מבנה חבילת הספרייה אינו תקין.', '');
+    LibraryInstallFailed('חילוץ הספרייה נכשל.', ErrOutput);
+    exit;
+  end;
+  if WithIndex and not UnpackArchive(PreparedIndexArchive, StagingRoot,
+    ErrOutput) then
+  begin
+    DelTree(StagingRoot, True, True, True);
+    LibraryInstallFailed('חילוץ אינדקס החיפוש נכשל.', ErrOutput);
+    exit;
+  end;
+
+  if (not FileExists(SourceBooks + '\seforim.db')) or (WithIndex and
+    not FileExists(SourceIndex + '\.otzaria_prebuilt_index')) then
+  begin
+    DelTree(StagingRoot, True, True, True);
+    LibraryInstallFailed('מבנה חבילת הספרייה אינו תקין.', '');
     exit;
   end;
 
@@ -1653,33 +1722,34 @@ begin
   if not BooksBackedUp then
   begin
     DelTree(StagingRoot, True, True, True);
-    IndexedLibraryFailed('לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.', '');
+    LibraryInstallFailed('לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.', '');
     exit;
   end;
-  IndexBackedUp := (not DirExists(TargetIndex)) or
+  IndexBackedUp := (not WithIndex) or (not DirExists(TargetIndex)) or
     RenameFile(TargetIndex, IndexBackup);
   if not IndexBackedUp then
   begin
     if DirExists(BooksBackup) then
       RenameFile(BooksBackup, BooksPath);
     DelTree(StagingRoot, True, True, True);
-    IndexedLibraryFailed('לא ניתן להחליף את תיקיית האינדקס הקיימת. ודא שאוצריא סגורה.', '');
+    LibraryInstallFailed('לא ניתן להחליף את תיקיית האינדקס הקיימת. ודא שאוצריא סגורה.', '');
     exit;
   end;
 
   NewBooksMoved := RenameFile(SourceBooks, BooksPath);
-  if (not NewBooksMoved) or (not RenameFile(SourceIndex, TargetIndex)) then
+  if (not NewBooksMoved) or
+    (WithIndex and not RenameFile(SourceIndex, TargetIndex)) then
   begin
     if NewBooksMoved then
       DelTree(BooksPath, True, True, True);
-    if DirExists(TargetIndex) then
+    if WithIndex and DirExists(TargetIndex) then
       DelTree(TargetIndex, True, True, True);
     if DirExists(BooksBackup) then
       RenameFile(BooksBackup, BooksPath);
     if DirExists(IndexBackup) then
       RenameFile(IndexBackup, TargetIndex);
     DelTree(StagingRoot, True, True, True);
-    IndexedLibraryFailed('העברת הספרייה למיקום שלה נכשלה.', '');
+    LibraryInstallFailed('העברת הספרייה למיקום שלה נכשלה.', '');
     exit;
   end;
 
@@ -1689,17 +1759,20 @@ begin
 end;
 
 // ב-ssPostInstall, אחרי ש-[Dirs] נתנה למשתמשים הרשאה על תיקיית הנתונים.
-procedure InstallPreparedIndexedLibrary();
+procedure InstallPreparedLibrary();
 var
   ResultCode: Integer;
 begin
-  if IndexedPreparedArchivePath = '' then
+  if PreparedLibraryArchive = '' then
     exit;
-  WizardForm.StatusLabel.Caption := 'מתקין את הספרייה המלאה ואת האינדקס המוכן...';
+  if PreparedIndexArchive <> '' then
+    WizardForm.StatusLabel.Caption := 'מתקין את הספרייה המלאה ואת אינדקס החיפוש המוכן...'
+  else
+    WizardForm.StatusLabel.Caption := 'מתקין את הספרייה המלאה...';
   WizardForm.StatusLabel.Update;
   WizardForm.ProgressGauge.Style := npbstMarquee;
   try
-    ExtractIndexedLibraryArchive(GetLibraryBooksPath());
+    ExtractLibraryArchives(GetLibraryBooksPath());
   finally
     WizardForm.ProgressGauge.Style := npbstNormal;
   end;
@@ -1721,8 +1794,8 @@ begin
     if PortableMode then
       SaveStringToFile(ExpandConstant('{app}\portable.marker'), '', False);
     RemoveOtherScopeInstalls();
-#ifdef IndexedLibraryParts
-    InstallPreparedIndexedLibrary();
+#ifdef LibraryParts
+    InstallPreparedLibrary();
 #endif
     exit;
   end;
