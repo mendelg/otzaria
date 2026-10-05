@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/links.dart';
-import 'package:otzaria/text_book/view/commentary_list_base.dart';
+import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
+import 'package:otzaria/services/commentary_service.dart';
 
 Link _link(String path2, int index2) => Link(
   heRef: '$path2 $index2',
@@ -13,11 +14,11 @@ Link _link(String path2, int index2) => Link(
 String _key(Link link) => '${link.index1}_${link.path2}_${link.index2}';
 
 void main() {
-  final rashi = CommentaryGroup(
+  final rashi = LinkGroup(
     bookTitle: 'רש"י',
     links: [_link('רש"י', 3), _link('רש"י', 4)],
   );
-  final ramban = CommentaryGroup(
+  final ramban = LinkGroup(
     bookTitle: 'רמב"ן',
     links: [_link('רמב"ן', 7)],
   );
@@ -76,7 +77,7 @@ void main() {
 
     test('קבוצה מורחבת ללא קטעים — כותרת ללא מפריד (אין פריט אחרון)', () {
       final items = buildCommentaryFlatItems(
-        groups: [const CommentaryGroup(bookTitle: 'ריק', links: [])],
+        groups: [const LinkGroup(bookTitle: 'ריק', links: [])],
         isGroupExpanded: (_) => true,
         linkKey: _key,
         headerIndexOut: {},
