@@ -72,6 +72,18 @@ class SemanticComponentsOmitted implements Exception {
   String toString() => reason;
 }
 
+/// קובצי המודל שהמסייעים מורידים: ה-zip של קובץ במקומו, כשיש — מסנני תוכן חוסמים
+/// את tokenizer.json, והאפליקציה פורסת zip מוכן כמו בהורדה (`_fetchModelFile`).
+List<SemanticModelFile> _offlineModelFiles(SemanticModelRelease model) => [
+  for (final file in [
+    model.graph,
+    model.tokenizer,
+    model.identity,
+    model.license,
+  ])
+    file.zipped ?? file,
+];
+
 /// בונה את הרכיבים מנתונים שכבר אומתו — בלי רשת.
 List<Map<String, Object?>> buildSemanticComponents({
   required SemanticModelRelease model,
@@ -110,12 +122,7 @@ List<Map<String, Object?>> buildSemanticComponents({
   };
 
   final modelAssets = [
-    for (final file in [
-      model.graph,
-      model.tokenizer,
-      model.identity,
-      model.license,
-    ])
+    for (final file in _offlineModelFiles(model))
       asset(modelRepository, modelTag, file.name, file.size, file.sha256),
   ];
   final vectorsAssets = [
@@ -259,12 +266,7 @@ Future<List<Map<String, Object?>>> resolveSemanticComponents({
       '$apiBase/${source.group(1)}/releases/tags/'
       '${Uri.encodeComponent(source.group(2)!)}',
     );
-    for (final file in [
-      release.graph,
-      release.tokenizer,
-      release.identity,
-      release.license,
-    ]) {
+    for (final file in _offlineModelFiles(release)) {
       _checkAsset(modelAssets, file.name, file.size, file.sha256);
     }
 
