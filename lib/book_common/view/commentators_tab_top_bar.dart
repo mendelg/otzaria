@@ -1,8 +1,8 @@
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
+import 'package:otzaria/bookmarks/view/book_bookmarks_action.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/widgets/controls/bar_button.dart';
@@ -96,10 +96,7 @@ class CommentatorsTabTopBar extends StatelessWidget {
     final compact = settings.state.compactMenuMode;
     void onZoomIn() => settings.add(const AdjustCommentatorsFontSize(2));
     void onZoomOut() => settings.add(const AdjustCommentatorsFontSize(-2));
-    void onShowBookmarks() => showDialog<void>(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: book),
-    );
+    void onShowBookmarks() => showBookBookmarksDialog(context, book);
     return AppTopBar(
       minCenterWidth: ReaderNavCenter.minTitleWidth,
       leadingItems: [

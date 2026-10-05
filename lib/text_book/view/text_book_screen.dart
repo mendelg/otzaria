@@ -1,4 +1,7 @@
 import 'dart:io';
+import 'package:otzaria/bookmarks/view/book_bookmarks_action.dart';
+import 'package:otzaria/book_common/view/parallel_editions_action.dart';
+import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'dart:math';
 import 'dart:async';
 import 'dart:convert';
@@ -20,7 +23,6 @@ import 'package:otzaria/tour/models/live_tip.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/bookmarks/utils/section_bookmark.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/settings/settings_exports.dart' hide UpdateFontSize;
 import 'package:otzaria/tabs/models/text_tab.dart';
@@ -82,12 +84,10 @@ import 'package:otzaria/utils/ui/image_decode_size.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/widgets/navigation/book_view_actions.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
-import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
 import 'package:otzaria/plugins/utils/plugin_toolbar_actions.dart';
 import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
-import 'package:otzaria/plugins/utils/reader_location_resolver.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/text_book/view/selection/plugin_selection_payload.dart';
 import 'package:otzaria/widgets/smart_text/render_settings.dart';
@@ -1687,51 +1687,25 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
               : null,
           actions: [
             ..._buildDisplayOrderActions(context, state),
-            ..._buildPluginActions(context),
+            ...buildReaderPluginActions(
+              context,
+              tab: widget.tab,
+              pluginContext: 'reader-text',
+            ),
           ],
           alwaysInMenu: mergeOrderedMenuActions(
             _buildAlwaysInMenuActions(context, state),
-            _buildOrderedPluginOverflowActions(context),
+            buildReaderPluginOverflowActions(
+              context,
+              tab: widget.tab,
+              pluginContext: 'reader-text',
+            ),
           ),
           menuHeaderActions: widget.isInCombinedView
               ? _buildNavigationActions()
               : null,
         ),
       ),
-    );
-  }
-
-  List<ActionButtonData> _buildPluginActions(BuildContext context) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildPluginToolbarActions(
-      records: records,
-      context: 'reader-text',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
-    );
-  }
-
-  List<(int, ActionButtonData)> _buildOrderedPluginOverflowActions(
-    BuildContext context,
-  ) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildOrderedPluginOverflowActions(
-      records: records,
-      context: 'reader-text',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
     );
   }
 
@@ -1838,11 +1812,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
         icon: FluentIcons.zoom_in_24_regular,
         tooltip: 'הגדל את גודל הטקסט',
         actionId: ToolbarActionId.zoomIn,
-        onPressed: () async {
-          final newSize = min(50.0, state.fontSize + 3);
-          context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-          await savePerBookDisplaySettings(context, state, fontSize: newSize);
-        },
+        onPressed: () => _stepFontSize(context, state, larger: true),
       ),
 
       // 6) Zoom Out Button
@@ -1851,11 +1821,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
         icon: FluentIcons.zoom_out_24_regular,
         tooltip: 'הקטן את גודל הטקסט',
         actionId: ToolbarActionId.zoomOut,
-        onPressed: () async {
-          final newSize = max(15.0, state.fontSize - 3);
-          context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-          await savePerBookDisplaySettings(context, state, fontSize: newSize);
-        },
+        onPressed: () => _stepFontSize(context, state, larger: false),
       ),
     ];
   }
@@ -1871,22 +1837,13 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
       // הצגת סימניות הספר הנוכחי (הוספת סימניה עברה לתפריט ההקשר בטקסט)
       (
         10,
-        ActionButtonData(
-          widget: KeyedSubtree(
-            key: widget.enableTourTargets
-                ? textBookBookmarkTourTargetKey
-                : null,
-            child: BarButton.icon(
-              tooltip: 'סימניות בספר זה',
-              icon: FluentIcons.bookmark_multiple_24_regular,
-              compact: context.read<SettingsBloc>().state.compactMenuMode,
-              onPressed: () =>
-                  _showBookmarksForCurrentBook(context, state.book),
-            ),
-          ),
-          icon: FluentIcons.bookmark_multiple_24_regular,
-          tooltip: 'סימניות בספר זה',
-          onPressed: () => _showBookmarksForCurrentBook(context, state.book),
+        buildBookBookmarksAction(
+          context,
+          book: state.book,
+          compact: context.read<SettingsBloc>().state.compactMenuMode,
+          tourKey: widget.enableTourTargets
+              ? textBookBookmarkTourTargetKey
+              : null,
         ),
       ),
 
@@ -2249,13 +2206,6 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
     );
   }
 
-  void _showBookmarksForCurrentBook(BuildContext context, Book book) {
-    showDialog(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: book),
-    );
-  }
-
   Widget _buildSearchButton(
     BuildContext context,
     TextBookLoaded state, {
@@ -2285,11 +2235,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
           'הגדל את גודל הטקסט (${ShortcutHelper.formatShortcutForDisplay('ctrl++')})',
       icon: FluentIcons.zoom_in_24_regular,
       compact: isCompact,
-      onPressed: () async {
-        final newSize = min(50.0, state.fontSize + 3);
-        context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-        await savePerBookDisplaySettings(context, state, fontSize: newSize);
-      },
+      onPressed: () => _stepFontSize(context, state, larger: true),
     );
   }
 
@@ -2300,11 +2246,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
           'הקטן את גודל הטקסט (${ShortcutHelper.formatShortcutForDisplay('ctrl+-')})',
       icon: FluentIcons.zoom_out_24_regular,
       compact: isCompact,
-      onPressed: () async {
-        final newSize = max(15.0, state.fontSize - 3);
-        context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-        await savePerBookDisplaySettings(context, state, fontSize: newSize);
-      },
+      onPressed: () => _stepFontSize(context, state, larger: false),
     );
   }
 
@@ -2470,7 +2412,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
     Key? key,
   }) {
     final shortcut =
-        Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+        ShortcutValidator.getShortcutValue(ShortcutValidator.printKey) ?? '';
     return IconButton(
       key: key,
       icon: const Icon(FluentIcons.print_24_regular),
@@ -2636,47 +2578,14 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   ActionButtonData _buildParallelEditionsAction(
     BuildContext context,
     TextBookLoaded state,
-  ) {
-    final compact = context.read<SettingsBloc>().state.compactMenuMode;
-    final primary = _parallelEditions.first;
-    final tooltip = primary.isCompanion
-        ? 'פתח בתצוגת PDF'
-        : 'פתח מהדורה מקבילה';
-    if (_parallelEditions.length == 1) {
-      return ActionButtonData(
-        widget: BarButton.icon(
-          tooltip: tooltip,
-          icon: FluentIcons.document_pdf_24_regular,
-          compact: compact,
-          onPressed: () => _openParallelEdition(context, state, primary),
-        ),
-        icon: FluentIcons.document_pdf_24_regular,
-        tooltip: tooltip,
-        actionId: ToolbarActionId.parallelEdition,
-        onPressed: () => _openParallelEdition(context, state, primary),
-      );
-    }
-    return ActionButtonData.split(
-      icon: FluentIcons.document_pdf_24_regular,
-      tooltip: tooltip,
-      compact: compact,
-      actionId: ToolbarActionId.parallelEdition,
-      onPressed: () => _openParallelEdition(context, state, primary),
-      menuItems: [
-        for (final edition in _parallelEditions)
-          ActionButtonData(
-            widget: const SizedBox.shrink(),
-            icon: edition.isCompanion
-                ? FluentIcons.document_pdf_24_regular
-                : OtzariaIcons.book_24_regular,
-            tooltip: edition.isCompanion
-                ? '${edition.book.title} — מהדורה מודפסת (אוצריא)'
-                : edition.label ?? edition.book.title,
-            onPressed: () => _openParallelEdition(context, state, edition),
-          ),
-      ],
-    );
-  }
+  ) => buildParallelEditionsAction(
+    editions: _parallelEditions,
+    compact: context.read<SettingsBloc>().state.compactMenuMode,
+    companionIcon: FluentIcons.document_pdf_24_regular,
+    companionTooltip: 'פתח בתצוגת PDF',
+    companionMenuSuffix: 'מהדורה מודפסת (אוצריא)',
+    onOpen: (edition) => _openParallelEdition(context, state, edition),
+  );
 
   void _openParallelEdition(
     BuildContext context,
@@ -3114,6 +3023,26 @@ int _itemIndexForSourceLine(TextBookLoaded state, int lineIndex) =>
 //   context.read<TextBookBloc>().add(OpenFullFileEditor());
 // }
 
+/// Steps the text size by 3 within 15 to 50 and saves it for the book.
+Future<void> _stepFontSize(
+  BuildContext context,
+  TextBookLoaded state, {
+  required bool larger,
+}) => _setFontSize(
+  context,
+  state,
+  larger ? min(50.0, state.fontSize + 3) : max(15.0, state.fontSize - 3),
+);
+
+Future<void> _setFontSize(
+  BuildContext context,
+  TextBookLoaded state,
+  double size,
+) {
+  context.read<TextBookBloc>().add(UpdateFontSize(size));
+  return savePerBookDisplaySettings(context, state, fontSize: size);
+}
+
 bool _handleGlobalKeyEvent(
   KeyEvent event,
   BuildContext context,
@@ -3135,18 +3064,18 @@ bool _handleGlobalKeyEvent(
       ) ??
       '';
   final printShortcut =
-      Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.printKey) ?? '';
   final addBookmarkShortcut =
-      Settings.getValue<String>('key-shortcut-add-bookmark') ?? 'ctrl+b';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.addBookmarkKey) ??
+      '';
   final addNoteShortcut =
-      Settings.getValue<String>('key-shortcut-add-note') ?? 'ctrl+n';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.addNoteKey) ?? '';
   final reportErrorShortcut =
       ShortcutValidator.getShortcutValue(ShortcutValidator.reportErrorKey) ??
       '';
   final togglePdfShortcut =
-      Settings.getValue<String>('key-shortcut-toggle-pdf-view') ??
-      ShortcutValidator.defaultShortcuts['key-shortcut-toggle-pdf-view'] ??
-      'ctrl+shift+p';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.togglePdfViewKey) ??
+      '';
   final copyBookLinkShortcut =
       ShortcutValidator.getShortcutValue(ShortcutValidator.copyBookLinkKey) ??
       '';
@@ -3363,9 +3292,7 @@ bool _handleGlobalKeyEvent(
   );
   if (zoomInShortcut != null &&
       ShortcutHelper.matchesShortcut(event, zoomInShortcut)) {
-    final newSize = min(50.0, state.fontSize + 3);
-    context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-    savePerBookDisplaySettings(context, state, fontSize: newSize);
+    _stepFontSize(context, state, larger: true);
     return true;
   }
 
@@ -3374,9 +3301,7 @@ bool _handleGlobalKeyEvent(
   );
   if (zoomOutShortcut != null &&
       ShortcutHelper.matchesShortcut(event, zoomOutShortcut)) {
-    final newSize = max(15.0, state.fontSize - 3);
-    context.read<TextBookBloc>().add(UpdateFontSize(newSize));
-    savePerBookDisplaySettings(context, state, fontSize: newSize);
+    _stepFontSize(context, state, larger: false);
     return true;
   }
 
@@ -3385,8 +3310,7 @@ bool _handleGlobalKeyEvent(
   );
   if (zoomResetShortcut != null &&
       ShortcutHelper.matchesShortcut(event, zoomResetShortcut)) {
-    context.read<TextBookBloc>().add(const UpdateFontSize(25.0));
-    savePerBookDisplaySettings(context, state, fontSize: 25.0);
+    _setFontSize(context, state, 25.0);
     return true;
   }
 

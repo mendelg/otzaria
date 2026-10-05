@@ -1,5 +1,8 @@
 import 'dart:io';
 
+import 'package:otzaria/bookmarks/view/book_bookmarks_action.dart';
+import 'package:otzaria/book_common/view/parallel_editions_action.dart';
+import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'package:otzaria/book_common/utils/commentators_menu.dart';
 
 import 'dart:math';
@@ -18,7 +21,6 @@ import 'package:otzaria/widgets/misc/app_selection_area.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria/bookmarks/bloc/bookmark_bloc.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/core/messages/notes_messages.dart';
 import 'package:otzaria/core/messages/pdf_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
@@ -98,9 +100,7 @@ import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/widgets/layout/adaptive_side_pane.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
-import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
 import 'package:otzaria/plugins/utils/plugin_toolbar_actions.dart';
-import 'package:otzaria/plugins/utils/reader_location_resolver.dart';
 import 'package:otzaria/widgets/navigation/book_view_actions.dart';
 
 import 'pdf_zoom_bar.dart';
@@ -1932,7 +1932,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
           onKeyEvent: (FocusNode node, KeyEvent event) {
             if (event is KeyDownEvent) {
               final printShortcut =
-                  Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+                  ShortcutValidator.getShortcutValue(
+                    ShortcutValidator.printKey,
+                  ) ??
+                  '';
               if (ShortcutHelper.matchesShortcut(event, printShortcut)) {
                 _handlePrintPress(context);
                 return KeyEventResult.handled;
@@ -5006,50 +5009,24 @@ class _PdfBookScreenState extends State<PdfBookScreen>
             : null,
         actions: [
           ..._buildDisplayOrderPdfActions(context),
-          ..._buildPluginActions(context),
+          ...buildReaderPluginActions(
+            context,
+            tab: widget.tab,
+            pluginContext: 'reader-pdf',
+          ),
         ],
         alwaysInMenu: mergeOrderedMenuActions(
           _buildAlwaysInMenuPdfActions(context),
-          _buildOrderedPluginOverflowActions(context),
+          buildReaderPluginOverflowActions(
+            context,
+            tab: widget.tab,
+            pluginContext: 'reader-pdf',
+          ),
         ),
         menuHeaderActions: widget.isInCombinedView
             ? _buildNavigationActions()
             : null,
       ),
-    );
-  }
-
-  List<ActionButtonData> _buildPluginActions(BuildContext context) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildPluginToolbarActions(
-      records: records,
-      context: 'reader-pdf',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
-    );
-  }
-
-  List<(int, ActionButtonData)> _buildOrderedPluginOverflowActions(
-    BuildContext context,
-  ) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildOrderedPluginOverflowActions(
-      records: records,
-      context: 'reader-pdf',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
     );
   }
 
@@ -5166,17 +5143,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       // הצגת סימניות הספר (הוספת סימניה עברה לתפריט ההקשר בעמוד)
       (
         30,
-        ActionButtonData(
-          widget: BarButton.icon(
-            key: widget.enableTourTargets ? pdfBookBookmarkTourTargetKey : null,
-            tooltip: 'סימניות בספר זה',
-            icon: FluentIcons.bookmark_multiple_24_regular,
-            compact: isCompact,
-            onPressed: () => _showBookmarksForCurrentBook(context),
-          ),
-          icon: FluentIcons.bookmark_multiple_24_regular,
-          tooltip: 'סימניות בספר זה',
-          onPressed: () => _showBookmarksForCurrentBook(context),
+        buildBookBookmarksAction(
+          context,
+          book: widget.tab.book,
+          compact: isCompact,
+          tourKey: widget.enableTourTargets
+              ? pdfBookBookmarkTourTargetKey
+              : null,
         ),
       ),
       if (!widget.isInCombinedView &&
@@ -5383,47 +5356,15 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     }
   }
 
-  ActionButtonData _buildParallelEditionsAction(BuildContext context) {
-    final compact = context.read<SettingsBloc>().state.compactMenuMode;
-    final primary = _parallelEditions.first;
-    final tooltip = primary.isCompanion
-        ? 'פתח בתצוגת טקסט'
-        : 'פתח מהדורה מקבילה';
-    if (_parallelEditions.length == 1) {
-      return ActionButtonData(
-        widget: BarButton.icon(
-          tooltip: tooltip,
-          icon: OtzariaIcons.document_column_24_regular,
-          compact: compact,
-          onPressed: () => _openParallelEdition(context, primary),
-        ),
-        icon: OtzariaIcons.document_column_24_regular,
-        tooltip: tooltip,
-        actionId: ToolbarActionId.parallelEdition,
-        onPressed: () => _openParallelEdition(context, primary),
+  ActionButtonData _buildParallelEditionsAction(BuildContext context) =>
+      buildParallelEditionsAction(
+        editions: _parallelEditions,
+        compact: context.read<SettingsBloc>().state.compactMenuMode,
+        companionIcon: OtzariaIcons.document_column_24_regular,
+        companionTooltip: 'פתח בתצוגת טקסט',
+        companionMenuSuffix: 'מהדורת טקסט (אוצריא)',
+        onOpen: (edition) => _openParallelEdition(context, edition),
       );
-    }
-    return ActionButtonData.split(
-      icon: OtzariaIcons.document_column_24_regular,
-      tooltip: tooltip,
-      compact: compact,
-      actionId: ToolbarActionId.parallelEdition,
-      onPressed: () => _openParallelEdition(context, primary),
-      menuItems: [
-        for (final edition in _parallelEditions)
-          ActionButtonData(
-            widget: const SizedBox.shrink(),
-            icon: edition.isCompanion
-                ? OtzariaIcons.document_column_24_regular
-                : OtzariaIcons.book_24_regular,
-            tooltip: edition.isCompanion
-                ? '${edition.book.title} — מהדורת טקסט (אוצריא)'
-                : edition.label ?? edition.book.title,
-            onPressed: () => _openParallelEdition(context, edition),
-          ),
-      ],
-    );
-  }
 
   void _openParallelEdition(BuildContext context, ParallelEdition edition) {
     // המהדורה המובנית עוברת המרת עמוד (עמוד PDF → שורת טקסט); מהדורת
@@ -5474,13 +5415,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       '',
       ignoreHistory: true,
       insertAdjacent: true,
-    );
-  }
-
-  void _showBookmarksForCurrentBook(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: widget.tab.book),
     );
   }
 

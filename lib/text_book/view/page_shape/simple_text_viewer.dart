@@ -1070,7 +1070,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
 
   bool _handleCommentaryKeyEvent(KeyEvent event) {
     final addNoteShortcut =
-        Settings.getValue<String>('key-shortcut-add-note') ?? 'ctrl+n';
+        ShortcutValidator.getShortcutValue(ShortcutValidator.addNoteKey) ?? '';
     final reportErrorShortcut =
         ShortcutValidator.getShortcutValue(ShortcutValidator.reportErrorKey) ??
         '';
