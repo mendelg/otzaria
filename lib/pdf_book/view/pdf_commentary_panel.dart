@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:otzaria/book_common/view/content_width.dart';
 import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
+import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -395,10 +396,10 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener =
       ItemPositionsListener.create();
-  Completer<bool>? _pendingGroupPositionWait;
-  VoidCallback? _pendingGroupPositionListener;
-  int? _pendingGroupPositionIndex;
-  String? _pendingGroupPositionTitle;
+  Completer<bool>? _pendingItemPositionWait;
+  VoidCallback? _pendingItemPositionListener;
+  int? _pendingItemPositionIndex;
+  String? _pendingItemPositionId;
   int _searchScrollGeneration = 0;
   final ScrollOffsetController _scrollOffsetController =
       ScrollOffsetController();
@@ -406,6 +407,11 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   final Map<String, GlobalKey> _itemKeys = {};
   List<Link> _orderedLinks = [];
   List<CommentaryGroup> _orderedGroups = [];
+
+  /// One item per group header and one per commentary of an expanded group,
+  /// so the list builds only what is on screen (#844).
+  List<CommentaryFlatItem> _flatItems = const [];
+  Map<String, int> _linkFlatIndex = const {};
 
   /// נשמרות כדי להשאיר את עץ הרשימה חי ומוסתר בזמן טעינת הקטע הבא.
   List<CommentaryGroup>? _lastResolvedGroups;
@@ -691,7 +697,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       _lastResolvedGroups = null;
       _orderedLinks = [];
       _orderedGroups = [];
-      _cancelPendingGroupPositionWait();
+      _cancelPendingItemPositionWait();
       _itemKeys.clear();
       _commentatorGroups = [];
       _loadCommentatorGroups();
@@ -708,7 +714,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   @override
   void dispose() {
-    _cancelPendingGroupPositionWait();
+    _cancelPendingItemPositionWait();
     _hiddenSelectionSubscription?.cancel();
     _searchUpdateDebounce?.cancel();
     _searchComputeDebounce?.cancel();
@@ -763,7 +769,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     _lastLinksSignature = 0;
     _orderedLinks = [];
     _orderedGroups = [];
-    _cancelPendingGroupPositionWait();
+    _cancelPendingItemPositionWait();
     _totalSearchResults = 0;
     _currentSearchIndex = 0;
     _searchResultsPerLink.clear();
@@ -1313,7 +1319,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   Widget _buildCommentariesView() {
     if (_showFilterTab) {
-      _cancelPendingGroupPositionWait();
+      _cancelPendingItemPositionWait();
       return _buildCommentatorsFilter();
     }
 
@@ -1331,7 +1337,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   Widget _buildCommentariesListContent() {
     final visibleContent = _getVisibleContent();
     if (visibleContent == null) {
-      _cancelPendingGroupPositionWait();
+      _cancelPendingItemPositionWait();
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -1347,7 +1353,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     }
 
     if (visibleContent.commentaryLinks.isEmpty) {
-      _cancelPendingGroupPositionWait();
+      _cancelPendingItemPositionWait();
       if (widget.linksLoading) {
         return Center(
           child: Padding(
@@ -1412,16 +1418,29 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
             snapshot.connectionState == ConnectionState.done && snapshot.hasData
             ? snapshot.data
             : null;
-        if (currentGroups == null) _cancelPendingGroupPositionWait();
+        if (currentGroups == null) _cancelPendingItemPositionWait();
         final sortedGroups = currentGroups ?? _lastResolvedGroups;
         if (sortedGroups == null) {
           return const Center(child: CircularProgressIndicator());
         }
+        for (final group in sortedGroups) {
+          _expansionStates.putIfAbsent(group.bookTitle, () => _allExpanded);
+        }
+        final linkFlatIndex = <String, int>{};
+        final flatItems = buildCommentaryFlatItems(
+          groups: sortedGroups,
+          isGroupExpanded: (title) => _expansionStates[title] ?? _allExpanded,
+          linkKey: _getLinkKey,
+          headerIndexOut: <String, int>{},
+          linkIndexOut: linkFlatIndex,
+        );
+        _flatItems = flatItems;
+        _linkFlatIndex = linkFlatIndex;
         if (currentGroups != null) {
           _lastResolvedGroups = currentGroups;
           _orderedGroups = currentGroups;
-          _cancelPendingWaitIfGroupChanged();
         }
+        _cancelPendingWaitIfItemChanged();
 
         // Rebuild _orderedLinks based on groups
         final orderedLinks = <Link>[];
@@ -1498,10 +1517,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
                 scrollController: _itemScrollController,
                 offsetController: _scrollOffsetController,
                 itemPositionsListener: _itemPositionsListener,
-                itemCount: sortedGroups.length,
-                labelForIndex: (index) =>
-                    index >= 0 && index < sortedGroups.length
-                    ? sortedGroups[index].bookTitle
+                itemCount: flatItems.length,
+                labelForIndex: (index) => index >= 0 && index < flatItems.length
+                    ? flatItems[index].group.bookTitle
                     : '',
                 child: constrainToContentWidth(
                   ScrollablePositionedList.builder(
@@ -1510,14 +1528,12 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
                         widget.tab.activeCommentators,
                       ),
                     ),
-                    itemCount: sortedGroups.length,
+                    itemCount: flatItems.length,
                     itemScrollController: _itemScrollController,
                     itemPositionsListener: _itemPositionsListener,
                     scrollOffsetController: _scrollOffsetController,
-                    itemBuilder: (context, index) {
-                      final group = sortedGroups[index];
-                      return _buildCommentaryGroupTile(group);
-                    },
+                    itemBuilder: (context, index) =>
+                        _buildFlatItem(flatItems[index]),
                   ),
                   widget.contentMaxWidth,
                 ),
@@ -1536,7 +1552,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   void _scrollToSearchResult() {
     final generation = ++_searchScrollGeneration;
-    _cancelPendingGroupPositionWait();
+    _cancelPendingItemPositionWait();
     if (_totalSearchResults == 0 ||
         _orderedLinks.isEmpty ||
         !_itemScrollController.isAttached) {
@@ -1560,22 +1576,13 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     if (targetLink == null) return;
 
     // 2. מוצא את ה-group שמכיל את ה-link
-    // Since we have _orderedGroups
-    int targetGroupIndex = -1;
-    CommentaryGroup? targetGroup;
-
-    for (int i = 0; i < _orderedGroups.length; i++) {
-      final group = _orderedGroups[i];
-      // Check if link is in group. Note: link instances might differ if rebuilt, so compare by key
-      final targetLinkKey = _getLinkKey(targetLink);
-      if (group.links.any((l) => _getLinkKey(l) == targetLinkKey)) {
-        targetGroupIndex = i;
-        targetGroup = group;
-        break;
-      }
-    }
-
-    if (targetGroupIndex == -1 || targetGroup == null) return;
+    final targetLinkKey = _getLinkKey(targetLink);
+    final targetGroup = _orderedGroups
+        .where(
+          (group) => group.links.any((l) => _getLinkKey(l) == targetLinkKey),
+        )
+        .firstOrNull;
+    if (targetGroup == null) return;
 
     // 3. מבטיח שה-ExpansionTile של הקבוצה פתוח
     final groupTitle = targetGroup.bookTitle;
@@ -1608,15 +1615,14 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
           itemContext.findRenderObject() is RenderBox;
 
       if (!itemInRenderTree) {
-        if (_itemScrollController.isAttached) {
+        // The index exists only after the expanded group was laid out.
+        final flatIndex = _linkFlatIndex[linkKey];
+        if (flatIndex != null && _itemScrollController.isAttached) {
           // לא scrollTo: הוא בונה רשימה שנייה, ובשתיהן אותו GlobalKey (issue #1505).
-          _itemScrollController.jumpTo(
-            index: targetGroupIndex,
-            alignment: 0.05,
-          );
-          final reachedTarget = await _waitForGroupPosition(
-            targetGroupIndex,
-            groupTitle,
+          _itemScrollController.jumpTo(index: flatIndex, alignment: 0.05);
+          final reachedTarget = await _waitForItemPosition(
+            flatIndex,
+            'l:$linkKey',
             generation,
           );
           if (!reachedTarget) return;
@@ -1641,19 +1647,28 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     });
   }
 
-  Future<bool> _waitForGroupPosition(
+  /// Identifies a flat list item across rebuilds: its index moves when a
+  /// group above it expands or collapses.
+  String? _flatItemIdAt(int index) {
+    if (index < 0 || index >= _flatItems.length) return null;
+    final item = _flatItems[index];
+    final link = item.link;
+    return link == null
+        ? 'h:${item.group.bookTitle}'
+        : 'l:${_getLinkKey(link)}';
+  }
+
+  Future<bool> _waitForItemPosition(
     int index,
-    String groupTitle,
+    String itemId,
     int generation,
   ) async {
     bool isVisible() => _itemPositionsListener.itemPositions.value.any(
       (position) => position.index == index,
     );
-    bool isTargetGroupCurrent() =>
-        index < _orderedGroups.length &&
-        _orderedGroups[index].bookTitle == groupTitle;
+    bool isTargetItemCurrent() => _flatItemIdAt(index) == itemId;
     if (!mounted || generation != _searchScrollGeneration) return false;
-    if (!isTargetGroupCurrent()) return false;
+    if (!isTargetItemCurrent()) return false;
     if (isVisible()) return true;
 
     final wait = Completer<bool>();
@@ -1661,91 +1676,98 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       if (wait.isCompleted) return;
       if (!mounted ||
           generation != _searchScrollGeneration ||
-          !isTargetGroupCurrent()) {
+          !isTargetItemCurrent()) {
         wait.complete(false);
       } else if (isVisible()) {
         wait.complete(true);
       }
     }
 
-    _pendingGroupPositionWait = wait;
-    _pendingGroupPositionListener = onPositionsChanged;
-    _pendingGroupPositionIndex = index;
-    _pendingGroupPositionTitle = groupTitle;
+    _pendingItemPositionWait = wait;
+    _pendingItemPositionListener = onPositionsChanged;
+    _pendingItemPositionIndex = index;
+    _pendingItemPositionId = itemId;
     _itemPositionsListener.itemPositions.addListener(onPositionsChanged);
     onPositionsChanged();
     try {
       return await wait.future;
     } finally {
       _itemPositionsListener.itemPositions.removeListener(onPositionsChanged);
-      if (identical(_pendingGroupPositionWait, wait)) {
-        _pendingGroupPositionWait = null;
-        _pendingGroupPositionListener = null;
-        _pendingGroupPositionIndex = null;
-        _pendingGroupPositionTitle = null;
+      if (identical(_pendingItemPositionWait, wait)) {
+        _pendingItemPositionWait = null;
+        _pendingItemPositionListener = null;
+        _pendingItemPositionIndex = null;
+        _pendingItemPositionId = null;
       }
     }
   }
 
-  void _cancelPendingWaitIfGroupChanged() {
-    final index = _pendingGroupPositionIndex;
-    final title = _pendingGroupPositionTitle;
-    if (index == null || title == null) return;
-    if (index >= _orderedGroups.length ||
-        _orderedGroups[index].bookTitle != title) {
-      _cancelPendingGroupPositionWait();
-    }
+  void _cancelPendingWaitIfItemChanged() {
+    final index = _pendingItemPositionIndex;
+    final itemId = _pendingItemPositionId;
+    if (index == null || itemId == null) return;
+    if (_flatItemIdAt(index) != itemId) _cancelPendingItemPositionWait();
   }
 
-  void _cancelPendingGroupPositionWait() {
-    final listener = _pendingGroupPositionListener;
+  void _cancelPendingItemPositionWait() {
+    final listener = _pendingItemPositionListener;
     if (listener != null) {
       _itemPositionsListener.itemPositions.removeListener(listener);
     }
-    final wait = _pendingGroupPositionWait;
-    _pendingGroupPositionWait = null;
-    _pendingGroupPositionListener = null;
-    _pendingGroupPositionIndex = null;
-    _pendingGroupPositionTitle = null;
+    final wait = _pendingItemPositionWait;
+    _pendingItemPositionWait = null;
+    _pendingItemPositionListener = null;
+    _pendingItemPositionIndex = null;
+    _pendingItemPositionId = null;
     if (wait != null && !wait.isCompleted) wait.complete(false);
   }
 
-  Widget _buildCommentaryGroupTile(CommentaryGroup group) {
-    final groupKey = group.bookTitle;
-    if (!_expansionStates.containsKey(groupKey)) {
-      _expansionStates[groupKey] = _allExpanded;
-    }
-    final isExpanded = _expansionStates[groupKey] ?? _allExpanded;
-
+  Widget _buildFlatItem(CommentaryFlatItem item) {
+    final group = item.group;
+    final link = item.link;
     return BlocBuilder<SettingsBloc, SettingsState>(
+      key: link == null
+          ? ValueKey('h:${group.bookTitle}')
+          : ValueKey('l:${_getLinkKey(link)}'),
       builder: (context, settingsState) {
-        return _CollapsibleCommentaryGroup(
-          key: PageStorageKey(group.bookTitle),
-          group: group,
-          settingsState: settingsState,
-          tab: widget.tab,
-          fontSize: widget.fontSize,
-          openBookCallback: widget.openBookCallback,
-          buildContextMenu: _buildCommentaryContextMenuEntries,
-          getSavedSelectedText: () => _savedSelectedText,
-          isExpanded: isExpanded,
-          onExpansionChanged: (expanded) {
-            setState(() {
-              _expansionStates[groupKey] = expanded;
-            });
-          },
-          searchQuery: _searchQuery,
-          onSearchResultsCountUpdate: _updateSearchResultsCount,
-          getKeyForLink: _getLinkKeyObject,
-          getItemSearchIndex: _getItemSearchIndex, // Pass the function
-          displayProfile: widget.displayProfile,
-          onLinkRendered: (link, text) =>
-              _renderedTextByKey[_getLinkKey(link)] = text,
-          onLinkTitleRendered: (link, title) =>
-              _renderedTitleByKey[_getLinkKey(link)] = title
-                  .replaceAll(RegExp(r'\s+'), ' ')
-                  .trim(),
-          onLinkPointerDown: (link) => _lastSelectedLink = link,
+        final Widget child;
+        if (link == null) {
+          final groupKey = group.bookTitle;
+          final isExpanded = _expansionStates[groupKey] ?? _allExpanded;
+          child = _PdfCommentaryGroupHeader(
+            bookTitle: groupKey,
+            settingsState: settingsState,
+            isExpanded: isExpanded,
+            onTap: () => setState(() {
+              _expansionStates[groupKey] = !isExpanded;
+            }),
+          );
+        } else {
+          child = _PdfCommentaryLinkItem(
+            link: link,
+            settingsState: settingsState,
+            fontSize: widget.fontSize,
+            openBookCallback: widget.openBookCallback,
+            buildContextMenu: _buildCommentaryContextMenuEntries,
+            getSavedSelectedText: () => _savedSelectedText,
+            searchQuery: _searchQuery,
+            onSearchResultsCountUpdate: _updateSearchResultsCount,
+            getKeyForLink: _getLinkKeyObject,
+            getItemSearchIndex: _getItemSearchIndex,
+            displayProfile: widget.displayProfile,
+            onLinkRendered: (link, text) =>
+                _renderedTextByKey[_getLinkKey(link)] = text,
+            onLinkTitleRendered: (link, title) =>
+                _renderedTitleByKey[_getLinkKey(link)] = title
+                    .replaceAll(RegExp(r'\s+'), ' ')
+                    .trim(),
+            onLinkPointerDown: (link) => _lastSelectedLink = link,
+          );
+        }
+        if (!item.showDivider) return child;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [child, const Divider(height: 1)],
         );
       },
     );
@@ -2065,96 +2087,6 @@ class _KeepAliveTabState extends State<_KeepAliveTab>
 
 /// Widget מותאם אישית להצגת קבוצת מפרשים עם אפשרות כיווץ/הרחבה
 /// שלא מפריע לבחירת טקסט והעתקה (במקום ExpansionTile)
-class _CollapsibleCommentaryGroup extends StatefulWidget {
-  final CommentaryGroup group;
-  final SettingsState settingsState;
-  final PdfBookTab tab;
-  final double fontSize;
-  final Function(OpenedTab) openBookCallback;
-  final List<AppContextMenuEntry> Function(BuildContext, Link) buildContextMenu;
-  // מחזיר את הטקסט הנבחר הנוכחי (מנוהל ע"י ה-SelectionArea היחיד של הפאנל),
-  // לבדיקה אם לחיצה ימנית נופלת על הבחירה ולכן יש לשמרה.
-  final String? Function() getSavedSelectedText;
-  final bool isExpanded;
-  final Function(bool) onExpansionChanged;
-  final String searchQuery;
-  final Function(Link, int)? onSearchResultsCountUpdate;
-  final Key? Function(Link)? getKeyForLink; // Support linking keys
-  final int Function(Link)? getItemSearchIndex; // Support highlighting
-  final TextDisplayProfile displayProfile;
-
-  /// מדווח את הטקסט המרונדר של פריט — לשחזור מעברי שורה בהעתקה רב-שורתית.
-  final void Function(Link link, String renderedPlainText)? onLinkRendered;
-
-  /// מדווח את הכותרת המרונדרת של פריט — לאותה מטרה.
-  final void Function(Link link, String renderedTitle)? onLinkTitleRendered;
-
-  /// נקרא בלחיצת עכבר על פריט — לסימון המפרש שאליו תיוחס כותרת ההעתקה.
-  final void Function(Link link)? onLinkPointerDown;
-
-  const _CollapsibleCommentaryGroup({
-    super.key,
-    required this.group,
-    required this.settingsState,
-    required this.tab,
-    required this.fontSize,
-    required this.openBookCallback,
-    required this.buildContextMenu,
-    required this.getSavedSelectedText,
-    required this.isExpanded,
-    required this.onExpansionChanged,
-    required this.searchQuery,
-    this.onSearchResultsCountUpdate,
-    this.getKeyForLink,
-    this.getItemSearchIndex,
-    this.displayProfile = TextDisplayProfile.defaults,
-    this.onLinkRendered,
-    this.onLinkTitleRendered,
-    this.onLinkPointerDown,
-  });
-
-  @override
-  State<_CollapsibleCommentaryGroup> createState() =>
-      _CollapsibleCommentaryGroupState();
-}
-
-class _CollapsibleCommentaryGroupState
-    extends State<_CollapsibleCommentaryGroup> {
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _PdfCommentaryGroupHeader(
-          bookTitle: widget.group.bookTitle,
-          settingsState: widget.settingsState,
-          isExpanded: widget.isExpanded,
-          onTap: () => widget.onExpansionChanged(!widget.isExpanded),
-        ),
-        if (widget.isExpanded)
-          for (final link in widget.group.links)
-            _PdfCommentaryLinkItem(
-              link: link,
-              settingsState: widget.settingsState,
-              fontSize: widget.fontSize,
-              openBookCallback: widget.openBookCallback,
-              buildContextMenu: widget.buildContextMenu,
-              getSavedSelectedText: widget.getSavedSelectedText,
-              searchQuery: widget.searchQuery,
-              onSearchResultsCountUpdate: widget.onSearchResultsCountUpdate,
-              getKeyForLink: widget.getKeyForLink,
-              getItemSearchIndex: widget.getItemSearchIndex,
-              displayProfile: widget.displayProfile,
-              onLinkRendered: widget.onLinkRendered,
-              onLinkTitleRendered: widget.onLinkTitleRendered,
-              onLinkPointerDown: widget.onLinkPointerDown,
-            ),
-        const Divider(height: 1),
-      ],
-    );
-  }
-}
-
 /// The header of a commentator group: tapping it expands or collapses the
 /// group.
 class _PdfCommentaryGroupHeader extends StatelessWidget {
