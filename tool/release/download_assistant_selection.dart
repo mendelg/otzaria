@@ -139,6 +139,33 @@ bool componentIsOffered(
   return installerFor(manifest, component, target) != null;
 }
 
+/// שורה בבחירה האישית: רכיב, והגודל שלו יחד עם החלקים שלו.
+typedef CustomChoice = ({String id, int downloadSize});
+
+/// השורות בבחירה האישית, בסדר המניפסט. רכיב עם `partOf` אינו שורה משלו: הוא
+/// מגיע עם הרכיב שהוא חלק ממנו (דרך `dependsOn` שלו), וגודלו נוסף לשורה של זה.
+List<CustomChoice> customChoices(
+  Map<String, Object?> manifest,
+  AssistantTarget target,
+) {
+  final offered = [
+    for (final component in _components(manifest))
+      if (componentIsOffered(manifest, component, target)) component,
+  ];
+  return [
+    for (final component in offered)
+      if (_field(component, 'partOf').isEmpty)
+        (
+          id: component['id'] as String,
+          downloadSize: offered
+              .where(
+                (c) => c == component || _field(c, 'partOf') == component['id'],
+              )
+              .fold(0, (sum, c) => sum + (c['downloadSize'] as int)),
+        ),
+  ];
+}
+
 /// הפלטפורמות שיש להן לפחות רכיב ייעודי אחד (רכיב `any` לבדו אינו מספיק).
 List<String> platformChoices(Map<String, Object?> manifest) {
   final present = _components(

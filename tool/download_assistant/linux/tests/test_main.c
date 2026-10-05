@@ -153,6 +153,18 @@ static void check_fixtures(const char *manifest_name, const char *expected_name)
     }
     assert_strings(offered, otz_json_get(entry, "offeredComponents"), label);
 
+    g_autoptr(GPtrArray) choices = otz_custom_choices(manifest, &target);
+    const OtzJson *expected_choices = otz_json_get(entry, "customChoices");
+    g_assert_cmpuint(choices->len, ==, otz_json_array_length(expected_choices));
+    for (guint c = 0; c < choices->len; c++) {
+      const OtzComponent *choice = g_ptr_array_index(choices, c);
+      const OtzJson *want = otz_json_array_get(expected_choices, c);
+      gint64 size = 0;
+      g_assert_cmpstr(choice->id, ==, otz_json_get_string(want, "id"));
+      g_assert_true(otz_json_get_int(want, "downloadSize", &size));
+      g_assert_cmpint(otz_custom_choice_size(manifest, choice, &target), ==, size);
+    }
+
     g_autoptr(GPtrArray) presets = otz_build_presets(manifest, &target);
     const OtzJson *expected_presets = otz_json_get(entry, "presets");
     g_assert_cmpuint(presets->len, ==, otz_json_array_length(expected_presets));

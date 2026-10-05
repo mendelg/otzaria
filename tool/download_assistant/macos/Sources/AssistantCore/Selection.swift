@@ -87,6 +87,20 @@ public func componentIsOffered(
     return component.installedBy.isEmpty || installerFor(manifest, component, target) != nil
 }
 
+/// השורות בבחירה האישית, בסדר המניפסט: מוצעות, בלי רכיב שהוא חלק (`partOf`) של אחר.
+public func customChoices(_ manifest: ReleaseManifest, _ target: AssistantTarget) -> [ManifestComponent] {
+    manifest.components.filter { $0.partOf.isEmpty && componentIsOffered(manifest, $0, target) }
+}
+
+/// גודל השורה: הרכיב יחד עם החלקים המוצעים שלו.
+public func customChoiceSize(
+    _ manifest: ReleaseManifest, _ component: ManifestComponent, _ target: AssistantTarget
+) -> Int64 {
+    manifest.components
+        .filter { $0.partOf == component.id && componentIsOffered(manifest, $0, target) }
+        .reduce(component.downloadSize) { $0 + $1.downloadSize }
+}
+
 /// הפלטפורמות שיש להן לפחות רכיב ייעודי אחד (רכיב `any` לבדו אינו מספיק).
 public func platformChoices(_ manifest: ReleaseManifest) -> [String] {
     let present = Set(manifest.components.map { $0.platform })

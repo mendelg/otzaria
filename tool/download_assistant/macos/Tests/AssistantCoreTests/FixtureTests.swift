@@ -111,6 +111,14 @@ final class FixtureTests: XCTestCase {
                 entry["offeredComponents"] as? [String], label
             )
 
+            let expectedChoices = try XCTUnwrap(entry["customChoices"] as? [[String: Any]], label)
+            let choices = customChoices(manifest, target)
+            XCTAssertEqual(choices.map { $0.id }, expectedChoices.map { $0["id"] as? String ?? "" }, label)
+            XCTAssertEqual(
+                choices.map { customChoiceSize(manifest, $0, target) },
+                expectedChoices.map { ($0["downloadSize"] as? NSNumber)?.int64Value ?? -1 }, label
+            )
+
             let expectedPresets = try XCTUnwrap(entry["presets"] as? [[String: Any]])
             let presets = buildPresets(manifest, target)
             XCTAssertEqual(presets.map { $0.id }, expectedPresets.map { $0["id"] as? String ?? "" }, label)

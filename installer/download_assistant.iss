@@ -147,7 +147,7 @@ var
   LoadErrorTech: String;
 
   CompId, CompName, CompDesc, CompType, CompPlatform, CompArch, CompFormat,
-    CompDependsOn, CompInstalledBy, CompOutputFolder,
+    CompDependsOn, CompInstalledBy, CompPartOf, CompOutputFolder,
     CompOutputNote: TArrayOfString;
   CompRequired, CompSelected: array of Boolean;
   CompDownloadSize: TInt64Array;
@@ -816,6 +816,7 @@ begin
     SetArrayLength(CompFormat, NC + 1);
     SetArrayLength(CompDependsOn, NC + 1);
     SetArrayLength(CompInstalledBy, NC + 1);
+    SetArrayLength(CompPartOf, NC + 1);
     SetArrayLength(CompOutputFolder, NC + 1);
     SetArrayLength(CompOutputNote, NC + 1);
     SetArrayLength(CompRequired, NC + 1);
@@ -837,6 +838,7 @@ begin
 
     CompDependsOn[NC] := JIdList(Raw, CompPos, 'dependsOn');
     CompInstalledBy[NC] := JIdList(Raw, CompPos, 'installedBy');
+    CompPartOf[NC] := JStr(Raw, CompPos, 'partOf');
     CompOutputFolder[NC] := JStr(Raw, CompPos, 'outputFolder');
     CompOutputNote[NC] := JStr(Raw, CompPos, 'outputNote');
     if (CompOutputFolder[NC] <> '') and
@@ -1337,6 +1339,24 @@ begin
     Result := False;
 end;
 
+{ שורה בבחירה האישית: מוצע, ואינו חלק של רכיב אחר — החלק מגיע איתו דרך
+  dependsOn שלו. }
+function IsCustomChoice(Index: Integer): Boolean;
+begin
+  Result := ComponentIsOffered(Index) and (CompPartOf[Index] = '');
+end;
+
+{ גודל השורה של רכיב בבחירה האישית: הוא והחלקים המוצעים שלו (partOf). }
+function CustomChoiceSize(Index: Integer): Int64;
+var
+  J: Integer;
+begin
+  Result := CompDownloadSize[Index];
+  for J := 0 to GetArrayLength(CompId) - 1 do
+    if (CompPartOf[J] = CompId[Index]) and ComponentIsOffered(J) then
+      Result := Result + CompDownloadSize[J];
+end;
+
 function AnyMember(const Members, Ids: String): Boolean;
 var
   Parts: TArrayOfString;
@@ -1638,6 +1658,11 @@ begin
             Line := Line + CompId[I] + ',';
         Text := Text + 'target ' + TargetPlatform + '/' + TargetArchitecture +
           '/' + TargetFormat + ' offered=' + Line + #10;
+        Line := '';
+        for I := 0 to GetArrayLength(CompId) - 1 do
+          if IsCustomChoice(I) then
+            Line := Line + CompId[I] + ':' + IntToStr(CustomChoiceSize(I)) + ',';
+        Text := Text + 'custom ' + Line + #10;
         BuildPresets();
         for I := 0 to GetArrayLength(PresetId) - 1 do
         begin
@@ -1693,13 +1718,13 @@ begin
   N := 0;
   for I := 0 to GetArrayLength(CompId) - 1 do
   begin
-    if not ComponentIsOffered(I) then
+    if not IsCustomChoice(I) then
       Continue;
     if CompRequired[I] then
       Extra := ' (נדרש)'
     else
       Extra := '';
-    CustomPage.Add(CompName[I] + ' — ' + HumanSize(CompDownloadSize[I]) + Extra);
+    CustomPage.Add(CompName[I] + ' — ' + HumanSize(CustomChoiceSize(I)) + Extra);
     CustomPage.CheckListBox.ItemSubItem[N] := CompDesc[I];
     CustomPage.Values[N] := CompSelected[I] or CompRequired[I];
     SetArrayLength(CustomIndex, N + 1);

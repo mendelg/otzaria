@@ -160,6 +160,8 @@ List<Map<String, Object?>> buildSemanticComponents({
         'platform': platform,
         'installOrder': kSemanticModelInstallOrder,
         'dependsOn': const <String>[],
+        // בלי הנתונים המודל אינו שמיש, ולכן הוא שורה אחת איתם בבחירה האישית.
+        'partOf': 'semantic-vectors-$platform',
         'downloadSize': total(modelAssets),
         'outputFolder': kSemanticModelOutputFolder,
         'outputNote': semanticOutputNote(platform),
@@ -168,9 +170,10 @@ List<Map<String, Object?>> buildSemanticComponents({
       },
       {
         'id': 'semantic-vectors-$platform',
-        'name': '$kSemanticSearchModeName — נתוני החיפוש לספרייה',
+        'name': kSemanticSearchModeLabel,
         'description':
-            'הנתונים של מצב "$kSemanticSearchModeName" לגרסת הספרייה '
+            'מה שמצב "$kSemanticSearchModeName" צריך כדי לעבוד בלי אינטרנט: '
+            'המודל שמבין את מילות החיפוש, והנתונים לגרסת הספרייה '
             '${vectors.toLibraryVersion}, זו שבהתקנה המלאה.'
             '${platform == 'macos' ? macNote : ''}',
         'type': kSemanticVectorsComponentType,

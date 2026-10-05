@@ -80,6 +80,8 @@ public struct ManifestComponent: Decodable, Equatable {
     public let dependsOn: [String]
     /// הרכיבים שמתקינים את הרכיב הזה (מתקין שקורא אותו מהתיקייה שלצדו).
     public let installedBy: [String]
+    /// הרכיב שזה חלק ממנו ('' — אין): אינו שורה משלו בבחירה האישית ומגיע דרך dependsOn שלו.
+    public let partOf: String
     /// תיקייה יחסית בתיקיית הפלט לקובצי הרכיב ('' — ישירות בה).
     public let outputFolder: String
     /// משפט לעמוד הסיום כשהרכיב הוכן ('' — אין).
@@ -89,7 +91,7 @@ public struct ManifestComponent: Decodable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, description, type, required, platform, architecture
-        case packageFormat, dependsOn, installedBy, outputFolder, outputNote
+        case packageFormat, dependsOn, installedBy, partOf, outputFolder, outputNote
         case downloadSize, assets
     }
 
@@ -97,7 +99,7 @@ public struct ManifestComponent: Decodable, Equatable {
         id: String, name: String = "", description: String = "", type: String,
         required: Bool = false, platform: String = "", architecture: String = "",
         packageFormat: String = "", dependsOn: [String] = [], installedBy: [String] = [],
-        outputFolder: String = "", outputNote: String = "",
+        partOf: String = "", outputFolder: String = "", outputNote: String = "",
         downloadSize: Int64 = 0, assets: [ManifestAsset] = []
     ) {
         self.id = id
@@ -110,6 +112,7 @@ public struct ManifestComponent: Decodable, Equatable {
         self.packageFormat = packageFormat
         self.dependsOn = dependsOn
         self.installedBy = installedBy
+        self.partOf = partOf
         self.outputFolder = outputFolder
         self.outputNote = outputNote
         self.downloadSize = downloadSize
@@ -129,6 +132,7 @@ public struct ManifestComponent: Decodable, Equatable {
         packageFormat = try c.decodeIfPresent(String.self, forKey: .packageFormat) ?? ""
         dependsOn = try c.decodeIfPresent([String].self, forKey: .dependsOn) ?? []
         installedBy = try c.decodeIfPresent([String].self, forKey: .installedBy) ?? []
+        partOf = try c.decodeIfPresent(String.self, forKey: .partOf) ?? ""
         outputFolder = try c.decodeIfPresent(String.self, forKey: .outputFolder) ?? ""
         outputNote = try c.decodeIfPresent(String.self, forKey: .outputNote) ?? ""
         downloadSize = try c.decodeIfPresent(Int64.self, forKey: .downloadSize) ?? 0
