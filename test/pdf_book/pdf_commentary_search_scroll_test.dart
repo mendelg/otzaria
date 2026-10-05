@@ -250,6 +250,8 @@ Future<void> main() async {
       }
       key.currentState!.navigateToGlobalIndex(0);
       await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pumpAndSettle();
       expect(find.textContaining('אמר אמר').hitTestable(), findsWidgets);
       expect(tester.takeException(), isNull);
     }, skip: !engineReady);
