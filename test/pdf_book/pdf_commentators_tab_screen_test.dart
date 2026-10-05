@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/book_common/view/commentary_search_pane.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/pdf_headings.dart';
@@ -15,6 +16,7 @@ import 'package:otzaria/personal_notes/bloc/personal_notes_state.dart';
 import 'package:otzaria/settings/engine/settings_bloc.dart';
 import 'package:otzaria/settings/engine/settings_event.dart';
 import 'package:otzaria/settings/engine/settings_state.dart';
+import 'package:otzaria/shortcuts/shortcut_helper.dart';
 import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
@@ -330,6 +332,54 @@ void main() {
     },
   );
 
+  for (final isMac in [false, true]) {
+    testWidgets(
+      '${isMac ? 'Command' : 'Ctrl'}+F פותח את לשונית החיפוש וממקד את השדה',
+      (tester) async {
+        final previousMacOverride = ShortcutHelper.isMacForTesting;
+        ShortcutHelper.isMacForTesting = isMac;
+        addTearDown(() => ShortcutHelper.isMacForTesting = previousMacOverride);
+        tester.view.physicalSize = const Size(1600, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final sourceTab = PdfBookTab(
+          book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),
+          pageNumber: 1,
+        );
+        addTearDown(sourceTab.dispose);
+        final tab = PdfCommentatorsTab(sourceTab: sourceTab);
+        await tester.pumpWidget(_wrap(PdfCommentatorsTabScreen(tab: tab)));
+        await tester.pump();
+        expect(find.byType(NavPanelTabHeader), findsNothing);
+
+        final modifier = ShortcutHelper.usesMacModifiers
+            ? LogicalKeyboardKey.metaLeft
+            : LogicalKeyboardKey.controlLeft;
+        await tester.sendKeyDownEvent(modifier);
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+
+        expect(
+          tester
+              .widget<NavPanelTabHeader>(find.byType(NavPanelTabHeader))
+              .controller
+              .index,
+          2,
+        );
+        expect(
+          tester
+              .widget<CommentarySearchPane>(find.byType(CommentarySearchPane))
+              .focusNode
+              .hasFocus,
+          isTrue,
+        );
+      },
+    );
+  }
+
   testWidgets('חלונית הניווט בעיצוב האחיד: NavSidePanel, כותרת ועץ כרטיסים', (
     tester,
   ) async {
@@ -363,36 +413,6 @@ void main() {
     // שורות העץ בעיצוב הספרייה: כרטיס מקובץ + שורת ניווט.
     expect(find.byType(NavTreeGroupCard), findsWidgets);
     expect(find.widgetWithText(NavTreeTile, 'פרק א'), findsOneWidget);
-  });
-
-  testWidgets('Ctrl+F פותח את לשונית החיפוש וממקד את השדה', (tester) async {
-    tester.view.physicalSize = const Size(1600, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final sourceTab = PdfBookTab(
-      book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),
-      pageNumber: 1,
-    );
-    addTearDown(sourceTab.dispose);
-    final tab = PdfCommentatorsTab(sourceTab: sourceTab);
-    await tester.pumpWidget(_wrap(PdfCommentatorsTabScreen(tab: tab)));
-    await tester.pump();
-    expect(find.byType(NavPanelTabHeader), findsNothing);
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await tester.pumpAndSettle();
-
-    expect(find.byType(NavPanelTabHeader), findsOneWidget);
-    expect(
-      tester
-          .widgetList<EditableText>(find.byType(EditableText))
-          .any((field) => field.focusNode.hasFocus),
-      isTrue,
-    );
   });
 
   // issue #1112 — פערים מול כרטיסיית המפרשים של ספר טקסט.
