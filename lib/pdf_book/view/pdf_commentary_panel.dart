@@ -1,4 +1,7 @@
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/book_common/view/content_width.dart';
+import 'package:otzaria/book_common/selection/commentary_selection.dart';
+import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/theme/app_fonts.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -16,7 +19,6 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/models/link_types.dart';
 import 'package:otzaria/book_common/selection/selection_hit_test.dart';
-import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/tabs/models/tab.dart';
@@ -453,30 +455,22 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
     if (_searchResultsPerLink.isEmpty) return -1;
 
     final linkKey = _getLinkKey(link);
-    final itemResults = _searchResultsPerLink[linkKey] ?? 0;
-    if (itemResults == 0) return -1;
+    if ((_searchResultsPerLink[linkKey] ?? 0) == 0) return -1;
 
     if (!identical(_searchResultOffsetsFor, _orderedLinks)) {
       _searchResultOffsets = null;
       _searchResultOffsetsFor = _orderedLinks;
     }
-    final offsets = _searchResultOffsets ??= () {
-      final result = <String, int>{};
-      var cumulativeIndex = 0;
-      for (final orderedLink in _orderedLinks) {
-        final key = _getLinkKey(orderedLink);
-        result.putIfAbsent(key, () => cumulativeIndex);
-        cumulativeIndex += _searchResultsPerLink[key] ?? 0;
-      }
-      return result;
-    }();
-    final start = offsets[linkKey];
-    if (start == null) return -1;
-
-    final relativeIndex = _currentSearchIndex - start;
-    return (relativeIndex >= 0 && relativeIndex < itemResults)
-        ? relativeIndex
-        : -1;
+    final offsets = _searchResultOffsets ??= commentarySearchOffsets(
+      _orderedLinks.map(_getLinkKey),
+      _searchResultsPerLink,
+    );
+    return commentarySearchRelativeIndex(
+      key: linkKey,
+      currentIndex: _currentSearchIndex,
+      offsets: offsets,
+      countsByKey: _searchResultsPerLink,
+    );
   }
 
   void _handleSearchFocusChange() {
@@ -881,24 +875,16 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   void _publishSearchSnippets() {
     final notifier = widget.externalSearchSnippetsNotifier;
     if (notifier == null || !mounted) return;
-    final result = <CommentarySearchSnippet>[];
-    var globalIndex = 0;
-    for (final link in _orderedLinks) {
-      final key = _getLinkKey(link);
-      final count = _searchResultsPerLink[key] ?? 0;
-      final snippet = _searchSnippetsPerLink[key];
-      if (snippet != null && count > 0) {
-        result.add(
-          CommentarySearchSnippet(
-            path: link.path2,
-            snippet: snippet,
-            globalIndex: globalIndex,
-          ),
-        );
-      }
-      globalIndex += count;
-    }
-    notifier.value = result;
+    notifier.value = orderCommentarySearchSnippets<Link>(
+      items: _orderedLinks,
+      keyOf: _getLinkKey,
+      pathOf: (link) => link.path2,
+      countsByKey: _searchResultsPerLink,
+      snippetsOf: (key, count) {
+        final snippet = _searchSnippetsPerLink[key];
+        return snippet != null && count > 0 ? [snippet] : const [];
+      },
+    );
   }
 
   void _updateSearchResultsCount(Link link, int count) {
@@ -932,9 +918,8 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       setState(() {
         _searchResultsPerLink.addAll(_pendingCounts);
         _pendingCounts.clear();
-        _totalSearchResults = _searchResultsPerLink.values.fold(
-          0,
-          (sum, count) => sum + count,
+        _totalSearchResults = totalCommentarySearchResults(
+          _searchResultsPerLink,
         );
 
         // Reset current index if out of bounds
@@ -952,53 +937,12 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
   }
 
   /// משחזר מעברי שורה בבחירה רב-שורתית לפי הטקסט המרונדר של המפרשים המוצגים.
-  String? _restoreLineBreaks(String? flat) {
-    if (flat == null || flat.isEmpty || flat.contains('\n')) return flat;
-    final lines = <String>[];
-    for (final link in _orderedLinks) {
-      final key = _getLinkKey(link);
-      final title = _renderedTitleByKey[key];
-      if (title != null && title.isNotEmpty) lines.add(title);
-      final content = _renderedTextByKey[key];
-      if (content != null && content.isNotEmpty) lines.add(content);
-    }
-    if (lines.isEmpty) return flat;
-    return restoreSelectedTextLineBreaks(
-      selectedText: flat,
-      visibleLines: lines,
-    );
-  }
-
-  /// האם הבחירה חוצה יותר ממפרש אחד, לפי מיקום שני קצותיה. בחירה כזו אינה
-  /// מיוחסת למפרש בודד, אחרת הייתה מקבלת כותרת מקור שגויה.
-  bool _selectionSpansMultipleItems() {
-    SelectableRegionState? sa;
-    for (final k in _itemKeys.values) {
-      sa = k.currentContext?.findAncestorStateOfType<SelectableRegionState>();
-      if (sa != null) break;
-    }
-    final saRender = sa?.context.findRenderObject();
-    if (saRender is! RenderBox) return false;
-    final List<TextSelectionPoint> eps;
-    try {
-      eps = sa!.selectionEndpoints;
-    } catch (_) {
-      return false;
-    }
-    if (eps.length < 2) return false;
-    final p1 = saRender.localToGlobal(eps.first.point);
-    final p2 = saRender.localToGlobal(eps.last.point);
-    String? k1;
-    String? k2;
-    for (final entry in _itemKeys.entries) {
-      final box = entry.value.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached) continue;
-      final rect = box.localToGlobal(Offset.zero) & box.size;
-      if (rect.contains(p1)) k1 = entry.key;
-      if (rect.contains(p2)) k2 = entry.key;
-    }
-    return k1 != null && k2 != null && k1 != k2;
-  }
+  String? _restoreLineBreaks(String? flat) => restoreCommentaryLineBreaks(
+    flat,
+    orderedKeys: _orderedLinks.map(_getLinkKey),
+    titlesByKey: _renderedTitleByKey,
+    textsByKey: _renderedTextByKey,
+  );
 
   /// העתקת טקסט מעוצב (HTML) ללוח
   Future<void> _copyFormattedText() async {
@@ -1006,7 +950,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       context: context,
       savedSelectedText: _restoreLineBreaks(_savedSelectedText),
       fontSize: widget.fontSize,
-      link: _selectionSpansMultipleItems() ? null : _lastSelectedLink,
+      link: selectionSpansMultipleItems(_itemKeys) ? null : _lastSelectedLink,
     );
   }
 
@@ -1035,7 +979,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         context: menuCtx,
         savedSelectedText: _restoreLineBreaks(_savedSelectedText),
         fontSize: widget.fontSize,
-        link: _selectionSpansMultipleItems()
+        link: selectionSpansMultipleItems(_itemKeys)
             ? null
             : (_lastSelectedLink ?? link),
       ),
@@ -1043,7 +987,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
         context: menuCtx,
         savedSelectedText: _restoreLineBreaks(_savedSelectedText),
         fontSize: widget.fontSize,
-        link: _selectionSpansMultipleItems()
+        link: selectionSpansMultipleItems(_itemKeys)
             ? null
             : (_lastSelectedLink ?? link),
         removeNikud: true,
@@ -1087,20 +1031,6 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       accelerationFactor: 5,
       itemScrollController: _itemScrollController,
       child: _wrapWithSelection(child),
-    );
-  }
-
-  /// מגביל את רוחב הרשימה ל-[PdfCommentaryPanel.contentMaxWidth]. יישור לראש
-  /// ולא מרכוז — אחרת הרשימה הייתה מתמרכזת אנכית.
-  Widget _constrainToContentWidth(Widget list) {
-    final maxWidth = widget.contentMaxWidth;
-    if (maxWidth == null || maxWidth <= 0) return list;
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        child: list,
-      ),
     );
   }
 
@@ -1566,7 +1496,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
                     index >= 0 && index < sortedGroups.length
                     ? sortedGroups[index].bookTitle
                     : '',
-                child: _constrainToContentWidth(
+                child: constrainToContentWidth(
                   ScrollablePositionedList.builder(
                     key: PageStorageKey(
                       pdfCommentaryListStorageKey(
@@ -1582,6 +1512,7 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
                       return _buildCommentaryGroupTile(group);
                     },
                   ),
+                  widget.contentMaxWidth,
                 ),
               ),
             ),
