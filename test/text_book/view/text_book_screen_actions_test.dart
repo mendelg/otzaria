@@ -541,6 +541,61 @@ void main() {
     );
 
     testWidgets(
+      'אייקון "מפרשים בצד" בסרגל תואם לתפריט ומראה חלונית משמאל ב-RTL (#1868)',
+      (tester) async {
+        final book = TextBook(title: 'ספר בדיקה');
+        final bloc = _TestTextBookBloc(
+          _loadedState(book).copyWith(showSplitView: true),
+        );
+        final tab = TextBookTab(book: book, index: 0, blocOverride: bloc);
+        final tabsBloc = _TestTabsBloc(
+          TabsState(tabs: [tab], currentTabIndex: 0),
+        );
+        final settingsBloc = _TestSettingsBloc(SettingsState.initial());
+
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+          await bloc.close();
+          await tabsBloc.close();
+          await settingsBloc.close();
+          tab.dispose();
+        });
+
+        await _setSurfaceSize(tester, const Size(1600, 900));
+        await _pumpTextBookScreen(
+          tester,
+          tab: tab,
+          textBookBloc: bloc,
+          tabsBloc: tabsBloc,
+          settingsBloc: settingsBloc,
+          focusRepository: focusRepository,
+          shamorZachorDataProvider: shamorZachorDataProvider,
+          shamorZachorProgressProvider: shamorZachorProgressProvider,
+          bookmarkBloc: bookmarkBloc,
+          personalNotesBloc: personalNotesBloc,
+          tourCubit: tourCubit,
+          isInCombinedView: false,
+          textDirection: TextDirection.rtl,
+        );
+
+        final viewModeButton = find.byTooltip('בחר סוג תצוגת מפרשים');
+        expect(
+          find.descendant(
+            of: viewModeButton,
+            matching: find.byIcon(FluentIcons.panel_left_24_regular),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(viewModeButton);
+        await tester.pumpAndSettle();
+        expect(find.byIcon(FluentIcons.panel_left_24_filled), findsOneWidget);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+
+    testWidgets(
       'openNotesTabNotifier פותח פאנל כשסיפליט ויו כבר פעיל והפאנל סגור',
       (tester) async {
         // P2 regression: ToggleSplitView(true) is swallowed by the bloc when
@@ -1255,6 +1310,7 @@ Future<void> _pumpTextBookScreen(
   required PersonalNotesBloc personalNotesBloc,
   required TourCubit tourCubit,
   required bool isInCombinedView,
+  TextDirection textDirection = TextDirection.ltr,
 }) async {
   // openBook (מסלול פתיחת נוסח) קורא גם ל-HistoryBloc ול-NavigationBloc.
   final historyBloc = _TestHistoryBloc();
@@ -1287,6 +1343,8 @@ Future<void> _pumpTextBookScreen(
           BlocProvider<NavigationBloc>.value(value: navigationBloc),
         ],
         child: MaterialApp(
+          builder: (context, child) =>
+              Directionality(textDirection: textDirection, child: child!),
           home: TextBookViewerBloc(
             tab: tab,
             isInCombinedView: isInCombinedView,
