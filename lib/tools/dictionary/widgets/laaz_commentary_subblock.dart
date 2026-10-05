@@ -172,27 +172,38 @@ class _LaazEntryLine extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: entry.lemma,
-              style: baseStyle.copyWith(fontWeight: FontWeight.bold),
-            ),
-            if (entry.laazHebrew.isNotEmpty) ...[
-              TextSpan(text: ' — ', style: baseStyle),
-              TextSpan(
-                text: entry.laazHebrew,
-                style: baseStyle.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-            if (entry.meaning.isNotEmpty)
-              TextSpan(text: ' ${entry.meaning}', style: baseStyle),
-          ],
+        laazCommentaryEntrySpan(
+          entry: entry,
+          baseStyle: baseStyle,
+          laazColor: colorScheme.primary,
         ),
       ),
     );
   }
 }
+
+/// תוכן שורת לעז משותף לתצוגה ולהעתקת מפרשים שטרם נבנו.
+TextSpan laazCommentaryEntrySpan({
+  required LaazDictionaryEntry entry,
+  TextStyle baseStyle = const TextStyle(),
+  Color? laazColor,
+}) => TextSpan(
+  children: [
+    TextSpan(
+      text: entry.lemma,
+      style: baseStyle.copyWith(fontWeight: FontWeight.bold),
+    ),
+    if (entry.laazHebrew.isNotEmpty) ...[
+      TextSpan(text: ' — ', style: baseStyle),
+      TextSpan(
+        text: entry.laazHebrew,
+        style: baseStyle.copyWith(
+          color: laazColor,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ],
+    if (entry.meaning.isNotEmpty)
+      TextSpan(text: ' ${entry.meaning}', style: baseStyle),
+  ],
+);

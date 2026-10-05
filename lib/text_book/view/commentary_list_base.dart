@@ -56,7 +56,9 @@ import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 import 'package:otzaria/widgets/feedback/app_future_builder.dart';
 import 'package:otzaria/widgets/feedback/scrollable_positioned_list_scrollbar.dart';
 import 'package:flutter/foundation.dart';
+
 import 'dart:async';
+
 import 'package:otzaria/services/commentary_service.dart';
 import 'package:otzaria/text_book/utils/inline_notes_utils.dart'
     as inline_notes;
@@ -678,10 +680,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       child: IconButton(
         iconSize: 18,
         padding: const EdgeInsets.all(8),
-        constraints: const BoxConstraints(
-          minWidth: 36,
-          minHeight: 36,
-        ),
+        constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         icon: const Icon(FluentIcons.dismiss_24_regular),
         onPressed: widget.onClosePane,
       ),
@@ -698,10 +697,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
           isActive: false,
           onPressed: _openCommentatorsFilter,
           padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(
-            minWidth: 40,
-            minHeight: 40,
-          ),
+          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
           iconSize: 20,
         ),
         // 2. הרחב/כווץ הכל — רק כשיש מפרשים נבחרים (לוגיקה מקורית)
@@ -2148,10 +2144,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                               if (!item.showDivider) return child;
                               return Column(
                                 mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  child,
-                                  const Divider(height: 1),
-                                ],
+                                children: [child, const Divider(height: 1)],
                               );
                             },
                           );
@@ -2283,9 +2276,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
           if (widget.externalSearchController != null) {
             return Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(fit: FlexFit.loose, child: buildList()),
-              ],
+              children: [Flexible(fit: FlexFit.loose, child: buildList())],
             );
           }
 
@@ -2298,10 +2289,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                     ? _buildSearchFieldRow()
                     : _buildButtonsRow(selectedCommentators),
               ),
-              Flexible(
-                fit: FlexFit.loose,
-                child: buildList(),
-              ),
+              Flexible(fit: FlexFit.loose, child: buildList()),
             ],
           );
         } else {
@@ -2334,9 +2322,7 @@ class CommentaryListBaseState extends State<CommentaryListBase>
                   ),
                 ),
               // הרשימה
-              Flexible(
-                child: buildList(),
-              ),
+              Flexible(child: buildList()),
             ],
           );
         }
@@ -2440,10 +2426,7 @@ class _CommentaryGroupHeader extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16.0,
-          vertical: 12.0,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         child: Row(
           children: [
             AnimatedRotation(
@@ -2624,10 +2607,7 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                     final reportedTitle = displayTitle;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (!mounted) return;
-                      widget.onLinkTitleRendered?.call(
-                        link,
-                        reportedTitle,
-                      );
+                      widget.onLinkTitleRendered?.call(link, reportedTitle);
                     });
                     return Text(
                       displayTitle,
@@ -2745,17 +2725,13 @@ class _CommentaryLinkItemState extends State<_CommentaryLinkItem> {
                     onSearchResultsCountChanged:
                         (widget.showSearch ||
                             widget.highlightQueryListenable != null)
-                        ? (count) => widget.updateSearchResultsCount(
-                            link,
-                            count,
-                          )
+                        ? (count) =>
+                              widget.updateSearchResultsCount(link, count)
                         : null,
                     onSearchSnippetsChanged:
                         widget.showSearch && widget.updateSearchSnippets != null
-                        ? (snippets) => widget.updateSearchSnippets!(
-                            link,
-                            snippets,
-                          )
+                        ? (snippets) =>
+                              widget.updateSearchSnippets!(link, snippets)
                         : null,
                     onRendered: (text) =>
                         widget.onLinkRendered?.call(link, text),
