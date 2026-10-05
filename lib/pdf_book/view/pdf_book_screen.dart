@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'package:otzaria/book_common/utils/commentators_menu.dart';
 
 import 'dart:math';
@@ -98,9 +99,7 @@ import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/widgets/layout/adaptive_side_pane.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
-import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
 import 'package:otzaria/plugins/utils/plugin_toolbar_actions.dart';
-import 'package:otzaria/plugins/utils/reader_location_resolver.dart';
 import 'package:otzaria/widgets/navigation/book_view_actions.dart';
 
 import 'pdf_zoom_bar.dart';
@@ -5006,50 +5005,24 @@ class _PdfBookScreenState extends State<PdfBookScreen>
             : null,
         actions: [
           ..._buildDisplayOrderPdfActions(context),
-          ..._buildPluginActions(context),
+          ...buildReaderPluginActions(
+            context,
+            tab: widget.tab,
+            pluginContext: 'reader-pdf',
+          ),
         ],
         alwaysInMenu: mergeOrderedMenuActions(
           _buildAlwaysInMenuPdfActions(context),
-          _buildOrderedPluginOverflowActions(context),
+          buildReaderPluginOverflowActions(
+            context,
+            tab: widget.tab,
+            pluginContext: 'reader-pdf',
+          ),
         ),
         menuHeaderActions: widget.isInCombinedView
             ? _buildNavigationActions()
             : null,
       ),
-    );
-  }
-
-  List<ActionButtonData> _buildPluginActions(BuildContext context) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildPluginToolbarActions(
-      records: records,
-      context: 'reader-pdf',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
-    );
-  }
-
-  List<(int, ActionButtonData)> _buildOrderedPluginOverflowActions(
-    BuildContext context,
-  ) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildOrderedPluginOverflowActions(
-      records: records,
-      context: 'reader-pdf',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
     );
   }
 

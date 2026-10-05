@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'dart:math';
 import 'dart:async';
 import 'dart:convert';
@@ -82,12 +83,10 @@ import 'package:otzaria/utils/ui/image_decode_size.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/widgets/navigation/book_view_actions.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
-import 'package:otzaria/plugins/bloc/plugin_system_bloc.dart';
 import 'package:otzaria/plugins/utils/plugin_toolbar_actions.dart';
 import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/utils/plugin_context_menu_entries.dart';
-import 'package:otzaria/plugins/utils/reader_location_resolver.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/text_book/view/selection/plugin_selection_payload.dart';
 import 'package:otzaria/widgets/smart_text/render_settings.dart';
@@ -1687,51 +1686,25 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
               : null,
           actions: [
             ..._buildDisplayOrderActions(context, state),
-            ..._buildPluginActions(context),
+            ...buildReaderPluginActions(
+              context,
+              tab: widget.tab,
+              pluginContext: 'reader-text',
+            ),
           ],
           alwaysInMenu: mergeOrderedMenuActions(
             _buildAlwaysInMenuActions(context, state),
-            _buildOrderedPluginOverflowActions(context),
+            buildReaderPluginOverflowActions(
+              context,
+              tab: widget.tab,
+              pluginContext: 'reader-text',
+            ),
           ),
           menuHeaderActions: widget.isInCombinedView
               ? _buildNavigationActions()
               : null,
         ),
       ),
-    );
-  }
-
-  List<ActionButtonData> _buildPluginActions(BuildContext context) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildPluginToolbarActions(
-      records: records,
-      context: 'reader-text',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
-    );
-  }
-
-  List<(int, ActionButtonData)> _buildOrderedPluginOverflowActions(
-    BuildContext context,
-  ) {
-    final records = PluginToolbarRegistry.instance.getAll();
-    if (records.isEmpty) return const [];
-    return buildOrderedPluginOverflowActions(
-      records: records,
-      context: 'reader-text',
-      compact: context.read<SettingsBloc>().state.compactMenuMode,
-      locationPayload: () async =>
-          (await resolveReaderLocation(widget.tab))?.toJson() ?? const {},
-      hostActionDispatcher: context
-          .read<PluginSystemBloc>()
-          .declarativeHost
-          ?.dispatchAction,
     );
   }
 
