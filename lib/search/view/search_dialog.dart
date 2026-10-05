@@ -1426,7 +1426,7 @@ class _SearchDialogState extends State<SearchDialog> {
             borderRadius: AppTokens.borderRadiusAll,
             child: segmentBody(
               FluentIcons.lightbulb_24_regular,
-              context.settingsText(kSemanticSearchModeName),
+              context.settingsText(kSemanticSearchModeLabel),
               semanticActive,
             ),
           ),

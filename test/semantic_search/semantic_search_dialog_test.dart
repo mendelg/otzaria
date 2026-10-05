@@ -368,7 +368,7 @@ void main() {
 
       expect(find.byType(LinearProgressIndicator), findsOneWidget);
       expect(
-        find.text('שלב 2 מתוך 3 — מוריד את נתוני החיפוש (25%)'),
+        find.text('מוריד את נתוני החיפוש (25%)'),
         findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('semantic-status-cancel')));
@@ -397,7 +397,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.text('שלב 2 מתוך 3 — בודק את הקבצים שהוכנו מראש'),
+        find.text('בודק את הקבצים שהוכנו מראש'),
         findsOneWidget,
       );
       expect(

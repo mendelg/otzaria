@@ -32,7 +32,7 @@ class SearchFeedbackPanel extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final consentStore = store ?? SearchFeedbackService.instance;
-    final modeName = context.settingsText(kSemanticSearchModeName);
+    final modeName = context.settingsText(kSemanticSearchModeLabel);
     final blockStatus =
         networkBlock ??
         (consentStore is SearchFeedbackService
@@ -51,7 +51,6 @@ class SearchFeedbackPanel extends StatelessWidget {
             title: context.settingsText('שיפור המנגנון'),
             subtitle: context.settingsText(
               kSemanticSearchConsentTemplate,
-              args: {'name': modeName},
             ),
             value: snapshot.data == SearchFeedbackConsent.granted,
             onChanged: (enabled) =>

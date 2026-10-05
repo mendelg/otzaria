@@ -49,17 +49,15 @@ abstract class SemanticSearchMessages {
   static const String libraryMoving =
       'מיקום הספרייה מועבר כעת. נסו שוב בסיום ההעברה.';
 
-  // ── שלבי ההורדה (גם מפתחות התרגום) ──
-  static const String downloadingComponent = 'מוריד את רכיב החיפוש';
+  // ── מצבי ההורדה (גם מפתחות התרגום) ──
   static const String downloadingData = 'מוריד את נתוני החיפוש';
   static const String installingData = 'מתקין את נתוני החיפוש';
   static const String checkingStagedFiles = 'בודק את הקבצים שהוכנו מראש';
-  static const String stepTemplate = 'שלב {step} מתוך {count} — {action}';
   static const String percentTemplate = '{label} ({percent}%)';
 
-  /// הפעולה של שלב [item].
+  /// הפעולה של שלב [item]; למשתמש זו הורדה אחת, בלי פירוט הרכיבים.
   static String stepAction(SemanticDownloadItem item) => switch (item) {
-    SemanticDownloadItem.model => downloadingComponent,
+    SemanticDownloadItem.model ||
     SemanticDownloadItem.vectors => downloadingData,
     SemanticDownloadItem.install => installingData,
   };
@@ -68,15 +66,9 @@ abstract class SemanticSearchMessages {
   static String progressAction(SemanticDownloadProgress progress) =>
       progress.checking ? checkingStagedFiles : stepAction(progress.item);
 
-  /// תווית השלב בעברית, עם מספר השלב כשיש יותר משלב אחד, ואחוז כולל בהורדה.
+  /// התווית בעברית, עם האחוז הכולל של כל ההורדה.
   static String progressLabel(SemanticDownloadProgress progress) {
-    final action = progressAction(progress);
-    final label = progress.stepCount > 1
-        ? stepTemplate
-              .replaceAll('{step}', '${progress.step}')
-              .replaceAll('{count}', '${progress.stepCount}')
-              .replaceAll('{action}', action)
-        : action;
+    final label = progressAction(progress);
     final percent = progressPercent(progress);
     return percent == null
         ? label

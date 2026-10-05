@@ -122,7 +122,7 @@ class SemanticModePanel extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _modeName(context),
+                  context.settingsText(kSemanticSearchModeLabel),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: theme.colorScheme.primary,
@@ -135,7 +135,6 @@ class SemanticModePanel extends StatelessWidget {
           Text(
             context.settingsText(
               kSemanticSearchConsentTemplate,
-              args: {'name': _modeName(context)},
             ),
             style: theme.textTheme.bodyMedium?.copyWith(height: 1.5),
           ),
@@ -277,7 +276,7 @@ class SemanticModePanel extends StatelessWidget {
             filled: true,
             fillColor: theme.colorScheme.surfaceContainerHigh,
             border: const OutlineInputBorder(),
-            labelText: _modeName(context),
+            labelText: context.settingsText(kSemanticSearchModeLabel),
             hintText: context.settingsText(
               'תארו במילים שלכם את העניין שאתם מחפשים',
             ),

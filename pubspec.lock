@@ -1234,10 +1234,10 @@ packages:
     dependency: "direct main"
     description:
       name: otzaria_search_engine
-      sha256: "0cbc6c7d9b5e31f809754b00949d3730ba39552a1c7b5ef27016a9f9e6ccb328"
+      sha256: e7be185d01492383ffa31189637ac0fa5adf1f360c76271c4d1fa981f3abfa96
       url: "https://pub.dev"
     source: hosted
-    version: "3.0.0"
+    version: "3.1.0"
   package_config:
     dependency: transitive
     description:

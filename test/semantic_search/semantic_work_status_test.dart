@@ -37,13 +37,13 @@ void main() {
         ),
       );
 
-  test('בזמן הורדה: שלב, התקדמות כוללת וביטול', () {
+  test('בזמן הורדה: התקדמות כוללת בלי שלבים, וביטול', () {
     reporter.update(downloading(SemanticDownloadItem.vectors, 2));
 
     final item = upserts.single;
     expect(item.id, kSemanticDataWorkStatusId);
     expect(item.title, contains('נתוני'));
-    expect(item.message, 'שלב 2 מתוך 3 — מוריד את נתוני החיפוש (40%)');
+    expect(item.message, 'מוריד את נתוני החיפוש (40%)');
     expect(item.progress, 0.4);
     expect(item.kind, WorkStatusKind.running);
     item.actions.single.onPressed();
@@ -65,7 +65,7 @@ void main() {
       ),
     );
 
-    expect(upserts.single.message, 'שלב 3 מתוך 3 — מתקין את נתוני החיפוש');
+    expect(upserts.single.message, 'מתקין את נתוני החיפוש');
     expect(upserts.single.progress, isNull);
   });
 

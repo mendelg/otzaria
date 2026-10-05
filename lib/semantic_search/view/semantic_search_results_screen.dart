@@ -441,7 +441,7 @@ class _SemanticSearchResultsScreenState
             final loading = state.status == SemanticResultsStatus.loading;
             return SearchResultsLayout(
               tab: widget.tab,
-              label: context.settingsText(kSemanticSearchModeName),
+              label: context.settingsText(kSemanticSearchModeLabel),
               hasQuery: widget.tab.options.query.trim().isNotEmpty,
               query: widget.tab.options.query.trim(),
               onEditSearch: _openEditDialog,

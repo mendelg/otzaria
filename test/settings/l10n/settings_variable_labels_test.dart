@@ -47,6 +47,7 @@ void main() {
 
     test('שם מצב החיפוש הסמנטי ונוסח ההסכמה', () {
       expect(catalog, contains(kSemanticSearchModeName));
+      expect(catalog, contains(kSemanticSearchModeLabel));
       expect(catalog, contains(kSemanticSearchConsentTemplate));
     });
 
@@ -62,7 +63,6 @@ void main() {
         final action = SemanticSearchMessages.stepAction(item);
         expect(catalog, contains(action), reason: item.name);
       }
-      expect(catalog, contains(SemanticSearchMessages.stepTemplate));
       expect(catalog, contains(SemanticSearchMessages.percentTemplate));
     });
 

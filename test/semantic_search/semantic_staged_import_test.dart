@@ -512,7 +512,7 @@ void main() {
     expect(checking.last.item, SemanticDownloadItem.vectors);
     expect(
       SemanticSearchMessages.progressLabel(checking.last),
-      'שלב 2 מתוך 3 — בודק את הקבצים שהוכנו מראש',
+      'בודק את הקבצים שהוכנו מראש',
     );
     expect(
       semanticWorkStatusItem(
