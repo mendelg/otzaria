@@ -5,6 +5,7 @@ import 'package:otzaria/book_common/selection/commentary_selection.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
 import 'package:otzaria/theme/app_fonts.dart';
+import 'package:otzaria/theme/app_theme_data.dart';
 import 'package:otzaria/theme/app_tokens.dart';
 import 'package:flutter/gestures.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -694,7 +695,9 @@ class CommentaryListBaseState extends State<CommentaryListBase>
       data: IconButtonThemeData(
         style: (Theme.of(context).iconButtonTheme.style ?? const ButtonStyle())
             .copyWith(
-              visualDensity: context.read<SettingsBloc>().state.compactMenuMode
+              visualDensity:
+                  Theme.of(context).extension<AppMenuMetrics>()?.compactMenus ==
+                      true
                   ? const VisualDensity(vertical: -1)
                   : null,
             ),

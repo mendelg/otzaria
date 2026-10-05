@@ -9,6 +9,7 @@ import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
 import 'package:otzaria/theme/app_fonts.dart';
+import 'package:otzaria/theme/app_theme_data.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -1225,7 +1226,9 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
       data: IconButtonThemeData(
         style: (Theme.of(context).iconButtonTheme.style ?? const ButtonStyle())
             .copyWith(
-              visualDensity: context.read<SettingsBloc>().state.compactMenuMode
+              visualDensity:
+                  Theme.of(context).extension<AppMenuMetrics>()?.compactMenus ==
+                      true
                   ? const VisualDensity(vertical: -1)
                   : null,
             ),
