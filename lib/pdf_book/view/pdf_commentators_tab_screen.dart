@@ -1065,7 +1065,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
                       _selectedHeadingIdx = idx;
                       _selectedParagraphIdx = _kAllPara;
                       if (paras.isNotEmpty) _expandedHeadings.add(idx);
-                      _searchController.clear();
                       _extraLines.clear();
                     });
                   },
@@ -1123,7 +1122,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
                             setState(() {
                               _selectedHeadingIdx = idx;
                               _selectedParagraphIdx = pi;
-                              _searchController.clear();
                               _extraLines.clear();
                             });
                           },
