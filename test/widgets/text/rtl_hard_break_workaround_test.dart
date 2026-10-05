@@ -226,4 +226,61 @@ void main() {
       expect(collapseHardBreaks(result.text).length, 3);
     });
   });
+  group('cached newline mapping', () {
+    test('selection-only edits reuse text in both directions', () {
+      for (final length in [50000, 200000]) {
+        final clean = '${'א\n' * (length ~/ 2)}😀';
+        final expand = HardBreakValueMapper(expand: true);
+        final collapse = HardBreakValueMapper(expand: false);
+        final initial = TextEditingValue(text: clean);
+        final raw = expand.map(initial);
+        final normalized = collapse.map(raw);
+        for (final offset in [0, 1, 2, length, clean.length]) {
+          final moved = initial.copyWith(
+            selection: TextSelection(
+              baseOffset: clean.length,
+              extentOffset: offset,
+              affinity: TextAffinity.upstream,
+              isDirectional: true,
+            ),
+          );
+          final expanded = expand.map(moved);
+          final collapsed = collapse.map(expanded);
+          expect(identical(expanded.text, raw.text), isTrue);
+          expect(identical(collapsed.text, normalized.text), isTrue);
+          expect(collapsed, moved);
+        }
+        final changed = expand.map(const TextEditingValue(text: 'חדש\nטקסט'));
+        expect(changed.text, 'חדש\r\nטקסט');
+        expect(collapse.map(changed).text, 'חדש\nטקסט');
+      }
+    });
+    test('UTF-16 offsets and reversed ranges survive every boundary', () {
+      const text = 'א😀\n\nב🕎\n';
+      for (var offset = 0; offset <= text.length; offset++) {
+        final value = TextEditingValue(
+          text: text,
+          selection: TextSelection(
+            baseOffset: text.length,
+            extentOffset: offset,
+            affinity: TextAffinity.upstream,
+            isDirectional: true,
+          ),
+          composing: TextRange.collapsed(offset),
+        );
+        expect(collapseValue(expandValue(value)), value);
+      }
+    });
+    test('identity adapter preserves composition with existing CRLF', () {
+      final formatter = CleanSpaceFormatterAdapter([
+        TextInputFormatter.withFunction((oldValue, newValue) => newValue),
+      ]);
+      const value = TextEditingValue(
+        text: 'אב\r\nדה',
+        selection: TextSelection.collapsed(offset: 6),
+        composing: TextRange(start: 4, end: 6),
+      );
+      expect(formatter.formatEditUpdate(TextEditingValue.empty, value), value);
+    });
+  });
 }
