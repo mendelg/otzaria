@@ -19,12 +19,14 @@ import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
+import 'package:otzaria/search/search_defaults.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/search/view/search_scope_menu.dart';
 import 'package:otzaria/search/utils/facet_helper.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_search_bloc.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
+import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
@@ -654,6 +656,48 @@ void main() {
     expect(_semanticSegment, findsNothing);
     expect(_consentCard, findsNothing);
     expect(_debugBanner, findsNothing);
+  });
+
+  testWidgets('"קבע מצב זה" במצב החכם שומר את החכם ולא את המצב שלפניו', (
+    tester,
+  ) async {
+    addTearDown(() {
+      SearchDefaults.rememberSessionMode(SearchMode.exact);
+      SearchDefaults.rememberSessionSemantic(false);
+    });
+    await pumpDialog(tester, _availability(SemanticAvailabilityPhase.ready));
+
+    Future<void> setCurrentModeAsDefault() async {
+      await tester.tap(
+        find.byKey(const ValueKey('search-dialog-defaults-menu')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('search-dialog-default-mode')),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await tester.tap(_semanticSegment);
+    await tester.pumpAndSettle();
+    await setCurrentModeAsDefault();
+    expect(
+      find.text(
+        'כל חיפוש חדש ייפתח מעכשיו במצב "$kSemanticSearchModeLabel". ניתן לשנות זאת שוב בכל עת.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('קבע כברירת מחדל'));
+    await tester.pumpAndSettle();
+    expect(SearchDefaults.loadSemanticDefault(), isTrue);
+
+    await tester.tap(find.text('מקורב'));
+    await tester.pumpAndSettle();
+    await setCurrentModeAsDefault();
+    await tester.tap(find.text('קבע כברירת מחדל'));
+    await tester.pumpAndSettle();
+    expect(SearchDefaults.loadSemanticDefault(), isFalse);
+    expect(SearchDefaults.loadModeDefault(), SearchMode.fuzzy);
   });
 }
 
