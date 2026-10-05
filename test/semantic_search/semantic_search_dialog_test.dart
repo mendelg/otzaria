@@ -15,6 +15,7 @@ import 'package:otzaria/indexing/bloc/indexing_state.dart';
 import 'package:otzaria/library/bloc/library_bloc.dart';
 import 'package:otzaria/library/bloc/library_event.dart';
 import 'package:otzaria/library/bloc/library_state.dart';
+import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
@@ -147,6 +148,7 @@ void main() {
     SearchingTab? existingTab,
     SearchingTab? editTab,
     FakeConsentStore? injectedConsent,
+    Library? library,
   }) async {
     final repository = _FakeRepository(availability);
     final consent =
@@ -159,7 +161,7 @@ void main() {
     final history = _MockHistoryBloc();
     final indexing = _MockIndexingBloc();
     final navigation = _MockNavigationBloc();
-    final library = _MockLibraryBloc();
+    final libraryBloc = _MockLibraryBloc();
     final tabs = _MockTabsBloc();
     whenListen(
       history,
@@ -177,9 +179,9 @@ void main() {
       initialState: const NavigationState(currentScreen: Screen.library),
     );
     whenListen(
-      library,
+      libraryBloc,
       const Stream<LibraryState>.empty(),
-      initialState: const LibraryState(),
+      initialState: LibraryState(library: library),
     );
     whenListen(
       tabs,
@@ -190,7 +192,7 @@ void main() {
       await history.close();
       await indexing.close();
       await navigation.close();
-      await library.close();
+      await libraryBloc.close();
       await tabs.close();
     });
 
@@ -200,7 +202,7 @@ void main() {
           BlocProvider<HistoryBloc>.value(value: history),
           BlocProvider<IndexingBloc>.value(value: indexing),
           BlocProvider<NavigationBloc>.value(value: navigation),
-          BlocProvider<LibraryBloc>.value(value: library),
+          BlocProvider<LibraryBloc>.value(value: libraryBloc),
           BlocProvider<TabsBloc>.value(value: tabs),
         ],
         child: MaterialApp(
@@ -586,6 +588,41 @@ void main() {
     addTearDown(tab.dispose);
     expect(tab.options.facets, ['/author/רש״י', facet]);
     expect(tab.options.query, rawQuery);
+  });
+  testWidgets('תחביר @ מצמצם את החיפוש החכם לקטגוריה ונמחק מהשאילתה', (
+    tester,
+  ) async {
+    final library = Library(
+      categories: [
+        Category(
+          title: 'הלכה',
+          description: '',
+          shortDescription: '',
+          order: 0,
+          subCategories: const [],
+          books: [TextBook(id: 1, title: 'ספר 1')],
+          parent: null,
+        ),
+      ],
+    );
+    final harness = await pumpDialog(
+      tester,
+      _availability(SemanticAvailabilityPhase.ready),
+      library: library,
+    );
+    await tester.tap(_semanticSegment);
+    await tester.pumpAndSettle();
+    await tester.enterText(_queryField, 'חסד@הלכה');
+    await tester.tap(find.byKey(const ValueKey('search-dialog-submit')));
+    await tester.pumpAndSettle();
+    final tab =
+        verify(
+              () => harness.tabs.add(captureAny()),
+            ).captured.whereType<AddTab>().single.tab
+            as SemanticSearchTab;
+    addTearDown(tab.dispose);
+    expect(tab.options.query, 'חסד');
+    expect(tab.options.facets, ['/הלכה']);
   });
   testWidgets('בשדה החיפוש החכם יש ניקוי והיסטוריה', (tester) async {
     await pumpDialog(tester, _availability(SemanticAvailabilityPhase.ready));
