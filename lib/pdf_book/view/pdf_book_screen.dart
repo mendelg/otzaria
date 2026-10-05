@@ -1932,7 +1932,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
           onKeyEvent: (FocusNode node, KeyEvent event) {
             if (event is KeyDownEvent) {
               final printShortcut =
-                  Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+                  ShortcutValidator.getShortcutValue(
+                    ShortcutValidator.printKey,
+                  ) ??
+                  '';
               if (ShortcutHelper.matchesShortcut(event, printShortcut)) {
                 _handlePrintPress(context);
                 return KeyEventResult.handled;

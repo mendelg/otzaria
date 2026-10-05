@@ -2428,7 +2428,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
     Key? key,
   }) {
     final shortcut =
-        Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+        ShortcutValidator.getShortcutValue(ShortcutValidator.printKey) ?? '';
     return IconButton(
       key: key,
       icon: const Icon(FluentIcons.print_24_regular),
@@ -3060,18 +3060,18 @@ bool _handleGlobalKeyEvent(
       ) ??
       '';
   final printShortcut =
-      Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.printKey) ?? '';
   final addBookmarkShortcut =
-      Settings.getValue<String>('key-shortcut-add-bookmark') ?? 'ctrl+b';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.addBookmarkKey) ??
+      '';
   final addNoteShortcut =
-      Settings.getValue<String>('key-shortcut-add-note') ?? 'ctrl+n';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.addNoteKey) ?? '';
   final reportErrorShortcut =
       ShortcutValidator.getShortcutValue(ShortcutValidator.reportErrorKey) ??
       '';
   final togglePdfShortcut =
-      Settings.getValue<String>('key-shortcut-toggle-pdf-view') ??
-      ShortcutValidator.defaultShortcuts['key-shortcut-toggle-pdf-view'] ??
-      'ctrl+shift+p';
+      ShortcutValidator.getShortcutValue(ShortcutValidator.togglePdfViewKey) ??
+      '';
   final copyBookLinkShortcut =
       ShortcutValidator.getShortcutValue(ShortcutValidator.copyBookLinkKey) ??
       '';

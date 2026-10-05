@@ -895,7 +895,7 @@ class _CommentatorsTabScreenState extends State<CommentatorsTabScreen>
   /// מטפל בקיצורי ההדפסה והחיפוש המוגדרים — פעילים רק בכרטיסיית המפרשים.
   KeyEventResult _handleTabShortcuts(FocusNode node, KeyEvent event) {
     final printShortcut =
-        Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
+        ShortcutValidator.getShortcutValue(ShortcutValidator.printKey) ?? '';
     if (ShortcutHelper.matchesShortcut(event, printShortcut)) {
       _commentaryKey.currentState?.printDisplayedCommentaries();
       return KeyEventResult.handled;
