@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'package:otzaria/book_common/view/commentators_tab_top_bar.dart';
 import 'package:otzaria/book_common/view/commentary_search_pane.dart';
 import 'package:otzaria/book_common/view/commentators_side_pane.dart';
@@ -754,12 +755,20 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
     );
   }
 
-  /// מטפל בקיצור ההדפסה המוגדר — פעיל רק בכרטיסיית המפרשים.
+  /// Handles the print and search shortcuts while the commentators tab has
+  /// focus, as the text commentators tab does.
   KeyEventResult _handleTabShortcuts(FocusNode node, KeyEvent event) {
     final printShortcut =
         Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
     if (ShortcutHelper.matchesShortcut(event, printShortcut)) {
       _panelKey.currentState?.printDisplayedCommentaries();
+      return KeyEventResult.handled;
+    }
+    final searchShortcut =
+        Settings.getValue<String>(ShortcutValidator.currentWindowSearchKey) ??
+        'ctrl+f';
+    if (ShortcutHelper.matchesShortcut(event, searchShortcut)) {
+      _openSearchPanel();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;

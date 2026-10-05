@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -362,6 +363,36 @@ void main() {
     // שורות העץ בעיצוב הספרייה: כרטיס מקובץ + שורת ניווט.
     expect(find.byType(NavTreeGroupCard), findsWidgets);
     expect(find.widgetWithText(NavTreeTile, 'פרק א'), findsOneWidget);
+  });
+
+  testWidgets('Ctrl+F פותח את לשונית החיפוש וממקד את השדה', (tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final sourceTab = PdfBookTab(
+      book: PdfBook(title: 'PDF בדיקה', path: '/tmp/book.pdf'),
+      pageNumber: 1,
+    );
+    addTearDown(sourceTab.dispose);
+    final tab = PdfCommentatorsTab(sourceTab: sourceTab);
+    await tester.pumpWidget(_wrap(PdfCommentatorsTabScreen(tab: tab)));
+    await tester.pump();
+    expect(find.byType(NavPanelTabHeader), findsNothing);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NavPanelTabHeader), findsOneWidget);
+    expect(
+      tester
+          .widgetList<EditableText>(find.byType(EditableText))
+          .any((field) => field.focusNode.hasFocus),
+      isTrue,
+    );
   });
 
   // issue #1112 — פערים מול כרטיסיית המפרשים של ספר טקסט.
