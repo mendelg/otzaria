@@ -12,9 +12,7 @@ import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 
-/// The selected text as a reader's context menu searches for it: without
-/// nikud or teamim, which search ignores, and with whitespace collapsed,
-/// since a selection across lines brings line breaks.
+/// בחירת טקסט לחיפוש: ללא ניקוד וטעמים, ועם רווחים ומעברי שורה מכווצים.
 class ReaderMenuSelection {
   ReaderMenuSelection(String? selectedText) : cleaned = _clean(selectedText);
 
@@ -24,8 +22,8 @@ class ReaderMenuSelection {
 
   /// [cleaned] cut to [maxChars] graphemes, for labels and tooltips.
   String quote(int maxChars) {
-    final chars = cleaned.characters;
-    return chars.length > maxChars ? '${chars.take(maxChars)}...' : cleaned;
+    final prefix = cleaned.characters.take(maxChars + 1);
+    return prefix.length > maxChars ? '${prefix.take(maxChars)}...' : cleaned;
   }
 
   static String _clean(String? text) {
@@ -78,8 +76,7 @@ AppContextMenuEntry buildReaderIconRow({
   ]);
 }
 
-/// The "search all books" action of a reader's icon row. [enabled] defaults
-/// to whether [selection] has text.
+/// פעולת חיפוש בכל הספרים; [enabled] נקבע לפי הבחירה אם לא סופק.
 AppContextMenuIconAction buildSearchAllBooksIconAction({
   required ReaderMenuSelection selection,
   required VoidCallback onTap,
