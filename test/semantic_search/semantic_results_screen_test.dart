@@ -18,9 +18,11 @@ import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_results_bloc.dart';
+import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/view/widgets/semantic_result_card.dart';
 import 'package:otzaria/semantic_search/services/semantic_dwell_binding.dart';
+import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/view/full_text_settings_widgets.dart';
 import 'package:otzaria/search/view/search_results_layout.dart';
 import 'package:otzaria/semantic_search/view/semantic_search_results_screen.dart';
@@ -376,6 +378,20 @@ void main() {
       SearchFeedbackOpenVia.click,
       SearchFeedbackOpenVia.click,
     ]);
+    SemanticDwellBinding.resetForTesting();
+  });
+
+  testWidgets('פתיחה: תוצאה מילולית מחפשת בספר במצב שבו נמצאה (issue #1874)', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester);
+
+    await tester.tap(find.text('ספר 3, א'));
+    await settle(tester);
+
+    final opened = harness.tabs.opened.single.tab as TextBookTab;
+    expect(opened.searchMode, SearchMode.fuzzy);
+    expect(opened.searchDistance, kSmartSearchFuzzyMaxDistance);
     SemanticDwellBinding.resetForTesting();
   });
 
