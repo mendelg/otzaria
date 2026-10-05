@@ -219,16 +219,17 @@ void main() {
     });
 
     test('שגיאת כתיב בשם — התאמה מקורבת', () async {
-      final repo = _repo(books: [_book(1, 'ספר המצוות הגדול')]);
+      // וו/יי כפולות הן התאמה מילולית; "מיצ" מול "מצ" נשאר מקורב.
+      final repo = _repo(books: [_book(1, 'ספר המיצות הגדול')]);
       expect(
         (await personal(repo, 'ספר המצות')).map((r) => r.title),
-        contains('ספר המצוות הגדול'),
+        contains('ספר המיצות הגדול'),
       );
     });
 
     test('התאמה מקורבת של ספר אישי יורדת מתחת להתאמה מילולית', () async {
       final repo = _repo(
-        books: [_book(1, 'המצוות הגדולות'), _book(2, 'קונטרס המצות גדול')],
+        books: [_book(1, 'המיצות הגדולות'), _book(2, 'קונטרס המצות גדול')],
       );
       // בלי סימון ההתאמה המקורבת, orderIndex הנמוך של 1 היה מקדים אותו.
       expect((await personal(repo, 'המצות גדול')).map((r) => r.bookId), [
