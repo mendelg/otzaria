@@ -155,6 +155,7 @@ void main() {
     SearchingTab? editTab,
     FakeConsentStore? injectedConsent,
     Library? library,
+    bool showMessages = false,
   }) async {
     final repository = _FakeRepository(availability);
     final consent =
@@ -216,7 +217,7 @@ void main() {
           BlocProvider<TabsBloc>.value(value: tabs),
         ],
         child: MaterialApp(
-          navigatorKey: navigatorKey,
+          navigatorKey: showMessages ? navigatorKey : null,
           home: Scaffold(
             body: Center(
               child: ElevatedButtonLauncher(
@@ -709,6 +710,7 @@ void main() {
           tester,
           _availability(SemanticAvailabilityPhase.ready),
           library: scopeLibrary(),
+          showMessages: true,
         );
         await tester.tap(_semanticSegment);
         await tester.pumpAndSettle();
@@ -801,6 +803,7 @@ void main() {
           tester,
           _availability(SemanticAvailabilityPhase.ready),
           library: scopeLibrary(),
+          showMessages: true,
         );
         await tester.tap(_semanticSegment);
         await tester.pumpAndSettle();
@@ -832,6 +835,7 @@ void main() {
           tester,
           _availability(SemanticAvailabilityPhase.ready),
           library: scopeLibrary(),
+          showMessages: true,
         );
         await tester.tap(_semanticSegment);
         await tester.pumpAndSettle();
@@ -872,6 +876,7 @@ void main() {
         _availability(SemanticAvailabilityPhase.ready),
         editTab: tab,
         library: scopeLibrary(),
+        showMessages: true,
       );
       await tester.enterText(_queryField, 'חסד@מחברת פרטית');
       await tester.tap(find.byKey(const ValueKey('search-dialog-submit')));
