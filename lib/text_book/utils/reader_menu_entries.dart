@@ -12,8 +12,7 @@ import 'package:otzaria/widgets/misc/direct_link_menu_entries.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 
-/// The selected text as a reader's context menu searches for it: trimmed
-/// and without nikud or teamim, since search always ignores them.
+/// בחירת טקסט לחיפוש: ללא ניקוד וטעמים, ועם רווחים ומעברי שורה מכווצים.
 class ReaderMenuSelection {
   ReaderMenuSelection(String? selectedText) : cleaned = _clean(selectedText);
 
@@ -23,13 +22,14 @@ class ReaderMenuSelection {
 
   /// [cleaned] cut to [maxChars] graphemes, for labels and tooltips.
   String quote(int maxChars) {
-    final chars = cleaned.characters;
-    return chars.length > maxChars ? '${chars.take(maxChars)}...' : cleaned;
+    final prefix = cleaned.characters.take(maxChars + 1);
+    return prefix.length > maxChars ? '${prefix.take(maxChars)}...' : cleaned;
   }
 
   static String _clean(String? text) {
-    final raw = text?.trim() ?? '';
-    return utils.hasNikud(raw) ? utils.removeVolwels(raw).trim() : raw;
+    var raw = text?.trim() ?? '';
+    if (utils.hasNikud(raw)) raw = utils.removeVolwels(raw);
+    return raw.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 }
 
@@ -46,13 +46,8 @@ AppContextMenuEntry buildReaderIconRow({
 }) {
   final bookId = book.id;
   return AppContextMenuEntry.iconRow([
-    AppContextMenuIconAction(
-      label: 'חיפוש',
-      tooltip: selection.hasText
-          ? 'חיפוש "${selection.quote(14)}" בכל הספרים'
-          : 'חיפוש בכל הספרים',
-      icon: FluentIcons.library_24_regular,
-      enabled: selection.hasText,
+    buildSearchAllBooksIconAction(
+      selection: selection,
       onTap: () =>
           openGlobalSearch(context, selection.cleaned, insertAdjacent: true),
     ),
@@ -79,6 +74,23 @@ AppContextMenuEntry buildReaderIconRow({
         ),
       ),
   ]);
+}
+
+/// פעולת חיפוש בכל הספרים; [enabled] נקבע לפי הבחירה אם לא סופק.
+AppContextMenuIconAction buildSearchAllBooksIconAction({
+  required ReaderMenuSelection selection,
+  required VoidCallback onTap,
+  bool? enabled,
+}) {
+  return AppContextMenuIconAction(
+    label: 'חיפוש',
+    tooltip: selection.hasText
+        ? 'חיפוש "${selection.quote(14)}" בכל הספרים'
+        : 'חיפוש בכל הספרים',
+    icon: FluentIcons.library_24_regular,
+    enabled: enabled ?? selection.hasText,
+    onTap: onTap,
+  );
 }
 
 /// The children of a paragraph's "קישורים" submenu: [openPaneEntry], when

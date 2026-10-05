@@ -14,6 +14,31 @@ void main() {
       expect(selection.hasText, isTrue);
     });
 
+    test('collapses line breaks of a multi-line selection', () {
+      expect(
+        ReaderMenuSelection('בראשית\nברא  \r\n אלהים').cleaned,
+        'בראשית ברא אלהים',
+      );
+    });
+
+    test('preserves the full search query beyond ten words', () {
+      const words =
+          'אחת שתים שלוש ארבע חמש שש שבע שמונה תשע עשר אחתעשרה שתיםעשרה';
+      final selection = ReaderMenuSelection(words.replaceAll(' ', '\n'));
+      expect(selection.cleaned, words);
+    });
+
+    test(
+      'a tooltip preserves graphemes and only truncates longer selections',
+      () {
+        final selection = ReaderMenuSelection('א👨‍👩‍👧‍👦ב');
+        expect(selection.quote(2), 'א👨‍👩‍👧‍👦...');
+        expect(selection.quote(3), selection.cleaned);
+        expect(selection.quote(0), '...');
+        expect(ReaderMenuSelection('').quote(0), '');
+      },
+    );
+
     test('a missing or blank selection has no text', () {
       expect(ReaderMenuSelection(null).hasText, isFalse);
       expect(ReaderMenuSelection('  ').hasText, isFalse);
@@ -169,9 +194,7 @@ void main() {
       expect(result.first.isDivider, isTrue);
     });
 
-    testWidgets('nothing to look up leaves the section empty', (
-      tester,
-    ) async {
+    testWidgets('nothing to look up leaves the section empty', (tester) async {
       expect(await entries(tester, null), isEmpty);
     });
   });

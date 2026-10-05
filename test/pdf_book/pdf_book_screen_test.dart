@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:otzaria/text_book/utils/reader_menu_entries.dart';
 import 'package:otzaria/book_common/utils/commentators_menu.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -198,18 +199,14 @@ void main() {
   group('shouldShowSelectPdfCommentatorsEntry', () {
     test('מחזירה true כשטאב המפרשים אינו פעיל', () {
       expect(
-        shouldShowSelectPdfCommentatorsEntry(
-          isCommentatorsTabActive: false,
-        ),
+        shouldShowSelectPdfCommentatorsEntry(isCommentatorsTabActive: false),
         isTrue,
       );
     });
 
     test('מחזירה false כשטאב המפרשים פעיל', () {
       expect(
-        shouldShowSelectPdfCommentatorsEntry(
-          isCommentatorsTabActive: true,
-        ),
+        shouldShowSelectPdfCommentatorsEntry(isCommentatorsTabActive: true),
         isFalse,
       );
     });
@@ -227,9 +224,7 @@ void main() {
           isFalse,
         );
         expect(
-          shouldShowSelectPdfCommentatorsEntry(
-            isCommentatorsTabActive: false,
-          ),
+          shouldShowSelectPdfCommentatorsEntry(isCommentatorsTabActive: false),
           isTrue,
         );
       },
@@ -512,20 +507,14 @@ void main() {
   group('resolveReadyPdfPageNumber', () {
     test('מחזירה את מספר העמוד כש-ה-controller מוכן', () {
       expect(
-        resolveReadyPdfPageNumber(
-          isReady: true,
-          readPageNumber: () => 7,
-        ),
+        resolveReadyPdfPageNumber(isReady: true, readPageNumber: () => 7),
         7,
       );
     });
 
     test('מחזירה null כשהעמוד הנוכחי עדיין לא ידוע למרות שמוכן', () {
       expect(
-        resolveReadyPdfPageNumber(
-          isReady: true,
-          readPageNumber: () => null,
-        ),
+        resolveReadyPdfPageNumber(isReady: true, readPageNumber: () => null),
         isNull,
       );
     });
@@ -552,8 +541,10 @@ void main() {
     // בלעדיו אין בדסקטופ שום מסלול עכבר להעתקה מתוך PDF.
     List<AppContextMenuEntry> buildMenu({
       required bool hasTextSelection,
+      String? selectedText,
       bool? canCopySelection,
       VoidCallback? onCopySelection,
+      VoidCallback? onSearchAllBooks,
     }) {
       return buildPdfContextMenuEntries(
         commentatorChildren: const [],
@@ -566,9 +557,12 @@ void main() {
           onOpenLink: (_) {},
         ),
         hasTextSelection: hasTextSelection,
+        selection: selectedText == null
+            ? null
+            : ReaderMenuSelection(selectedText),
         canCopySelection: canCopySelection ?? hasTextSelection,
-        onSearch: () {},
-        onSearchParallels: () {},
+        onSearchInBook: () {},
+        onSearchAllBooks: onSearchAllBooks ?? () {},
         onCopySelection: onCopySelection ?? () {},
         onAddBookmark: () {},
         onAddNote: () {},
@@ -603,6 +597,60 @@ void main() {
       );
     });
 
+    test('"חיפוש" בשורת האייקונים מחפש בכל הספרים, כמו בתצוגת הטקסט', () {
+      final menu = buildMenu(hasTextSelection: true);
+      final search = menu
+          .firstWhere((entry) => entry.iconRowActions != null)
+          .iconRowActions!
+          .first;
+
+      expect(search.label, 'חיפוש');
+      expect(search.tooltip, 'חיפוש בכל הספרים');
+      expect(
+        buildMenu(hasTextSelection: true, selectedText: 'בראשית\nברא')
+            .firstWhere((entry) => entry.iconRowActions != null)
+            .iconRowActions!
+            .first
+            .tooltip,
+        'חיפוש "בראשית ברא" בכל הספרים',
+        reason: 'כשהטקסט המסומן כבר טעון, הרמז מצטט אותו כמו בתצוגת הטקסט',
+      );
+      expect(
+        menu.where((entry) => entry.label == 'חיפוש בספר'),
+        hasLength(1),
+        reason: 'החיפוש בתוך הספר נבדל בשמו מהחיפוש בכל הספרים',
+      );
+    });
+
+    test('חיפוש זמין בזמן טעינת הבחירה ומנוטרל בלי טקסט לחיפוש', () {
+      AppContextMenuIconAction search({
+        required bool hasSelection,
+        String? selectedText,
+      }) => buildMenu(
+        hasTextSelection: hasSelection,
+        selectedText: selectedText,
+      ).first.iconRowActions!.first;
+
+      expect(search(hasSelection: false).enabled, isFalse);
+      expect(search(hasSelection: true).enabled, isTrue);
+      expect(
+        search(hasSelection: true, selectedText: '  \n ').enabled,
+        isFalse,
+      );
+      expect(search(hasSelection: true, selectedText: 'שלום').enabled, isTrue);
+    });
+
+    test('לחיצה על חיפוש בכל הספרים מפעילה את הפעולה המתאימה', () {
+      var searched = false;
+      final menu = buildMenu(
+        hasTextSelection: true,
+        selectedText: 'בראשית',
+        onSearchAllBooks: () => searched = true,
+      );
+      menu.first.iconRowActions!.first.onTap!();
+      expect(searched, isTrue);
+    });
+
     test('לחיצה על "העתקה" מפעילה את העתקת הבחירה', () {
       var copied = false;
       final menu = buildMenu(
@@ -616,13 +664,12 @@ void main() {
     });
 
     test('"הוסף הערה אישית" נשאר זמין — עבר לשורת האייקונים', () {
-      // שמירה על הפונקציונליות: הפריט לא נמחק מהתפריט, רק שינה מיקום.
       final menu = buildMenu(hasTextSelection: false);
       final iconRow = menu.firstWhere((entry) => entry.iconRowActions != null);
 
       expect(
         iconRow.iconRowActions!.map((action) => action.label),
-        containsAll(<String>['העתקה', 'מקבילות', 'הערה']),
+        containsAll(<String>['חיפוש', 'העתקה', 'הערה']),
       );
       expect(
         menu.any((entry) => entry.label == 'הוסף הערה אישית'),
