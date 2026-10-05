@@ -49,8 +49,7 @@ AppContextMenuEntry buildReaderIconRow({
   final bookId = book.id;
   return AppContextMenuEntry.iconRow([
     buildSearchAllBooksIconAction(
-      enabled: selection.hasText,
-      quote: selection.hasText ? selection.quote(14) : null,
+      selection: selection,
       onTap: () =>
           openGlobalSearch(context, selection.cleaned, insertAdjacent: true),
     ),
@@ -79,18 +78,20 @@ AppContextMenuEntry buildReaderIconRow({
   ]);
 }
 
-/// The "search all books" action of a reader's icon row; [quote] is the
-/// selection shown in the tooltip.
+/// The "search all books" action of a reader's icon row. [enabled] defaults
+/// to whether [selection] has text.
 AppContextMenuIconAction buildSearchAllBooksIconAction({
-  required bool enabled,
+  required ReaderMenuSelection selection,
   required VoidCallback onTap,
-  String? quote,
+  bool? enabled,
 }) {
   return AppContextMenuIconAction(
     label: 'חיפוש',
-    tooltip: quote != null ? 'חיפוש "$quote" בכל הספרים' : 'חיפוש בכל הספרים',
+    tooltip: selection.hasText
+        ? 'חיפוש "${selection.quote(14)}" בכל הספרים'
+        : 'חיפוש בכל הספרים',
     icon: FluentIcons.library_24_regular,
-    enabled: enabled,
+    enabled: enabled ?? selection.hasText,
     onTap: onTap,
   );
 }

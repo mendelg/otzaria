@@ -441,6 +441,7 @@ List<AppContextMenuEntry> buildPdfContextMenuEntries({
   required bool canSelectCommentators,
   required AppContextMenuEntry linksEntry,
   required bool hasTextSelection,
+  required String? selectedText,
   required bool canCopySelection,
   required VoidCallback onSearchInBook,
   required VoidCallback onSearchAllBooks,
@@ -452,6 +453,7 @@ List<AppContextMenuEntry> buildPdfContextMenuEntries({
     // שורת אייקונים עליונה בסגנון Windows 11, כמו בתצוגת הטקסט.
     AppContextMenuEntry.iconRow([
       buildSearchAllBooksIconAction(
+        selection: ReaderMenuSelection(selectedText),
         enabled: hasTextSelection,
         onTap: onSearchAllBooks,
       ),
@@ -1496,6 +1498,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
 
     final hasTextSelection = _hasPdfTextSelection();
+    final selectedText = hasTextSelection
+        ? widget
+              .tab
+              .pdfViewerController
+              .textSelectionDelegate
+              .selectedTextIfLoaded
+        : null;
 
     return buildPdfContextMenuEntries(
       commentatorChildren: commentatorChildren,
@@ -1508,9 +1517,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
         onOpenLink: (link) => _openLinkTarget(menuContext, link),
       ),
       hasTextSelection: hasTextSelection,
+      selectedText: selectedText,
       canCopySelection: hasTextSelection && _isPdfCopyAllowed(),
       onSearchInBook: _ensureSearchTabIsActive,
-      onSearchAllBooks: _searchAllBooksFromSelection,
+      onSearchAllBooks: () => _searchAllBooksFromSelection(selectedText),
       onCopySelection: _copyPdfTextSelection,
       onAddBookmark: () => _handleBookmarkPress(menuContext),
       onAddNote: () => _handleAddNotePress(menuContext),
@@ -1577,10 +1587,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     return controller.isReady && controller.textSelectionDelegate.isCopyAllowed;
   }
 
-  Future<void> _searchAllBooksFromSelection() async {
+  /// [loadedText] הוא הבחירה כפי שנקראה בפתיחת התפריט; null אם עמוד באמצע
+  /// הבחירה טרם נטען, ואז ממתינים לטקסט.
+  Future<void> _searchAllBooksFromSelection(String? loadedText) async {
     final controller = widget.tab.pdfViewerController;
     if (!controller.isReady) return;
-    final raw = await controller.textSelectionDelegate.getSelectedText();
+    final raw =
+        loadedText ?? await controller.textSelectionDelegate.getSelectedText();
     if (!mounted) return;
     openGlobalSearch(
       context,

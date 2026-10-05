@@ -552,6 +552,7 @@ void main() {
     // בלעדיו אין בדסקטופ שום מסלול עכבר להעתקה מתוך PDF.
     List<AppContextMenuEntry> buildMenu({
       required bool hasTextSelection,
+      String? selectedText,
       bool? canCopySelection,
       VoidCallback? onCopySelection,
     }) {
@@ -566,6 +567,7 @@ void main() {
           onOpenLink: (_) {},
         ),
         hasTextSelection: hasTextSelection,
+        selectedText: selectedText,
         canCopySelection: canCopySelection ?? hasTextSelection,
         onSearchInBook: () {},
         onSearchAllBooks: () {},
@@ -612,6 +614,15 @@ void main() {
 
       expect(search.label, 'חיפוש');
       expect(search.tooltip, 'חיפוש בכל הספרים');
+      expect(
+        buildMenu(hasTextSelection: true, selectedText: 'בראשית\nברא')
+            .firstWhere((entry) => entry.iconRowActions != null)
+            .iconRowActions!
+            .first
+            .tooltip,
+        'חיפוש "בראשית ברא" בכל הספרים',
+        reason: 'כשהטקסט המסומן כבר טעון, הרמז מצטט אותו כמו בתצוגת הטקסט',
+      );
       expect(
         menu.where((entry) => entry.label == 'חיפוש בספר'),
         hasLength(1),
