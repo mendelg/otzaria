@@ -26,6 +26,12 @@ const Map<String, String> apiCallToPermissionHint = {
   'library.getLinkTargetsSummary': pluginLinksReadPermission,
   'library.refreshUserBooks': pluginLibraryRefreshPermission,
 
+  // reader.* — בחירת קורא חלופי דורשת גם הרשאות ספרייה בפועל.
+  'reader.getDefaultTextReader': 'reader.open',
+  'reader.setDefaultTextReader': 'reader.open',
+  'reader.reportTextReaderLocation': 'reader.open',
+  'reader.setTextReaderFontSize': 'reader.open',
+
   // app.*
   'app.getUserEmail': 'app.user_email.read',
   'app.openUrl': 'app.open_url',

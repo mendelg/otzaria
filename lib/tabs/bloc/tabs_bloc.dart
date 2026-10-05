@@ -17,6 +17,7 @@ import 'package:otzaria/tabs/models/pdf_commentators_tab.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/tabs/models/reading_tab_search_state.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
 import 'package:otzaria/tabs/models/tool_tab.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
@@ -411,7 +412,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       // סימניות/היסטוריה: המשתמש בחר מיקום ספציפי בספר, ולא מספיק להעביר
       // focus לטאב הקיים — צריך לגלול אותו למיקום המבוקש.
       if (event.navigateToPositionIfReused) {
-        _propagateNavigationToExistingTab(
+        await _propagateNavigationToExistingTab(
           existingTab: state.tabs[matchingIndex],
           incomingTab: event.tab,
         );
@@ -428,10 +429,22 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       );
       event.tab.dispose();
       final tabsToSave = state.tabs;
+      final readerTarget = event.tab is TextBookTab
+          ? _resolveTextBookTab(
+              state.tabs[matchingIndex],
+              event.tab as TextBookTab,
+            )
+          : null;
       // התאמה בחלונית מפוצלת דורשת גם עדכון של החלונית הפעילה.
       emit(
         state.copyWith(
           currentTabIndex: matchingIndex,
+          // ניווט בספר שכבר פעיל חייב להגיע גם ל-WebView: ערך index
+          // משתנה בתוך הכרטיסייה ואינו נכלל בהשוואת TabsState.
+          forceUpdate:
+              event.navigateToPositionIfReused &&
+              readerTarget != null &&
+              PluginTextReaderRegistry.instance.usesPlugin(readerTarget),
           // `_matchingPaneIn` מחזיר null במשמעות "הטאב עצמו הוא ההתאמה",
           // ולא "אל תיגע". שמירת הערך הקודם הותירה כאן חלונית פעילה
           // ששייכת לטאב אחר; `clear` נופל נכון ל-`panes.first`.
@@ -632,10 +645,10 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   /// מנווט טאב קיים למיקום של הטאב הנכנס (index ב‑TextBook, pageNumber ב‑PDF).
   /// משמש כשפתיחת סימניה/היסטוריה ממחזרת טאב קיים — המשתמש בחר מיקום ספציפי
   /// ולא רק את הספר.
-  void _propagateNavigationToExistingTab({
+  Future<void> _propagateNavigationToExistingTab({
     required OpenedTab existingTab,
     required OpenedTab incomingTab,
-  }) {
+  }) async {
     if (incomingTab is PdfBookTab) {
       final targetPdf = _resolvePdfBookTab(existingTab, incomingTab);
       if (targetPdf == null) return;
@@ -658,6 +671,24 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       // 2. אם המסך עוד לא בנה את הרשימה (scrollController לא מחובר), הקריאה
       //    הבאה ל‑initState/load תפתח באינדקס הזה.
       targetText.index = targetIndex;
+      if (PluginTextReaderRegistry.instance.usesPlugin(targetText)) {
+        // toJson derives index from the loaded BLoC. Synchronize before saving
+        // or notifying the plugin so it cannot restore the previous location.
+        final currentState = targetText.bloc.state;
+        if (currentState is TextBookLoaded &&
+            (currentState.visibleIndices.isEmpty ||
+                currentState.visibleIndices.first != targetIndex)) {
+          final updated = targetText.bloc.stream.firstWhere(
+            (state) =>
+                state is TextBookLoaded &&
+                state.visibleIndices.isNotEmpty &&
+                state.visibleIndices.first == targetIndex,
+          );
+          targetText.bloc.add(UpdateVisibleIndecies([targetIndex]));
+          await updated.timeout(const Duration(seconds: 2));
+        }
+        return;
+      }
 
       Future<void> dispatch() async {
         // ApplyPinpointHighlight (אם קודם) כבר גלל. כאן מטפלים במקרה שאין

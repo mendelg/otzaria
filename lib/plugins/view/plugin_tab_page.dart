@@ -67,6 +67,8 @@ import 'package:otzaria/plugins/services/plugin_download_handler.dart';
 import 'package:otzaria/plugins/services/plugin_webview_permission_gate.dart';
 import 'package:otzaria/settings/settings_exports.dart';
 import 'package:otzaria/utils/ui/fullscreen_helper.dart';
+import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
 
 // ---------------------------------------------------------------------------
 // Stub SDK — injected at AT_DOCUMENT_START before any page JS runs.
@@ -234,6 +236,7 @@ Set<Factory<OneSequenceGestureRecognizer>>? pluginTabWebViewGestureRecognizers({
 
 class PluginTabPage extends StatefulWidget {
   final InstalledPlugin plugin;
+  final TextBookTab? readerTab;
 
   /// מזהה המופע של הטאב (ToolTab.instanceId) — מזהה את הרישום של הדף הזה
   /// אצל PluginRuntimeDispatcher, לצד מופעים נוספים של אותו תוסף.
@@ -243,6 +246,7 @@ class PluginTabPage extends StatefulWidget {
     super.key,
     required this.plugin,
     required this.instanceId,
+    this.readerTab,
   });
 
   @override
@@ -477,6 +481,7 @@ class _PluginTabPageState extends State<PluginTabPage> {
       widget.plugin,
       dependencies: dependencies,
       instanceId: widget.instanceId,
+      readerTab: widget.readerTab,
       pluginRepository: pluginRegistryRepository,
     );
     _bridge = PluginBridgeHandler(
@@ -1156,6 +1161,8 @@ class _PluginTabPageState extends State<PluginTabPage> {
             'connectivity': ConnectivityStatusService.instance.bootPayload(),
             'theme': theme,
             'permissions': permissions,
+            if (widget.readerTab case final tab?)
+              'reader': PluginTextReaderRegistry.bookPayload(tab),
           };
 
           final jsonPayload = jsonEncode(bootPayload);

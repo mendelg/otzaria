@@ -25,6 +25,7 @@ import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/history/bloc/history_bloc.dart';
+import 'package:otzaria/history/bloc/history_state.dart';
 import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/personal_notes/repository/personal_notes_repository.dart';
 import 'package:otzaria/plugins/bridge/plugin_bridge_adapter.dart';
@@ -37,6 +38,8 @@ import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_condition_evaluator.dart';
 import 'package:otzaria/plugins/services/plugin_shortcut_registry.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
+import 'package:otzaria/plugins/models/plugin_book_identity.dart';
 import 'package:otzaria/plugins/services/plugin_network_access_resolver.dart';
 import 'package:otzaria/plugins/services/plugin_page_launcher.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
@@ -280,6 +283,32 @@ class _MockPersonalNotesRepository extends Mock
     implements PersonalNotesRepository {}
 
 class _MockBookOpenCoordinator extends Mock implements BookOpenCoordinator {}
+
+class _ReaderHistoryBloc extends _MockHistoryBloc {
+  @override
+  HistoryState get state => HistoryLoaded([]);
+}
+
+class _RecordingReaderCoordinator extends BookOpenCoordinator {
+  _RecordingReaderCoordinator(TabsBloc tabsBloc)
+    : super(
+        tabsBloc: tabsBloc,
+        historyBloc: _ReaderHistoryBloc(),
+        navigationBloc: _MockNavigationBloc(),
+      );
+  OpenedTab? opened;
+  bool navigate = false;
+  @override
+  void openTab(
+    OpenedTab tab, {
+    bool insertAdjacent = false,
+    bool navigateToPositionIfReused = false,
+    bool inSidePane = false,
+  }) {
+    opened = tab;
+    navigate = navigateToPositionIfReused;
+  }
+}
 
 class _StubPluginRegistryRepository extends PluginRegistryRepository {
   List<PluginPermissionGrant> permissions = [];
@@ -1636,6 +1665,29 @@ Future<void> main() async {
     late PluginBridgeAdapter adapter;
     late _FakeBookProvider fakeProvider;
 
+    PluginBridgeAdapter readerAdapter(TextBookTab tab) => PluginBridgeAdapter(
+      _buildInstalledPlugin(permissions: const ['library.read']),
+      readerTab: tab,
+      dependencies: PluginBridgeDependencies(
+        historyBloc: _MockHistoryBloc(),
+        tabsBloc: _StubTabsBloc(),
+        navigationBloc: _MockNavigationBloc(),
+        calendarCubit: _StubCalendarCubit(
+          _buildCalendarState(DateTime(2026, 1, 1), inIsrael: true),
+        ),
+        workspaceBloc: _MockWorkspaceBloc(),
+        searchRepository: _MockSearchRepository(),
+        personalNotesRepository: _MockPersonalNotesRepository(),
+        bookOpenCoordinator: _MockBookOpenCoordinator(),
+        themePayloadBuilder: () => {},
+        showConfirmDialog: ({required title, required content}) async => true,
+        showWarningDialog:
+            ({required title, required content, required subtitle}) async =>
+                true,
+      ),
+      pluginRepository: _StubPluginRegistryRepository(),
+    );
+
     setUp(() {
       // 1. הזרקת ספריית קטלוג מותאמת: TextBook עם fileType='docx' (מקרה הבאג),
       //    TextBook עם fileType='txt' (לוודא שגם הדרך הרגילה עובדת), ו-PdfBook
@@ -1754,6 +1806,79 @@ Future<void> main() async {
     tearDown(() {
       LibraryProviderManager.instance.resetForTesting();
     });
+
+    test(
+      'bound book absent from visible catalog retains identity and display source lines',
+      () async {
+        const raw = 'אָב<br>גָד,\nשָׁלוֹם\nדף ב';
+        final book = TextBook(title: 'מוסתר', categoryId: 501, id: 777);
+        final key = BookCompositeKey.create(
+          title: book.title,
+          categoryId: 501,
+          fileType: 'txt',
+        );
+        final provider = _FakeBookProvider({key: raw});
+        LibraryProviderManager.instance.seedMappingsForTesting(
+          mapping: {key: provider},
+          providers: [provider],
+        );
+        final tab = TextBookTab(book: book, index: 0);
+        addTearDown(tab.dispose);
+        tab.bloc.emit(
+          TextBookLoaded.initial(
+            book: book,
+            index: 0,
+            showLeftPane: false,
+            splitView: false,
+          ).copyWith(removeNikud: true, removePunctuation: true),
+        );
+        final boundAdapter = readerAdapter(tab);
+        final identity = PluginBookIdentity.toJsonWithUid(book);
+        expect(
+          await boundAdapter.execute('library', 'getBookContent', {
+            ...identity,
+            'limit': 5000,
+          }),
+          raw,
+        );
+        final display =
+            await boundAdapter.execute('library', 'getBookContent', {
+                  ...identity,
+                  'limit': 5000,
+                  'textReaderDisplay': true,
+                })
+                as String;
+        expect(display.split('\n'), hasLength(3));
+        expect(display.split('\n')[1], 'שלום');
+        expect(display.split('\n')[2], 'דף ב');
+        expect(display.split('\n').first, 'אב גד');
+        final fragments = <String>[];
+        for (var offset = 0; offset < display.length; offset += 3) {
+          fragments.add(
+            await boundAdapter.execute('library', 'getBookContent', {
+                  ...identity,
+                  'offset': offset,
+                  'limit': 3,
+                  'textReaderDisplay': true,
+                })
+                as String,
+          );
+        }
+        expect(fragments.join(), display);
+        tab.bloc.emit(
+          (tab.bloc.state as TextBookLoaded).copyWith(removeNikud: false),
+        );
+        final vocalized =
+            await boundAdapter.execute('library', 'getBookContent', {
+                  ...identity,
+                  'limit': 5000,
+                  'textReaderDisplay': true,
+                })
+                as String;
+        expect(vocalized, contains('שָׁלוֹם'));
+        expect(vocalized.split('\n'), hasLength(3));
+      },
+    );
 
     test('זורק כש-bookId חסר', () async {
       expect(
@@ -4150,6 +4275,7 @@ Future<void> main() async {
       List<OpenedTab> tabs = const [],
       int currentTabIndex = 0,
       SearchRepository? searchRepository,
+      BookOpenCoordinator? readerCoordinator,
     }) {
       tabsBloc = _StubTabsBloc();
       if (tabs.isNotEmpty) {
@@ -4186,7 +4312,7 @@ Future<void> main() async {
           workspaceBloc: _MockWorkspaceBloc(),
           searchRepository: searchRepository ?? _MockSearchRepository(),
           personalNotesRepository: _MockPersonalNotesRepository(),
-          bookOpenCoordinator: mockCoordinator,
+          bookOpenCoordinator: readerCoordinator ?? mockCoordinator,
           themePayloadBuilder: () => <String, dynamic>{},
           showConfirmDialog: ({required title, required content}) async => true,
           showWarningDialog:
@@ -4532,6 +4658,50 @@ Future<void> main() async {
     });
 
     // --- reader.openBook ---
+    test(
+      'native escape preserves source, position and global default while overriding only the matching book',
+      () async {
+        final registry = PluginTextReaderRegistry.instance;
+        final selected = _buildInstalledPlugin(
+          permissions: PluginTextReaderRegistry.requiredPermissions.toList(),
+        );
+        await registry.select(selected, true);
+        addTearDown(() => registry.select(selected, false));
+        final book = TextBook(
+          id: 10,
+          title: 'בראשית',
+          source: BookSource.attached('test-library'),
+        );
+        final bound = TextBookTab(book: book, index: 3);
+        final official = TextBookTab(
+          book: TextBook(id: 10, title: 'בראשית'),
+          index: 2,
+        );
+        addTearDown(bound.dispose);
+        addTearDown(official.dispose);
+        final coordinator = _RecordingReaderCoordinator(_StubTabsBloc());
+        final adapter = buildAdapter(
+          books: [book, official.book],
+          tabs: [bound, official],
+          readerCoordinator: coordinator,
+        );
+        final result = await adapter.execute('reader', 'openBook', {
+          'bookUid': PluginBookIdentity.uidOf(book),
+          'index': 42,
+          'reader': 'native',
+        });
+        expect(result, true);
+        expect(coordinator.navigate, true);
+        final opened = coordinator.opened as TextBookTab;
+        addTearDown(opened.dispose);
+        expect(opened.book.source, BookSource.attached('test-library'));
+        expect(opened.index, 42);
+        expect(registry.usesPlugin(opened), false);
+        expect(registry.usesPlugin(bound), false);
+        expect(registry.usesPlugin(official), true);
+        expect(registry.selectedPluginId, selected.pluginId);
+      },
+    );
 
     test('reader.openBook פותח לפי id בלבד', () async {
       final book = TextBook(id: 5, title: 'ויקרא');

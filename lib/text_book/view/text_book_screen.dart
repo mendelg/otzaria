@@ -84,6 +84,7 @@ import 'package:otzaria/utils/ui/image_decode_size.dart';
 import 'package:otzaria/widgets/navigation/responsive_action_bar.dart';
 import 'package:otzaria/widgets/navigation/book_view_actions.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
 import 'package:otzaria/plugins/utils/plugin_toolbar_actions.dart';
 import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
@@ -109,6 +110,7 @@ import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:otzaria/widgets/navigation/nav_panel_search.dart';
 import 'package:otzaria/widgets/navigation/nav_side_panel.dart';
 import 'package:otzaria/widgets/navigation/app_top_bar.dart';
+import 'package:otzaria/widgets/lists/jump_aware_item_scroll_controller.dart';
 
 // קבועים למצבי תצוגה (למניעת magic strings)
 const String _viewModeSplit = 'split';
@@ -1354,6 +1356,7 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
 
               context.read<TextBookBloc>().add(
                 LoadContent(
+                  startIndex: widget.tab.index,
                   fontSize: settingsState.fontSize,
                   showSplitView: state.splitedView,
                   removeNikud: settingsState.defaultRemoveNikud,
@@ -1486,6 +1489,14 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   }
 
   Widget _buildAppBar(
+    BuildContext context,
+    TextBookLoaded state,
+  ) => ListenableBuilder(
+    listenable: PluginTextReaderRegistry.instance,
+    builder: (context, _) => _buildReaderAppBar(context, state),
+  );
+
+  Widget _buildReaderAppBar(
     BuildContext context,
     TextBookLoaded state,
   ) {
@@ -1836,6 +1847,30 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
     TextBookLoaded state,
   ) {
     return [
+      if (PluginTextReaderRegistry.instance.usesPlugin(widget.tab)) ...[
+        (
+          5,
+          ActionButtonData(
+            widget: const SizedBox.shrink(),
+            icon: FluentIcons.settings_24_regular,
+            tooltip: PluginMessages.textReaderSettings,
+            onPressed: () => PluginTextReaderRegistry.instance.command(
+              widget.tab,
+              'settings',
+            ),
+          ),
+        ),
+        (
+          6,
+          ActionButtonData(
+            widget: const SizedBox.shrink(),
+            icon: OtzariaIcons.otzaria_icon_2_page_24_regular,
+            tooltip: PluginMessages.nativeTextReader,
+            onPressed: () =>
+                PluginTextReaderRegistry.instance.useNative(widget.tab),
+          ),
+        ),
+      ],
       // הצגת סימניות הספר הנוכחי (הוספת סימניה עברה לתפריט ההקשר בטקסט)
       (
         10,
@@ -2277,6 +2312,14 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   /// לחיצה תוך כדי גלילה ממשיכה מהיעד הקודם: הקטע העליון מתעדכן כלפי מטה רק
   /// בסוף האנימציה, ובלי זה לחיצות רצופות קדימה חוזרות על אותו יעד.
   void _scrollBySegments(TextBookLoaded state, int delta) {
+    if (PluginTextReaderRegistry.instance.usesPlugin(widget.tab)) {
+      PluginTextReaderRegistry.instance.command(
+        widget.tab,
+        'advance',
+        direction: delta,
+      );
+      return;
+    }
     if (state.positionsListener.itemPositions.value.isEmpty) return;
     final lastIndex = state.readingSegments.isNotEmpty
         ? state.readingSegments.length - 1
@@ -2995,11 +3038,18 @@ KeyEventResult passSegmentArrowsToGlobalShortcuts(FocusNode _, KeyEvent event) {
   return KeyEventResult.skipRemainingHandlers;
 }
 
-int _topmostVisibleSourceLine(TextBookLoaded state) => resolveTopmostSourceLine(
-  positions: state.positionsListener.itemPositions.value,
-  continuousReadingMode: state.continuousReadingMode,
-  readingSegments: state.readingSegments,
-);
+int _topmostVisibleSourceLine(TextBookLoaded state) =>
+    state.positionsListener.itemPositions.value.isEmpty ||
+        (state.scrollController is JumpAwareItemScrollController &&
+            (state.scrollController as JumpAwareItemScrollController)
+                    .externalScroll !=
+                null)
+    ? (state.visibleIndices.firstOrNull ?? 0)
+    : resolveTopmostSourceLine(
+        positions: state.positionsListener.itemPositions.value,
+        continuousReadingMode: state.continuousReadingMode,
+        readingSegments: state.readingSegments,
+      );
 
 /// [label] followed by the shortcut the user set for [settingKey], or the
 /// label alone when the shortcut is cleared.

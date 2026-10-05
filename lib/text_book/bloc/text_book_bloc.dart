@@ -695,7 +695,8 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
       searchResultLines = initial.initialSearchResultLines;
       showLeftPane = initial.showLeftPane;
       commentators = initial.commentators;
-      visibleIndices = [initial.index < 0 ? 0 : initial.index];
+      final startIndex = event.startIndex ?? initial.index;
+      visibleIndices = [startIndex < 0 ? 0 : startIndex];
       initialShowPageShapeView = initial.showPageShapeView;
       pinpointHighlightIndex = initial.pinpointHighlightIndex;
       pinpointHighlightText = initial.pinpointHighlightText;
@@ -703,7 +704,7 @@ class TextBookBloc extends Bloc<TextBookEvent, TextBookState> {
       emit(
         TextBookLoading(
           book,
-          initial.index,
+          visibleIndices.first,
           initial.showLeftPane,
           initial.commentators,
         ),

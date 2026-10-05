@@ -8,6 +8,10 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 /// נוחתת אחריה על טקסט אחר.
 class JumpAwareItemScrollController extends ItemScrollController {
   final _beforeJumpListeners = ObserverList<VoidCallback>();
+  Future<void> Function(int index)? externalScroll;
+
+  @override
+  bool get isAttached => externalScroll != null || super.isAttached;
 
   void addBeforeJumpListener(VoidCallback listener) =>
       _beforeJumpListeners.add(listener);
@@ -24,6 +28,10 @@ class JumpAwareItemScrollController extends ItemScrollController {
   @override
   void jumpTo({required int index, double alignment = 0}) {
     _notifyBeforeJump();
+    if (externalScroll case final navigate?) {
+      navigate(index);
+      return;
+    }
     super.jumpTo(index: index, alignment: alignment);
   }
 
@@ -36,6 +44,7 @@ class JumpAwareItemScrollController extends ItemScrollController {
     List<double> opacityAnimationWeights = const [40, 20, 40],
   }) {
     _notifyBeforeJump();
+    if (externalScroll case final navigate?) return navigate(index);
     return super.scrollTo(
       index: index,
       alignment: alignment,

@@ -172,6 +172,10 @@ if (response.success) {
 | `reader.printRange` | 0.9.99 |
 | `reader.openSearchTab` | 0.9.89 |
 | `reader.getCurrentState` | 0.9.89 |
+| `reader.getDefaultTextReader` | 0.9.98 |
+| `reader.reportTextReaderLocation` | 0.9.98 |
+| `reader.setDefaultTextReader` | 0.9.98 |
+| `reader.setTextReaderFontSize` | 0.9.98 |
 | `reader.getCurrentRef` | 0.9.89 |
 | `reader.closeTab` | 0.9.97 |
 | `reader.activateTab` | 0.9.97 |
@@ -5958,3 +5962,6 @@ if (data.created) {
 ```
 
 > **למה צריך הרשאה + אישור?** יצירת קובץ בשולחן העבודה היא פעולה שהמשתמש צריך להיות מודע לה. לכן נדרשת גם הרשאת `ui.create_shortcut` ב-manifest (נאכפת בשכבת ה-RPC לפני שהפעולה רצה) וגם אישור מפורש בזמן ריצה — שתי שכבות שמונעות מתוסף ליצור קיצורים ללא ידיעת המשתמש.
+## קורא תוספים משובץ
+
+למימוש תצוגת טקסט חלופית בתוך כרטיסיית ספר, ראו [קורא טקסט באמצעות תוסף](DEFAULT_TEXT_READER.md): בחירת משתמש, מופע לכל כרטיסייה, ניווט ושמירת מיקום, פרופיל תצוגה וחזרה לקורא המובנה.

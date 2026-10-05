@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:otzaria/plugins/view/plugin_text_reader.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:multi_split_view/multi_split_view.dart';
@@ -493,67 +494,71 @@ class _SplitedViewScreenState extends State<SplitedViewScreen> {
                   children: [
                     Listener(
                       onPointerDown: (_) => _focusMainBookNotes(),
-                      child: CombinedView(
-                        data: widget.content,
-                        textSize: state.fontSize,
-                        openBookCallback: widget.openBookCallback,
-                        openLeftPaneTab: widget.openLeftPaneTab,
-                        onSelectedTextChanged: widget.onSelectedTextChanged,
-                        selectionSyncController: _selectionSyncController,
-                        showCommentaryAsExpansionTiles: !widget.showSplitView,
+                      child: PluginTextReader(
+                        key: ValueKey(widget.tab),
                         tab: widget.tab,
-                        onOpenPersonalNotes: () {
-                          setState(() {
-                            _notesBookIdOverride = null;
-                            _notesCategoryIdOverride = null;
-                            _notesFocusLineNumber = null;
-                            _paneOpen = true;
-                            _currentTabIndex = kNotesTabIndex;
-                          });
-                        },
-                        onOpenCommentaryPersonalNote:
-                            _openCommentaryPersonalNote,
-                        onOpenCommentatorsPane: () {
-                          setState(() {
-                            _paneOpen = true;
-                          });
-                          Future.delayed(
-                            const Duration(milliseconds: 280),
-                            () {
+                        nativeReader: CombinedView(
+                          data: widget.content,
+                          textSize: state.fontSize,
+                          openBookCallback: widget.openBookCallback,
+                          openLeftPaneTab: widget.openLeftPaneTab,
+                          onSelectedTextChanged: widget.onSelectedTextChanged,
+                          selectionSyncController: _selectionSyncController,
+                          showCommentaryAsExpansionTiles: !widget.showSplitView,
+                          tab: widget.tab,
+                          onOpenPersonalNotes: () {
+                            setState(() {
+                              _notesBookIdOverride = null;
+                              _notesCategoryIdOverride = null;
+                              _notesFocusLineNumber = null;
+                              _paneOpen = true;
+                              _currentTabIndex = kNotesTabIndex;
+                            });
+                          },
+                          onOpenCommentaryPersonalNote:
+                              _openCommentaryPersonalNote,
+                          onOpenCommentatorsPane: () {
+                            setState(() {
+                              _paneOpen = true;
+                            });
+                            Future.delayed(
+                              const Duration(milliseconds: 280),
+                              () {
+                                if (!mounted) return;
+                                _closeCommentatorsFilterNotifier.value++;
+                                setState(() {
+                                  _currentTabIndex = kCommentaryTabIndex;
+                                });
+                              },
+                            );
+                          },
+                          onCommentaryPaneScrollRequested:
+                              _requestCommentaryScroll,
+                          onOpenCommentatorsPaneWithFilter: () {
+                            setState(() {
+                              _paneOpen = true;
+                              _currentTabIndex = kCommentaryTabIndex;
+                            });
+                            _openCommentatorsFilterNotifier.value++;
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
                               if (!mounted) return;
-                              _closeCommentatorsFilterNotifier.value++;
-                              setState(() {
-                                _currentTabIndex = kCommentaryTabIndex;
-                              });
-                            },
-                          );
-                        },
-                        onCommentaryPaneScrollRequested:
-                            _requestCommentaryScroll,
-                        onOpenCommentatorsPaneWithFilter: () {
-                          setState(() {
-                            _paneOpen = true;
-                            _currentTabIndex = kCommentaryTabIndex;
-                          });
-                          _openCommentatorsFilterNotifier.value++;
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (!mounted) return;
-                            _openFilterRequest.value++;
-                          });
-                        },
-                        onOpenLinksPane: () {
-                          setState(() {
-                            _paneOpen = true;
-                            _currentTabIndex = kLinksTabIndex;
-                          });
-                        },
-                        isCommentatorsTabActive: () =>
-                            _paneOpen &&
-                            _currentTabIndex == kCommentaryTabIndex,
-                        isLinksTabActive: () =>
-                            _paneOpen && _currentTabIndex == kLinksTabIndex,
-                        isPersonalNotesTabActive: () =>
-                            _paneOpen && _currentTabIndex == kNotesTabIndex,
+                              _openFilterRequest.value++;
+                            });
+                          },
+                          onOpenLinksPane: () {
+                            setState(() {
+                              _paneOpen = true;
+                              _currentTabIndex = kLinksTabIndex;
+                            });
+                          },
+                          isCommentatorsTabActive: () =>
+                              _paneOpen &&
+                              _currentTabIndex == kCommentaryTabIndex,
+                          isLinksTabActive: () =>
+                              _paneOpen && _currentTabIndex == kLinksTabIndex,
+                          isPersonalNotesTabActive: () =>
+                              _paneOpen && _currentTabIndex == kNotesTabIndex,
+                        ),
                       ),
                     ),
                     if (!_paneOpen)
