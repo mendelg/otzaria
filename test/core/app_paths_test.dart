@@ -1196,6 +1196,56 @@ void main() {
       expect(await AppPaths.getDefaultLibraryPath(), programDataBooks());
     });
 
+    Future<String> stageCustomLibrary({required bool prebuiltIndex}) async {
+      final libraryRoot = await Directory.systemTemp.createTemp(
+        'otzaria_library_',
+      );
+      addTearDown(() async {
+        if (await libraryRoot.exists()) {
+          await libraryRoot.delete(recursive: true);
+        }
+      });
+      final index = Directory(p.join(libraryRoot.path, 'index'));
+      await index.create(recursive: true);
+      if (prebuiltIndex) {
+        await File(
+          p.join(index.path, AppPaths.prebuiltIndexMarkerFileName),
+        ).writeAsString('');
+      }
+      await Settings.setValue(
+        SettingsRepository.keyLibraryPath,
+        p.join(libraryRoot.path, 'books'),
+      );
+      return index.path;
+    }
+
+    test(
+      'התקנה מערכתית — אינדקס מוכן ליד ספרייה מותאמת גובר על ProgramData',
+      () async {
+        if (!Platform.isWindows) return;
+        await stageDataRoot();
+        await stageExe(systemInstallMarker: true);
+        final adjacentIndex = await stageCustomLibrary(prebuiltIndex: true);
+
+        expect(await AppPaths.getIndexPath(), adjacentIndex);
+      },
+    );
+
+    test(
+      'התקנה מערכתית — אינדקס ליד ספרייה מותאמת בלי מסמן: ProgramData',
+      () async {
+        if (!Platform.isWindows) return;
+        await stageDataRoot();
+        await stageExe(systemInstallMarker: true);
+        await stageCustomLibrary(prebuiltIndex: false);
+
+        expect(
+          await AppPaths.getIndexPath(),
+          p.join(p.dirname(programDataBooks()), 'index'),
+        );
+      },
+    );
+
     test('התקנת משתמש — ברירת המחדל של הספרייה תחת data root', () async {
       if (!Platform.isWindows) return;
       final dataRoot = await stageDataRoot();

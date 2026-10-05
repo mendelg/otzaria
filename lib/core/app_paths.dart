@@ -383,13 +383,10 @@ class AppPaths {
   }
 
   static Future<String> _getDefaultIndexPath() async {
-    final systemWideRoot = await _getSystemWideLibraryRootIfNeeded();
-    if (systemWideRoot != null) {
-      return p.join(systemWideRoot, 'index');
-    }
     // ספרייה על כרטיס SD אינה מושכת אחריה את האינדקס (ראה androidInternalIndexPath).
     if (_isAndroid) return androidInternalIndexPath();
 
+    // המתקין פורס אינדקס מוכן ליד הספרייה גם כשהיא מחוץ ל-ProgramData.
     final libraryPath = await getLibraryPath();
     final adjacentPath = p.join(p.dirname(libraryPath), 'index');
     final prebuiltMarker = File(
@@ -397,6 +394,11 @@ class AppPaths {
     );
     if (await prebuiltMarker.exists()) {
       return adjacentPath;
+    }
+
+    final systemWideRoot = await _getSystemWideLibraryRootIfNeeded();
+    if (systemWideRoot != null) {
+      return p.join(systemWideRoot, 'index');
     }
 
     // תאימות אחורה: בעבר האינדקס תמיד נוצר תחת dataRoot (APPDATA וכדומה).
