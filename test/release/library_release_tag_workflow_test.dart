@@ -36,7 +36,7 @@ void main() {
       ('build_windows_arm64', 'build_linux'),
       ('build_linux', 'build_android'),
       ('build_android', 'build_macos'),
-      ('build_macos', 'build_windows_indexed_full'),
+      ('build_macos', 'build_windows_installer'),
     ]) {
       final body = job(name, next);
       expect(
@@ -57,7 +57,7 @@ void main() {
     for (final (name, next) in const [
       ('build_linux', 'build_android'),
       ('build_android', 'build_macos'),
-      ('build_macos', 'build_windows_indexed_full'),
+      ('build_macos', 'build_windows_installer'),
     ]) {
       expect(job(name, next), contains('SEFORIM_LIBRARY_TAG: $tagOutput'));
       expect(

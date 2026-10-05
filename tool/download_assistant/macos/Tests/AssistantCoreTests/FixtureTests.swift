@@ -77,7 +77,7 @@ final class FixtureTests: XCTestCase {
         try checkTargets(manifest, targets)
     }
 
-    /// מתקין ה-FULL הגיע ל-4 GiB ואינו רץ: "מלאה" עוברת למתקין המאונדקס וחלקי הספרייה.
+    /// מתקין ה-FULL הגיע ל-4 GiB ואינו רץ: "מלאה" עוברת למתקין הרגיל וחלקי הספרייה המאונדקסת.
     func testLargeFullVariant() throws {
         let large = try Self.load("release-manifest-large-full.json", "expected-selections-large-full.json")
         let targets = try XCTUnwrap(large.expected["targets"] as? [[String: Any]])
@@ -90,7 +90,7 @@ final class FixtureTests: XCTestCase {
         let x64 = AssistantTarget(platform: "windows", architecture: "x64")
         XCTAssertEqual(
             withDependencies(manifest, ["library-full-indexed"], x64),
-            ["otzaria-windows-full-indexed", "library-full-indexed"]
+            ["otzaria-windows-x64", "library-full-indexed"]
         )
         let library = try XCTUnwrap(manifest.components.first { $0.id == "library-full-indexed" })
         XCTAssertFalse(componentIsOffered(manifest, library, AssistantTarget(platform: "windows", architecture: "arm64")))

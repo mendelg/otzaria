@@ -47,7 +47,6 @@
       "offeredComponents": [
         "otzaria-windows-portable-x64",
         "otzaria-windows-x64",
-        "otzaria-windows-full-indexed",
         "library-full-indexed",
         "semantic-model-windows",
         "semantic-vectors-windows"
@@ -78,13 +77,13 @@
         {
           "id": "full",
           "members": [
-            "otzaria-windows-full-indexed",
+            "otzaria-windows-x64",
             "library-full-indexed",
             "semantic-model-windows",
             "semantic-vectors-windows"
           ],
           "outputFiles": [
-            "otzaria-0.10.3-windows-full-indexed.exe",
+            "otzaria-0.10.3-windows.exe",
             "otzaria-0.10.3-library-full-indexed.tar.zst.part-000",
             "otzaria-0.10.3-library-full-indexed.tar.zst.part-001",
             "otzaria-0.10.3-library-full-indexed.tar.zst.part-002",
@@ -96,7 +95,7 @@
             "semantic-import/vectors/otzaria-vectors-0c3f95be-v30-base.manifest.json"
           ],
           "outputNotes": [
-            "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
+            "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
         },

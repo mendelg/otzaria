@@ -34,7 +34,6 @@ void main() {
     writeFile('otzaria-0.9.97-windows_arm64.exe', 'installer-arm');
     writeFile('otzaria-windows.zip', 'portable');
     writeFile('otzaria-windows_arm64.zip', 'portable-arm');
-    writeFile('otzaria-0.9.97-windows-full-indexed.exe', 'full-indexed');
     if (withFullInstaller) {
       writeFile('otzaria-0.9.97-windows-full.exe', 'full');
     }
@@ -103,7 +102,6 @@ void main() {
           'otzaria-windows-portable-x64',
           'otzaria-windows-portable-arm64',
           'otzaria-windows-full',
-          'otzaria-windows-full-indexed',
           'library-full-indexed',
         ]),
       );
@@ -391,7 +389,7 @@ void main() {
             'platform': 'any',
             'installOrder': 30,
             'dependsOn': <String>[],
-            'installedBy': ['otzaria-windows-full-indexed'],
+            'installedBy': ['otzaria-windows-x64'],
             'downloadSize': 25,
             'assets': [
               {
@@ -435,7 +433,7 @@ void main() {
           .map((c) => c['id'])
           .toList();
       expect(ids, isNot(contains('otzaria-windows-full')));
-      expect(ids, contains('otzaria-windows-full-indexed'));
+      expect(ids, contains('library-full-indexed'));
       expect(jsonEncode(manifest), isNot(contains('otzaria-windows-full"')));
     });
 
@@ -445,8 +443,8 @@ void main() {
 
       final library = componentById(manifest, 'library-full-indexed');
       expect(library['type'], 'library');
-      // המתקין המאונדקס הוא היחיד שקורא את החלקים לצדו; המתקין הרגיל לא.
-      expect(library['installedBy'], ['otzaria-windows-full-indexed']);
+      // המתקין הרגיל של x64 הוא היחיד שקורא את החלקים לצדו.
+      expect(library['installedBy'], ['otzaria-windows-x64']);
       expect(library['dependsOn'], isEmpty);
       // גודל ההורדה הוא סכום החלקים, לא גודל הארכיון בלבד.
       expect(library['downloadSize'], 42);
@@ -549,7 +547,7 @@ void main() {
             'origin': 'built',
             'installOrder': 35,
             'dependsOn': const <String>[],
-            'installedBy': const ['otzaria-windows-full-indexed'],
+            'installedBy': const ['otzaria-windows-x64'],
             'downloadSize': 100,
             'assets': [
               {
@@ -575,7 +573,7 @@ void main() {
   group('who installs a library (installedBy)', () {
     test('a library whose installer was not built is left out', () {
       writeRealisticRelease();
-      File('${dir.path}/otzaria-0.9.97-windows-full-indexed.exe').deleteSync();
+      File('${dir.path}/otzaria-0.9.97-windows.exe').deleteSync();
       final manifest = build();
       expect(validateReleaseManifest(manifest), isEmpty);
       final ids = (manifest['components'] as List).map((c) => (c as Map)['id']);
@@ -979,10 +977,6 @@ void main() {
       expect(
         nameOf('otzaria-windows-full'),
         'אוצריא ל-Windows עם ספרייה מלאה',
-      );
-      expect(
-        nameOf('otzaria-windows-full-indexed'),
-        'אוצריא ל-Windows עם ספרייה מאונדקסת',
       );
     });
   });

@@ -129,10 +129,10 @@ void main() {
     expect(workflow, contains('1992294400'));
     expect(workflow, contains('split_release_asset.sh'));
     expect(workflow, contains('compression-level: 0'));
-    expect(workflow, contains('/DIndexedSplitFull=1'));
-    expect(workflow, contains('otzaria-windows-installer-full-indexed'));
-    expect(workflow, contains('התקנה לא־מקוונת בווינדוס'));
-    expect(workflow, contains('indexed_library.manifest.json'));
+    // המתקין הרגיל מטמיע את המניפסט; אין יותר מתקין מאונדקס נפרד.
+    expect(workflow, isNot(contains('IndexedSplitFull')));
+    expect(workflow, isNot(contains('windows-full-indexed')));
+    expect(workflow, contains(r'installer\indexed_library.manifest.json'));
     expect(
       workflow,
       contains(
@@ -220,17 +220,18 @@ packages:
       p.join(temp.path, 'engine', 'rust', 'src', 'api', 'search_engine.rs'),
     )..createSync(recursive: true);
     Directory(p.join(temp.path, '.dart_tool')).createSync();
-    File(p.join(temp.path, '.dart_tool', 'package_config.json'))
-        .writeAsStringSync(
-          jsonEncode({
-            'packages': [
-              {
-                'name': 'otzaria_search_engine',
-                'rootUri': 'file://${p.join(temp.path, 'engine')}',
-              },
-            ],
-          }),
-        );
+    File(
+      p.join(temp.path, '.dart_tool', 'package_config.json'),
+    ).writeAsStringSync(
+      jsonEncode({
+        'packages': [
+          {
+            'name': 'otzaria_search_engine',
+            'rootUri': 'file://${p.join(temp.path, 'engine')}',
+          },
+        ],
+      }),
+    );
     final rebuildTagFile = File(p.join(temp.path, 'rebuild-tag'));
 
     Future<ProcessResult> fetch({
@@ -244,34 +245,39 @@ packages:
         'const INDEX_FORMAT: &str = "otzaria-search-index";\n'
         'pub(crate) const INDEX_SCHEMA_VERSION: u32 = $requiredSchema;\n',
       );
-      File(p.join(dist.path, 'otzaria-library-index.provenance.json'))
-          .writeAsStringSync(
-            jsonEncode({
-              'schemaVersion': 1,
-              'libraryReleaseTag': 'v28-20260910220310',
-              'seforimDbZstSha256': databaseSha256,
-              'indexArchive': 'otzaria-library-index.tar.zst',
-              'indexArchiveSha256': await sha256Of(archive),
-              'catalogueBooks': 7,
-              'talmudBavliSha256': await sha256Of(talmud.path),
-              'talmudVolumesDigest': volumesDigest ?? talmudVolumesDigest,
-              'talmudVolumes': 3,
-              'includesPdfBooks': false,
-              'searchEngineVersion': engineVersion,
-            }),
-          );
-      return Process.run('bash', [
-        'tool/release/fetch_prebuilt_library_index.sh',
-        indexDirectory,
-        database.path,
-        talmud.path,
-        lock.path,
-      ], environment: {
-        'PREBUILT_LIBRARY_INDEX_BASE_URL': 'file://${dist.path}',
-        'PREBUILT_INDEX_REBUILD_TAG_FILE': rebuildTagFile.path,
-        // כמו קונטיינר debian:bookworm-slim של ה-job, שאין בו locale.
-        'LC_ALL': 'C',
-      });
+      File(
+        p.join(dist.path, 'otzaria-library-index.provenance.json'),
+      ).writeAsStringSync(
+        jsonEncode({
+          'schemaVersion': 1,
+          'libraryReleaseTag': 'v28-20260910220310',
+          'seforimDbZstSha256': databaseSha256,
+          'indexArchive': 'otzaria-library-index.tar.zst',
+          'indexArchiveSha256': await sha256Of(archive),
+          'catalogueBooks': 7,
+          'talmudBavliSha256': await sha256Of(talmud.path),
+          'talmudVolumesDigest': volumesDigest ?? talmudVolumesDigest,
+          'talmudVolumes': 3,
+          'includesPdfBooks': false,
+          'searchEngineVersion': engineVersion,
+        }),
+      );
+      return Process.run(
+        'bash',
+        [
+          'tool/release/fetch_prebuilt_library_index.sh',
+          indexDirectory,
+          database.path,
+          talmud.path,
+          lock.path,
+        ],
+        environment: {
+          'PREBUILT_LIBRARY_INDEX_BASE_URL': 'file://${dist.path}',
+          'PREBUILT_INDEX_REBUILD_TAG_FILE': rebuildTagFile.path,
+          // כמו קונטיינר debian:bookworm-slim של ה-job, שאין בו locale.
+          'LC_ALL': 'C',
+        },
+      );
     }
 
     final installed = p.join(temp.path, 'installed', 'index');
@@ -301,7 +307,8 @@ packages:
     expect(
       otherEngineSameSchema.exitCode,
       0,
-      reason: '${otherEngineSameSchema.stdout}\n${otherEngineSameSchema.stderr}',
+      reason:
+          '${otherEngineSameSchema.stdout}\n${otherEngineSameSchema.stderr}',
     );
 
     // סכמה אחרת: האפליקציה הייתה דוחה את האינדקס ובונה אותו מחדש אצל המשתמש.

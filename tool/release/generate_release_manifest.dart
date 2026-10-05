@@ -179,18 +179,6 @@ const List<ComponentSpec> kKnownComponents = [
     ],
   ),
   ComponentSpec(
-    id: 'otzaria-windows-full-indexed',
-    name: 'אוצריא ל-Windows עם ספרייה מאונדקסת',
-    description:
-        'מתקין קטן שמוריד בעת ההתקנה את הספרייה המלאה עם אינדקס החיפוש הבנוי מראש.',
-    type: 'application-bundle',
-    required: false,
-    platform: 'windows',
-    architecture: 'x64',
-    installOrder: 20,
-    assets: [AssetSpec(pattern: r'^otzaria-.+-windows-full-indexed\.exe$')],
-  ),
-  ComponentSpec(
     id: 'otzaria-linux-deb-x64',
     name: 'אוצריא ל-Linux (DEB)',
     description:
@@ -370,8 +358,8 @@ const List<ComponentSpec> kKnownComponents = [
     required: false,
     platform: 'any',
     installOrder: 30,
-    // רק המתקין המאונדקס קורא את החלקים לצדו; ל-ARM64 אין צרכן.
-    installedBy: ['otzaria-windows-full-indexed'],
+    // רק המתקין הרגיל של x64 קורא את החלקים לצדו; ל-ARM64 אין צרכן.
+    installedBy: ['otzaria-windows-x64'],
     compatibilityFromLibraryIndexProvenance: true,
     assets: [
       AssetSpec(

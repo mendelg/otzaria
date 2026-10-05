@@ -402,29 +402,6 @@
       ]
     },
     {
-      "id": "otzaria-windows-full-indexed",
-      "name": "אוצריא ל-Windows עם ספרייה מאונדקסת",
-      "description": "מתקין קטן שמוריד בעת ההתקנה את הספרייה המלאה עם אינדקס החיפוש הבנוי מראש.",
-      "type": "application-bundle",
-      "required": false,
-      "origin": "built",
-      "platform": "windows",
-      "architecture": "x64",
-      "installOrder": 20,
-      "dependsOn": [],
-      "downloadSize": 60,
-      "assets": [
-        {
-          "kind": "single",
-          "repository": "Otzaria/otzaria",
-          "releaseTag": "0.10.3+143",
-          "name": "otzaria-0.10.3-windows-full-indexed.exe",
-          "size": 60,
-          "sha256": "edf36ecb540ad41c7e2132309c1bc7f34ed958ec2b09028aafbf5c67f043ef24"
-        }
-      ]
-    },
-    {
       "id": "library-full-indexed",
       "name": "ספרייה מלאה עם אינדקס חיפוש",
       "description": "מסד הספרים המלא יחד עם אינדקס החיפוש הבנוי מראש, לצירוף למחשב מנותק.",
@@ -435,7 +412,7 @@
       "installOrder": 30,
       "dependsOn": [],
       "installedBy": [
-        "otzaria-windows-full-indexed"
+        "otzaria-windows-x64"
       ],
       "downloadSize": 3215,
       "assets": [
@@ -586,7 +563,7 @@
       "partOf": "semantic-vectors-windows",
       "downloadSize": 46,
       "outputFolder": "semantic-import/meivin-round2-onnx",
-      "outputNote": "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
+      "outputNote": "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
       "compatibility": {
         "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
       },
@@ -719,7 +696,7 @@
       ],
       "downloadSize": 1657,
       "outputFolder": "semantic-import/vectors",
-      "outputNote": "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
+      "outputNote": "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
       "compatibility": {
         "libraryReleaseTag": "v30-20260930165019",
         "libraryVersion": 30,

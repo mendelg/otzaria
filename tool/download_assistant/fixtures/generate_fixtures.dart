@@ -27,7 +27,6 @@ const Map<String, int> _singleFiles = {
   'otzaria-0.10.3-windows_arm64.exe': 38,
   'otzaria-windows.zip': 45,
   'otzaria-windows_arm64.zip': 44,
-  'otzaria-0.10.3-windows-full-indexed.exe': 60,
   'otzaria-0.10.3-windows_arm64-full.exe': 1990,
   'otzaria-0.10.3+143-linux.deb': 96,
   'otzaria-0.10.3+143-linux-arm64.deb': 87,

@@ -423,74 +423,220 @@ void main() {
         ),
       );
     });
+
+    // "מלאה" ב-x64 עם מתקין FULL גדול היא המתקין הרגיל + חלקים + נתוני החיפוש.
+    test('$_regular: מעתיק גם הוא, בכל ארכיטקטורה ובלי תלות בחלקים', () {
+      final script = _script(_regular);
+      final filesSection = _section(script, 'Files').replaceAll('\\\n', ' ');
+      final line = _squeeze(
+        filesSection,
+      ).split('\n').singleWhere((l) => l.contains(kSemanticImportFolderName));
+      expect(
+        line,
+        startsWith(
+          'Source: "{src}\\$kSemanticImportFolderName\\*"; '
+          'DestDir: "{code:GetSemanticImportDir}"; Flags: external '
+          'recursesubdirs createallsubdirs skipifsourcedoesntexist',
+        ),
+      );
+      final ifdef = filesSection.indexOf('#ifdef IndexedLibraryParts');
+      final endif = filesSection.indexOf('#endif', ifdef);
+      expect(
+        filesSection.indexOf(kSemanticImportFolderName),
+        greaterThan(endif),
+        reason: 'ההעתקה אינה חלק מתמיכת החלקים',
+      );
+      expect(
+        _routine(script, 'function GetSemanticImportDir('),
+        contains(
+          "ExtractFileDir(GetLibraryBooksPath()) + "
+          "'\\$kSemanticImportFolderName'",
+        ),
+      );
+    });
   });
 
-  group('מתקין FULL מאונדקס מפוצל', () {
-    test('המבנה המפוצל הוא מצב בנייה נוסף ואינו מחליף את FULL המשובץ', () {
-      final script = _script(_full);
+  group('חלקי הספרייה המאונדקסת לצד המתקין הרגיל', () {
+    test('$_regular: התמיכה נבנית רק עם המניפסט, ל-x64 בלבד', () {
+      final script = _script(_regular);
 
-      expect(script, contains('#ifdef IndexedSplitFull'));
-      expect(script, contains('windows-full-indexed'));
-      expect(script, contains('#ifndef IndexedSplitFull'));
-      expect(script, contains(r'Source: "library_db\seforim.db.zst"'));
+      expect(
+        script,
+        contains(
+          '#if AppArch == "x64" && FileExists(AddBackslash(SourcePath) + '
+          '"indexed_library.manifest.json")\n'
+          '  #define IndexedLibraryParts\n',
+        ),
+        reason: 'בנייה מקומית בלי המניפסט ומתקין ARM64 אינם מכירים את החלקים',
+      );
+      expect(
+        script,
+        contains(
+          '#define IndexedArchiveName "otzaria-" + MyAppVersion + '
+          '"-library-full-indexed.tar.zst"',
+        ),
+        reason: 'השם חייב להתאים לארכיון שה-workflow אורז ומפצל',
+      );
     });
 
-    test('מזהה manifest וחלקים תקינים לצד קובץ המתקין', () {
+    test('$_full: אין יותר מתקין מאונדקס נפרד', () {
       final script = _script(_full);
+
+      expect(script, isNot(contains('IndexedSplitFull')));
+      expect(script, isNot(contains('windows-full-indexed')));
+      expect(script, isNot(contains('CreateDownloadPage')));
+    });
+
+    test('$_regular: בלי החלק הראשון לצדו — בדיקת קובץ אחת ויציאה', () {
       final prepare = _routine(
-        script,
-        'function PrepareIndexedLibrary(): Boolean;\nvar',
+        _script(_regular),
+        'function PrepareIndexedLibrary(): Boolean;',
       );
-      final localCheck = _routine(
-        script,
-        'function LocalIndexedPartsAreComplete(',
+      final quickCheck = prepare.indexOf(
+        "'{#IndexedArchiveName}.part-000'",
       );
 
       expect(prepare, contains(r"ExpandConstant('{srcexe}')"));
+      expect(quickCheck, greaterThan(0));
       expect(
-        prepare,
-        contains("ExtractTemporaryFile('{#IndexedEmbeddedManifestName}')"),
-        reason: 'offline צריך לדרוש רק מתקין וחלקים, בלי manifest נפרד',
+        quickCheck,
+        lessThan(prepare.indexOf("ExtractTemporaryFile(")),
+        reason: 'עדכון רגיל (גם שקט) לא מחלץ קבצים ולא מריץ PowerShell',
       );
       expect(prepare, contains('LocalIndexedPartsAreComplete(SourceDir)'));
-      expect(localCheck, contains('FileExists(PartPath)'));
-      expect(prepare, contains('AssembleIndexedArchive()'));
+      expect(
+        prepare,
+        contains('AssembleIndexedArchive(ManifestPath, SourceDir)'),
+      );
+      // מתקין בשורש כונן: "E:\" היה הופך את \" למרכאה מילולית בשורת הפקודה.
+      expect(
+        _routine(_script(_regular), 'function AssembleIndexedArchive('),
+        contains("AddBackslash(PartsDir) + '.\"'"),
+      );
+      expect(
+        _script(_regular),
+        isNot(contains('CreateDownloadPage')),
+        reason: 'המתקין הרגיל אינו מוריד את החלקים בעצמו',
+      );
       expect(
         File('tool/release/assemble_split_asset.ps1').readAsStringSync(),
         contains(r'$part.sha256'),
       );
     });
 
-    test('חלקים חסרים יורדים דרך מסך ההורדה עם hash מה-manifest', () {
-      final script = _script(_full);
-      final download = _routine(script, 'function DownloadIndexedParts()');
+    test('$_regular: החלקים מוכנים לפני תחילת ההתקנה, גם בהתקנה שקטה', () {
+      final next = _routine(_script(_regular), 'function NextButtonClick(');
 
-      expect(download, contains('IndexedDownloadPage.Add('));
-      expect(download, contains('IndexedPartHashes[I]'));
-      expect(download, contains('IndexedDownloadPage.Download'));
-    });
-
-    test('הארכיון מוכן לפני תחילת ההתקנה והספרייה מוחלפת רק אחרי חילוץ', () {
-      final script = _script(_full);
-      final next = _routine(script, 'function NextButtonClick(');
-      final extract = _routine(
-        script,
-        'procedure ExtractIndexedLibraryArchive();',
-      );
-
-      expect(next, contains('(CurPageID = wpReady)'));
-      expect(next, contains('PrepareIndexedLibrary()'));
+      expect(next, contains('if CurPageID = wpReady then'));
       expect(
         next.indexOf('PrepareIndexedLibrary()'),
-        lessThan(next.indexOf('if (ModePage <> nil)')),
-        reason: 'גם התקנה שקטה חייבת להכין את החלקים לפני היציאה המוקדמת',
+        lessThan(next.indexOf('if WizardSilent then')),
+        reason: 'בהתקנה שקטה Inno "לוחץ" Next, והיציאה המוקדמת הייתה מדלגת',
       );
+    });
+
+    test('$_regular: הפריסה מחליפה ספרייה ואינדקס רק אחרי חילוץ מלא', () {
+      final script = _script(_regular);
+      final extract = _routine(
+        script,
+        'procedure ExtractIndexedLibraryArchive(',
+      );
+      final step = _routine(script, 'procedure CurStepChanged(');
+
+      expect(extract, contains(r"SourceIndex + '\.otzaria_prebuilt_index'"));
+      expect(extract, contains('RenameFile(BooksPath, BooksBackup)'));
+      expect(extract, contains('RenameFile(SourceBooks, BooksPath)'));
       expect(
         extract,
-        contains(r"SourceIndex + '\.otzaria_prebuilt_index'"),
+        isNot(contains('Abort')),
+        reason: 'Abort אינו עוצר את Setup ב-ssPostInstall — כשל מדווח וממשיכים',
       );
-      expect(extract, contains('RenameFile(SelectedBooksPath, BooksBackup)'));
-      expect(extract, contains('RenameFile(SourceBooks, SelectedBooksPath)'));
+      // אחרי [Dirs], שנותנת למשתמשים הרשאה על תיקיית הנתונים ועל index.
+      expect(
+        step.indexOf('InstallPreparedIndexedLibrary()'),
+        greaterThan(step.indexOf('if CurStep = ssPostInstall then')),
+      );
+      expect(
+        step.indexOf('InstallPreparedIndexedLibrary()'),
+        lessThan(step.indexOf('if CurStep <> ssInstall then')),
+      );
+    });
+
+    test('$_regular: הספרייה נפרסת לנתיב שהאפליקציה קוראת ממנו', () {
+      final script = _script(_regular);
+      final body = _routine(script, 'function GetLibraryBooksPath(');
+
+      expect(
+        _routine(script, 'procedure InstallPreparedIndexedLibrary('),
+        contains('ExtractIndexedLibraryArchive(GetLibraryBooksPath())'),
+      );
+      expect(body, contains(r"'\otzaria_data\books'"));
+      expect(body, contains('GetCustomLibraryPath()'));
+      expect(body, contains('IsOtzariaBooksFolder(CustomPath)'));
+      expect(body, contains(r"GetDataDir('') + '\books'"));
+    });
+
+    test('$_regular: ההשקה השקטה ממתינה לסוף הפריסה', () {
+      final script = _script(_regular);
+      final launch = _routine(
+        script,
+        'function ShouldLaunchAppAfterSilentInstall(',
+      );
+      final install = _routine(
+        script,
+        'procedure InstallPreparedIndexedLibrary(',
+      );
+
+      expect(launch, contains("(IndexedPreparedArchivePath = '')"));
+      expect(install, contains('ExecAsOriginalUser('));
+      expect(install, contains("{param:NOLAUNCH|0}"));
+    });
+
+    test('$_regular: הקבצים הזמניים ראשונים ב-[Files]', () {
+      final files = _section(_script(_regular), 'Files');
+      final app = files.indexOf(r'Source: "..\build\windows\');
+
+      for (final entry in const [
+        'Source: "indexed_library.manifest.json"; Flags: dontcopy',
+        'Source: "read_indexed_library_manifest.ps1"; Flags: dontcopy',
+        r'Source: "..\tool\release\assemble_split_asset.ps1"; Flags: dontcopy',
+        'Source: "zstd.exe"; Flags: dontcopy',
+        'Source: "7za.exe"; Flags: dontcopy',
+      ]) {
+        expect(files.indexOf(entry), inInclusiveRange(0, app), reason: entry);
+      }
+    });
+
+    test('ה-workflow בונה את המתקין הרגיל אחרי חלקי הספרייה', () {
+      final workflow = File(
+        '.github/workflows/build-and-announce.yml',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final job = workflow.substring(
+        workflow.indexOf('\n  build_windows_installer:\n'),
+        workflow.indexOf('\n  create_release:\n'),
+      );
+      final prepare = _workflowStep('Prepare regular installer inputs');
+
+      expect(
+        job,
+        contains('needs: [bump_version, build_windows, build_linux]'),
+      );
+      expect(job, contains("needs.build_windows.result == 'success'"));
+      expect(prepare, contains(r'installer\indexed_library.manifest.json'));
+      expect(
+        prepare,
+        contains(r'Remove-Item "$releaseDir\portable.marker"'),
+        reason: 'ה-ZIP נייד; marker שהיה נארז הופך כל התקנה רגילה לניידת',
+      );
+      expect(
+        _workflowStep('Build regular installer'),
+        contains(r'& "$env:ISCC" installer\otzaria.iss'),
+      );
+      expect(
+        _workflowStep('Build Inno Setup installer'),
+        isNot(contains(r'installer\otzaria.iss')),
+        reason: 'המתקין הרגיל נבנה פעם אחת, עם המניפסט',
+      );
     });
   });
 
@@ -545,17 +691,6 @@ void main() {
             'ערך stale ב-keyLibraryFolderName מפנה את האפליקציה לתת-תיקייה '
             'שאינה קיימת — והספרייה שהותקנה זה עתה "נעלמת"',
       );
-    });
-
-    test('$_full: המתקין המאונדקס שומר גם את נתיב האינדקס הצמוד', () {
-      final body = _routine(
-        _script(_full),
-        'procedure WriteLibraryPathToPrefs(',
-      );
-
-      expect(body, contains('#ifdef IndexedSplitFull'));
-      expect(body, contains("'${SettingsRepository.keyIndexPath}'"));
-      expect(body, contains("ExtractFileDir(LibraryPath) + '\\index'"));
     });
   });
 
@@ -1012,11 +1147,9 @@ void main() {
       expect(
         setup,
         contains(
-          '#ifdef IndexedSplitFull\n'
-          'OutputBaseFilename=otzaria-{#MyAppVersion}-windows-full-indexed\n'
-          '#elif AppArch == "arm64"\n',
+          '#if AppArch == "arm64"\n'
+          '; "full" בשם מונע מהעדכון שבתוך התוכנה לבחור בו כמתקין עדכון.\n',
         ),
-        reason: 'המאונדקס קודם — השם שלו אינו תלוי בארכיטקטורה',
       );
       expect(
         setup,
@@ -1053,19 +1186,6 @@ void main() {
         contains(r'Source: "..\build\windows\{#AppArch}\runner\Release\*"; \'),
       );
     });
-
-    test(
-      '$_full: המאונדקס נבנה ל-x64 בלבד — שילוב עם arm64 נכשל בקומפילציה',
-      () {
-        expect(
-          _script(_full),
-          contains(
-            '#if defined(IndexedSplitFull) && AppArch == "arm64"\n'
-            '  #error ',
-          ),
-        );
-      },
-    );
 
     test('FULL ורגיל חולקים AppId — שדרוג בין הגרסאות כמו ב-x64', () {
       String appId(String name) => RegExp(
@@ -1291,7 +1411,8 @@ void main() {
           r'download_bundled_plugins\.ps1 -Platform windows',
         ).allMatches(workflow).length,
         3,
-        reason: 'שלושת מתקיני Windows (רגיל, ARM64, indexed) חייבים סינון',
+        reason:
+            'שלושת ה-jobs של מתקיני Windows (FULL, ARM64, רגיל) חייבים סינון',
       );
       expect(workflow, contains('download_bundled_plugins.sh linux'));
       expect(workflow, contains('download_bundled_plugins.sh macos'));
@@ -1502,17 +1623,6 @@ void main() {
               'ב-OrphanLibraryService — יש לעדכן את שניהם יחד',
         );
       }
-    });
-
-    test('$_full: בדילוג לא מורידים את חבילת הספרייה המאונדקסת', () {
-      final next = _routine(_script(_full), 'function NextButtonClick(');
-      expect(
-        next,
-        contains(
-          'if not PortableSkipLibrary then\n'
-          '      Result := PrepareIndexedLibrary();',
-        ),
-      );
     });
   });
 
@@ -2328,71 +2438,6 @@ void main() {
           r"'${{ github.ref }}' '${{ github.run_number }}'",
         ),
       );
-    });
-  });
-
-  group('תג ה-release של המתקין המאונדקס', () {
-    // ‎/D‎ עם ערך במרכאות מגיע ל-ISPP עטוף בלוכסנים דרך pwsh, והכתובת
-    // שנבנית ממנו שבורה. נמדד מול ISCC אמיתי: ‎[\0.10.0+139\]‎.
-    test('$_full: התג מגיע ממשתנה סביבה, עם נפילה אחורה', () {
-      final script = _script(_full);
-      final flat = script.replaceAll(RegExp(r'\s+'), ' ');
-
-      expect(
-        flat,
-        contains(
-          '#ifndef IndexedReleaseTag '
-          '#define IndexedReleaseTag GetEnv("OTZARIA_INDEXED_RELEASE_TAG") '
-          '#endif',
-        ),
-        reason: '‎#ifndef‎ משאיר ל-‎/D‎ מפורש לנצח בבנייה מקומית',
-      );
-      expect(
-        flat,
-        contains(
-          '#if IndexedReleaseTag == "" '
-          '#define IndexedReleaseTag MyAppVersion '
-          '#endif',
-        ),
-        reason: 'בנייה בלי תג ובלי משתנה סביבה חייבת עדיין להתקמפל',
-      );
-      expect(
-        flat,
-        contains(
-          '#define IndexedReleaseBaseUrl '
-          '"https://github.com/Otzaria/otzaria/releases/download/" '
-          '+ IndexedReleaseTag',
-        ),
-      );
-    });
-
-    test('ה-workflow מעביר את התג בסביבה ולא ב-‎/D‎', () {
-      final step = _workflowStep('Build indexed FULL bootstrap installer');
-
-      expect(
-        step,
-        contains(r'$env:OTZARIA_INDEXED_RELEASE_TAG = $releaseTag'),
-      );
-      expect(
-        step,
-        contains(
-          r'$releaseTag = & ./tool/version/release_tag.ps1 $version '
-          r'$env:GITHUB_REF $env:GITHUB_RUN_NUMBER',
-        ),
-      );
-      expect(
-        step,
-        contains(
-          '& "\$env:ISCC" \'/DIndexedSplitFull=1\' installer\\otzaria_full.iss',
-        ),
-      );
-      expect(
-        step,
-        isNot(contains('/DIndexedReleaseTag')),
-        reason: 'ערך שעובר ב-‎/D‎ דרך pwsh מגיע עטוף בלוכסנים',
-      );
-      // דגל בלי ערך — לא מושפע מהעיוות ונשאר כפי שהוא.
-      expect(step, contains("'/DIndexedSplitFull=1'"));
     });
   });
 }

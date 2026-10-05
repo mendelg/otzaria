@@ -9,6 +9,8 @@ zstd-win64.zip
 
 # Ignore generated DB bundle for full installer
 library_db/
+# מניפסט חלקי הספרייה המאונדקסת שה-workflow מניח למתקין הרגיל
+indexed_library.manifest.json
 7zip_tmp/
 zstd_tmp/
 

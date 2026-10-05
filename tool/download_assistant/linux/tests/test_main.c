@@ -192,7 +192,7 @@ static void test_fixtures(void) {
 }
 
 /* The Windows FULL installer reached 4 GiB: it cannot run, so "full" falls
- * back to the indexed installer and the library parts it reads. */
+ * back to the regular installer and the indexed library parts it reads. */
 static void test_fixtures_large_full(void) {
   check_fixtures("release-manifest-large-full.json",
                  "expected-selections-large-full.json");
@@ -211,7 +211,7 @@ static void test_library_brings_its_installer(void) {
   OtzTarget x64 = {"windows", "x64", ""};
   g_autoptr(GPtrArray) closed = otz_with_dependencies(manifest, picked, &x64);
   g_assert_cmpuint(closed->len, ==, 2);
-  g_assert_cmpstr(g_ptr_array_index(closed, 0), ==, "otzaria-windows-full-indexed");
+  g_assert_cmpstr(g_ptr_array_index(closed, 0), ==, "otzaria-windows-x64");
   g_assert_cmpstr(g_ptr_array_index(closed, 1), ==, "library-full-indexed");
   OtzTarget arm64 = {"windows", "arm64", ""};
   g_assert_false(otz_component_is_offered(
