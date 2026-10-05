@@ -2125,159 +2125,230 @@ class _CollapsibleCommentaryGroupState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // כותרת הקבוצה - ניתנת ללחיצה להרחבה/כיווץ
-        InkWell(
-          onTap: () {
-            widget.onExpansionChanged(!widget.isExpanded);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 12.0,
+        _PdfCommentaryGroupHeader(
+          bookTitle: widget.group.bookTitle,
+          settingsState: widget.settingsState,
+          isExpanded: widget.isExpanded,
+          onTap: () => widget.onExpansionChanged(!widget.isExpanded),
+        ),
+        if (widget.isExpanded)
+          for (final link in widget.group.links)
+            _PdfCommentaryLinkItem(
+              link: link,
+              settingsState: widget.settingsState,
+              fontSize: widget.fontSize,
+              openBookCallback: widget.openBookCallback,
+              buildContextMenu: widget.buildContextMenu,
+              getSavedSelectedText: widget.getSavedSelectedText,
+              searchQuery: widget.searchQuery,
+              onSearchResultsCountUpdate: widget.onSearchResultsCountUpdate,
+              getKeyForLink: widget.getKeyForLink,
+              getItemSearchIndex: widget.getItemSearchIndex,
+              displayProfile: widget.displayProfile,
+              onLinkRendered: widget.onLinkRendered,
+              onLinkTitleRendered: widget.onLinkTitleRendered,
+              onLinkPointerDown: widget.onLinkPointerDown,
             ),
-            child: Row(
-              children: [
-                AnimatedRotation(
-                  turns: widget.isExpanded ? -0.25 : 0,
-                  duration: const Duration(milliseconds: 200),
-                  child: RtlIcon(
-                    FluentIcons.chevron_left_24_regular,
-                    size: 20,
+        const Divider(height: 1),
+      ],
+    );
+  }
+}
+
+/// The header of a commentator group: tapping it expands or collapses the
+/// group.
+class _PdfCommentaryGroupHeader extends StatelessWidget {
+  final String bookTitle;
+  final SettingsState settingsState;
+  final bool isExpanded;
+  final VoidCallback onTap;
+
+  const _PdfCommentaryGroupHeader({
+    required this.bookTitle,
+    required this.settingsState,
+    required this.isExpanded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16.0,
+          vertical: 12.0,
+        ),
+        child: Row(
+          children: [
+            AnimatedRotation(
+              turns: isExpanded ? -0.25 : 0,
+              duration: const Duration(milliseconds: 200),
+              child: RtlIcon(
+                FluentIcons.chevron_left_24_regular,
+                size: 20,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                settingsState.replaceHolyNames
+                    ? utils.replaceHolyNames(
+                        bookTitle,
+                        style: settingsState.holyNameStyle,
+                      )
+                    : bookTitle,
+                style: TextStyle(
+                  fontSize: settingsState.commentatorsFontSize - 2,
+                  fontWeight: FontWeight.bold,
+                  fontVariations: AppFonts.boldFontVariations(
+                    settingsState.commentatorsFontFamily,
+                  ),
+                  fontFamily: settingsState.commentatorsFontFamily,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One commentary of a group: its reference title and its content.
+class _PdfCommentaryLinkItem extends StatelessWidget {
+  final Link link;
+  final SettingsState settingsState;
+  final double fontSize;
+  final Function(OpenedTab) openBookCallback;
+  final List<AppContextMenuEntry> Function(BuildContext, Link) buildContextMenu;
+  final String? Function() getSavedSelectedText;
+  final String searchQuery;
+  final Function(Link, int)? onSearchResultsCountUpdate;
+  final Key? Function(Link)? getKeyForLink;
+  final int Function(Link)? getItemSearchIndex;
+  final TextDisplayProfile displayProfile;
+  final void Function(Link link, String renderedPlainText)? onLinkRendered;
+  final void Function(Link link, String renderedTitle)? onLinkTitleRendered;
+  final void Function(Link link)? onLinkPointerDown;
+
+  const _PdfCommentaryLinkItem({
+    required this.link,
+    required this.settingsState,
+    required this.fontSize,
+    required this.openBookCallback,
+    required this.buildContextMenu,
+    required this.getSavedSelectedText,
+    required this.searchQuery,
+    this.onSearchResultsCountUpdate,
+    this.getKeyForLink,
+    this.getItemSearchIndex,
+    this.displayProfile = TextDisplayProfile.defaults,
+    this.onLinkRendered,
+    this.onLinkTitleRendered,
+    this.onLinkPointerDown,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      // מזהה על איזה מפרש לחץ המשתמש — ל-SelectionArea היחיד אין מידע
+      // כזה, והוא נדרש לייחוס כותרת המקור בהעתקת מקלדת.
+      onPointerDown: (_) => onLinkPointerDown?.call(link),
+      child: Padding(
+        key: getKeyForLink?.call(
+          link,
+        ), // Attach the key here for scrolling
+        padding: const EdgeInsets.only(
+          right: 32.0,
+          left: 16.0,
+          top: 8.0,
+          bottom: 8.0,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FutureBuilder<String>(
+              future: link.displayReference,
+              builder: (context, snapshot) {
+                var displayTitle =
+                    snapshot.data ?? link.fallbackDisplayReference;
+                // קישור עם עוגן-מילה: אות הסימון שמופיעה בגוף הטקסט
+                // מוצגת גם לפני כותרת ההערה.
+                if (link.anchorStart != null) {
+                  final markerText = anchorMarkerText(link);
+                  if (markerText != null) {
+                    displayTitle = '$markerText $displayTitle';
+                  }
+                }
+                if (settingsState.replaceHolyNames) {
+                  displayTitle = utils.replaceHolyNames(
+                    displayTitle,
+                    style: settingsState.holyNameStyle,
+                  );
+                }
+                final reportedTitle = displayTitle;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  onLinkTitleRendered?.call(link, reportedTitle);
+                });
+                return Text(
+                  displayTitle,
+                  style: TextStyle(
+                    fontSize: settingsState.commentatorsFontSize - 4,
+                    fontWeight: FontWeight.normal,
+                    fontFamily: settingsState.commentatorsFontFamily,
                     color: Theme.of(
                       context,
                     ).colorScheme.onSurfaceVariant,
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    widget.settingsState.replaceHolyNames
-                        ? utils.replaceHolyNames(
-                            widget.group.bookTitle,
-                            style: widget.settingsState.holyNameStyle,
-                          )
-                        : widget.group.bookTitle,
-                    style: TextStyle(
-                      fontSize: widget.settingsState.commentatorsFontSize - 2,
-                      fontWeight: FontWeight.bold,
-                      fontVariations: AppFonts.boldFontVariations(
-                        widget.settingsState.commentatorsFontFamily,
-                      ),
-                      fontFamily: widget.settingsState.commentatorsFontFamily,
-                    ),
-                  ),
-                ),
-              ],
+                );
+              },
             ),
-          ),
-        ),
-        // תוכן המפרשים - מוצג רק כשמורחב
-        if (widget.isExpanded)
-          ...widget.group.links.map((link) {
-            return Listener(
-              // מזהה על איזה מפרש לחץ המשתמש — ל-SelectionArea היחיד אין מידע
-              // כזה, והוא נדרש לייחוס כותרת המקור בהעתקת מקלדת.
-              onPointerDown: (_) => widget.onLinkPointerDown?.call(link),
-              child: Padding(
-                key: widget.getKeyForLink?.call(
-                  link,
-                ), // Attach the key here for scrolling
-                padding: const EdgeInsets.only(
-                  right: 32.0,
-                  left: 16.0,
-                  top: 8.0,
-                  bottom: 8.0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FutureBuilder<String>(
-                      future: link.displayReference,
-                      builder: (context, snapshot) {
-                        var displayTitle =
-                            snapshot.data ?? link.fallbackDisplayReference;
-                        // קישור עם עוגן-מילה: אות הסימון שמופיעה בגוף הטקסט
-                        // מוצגת גם לפני כותרת ההערה.
-                        if (link.anchorStart != null) {
-                          final markerText = anchorMarkerText(link);
-                          if (markerText != null) {
-                            displayTitle = '$markerText $displayTitle';
-                          }
-                        }
-                        if (widget.settingsState.replaceHolyNames) {
-                          displayTitle = utils.replaceHolyNames(
-                            displayTitle,
-                            style: widget.settingsState.holyNameStyle,
-                          );
-                        }
-                        final reportedTitle = displayTitle;
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          widget.onLinkTitleRendered?.call(link, reportedTitle);
-                        });
-                        return Text(
-                          displayTitle,
-                          style: TextStyle(
-                            fontSize:
-                                widget.settingsState.commentatorsFontSize - 4,
-                            fontWeight: FontWeight.normal,
-                            fontFamily:
-                                widget.settingsState.commentatorsFontFamily,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    AppContextMenuRegion(
-                      // ריחוף מקדים את טעינת קישורי קטע היעד, כדי שהתפריט
-                      // ייבנה עם נתונים מוכנים. הלחיצה מכסה מגע/עט (אין ריחוף).
-                      onHoverEnter: () =>
-                          TargetLineLinksService.instance.prefetchOnHover(link),
-                      onSecondaryTapDown: (_) =>
-                          TargetLineLinksService.instance.prefetch(link),
-                      // לחיצה ימנית על הטקסט המסומן בפועל לא תשחרר את הבחירה
-                      // (התנהגות ברירת המחדל של SelectableRegion ב-Windows); לחיצה
-                      // על חלק לא-מסומן מבטלת כרגיל. הבחירה מנוהלת ע"י SelectionArea
-                      // יחיד, לכן מחשבים את קטע הבחירה ישירות מול הפסקה שעליה לחצו.
-                      shouldPreserveSelectionOnSecondaryTap: (globalPosition) {
-                        final selected = widget.getSavedSelectedText();
-                        if (selected == null || selected.isEmpty) return false;
-                        final root = context.findRenderObject();
-                        if (root == null) return true; // סלחני
-                        return clickIsOnSelectionWithinArea(
-                              root: root,
-                              globalPosition: globalPosition,
-                              selectedText: selected,
-                            ) ??
-                            true; // לא הוכרע — סלחני
-                      },
-                      menuBuilder: (menuCtx, _) =>
-                          widget.buildContextMenu(menuCtx, link),
-                      child: CommentaryContent(
-                        key: ValueKey(pdfCommentaryItemKey(link)),
-                        link: link,
-                        fontSize: widget.fontSize,
-                        openBookCallback: widget.openBookCallback,
-                        searchQuery: widget.searchQuery,
-                        onSearchResultsCountChanged: (count) {
-                          widget.onSearchResultsCountUpdate?.call(link, count);
-                        },
-                        currentSearchIndex:
-                            widget.getItemSearchIndex?.call(link) ?? -1,
-                        displayProfile: widget.displayProfile,
-                        onRendered: (text) =>
-                            widget.onLinkRendered?.call(link, text),
-                      ),
-                    ),
-                  ],
-                ),
+            const SizedBox(height: 4),
+            AppContextMenuRegion(
+              // ריחוף מקדים את טעינת קישורי קטע היעד, כדי שהתפריט
+              // ייבנה עם נתונים מוכנים. הלחיצה מכסה מגע/עט (אין ריחוף).
+              onHoverEnter: () =>
+                  TargetLineLinksService.instance.prefetchOnHover(link),
+              onSecondaryTapDown: (_) =>
+                  TargetLineLinksService.instance.prefetch(link),
+              // לחיצה ימנית על הטקסט המסומן בפועל לא תשחרר את הבחירה
+              // (התנהגות ברירת המחדל של SelectableRegion ב-Windows); לחיצה
+              // על חלק לא-מסומן מבטלת כרגיל. הבחירה מנוהלת ע"י SelectionArea
+              // יחיד, לכן מחשבים את קטע הבחירה ישירות מול הפסקה שעליה לחצו.
+              shouldPreserveSelectionOnSecondaryTap: (globalPosition) {
+                final selected = getSavedSelectedText();
+                if (selected == null || selected.isEmpty) return false;
+                final root = context.findRenderObject();
+                if (root == null) return true; // סלחני
+                return clickIsOnSelectionWithinArea(
+                      root: root,
+                      globalPosition: globalPosition,
+                      selectedText: selected,
+                    ) ??
+                    true; // לא הוכרע — סלחני
+              },
+              menuBuilder: (menuCtx, _) => buildContextMenu(menuCtx, link),
+              child: CommentaryContent(
+                key: ValueKey(pdfCommentaryItemKey(link)),
+                link: link,
+                fontSize: fontSize,
+                openBookCallback: openBookCallback,
+                searchQuery: searchQuery,
+                onSearchResultsCountChanged: (count) {
+                  onSearchResultsCountUpdate?.call(link, count);
+                },
+                currentSearchIndex: getItemSearchIndex?.call(link) ?? -1,
+                displayProfile: displayProfile,
+                onRendered: (text) => onLinkRendered?.call(link, text),
               ),
-            );
-          }),
-        const Divider(height: 1),
-      ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
