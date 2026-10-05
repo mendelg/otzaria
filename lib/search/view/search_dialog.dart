@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/core/messages/library_messages.dart';
+import 'package:otzaria/core/messages/semantic_search_messages.dart';
 import 'package:otzaria/history/bloc/history_bloc.dart';
 import 'package:otzaria/history/bloc/history_event.dart';
 import 'package:otzaria/history/bloc/history_state.dart';
@@ -1082,6 +1083,17 @@ class _SearchDialogState extends State<SearchDialog> {
       UiSnack.show(LibraryMessages.emptySearchQuery);
       return;
     }
+    final isOfficialCategory = officialCategoryFilter(library);
+    if (parsedCategory.categoryFound &&
+        !parsedCategory.facets!.toSet().every(
+          (facet) => isSemanticScopeFacetSupported(
+            facet,
+            isOfficialCategory: isOfficialCategory,
+          ),
+        )) {
+      UiSnack.showError(SemanticSearchMessages.unsupportedScope);
+      return;
+    }
     _semanticSubmitted = true;
     _existingTabHandedOff = true;
     _sessionPrefersSemantic = true;
@@ -1094,7 +1106,9 @@ class _SearchDialogState extends State<SearchDialog> {
                 ...FacetHelper.dimensionFacetsOf(_scopeSelection),
               ]
             : _scopeSelection,
-        isOfficialCategory: officialCategoryFilter(library),
+        isOfficialCategory: parsedCategory.categoryFound
+            ? null
+            : isOfficialCategory,
       ),
       includeLexical: _semanticIncludeLexical,
       groupIdenticalText: _semanticGroupIdentical,
