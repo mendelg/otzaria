@@ -3384,9 +3384,21 @@ extension BookAcronymRepository on SeforimRepository {
       entryParentIds[e.id] = e.parentId;
     }
 
+    // h1 יחיד בשורה 0 שחולק מילה עם שם הספר הוא כותרת הספר בפורמט אוצריא;
+    // כמו רמה 0, אינו חלק מהכתובת.
+    List<String> words(String s) => normalizeForFindRefMatch(s).split(' ');
+    final titleWords = words(bookTitle).where((w) => w.length > 2).toSet();
+    final h1s = tocEntries.where((e) => e.level == 1 && e.parentId == null);
+    final titleHeadingId =
+        h1s.length == 1 &&
+            h1s.single.lineIndex == 0 &&
+            words(h1s.single.text).any(titleWords.contains)
+        ? h1s.single.id
+        : null;
+
     final pathById = <int, String>{};
     String buildPath(int? id) {
-      if (id == null) return bookTitle;
+      if (id == null || id == titleHeadingId) return bookTitle;
       final lvl = entryLevels[id];
       if (lvl == null || lvl == 0) return bookTitle;
       return pathById[id] ??=
@@ -3409,7 +3421,7 @@ extension BookAcronymRepository on SeforimRepository {
       final parentId = e.parentId;
 
       final ancestorPath = buildPath(parentId);
-      final fullRef = text.isNotEmpty ? '$ancestorPath $text' : ancestorPath;
+      final fullRef = text.isEmpty ? ancestorPath : buildPath(id);
 
       // `tocText` ייחודי, וכותרת חוזרת ("פרק א") מופיעה באלפי ערכים באותו
       // ספר — 30 אלף ערכים חולקים כ-1,000 טקסטים. בלי המטמון אותה מחרוזת
