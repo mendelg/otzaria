@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:otzaria/book_common/view/parallel_editions_action.dart';
 import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'package:otzaria/book_common/utils/commentators_menu.dart';
 
@@ -5356,47 +5357,15 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     }
   }
 
-  ActionButtonData _buildParallelEditionsAction(BuildContext context) {
-    final compact = context.read<SettingsBloc>().state.compactMenuMode;
-    final primary = _parallelEditions.first;
-    final tooltip = primary.isCompanion
-        ? 'פתח בתצוגת טקסט'
-        : 'פתח מהדורה מקבילה';
-    if (_parallelEditions.length == 1) {
-      return ActionButtonData(
-        widget: BarButton.icon(
-          tooltip: tooltip,
-          icon: OtzariaIcons.document_column_24_regular,
-          compact: compact,
-          onPressed: () => _openParallelEdition(context, primary),
-        ),
-        icon: OtzariaIcons.document_column_24_regular,
-        tooltip: tooltip,
-        actionId: ToolbarActionId.parallelEdition,
-        onPressed: () => _openParallelEdition(context, primary),
+  ActionButtonData _buildParallelEditionsAction(BuildContext context) =>
+      buildParallelEditionsAction(
+        editions: _parallelEditions,
+        compact: context.read<SettingsBloc>().state.compactMenuMode,
+        companionIcon: OtzariaIcons.document_column_24_regular,
+        companionTooltip: 'פתח בתצוגת טקסט',
+        companionMenuSuffix: 'מהדורת טקסט (אוצריא)',
+        onOpen: (edition) => _openParallelEdition(context, edition),
       );
-    }
-    return ActionButtonData.split(
-      icon: OtzariaIcons.document_column_24_regular,
-      tooltip: tooltip,
-      compact: compact,
-      actionId: ToolbarActionId.parallelEdition,
-      onPressed: () => _openParallelEdition(context, primary),
-      menuItems: [
-        for (final edition in _parallelEditions)
-          ActionButtonData(
-            widget: const SizedBox.shrink(),
-            icon: edition.isCompanion
-                ? OtzariaIcons.document_column_24_regular
-                : OtzariaIcons.book_24_regular,
-            tooltip: edition.isCompanion
-                ? '${edition.book.title} — מהדורת טקסט (אוצריא)'
-                : edition.label ?? edition.book.title,
-            onPressed: () => _openParallelEdition(context, edition),
-          ),
-      ],
-    );
-  }
 
   void _openParallelEdition(BuildContext context, ParallelEdition edition) {
     // המהדורה המובנית עוברת המרת עמוד (עמוד PDF → שורת טקסט); מהדורת

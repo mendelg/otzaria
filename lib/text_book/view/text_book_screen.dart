@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:otzaria/book_common/view/parallel_editions_action.dart';
 import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'dart:math';
 import 'dart:async';
@@ -2609,47 +2610,14 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
   ActionButtonData _buildParallelEditionsAction(
     BuildContext context,
     TextBookLoaded state,
-  ) {
-    final compact = context.read<SettingsBloc>().state.compactMenuMode;
-    final primary = _parallelEditions.first;
-    final tooltip = primary.isCompanion
-        ? 'פתח בתצוגת PDF'
-        : 'פתח מהדורה מקבילה';
-    if (_parallelEditions.length == 1) {
-      return ActionButtonData(
-        widget: BarButton.icon(
-          tooltip: tooltip,
-          icon: FluentIcons.document_pdf_24_regular,
-          compact: compact,
-          onPressed: () => _openParallelEdition(context, state, primary),
-        ),
-        icon: FluentIcons.document_pdf_24_regular,
-        tooltip: tooltip,
-        actionId: ToolbarActionId.parallelEdition,
-        onPressed: () => _openParallelEdition(context, state, primary),
-      );
-    }
-    return ActionButtonData.split(
-      icon: FluentIcons.document_pdf_24_regular,
-      tooltip: tooltip,
-      compact: compact,
-      actionId: ToolbarActionId.parallelEdition,
-      onPressed: () => _openParallelEdition(context, state, primary),
-      menuItems: [
-        for (final edition in _parallelEditions)
-          ActionButtonData(
-            widget: const SizedBox.shrink(),
-            icon: edition.isCompanion
-                ? FluentIcons.document_pdf_24_regular
-                : OtzariaIcons.book_24_regular,
-            tooltip: edition.isCompanion
-                ? '${edition.book.title} — מהדורה מודפסת (אוצריא)'
-                : edition.label ?? edition.book.title,
-            onPressed: () => _openParallelEdition(context, state, edition),
-          ),
-      ],
-    );
-  }
+  ) => buildParallelEditionsAction(
+    editions: _parallelEditions,
+    compact: context.read<SettingsBloc>().state.compactMenuMode,
+    companionIcon: FluentIcons.document_pdf_24_regular,
+    companionTooltip: 'פתח בתצוגת PDF',
+    companionMenuSuffix: 'מהדורה מודפסת (אוצריא)',
+    onOpen: (edition) => _openParallelEdition(context, state, edition),
+  );
 
   void _openParallelEdition(
     BuildContext context,
