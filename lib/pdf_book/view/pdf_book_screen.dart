@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:otzaria/bookmarks/view/book_bookmarks_action.dart';
 import 'package:otzaria/book_common/view/parallel_editions_action.dart';
 import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'package:otzaria/book_common/utils/commentators_menu.dart';
@@ -20,7 +21,6 @@ import 'package:otzaria/widgets/misc/app_selection_area.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
 import 'package:otzaria/bookmarks/bloc/bookmark_bloc.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/core/messages/notes_messages.dart';
 import 'package:otzaria/core/messages/pdf_messages.dart';
 import 'package:otzaria/core/ui_snack.dart';
@@ -5140,17 +5140,13 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       // הצגת סימניות הספר (הוספת סימניה עברה לתפריט ההקשר בעמוד)
       (
         30,
-        ActionButtonData(
-          widget: BarButton.icon(
-            key: widget.enableTourTargets ? pdfBookBookmarkTourTargetKey : null,
-            tooltip: 'סימניות בספר זה',
-            icon: FluentIcons.bookmark_multiple_24_regular,
-            compact: isCompact,
-            onPressed: () => _showBookmarksForCurrentBook(context),
-          ),
-          icon: FluentIcons.bookmark_multiple_24_regular,
-          tooltip: 'סימניות בספר זה',
-          onPressed: () => _showBookmarksForCurrentBook(context),
+        buildBookBookmarksAction(
+          context,
+          book: widget.tab.book,
+          compact: isCompact,
+          tourKey: widget.enableTourTargets
+              ? pdfBookBookmarkTourTargetKey
+              : null,
         ),
       ),
       if (!widget.isInCombinedView &&
@@ -5416,13 +5412,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
       '',
       ignoreHistory: true,
       insertAdjacent: true,
-    );
-  }
-
-  void _showBookmarksForCurrentBook(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: widget.tab.book),
     );
   }
 

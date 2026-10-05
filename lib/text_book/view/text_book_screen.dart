@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:otzaria/bookmarks/view/book_bookmarks_action.dart';
 import 'package:otzaria/book_common/view/parallel_editions_action.dart';
 import 'package:otzaria/plugins/utils/reader_plugin_toolbar_actions.dart';
 import 'dart:math';
@@ -22,7 +23,6 @@ import 'package:otzaria/tour/models/live_tip.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/bookmarks/utils/section_bookmark.dart';
-import 'package:otzaria/bookmarks/view/bookmark_screen.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/settings/settings_exports.dart' hide UpdateFontSize;
 import 'package:otzaria/tabs/models/text_tab.dart';
@@ -1845,22 +1845,13 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
       // הצגת סימניות הספר הנוכחי (הוספת סימניה עברה לתפריט ההקשר בטקסט)
       (
         10,
-        ActionButtonData(
-          widget: KeyedSubtree(
-            key: widget.enableTourTargets
-                ? textBookBookmarkTourTargetKey
-                : null,
-            child: BarButton.icon(
-              tooltip: 'סימניות בספר זה',
-              icon: FluentIcons.bookmark_multiple_24_regular,
-              compact: context.read<SettingsBloc>().state.compactMenuMode,
-              onPressed: () =>
-                  _showBookmarksForCurrentBook(context, state.book),
-            ),
-          ),
-          icon: FluentIcons.bookmark_multiple_24_regular,
-          tooltip: 'סימניות בספר זה',
-          onPressed: () => _showBookmarksForCurrentBook(context, state.book),
+        buildBookBookmarksAction(
+          context,
+          book: state.book,
+          compact: context.read<SettingsBloc>().state.compactMenuMode,
+          tourKey: widget.enableTourTargets
+              ? textBookBookmarkTourTargetKey
+              : null,
         ),
       ),
 
@@ -2220,13 +2211,6 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
           : FluentIcons.text_align_justify_24_regular,
       compact: isCompact,
       onPressed: () => _toggleAndSaveContinuousReading(context, state),
-    );
-  }
-
-  void _showBookmarksForCurrentBook(BuildContext context, Book book) {
-    showDialog(
-      context: context,
-      builder: (_) => BookmarksDialog(bookFilter: book),
     );
   }
 
