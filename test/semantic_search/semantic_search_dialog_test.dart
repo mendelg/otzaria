@@ -88,6 +88,12 @@ class _FakeRepository extends SemanticSearchRepository {
   @override
   Future<SemanticAvailability> refresh() async => current;
 
+  /// הבדיקה הראשונה הסתיימה: המאגר משדר מצב חדש.
+  void emit(SemanticAvailability next) {
+    current = next;
+    _controller.add(next);
+  }
+
   @override
   Future<void> enableAndDownload() async => downloads++;
 
@@ -950,6 +956,66 @@ void main() {
     expect(tab.options.includeLexical, isFalse);
     expect(tab.options.groupIdenticalText, isFalse);
   });
+  // הסשן זוכר מצב חכם מהשליחות שלמעלה; עריכה נפתחת במצב של הכרטיסייה.
+  testWidgets('עריכת חיפוש רגיל מציעה את המצב החכם, ושליחה בו פותחת '
+      'כרטיסייה חכמה חדשה', (tester) async {
+    final edited = SearchingTab('חיפוש', 'צדקה');
+    addTearDown(edited.dispose);
+    final harness = await pumpDialog(
+      tester,
+      _availability(SemanticAvailabilityPhase.ready),
+      initialMode: null,
+      editTab: edited,
+    );
+    expect(_queryField, findsNothing);
+    expect(_semanticSegment, findsOneWidget);
+    await tester.tap(_semanticSegment);
+    await tester.pumpAndSettle();
+    await tester.enterText(_queryField, 'חסד');
+    await tester.tap(find.byKey(const ValueKey('search-dialog-submit')));
+    await tester.pumpAndSettle();
+
+    final added = verify(
+      () => harness.tabs.add(captureAny()),
+    ).captured.whereType<AddTab>().single;
+    final tab = added.tab as SemanticSearchTab;
+    addTearDown(tab.dispose);
+    expect(tab.options.query, 'חסד');
+    expect(edited.queryController.text, 'צדקה');
+  });
+
+  testWidgets('עריכת חיפוש חכם לפני שהזמינות נבדקה נשארת חכמה', (
+    tester,
+  ) async {
+    final tab = SemanticSearchTab(
+      options: const SemanticQueryOptions(query: 'צדקה'),
+      createResultsBloc: (_) =>
+          buildResultsBloc(source: null, recorder: RecordingRecorder()),
+    );
+    addTearDown(tab.dispose);
+    final harness = await pumpDialog(
+      tester,
+      SemanticAvailability.initial,
+      editTab: tab,
+    );
+    expect(_semanticSegment, findsOneWidget);
+    expect(submitButton(tester).onPressed, isNull);
+    await tester.tap(
+      find.byKey(const ValueKey('search-dialog-submit')),
+      warnIfMissed: false,
+    );
+    await tester.pumpAndSettle();
+    verifyNever(() => harness.tabs.add(any()));
+
+    harness.repository.emit(_availability(SemanticAvailabilityPhase.ready));
+    await tester.pumpAndSettle();
+    await tester.enterText(_queryField, 'חסד');
+    await tester.tap(find.byKey(const ValueKey('search-dialog-submit')));
+    await tester.pumpAndSettle();
+    verifyNever(() => harness.tabs.add(any()));
+    expect(tab.options.query, 'חסד');
+  });
+
   testWidgets('גם בדיבאג פלטפורמה לא נתמכת אינה מציגה מצב או הסכמה', (
     tester,
   ) async {
