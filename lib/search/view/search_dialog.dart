@@ -1066,7 +1066,18 @@ class _SearchDialogState extends State<SearchDialog> {
         )) {
       return;
     }
-    final query = _searchTab.queryController.text;
+    final library = context.read<LibraryBloc>().state.library;
+    final parsedCategory = parseCategoryQuery(
+      _searchTab.queryController.text,
+      library,
+    );
+    if (parsedCategory.hasCategoryToken && !parsedCategory.categoryFound) {
+      UiSnack.showError(
+        LibraryMessages.categoryOrBookNotFound(parsedCategory.notFoundNames),
+      );
+      return;
+    }
+    final query = parsedCategory.query;
     if (query.trim().isEmpty) {
       UiSnack.show(LibraryMessages.emptySearchQuery);
       return;
@@ -1077,10 +1088,13 @@ class _SearchDialogState extends State<SearchDialog> {
     final options = SemanticQueryOptions(
       query: query,
       facets: semanticScopeFacets(
-        _scopeSelection,
-        isOfficialCategory: officialCategoryFilter(
-          context.read<LibraryBloc>().state.library,
-        ),
+        parsedCategory.categoryFound
+            ? [
+                ...parsedCategory.facets!,
+                ...FacetHelper.dimensionFacetsOf(_scopeSelection),
+              ]
+            : _scopeSelection,
+        isOfficialCategory: officialCategoryFilter(library),
       ),
       includeLexical: _semanticIncludeLexical,
       groupIdenticalText: _semanticGroupIdentical,
