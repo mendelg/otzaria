@@ -286,6 +286,14 @@ export interface BookIdentity {
   external?: { provider: 'hebrewbooks' | 'otzar'; id: number | string };
 }
 
+/** Initial print range; the user can change the range and commentators in the dialog. */
+export interface ReaderPrintRangeArgs extends BookIdentity {
+  startIndex: number;
+  endIndex?: number;
+  /** Omitted: active reader selection for this book, otherwise linked commentators. []: none. */
+  commentators?: string[];
+}
+
 /** One book in `library.setProviderBooks`. */
 export interface ProviderBook {
   /** Positive integer, unique within the provider. */
@@ -2081,6 +2089,12 @@ export interface OtzariaGlobal {
     method: 'network.fetchStream',
     payload: NetworkFetchParams
   ): AsyncIterable<NetworkFetchStreamChunk>;
+
+  /** Waits for the print dialog to finish, without the generic 30-second RPC timeout. */
+  call(
+    method: 'reader.printRange',
+    payload: ReaderPrintRangeArgs
+  ): Promise<OtzariaResponse<{ printed: boolean }>>;
 
   /** פותח כרטיסיית חיפוש מובנית עם השאילתה וההגדרות. */
   call(

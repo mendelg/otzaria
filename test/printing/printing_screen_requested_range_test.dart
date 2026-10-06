@@ -72,7 +72,12 @@ void main() {
         .setMockMethodCallHandler(pathProviderChannel, null);
   });
 
-  Future<void> pumpScreen(WidgetTester tester, {int? endLine}) async {
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    int? endLine,
+    List<String>? availableCommentators,
+    List<String> activeCommentators = const [],
+  }) async {
     tester.view.physicalSize = const Size(1600, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -100,6 +105,8 @@ void main() {
               startLine: 1,
               endLine: endLine,
               tableOfContents: _toc,
+              availableCommentators: availableCommentators,
+              activeCommentators: activeCommentators,
             ),
           ),
         ),
@@ -132,6 +139,46 @@ void main() {
 
     // פרק א בלבד (שורות 1–6)
     expect(find.text('6 שורות נבחרו מתוך 20'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  }, skip: skip != null);
+  testWidgets(
+    'SDK commentator picker changes selection and survives include toggle',
+    (tester) async {
+      await pumpScreen(
+        tester,
+        availableCommentators: ['רש"י', 'אבן עזרא'],
+        activeCommentators: ['רש"י'],
+      );
+      await tester.ensureVisible(find.text('כלול מפרשים'));
+      await tester.tap(find.text('כלול מפרשים'));
+      await tester.pump();
+      final chips = find.byType(FilterChip);
+      expect(chips, findsNWidgets(2));
+      expect(tester.widget<FilterChip>(chips.at(0)).selected, isTrue);
+      expect(tester.widget<FilterChip>(chips.at(1)).selected, isFalse);
+      await tester.ensureVisible(find.text('אבן עזרא'));
+      await tester.tap(find.text('אבן עזרא'));
+      await tester.pump();
+      expect(tester.widget<FilterChip>(chips.at(1)).selected, isTrue);
+      await tester.ensureVisible(find.text('כלול מפרשים'));
+      await tester.tap(find.text('כלול מפרשים'));
+      await tester.pump();
+      expect(chips, findsNothing);
+      await tester.tap(find.text('כלול מפרשים'));
+      await tester.pump();
+      expect(tester.widget<FilterChip>(chips.at(1)).selected, isTrue);
+      await tester.pumpWidget(const SizedBox());
+    },
+    skip: skip != null,
+  );
+  testWidgets('SDK with no linked commentators has no selectable chips', (
+    tester,
+  ) async {
+    await pumpScreen(tester, availableCommentators: []);
+    await tester.ensureVisible(find.text('כלול מפרשים'));
+    await tester.tap(find.text('כלול מפרשים'));
+    await tester.pump();
+    expect(find.byType(FilterChip), findsNothing);
     await tester.pumpWidget(const SizedBox());
   }, skip: skip != null);
 }

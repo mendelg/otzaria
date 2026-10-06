@@ -1,7 +1,13 @@
+import 'dart:async';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:otzaria/data/repository/data_repository.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
+import 'package:otzaria/tabs/bloc/tabs_state.dart';
+import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/text_book/bloc/text_book_state.dart';
+import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/history/bloc/history_bloc.dart';
 import 'package:otzaria/library/models/library.dart';
 import 'package:otzaria/models/books.dart';
@@ -21,7 +27,28 @@ import '../../test_helpers/memory_cache_provider.dart';
 
 class _MockHistoryBloc extends Mock implements HistoryBloc {}
 
-class _MockTabsBloc extends Mock implements TabsBloc {}
+class _MockTabsBloc extends Mock implements TabsBloc {
+  TabsState current = TabsState.initial();
+  @override
+  TabsState get state => current;
+}
+
+class _PrintRepository extends Mock implements TextBookRepository {
+  List<String> available = ['רש"י', 'אבן עזרא'];
+  Object? error;
+  Completer<List<String>>? pending;
+  int lookups = 0;
+  @override
+  Future<List<String>> getAvailableCommentators(TextBook book) async {
+    lookups++;
+    if (error != null) throw error!;
+    return pending?.future ?? available;
+  }
+
+  @override
+  Future<String> getBookContent(TextBook book) async =>
+      'content:${book.source.wireKey}';
+}
 
 class _MockNavigationBloc extends Mock implements NavigationBloc {}
 
@@ -79,6 +106,10 @@ void main() {
   late bool printResult;
   late bool userActivated;
   late PluginBridgeAdapter adapter;
+  late _MockTabsBloc tabsBloc;
+  late _PrintRepository repository;
+  late List<String> selected;
+  late List<String> available;
 
   void installLibrary(List<Book> books) {
     final category = Category(
@@ -101,6 +132,10 @@ void main() {
 
   setUp(() {
     shown = [];
+    tabsBloc = _MockTabsBloc();
+    repository = _PrintRepository();
+    selected = [];
+    available = [];
     printResult = true;
     userActivated = true;
     installLibrary([
@@ -112,7 +147,7 @@ void main() {
       instanceId: 'tab-1',
       dependencies: PluginBridgeDependencies(
         historyBloc: _MockHistoryBloc(),
-        tabsBloc: _MockTabsBloc(),
+        tabsBloc: tabsBloc,
         navigationBloc: _MockNavigationBloc(),
         calendarCubit: _MockCalendarCubit(),
         workspaceBloc: _MockWorkspaceBloc(),
@@ -125,10 +160,20 @@ void main() {
             ({required title, required content, required subtitle}) async =>
                 true,
         hasUserActivation: (pluginId, instanceId) async => userActivated,
-        printBookRange: (book, {required startLine, endLine}) async {
-          shown.add((book: book, startLine: startLine, endLine: endLine));
-          return printResult;
-        },
+        textBookRepository: repository,
+        printBookRange:
+            (
+              book, {
+              required startLine,
+              endLine,
+              required activeCommentators,
+              required availableCommentators,
+            }) async {
+              selected = List.of(activeCommentators);
+              available = List.of(availableCommentators);
+              shown.add((book: book, startLine: startLine, endLine: endLine));
+              return printResult;
+            },
       ),
       pluginRepository: _MockPluginRegistryRepository(),
     );
@@ -178,6 +223,7 @@ void main() {
       _codedError('error.forbidden'),
     );
     expect(shown, isEmpty);
+    expect(repository.lookups, 0);
   });
 
   test('פרמטרים פסולים — invalid_params, לפני כל דיאלוג', () async {
@@ -217,4 +263,178 @@ void main() {
     );
     expect(shown, isEmpty);
   });
+  test(
+    'omitted commentators uses linked commentators; explicit [] remains empty',
+    () async {
+      await adapter.execute('reader', 'printRange', {
+        'bookId': 'תהילים',
+        'startIndex': 0,
+      });
+      expect(selected, ['רש"י', 'אבן עזרא']);
+      expect(available, ['רש"י', 'אבן עזרא']);
+      await adapter.execute('reader', 'printRange', {
+        'bookId': 'תהילים',
+        'startIndex': 0,
+        'commentators': [],
+      });
+      expect(selected, isEmpty);
+      await adapter.execute('reader', 'printRange', {
+        'bookId': 'תהילים',
+        'startIndex': 0,
+        'commentators': [' רש"י ', 'רש"י'],
+      });
+      expect(selected, ['רש"י']);
+    },
+  );
+  test(
+    'commentators rejects invalid and unknown names before opening',
+    () async {
+      for (final names in [
+        null,
+        'רש"י',
+        [3],
+        [''],
+        ['   '],
+        List.filled(257, 'רש"י'),
+      ]) {
+        await expectLater(
+          adapter.execute('reader', 'printRange', {
+            'bookId': 'תהילים',
+            'startIndex': 0,
+            'commentators': names,
+          }),
+          _codedError('error.invalid_params'),
+        );
+      }
+      await expectLater(
+        adapter.execute('reader', 'printRange', {
+          'bookId': 'תהילים',
+          'startIndex': 0,
+          'commentators': ['לא קיים'],
+        }),
+        _codedError('error.not_found'),
+      );
+      expect(shown, isEmpty);
+    },
+  );
+  test(
+    'active reader defaults only apply to the exact attached bookUid',
+    () async {
+      final a = TextBook(
+        id: 5,
+        title: 'תהילים',
+        source: BookSource.attached('a'),
+      );
+      final b = TextBook(
+        id: 5,
+        title: 'תהילים',
+        source: BookSource.attached('b'),
+      );
+      installLibrary([a, b]);
+      final tab = TextBookTab(book: a, index: 0);
+      tab.bloc.emit(
+        TextBookLoaded.initial(
+          book: a,
+          index: 0,
+          showLeftPane: false,
+          splitView: false,
+        ).copyWith(
+          availableCommentators: repository.available,
+          activeCommentators: ['רש"י'],
+        ),
+      );
+      tabsBloc.current = TabsState(tabs: [tab], currentTabIndex: 0);
+      await adapter.execute('reader', 'printRange', {
+        'bookUid': 'db:a:5',
+        'startIndex': 0,
+      });
+      expect(selected, ['רש"י']);
+      await adapter.execute('reader', 'printRange', {
+        'bookUid': 'db:b:5',
+        'startIndex': 0,
+      });
+      expect(selected, repository.available);
+      await adapter.execute('reader', 'printRange', {
+        'bookUid': 'db:a:5',
+        'startIndex': 0,
+        'commentators': [],
+      });
+      expect(selected, isEmpty);
+      await tab.bloc.close();
+    },
+  );
+  test(
+    'commentator lookup failure opens nothing and releases dialog guard',
+    () async {
+      repository.error = StateError('offline');
+      await expectLater(
+        adapter.execute('reader', 'printRange', {
+          'bookId': 'תהילים',
+          'startIndex': 0,
+        }),
+        throwsStateError,
+      );
+      expect(shown, isEmpty);
+      repository.error = null;
+      repository.available = [];
+      expect(
+        await adapter.execute('reader', 'printRange', {
+          'bookId': 'תהילים',
+          'startIndex': 0,
+        }),
+        {'printed': true},
+      );
+      expect(selected, isEmpty);
+    },
+  );
+  test(
+    'raw text cache isolates two attached sources with identical id and title',
+    () async {
+      installLibrary([
+        TextBook(id: 5, title: 'זהה', source: BookSource.attached('a')),
+        TextBook(id: 5, title: 'זהה', source: BookSource.attached('b')),
+      ]);
+      expect(
+        await adapter.execute('library', 'getBookContent', {
+          'bookUid': 'db:a:5',
+        }),
+        'content:d:a',
+      );
+      expect(
+        await adapter.execute('library', 'getBookContent', {
+          'bookUid': 'db:b:5',
+        }),
+        'content:d:b',
+      );
+      expect(
+        await adapter.execute('library', 'getBookContent', {
+          'bookUid': 'db:a:5',
+        }),
+        'content:d:a',
+      );
+    },
+  );
+
+  test(
+    'loading linked commentators waits before dialog and blocks a second dialog',
+    () async {
+      repository.pending = Completer<List<String>>();
+      final response = adapter.execute('reader', 'printRange', {
+        'bookId': 'תהילים',
+        'startIndex': 0,
+      });
+      await Future<void>.delayed(Duration.zero);
+      expect(shown, isEmpty);
+      await expectLater(
+        adapter.execute('reader', 'printRange', {
+          'bookId': 'תהילים',
+          'startIndex': 0,
+        }),
+        _codedError('error.forbidden'),
+      );
+      repository.pending!.complete(['רש"י']);
+      expect(await response, {'printed': true});
+      expect(selected, ['רש"י']);
+    },
+  );
 }

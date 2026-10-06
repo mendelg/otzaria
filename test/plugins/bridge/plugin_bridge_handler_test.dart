@@ -1054,4 +1054,32 @@ void main() {
       }
     });
   });
+  for (final printed in [true, false]) {
+    testWidgets('reader.printRange waits beyond 30 seconds, printed=$printed', (
+      tester,
+    ) async {
+      final dialog = Completer<Map<String, bool>>();
+      final handler = PluginBridgeHandler(
+        _buildInstalledPlugin(permissions: const ['reader.open']),
+        adapter: _FakeAdapter(result: dialog.future),
+        registry: _StubRegistry(true),
+      );
+      Map<String, dynamic>? response;
+      final pending = handler
+          .handleRpcForTesting([
+            {
+              'method': 'reader.printRange',
+              'payload': {'bookId': 'ספר', 'startIndex': 0},
+            },
+          ])
+          .then((value) => response = value as Map<String, dynamic>);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 31));
+      expect(response, isNull);
+      dialog.complete({'printed': printed});
+      await tester.pump();
+      await pending;
+      expect(response!['data'], {'printed': printed});
+    });
+  }
 }

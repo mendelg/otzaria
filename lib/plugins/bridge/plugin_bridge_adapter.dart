@@ -532,6 +532,8 @@ class PluginBridgeDependencies {
     TextBook book, {
     required int startLine,
     int? endLine,
+    required List<String> activeCommentators,
+    required List<String> availableCommentators,
   })?
   printBookRange;
 
@@ -717,9 +719,8 @@ class PluginBridgeAdapter {
   PluginNetworkFetchService get _fetchService =>
       _networkFetchService ??= PluginNetworkFetchService();
 
-  // bookId → טקסט מלא של הספר (מטמון LRU קצר, per adapter instance) עבור
-  // getBookContent. ראה _loadBookRawText.
-  final Map<PluginBookIdentityKey, String> _bookContentCache = {};
+  // LRU קצר לכל תוסף; bookUid מפריד ספרים זהים ממסדים מצורפים שונים.
+  final Map<String, String> _bookContentCache = {};
   static const int _bookContentCacheMaxEntries = 4;
   static int _bookContentRevision = 0;
   int _seenBookContentRevision = 0;
@@ -793,38 +794,27 @@ class PluginBridgeAdapter {
     _booksByIndexedPath = const {};
   }
 
-  /// טוען את הטקסט המלא של ספר עבור `getBookContent`, עם מטמון LRU קצר
-  /// (per adapter instance).
-  ///
-  /// `getBookContent` מחזירה מקטע באמצעות `substring`, והתוסף טוען ספר מלא
-  /// ב-chunks של 5000 תווים — כך שטעינה אחת מחייבת עשרות קריאות RPC רצופות.
-  /// בלי מטמון כל קריאה טוענת מחדש את כל הספר מה-DB (O(n²)), בזבוז שמתחדד
-  /// כשתוסף מבצע polling/prefetch אגרסיבי. המטמון מצמצם זאת ל-O(n) לספר
-  /// ומנטרל את עלות ה-IO החוזרת.
-  ///
-  /// המטמון מוגבל ל-[_bookContentCacheMaxEntries] ספרים ומתאפס עם dispose של
-  /// ה-adapter (טעינה/השבתה מחדש של התוסף). לכן ייתכן חלון קצר של תוכן
-  /// לא-מעודכן אם המשתמש עורך ספר בזמן שתוסף קורא אותו — מקרה קצה נדיר
-  /// בנתיב קריאה-בלבד.
+  /// LRU מונע טעינה חוזרת של ספר בקריאות מקוטעות; UID שומר על הפרדת המקורות.
   Future<String> _loadBookRawText(Book book) async {
     if (_seenBookContentRevision != _bookContentRevision) {
       _bookContentCache.clear();
       _seenBookContentRevision = _bookContentRevision;
     }
-    final key = PluginBookIdentity.keyOf(book);
+    final key = PluginBookIdentity.uidOf(book);
     final cached = _bookContentCache.remove(key);
     if (cached != null) {
       _bookContentCache[key] = cached; // רענון מיקום ב-LRU
       return cached;
     }
-    // איתור ה-TextBook מהקטלוג כדי לקבל categoryId/fileType נכונים מה-metadata.
-    // בלי זה, השכבה התחתונה מקבעת fileType='txt' ונכשלת לגבי ספרים בפורמט אחר
-    // אצל משתמשים שאין להם קבצי טקסט נפרדים בדיסק (רק seforim.db).
+    // ה-TextBook מהקטלוג שומר categoryId/fileType נכונים גם בספרים השמורים רק ב-DB.
     final String rawText;
     if (book is TextBook) {
-      rawText = await TextBookRepository(
-        fileSystem: FileSystemData.instance,
-      ).getBookContent(book);
+      rawText =
+          await (_dependencies.textBookRepository ??
+                  TextBookRepository(
+                    fileSystem: FileSystemData.instance,
+                  ))
+              .getBookContent(book);
     } else {
       rawText = await DataRepository.instance.getBookText(book.title);
     }
@@ -2573,10 +2563,8 @@ class PluginBridgeAdapter {
           return true;
         }
       case 'printRange':
-        // spec: printRange({ id?, bookUid?, bookId?, type?, startIndex, endIndex? })
-        // פותח את מסך ההדפסה של אוצריא (כמו כפתור ההדפסה בקורא) על טווח
-        // שורות, מסומן מראש. התוסף אינו מקבל את הטקסט — ההדפסה נעשית בדיאלוג,
-        // ולכן כמו ui.print היא מותרת רק מתוך לחיצה של המשתמש.
+        // spec: printRange({ id?, bookUid?, bookId?, type?, startIndex, endIndex?, commentators? })
+        // התוסף אינו מקבל טקסט; המסך נפתח רק מתוך מחוות משתמש.
         {
           final startIndex = _nonNegativeIntArg(args['startIndex']);
           if (startIndex == null) {
@@ -2599,6 +2587,24 @@ class PluginBridgeAdapter {
               'error.invalid_params: id, bookUid or bookId required',
             );
           }
+          final rawCommentators = args['commentators'];
+          if (args.containsKey('commentators') &&
+              (rawCommentators is! List ||
+                  rawCommentators.length > 256 ||
+                  rawCommentators.any(
+                    (name) => name is! String || name.trim().isEmpty,
+                  ))) {
+            throw Exception(
+              'error.invalid_params: commentators must be an array of non-empty names',
+            );
+          }
+          final requestedCommentators = rawCommentators == null
+              ? null
+              : (rawCommentators as List)
+                    .cast<String>()
+                    .map((name) => name.trim())
+                    .toSet()
+                    .toList();
           return await _runUserGatedDialog(() async {
             final book = _findPluginBook(
               await DataRepository.instance.library,
@@ -2612,11 +2618,35 @@ class PluginBridgeAdapter {
                 'error.unsupported: printRange supports text books only',
               );
             }
+            final available =
+                await (_dependencies.textBookRepository ??
+                        TextBookRepository(fileSystem: FileSystemData.instance))
+                    .getAvailableCommentators(book);
+            final pane = _dependencies.tabsBloc.state.readingPane;
+            final state =
+                pane is TextBookTab &&
+                    PluginBookIdentity.uidOf(pane.book) ==
+                        PluginBookIdentity.uidOf(book)
+                ? pane.bloc.state
+                : null;
+            final active =
+                requestedCommentators ??
+                (state is TextBookLoaded
+                    ? state.activeCommentators
+                          .where(available.contains)
+                          .toList()
+                    : available);
+            if (requestedCommentators != null &&
+                active.any((name) => !available.contains(name))) {
+              throw Exception('error.not_found: unknown commentators');
+            }
             final show = _dependencies.printBookRange ?? _defaultPrintBookRange;
             final printed = await show(
               book,
               startLine: startIndex,
               endLine: endIndex,
+              activeCommentators: active,
+              availableCommentators: available,
             );
             return {'printed': printed};
           });
@@ -3790,6 +3820,8 @@ class PluginBridgeAdapter {
     TextBook book, {
     required int startLine,
     int? endLine,
+    required List<String> activeCommentators,
+    required List<String> availableCommentators,
   }) async {
     final toc = await book.tableOfContents;
     final context = navigatorKey.currentContext;
@@ -3806,6 +3838,8 @@ class PluginBridgeAdapter {
         startLine: startLine,
         endLine: endLine,
         tableOfContents: toc,
+        activeCommentators: activeCommentators,
+        availableCommentators: availableCommentators,
       ),
     );
     return printed ?? false;

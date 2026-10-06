@@ -1,4 +1,5 @@
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/models/links.dart';
 import 'package:otzaria/pdf_book/utils/pdf_spread_layout.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -187,3 +188,14 @@ int headerSectionEndLine(List<TocEntry> headers, int index, int totalLines) {
   }
   return (start: start, end: end);
 }
+
+/// זהות התוכן והטרנספורמציות במטמון המפרשים להדפסה.
+String printCommentaryContentCacheKey(
+  Link link, {
+  required bool removeNikud,
+  required bool removeTaamim,
+  required bool replaceHolyNames,
+  required bool keepHtml,
+}) =>
+    '$removeNikud|$removeTaamim|$replaceHolyNames'
+    '::${link.contentIdentityKey}::${link.heRef}::$keepHtml';
