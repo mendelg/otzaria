@@ -36,6 +36,12 @@ class _ReadyPdfViewerController extends PdfViewerController {
   Offset get centerPosition => Offset.zero;
 
   @override
+  Rect get visibleRect => const Rect.fromLTWH(0, 1000, 400, 600);
+
+  @override
+  double get currentZoom => 2.05;
+
+  @override
   Future<void> setZoom(
     Offset position,
     double zoom, {
@@ -1176,6 +1182,18 @@ void main() {
         await bloc.stream.firstWhere((s) => s is PdfBookLoaded);
       },
     );
+
+    test('זום שמור לספר נשאר מעוגן לראש העמוד שאליו קפצו (#1974)', () {
+      const visible = Rect.fromLTWH(0, 1000, 400, 600);
+      final center = pdfZoomCenterKeepingTop(
+        visible,
+        fromZoom: 2.05,
+        toZoom: 1.76,
+      );
+      final newVisibleHeight = visible.height * 2.05 / 1.76;
+      expect(center.dx, visible.center.dx);
+      expect(center.dy - newVisibleHeight / 2, closeTo(visible.top, 1e-9));
+    });
 
     test('retry אוטומטי בונה את הצפיין מחדש', () {
       expect(

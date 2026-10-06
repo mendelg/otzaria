@@ -2623,7 +2623,10 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
     }
 
     // PDF נמדד מול שורות מקור; ל-tab.index גם רוצים שורת מקור (לשמירה).
-    final currentIndex = _topmostVisibleSourceLine(state);
+    final currentIndex = displayedSourceLine(
+      state.visibleIndices,
+      _topmostVisibleSourceLine(state),
+    );
     widget.tab.index = currentIndex;
 
     final index = await textToPdfPage(
