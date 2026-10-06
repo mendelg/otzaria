@@ -481,6 +481,8 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
   bool _pendingKeyboardFocusRestore = false;
   bool _wasMenuFocused = false;
   String? _savedSelectedText;
+  // הבחירה בלי ציוני המפרשים שהוזרקו לתצוגה, כפי שהיא בשורת המקור.
+  SourceSelection? _sourceSelection;
   String? _contextMenuSelectedText;
 
   /// זמן הלחיצה הימנית האחרונה — לזיהוי אירוע בחירה ריקה רגעי שהיא פולטת.
@@ -610,15 +612,23 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     ).isNotEmpty) {
       result = addNumberedNoteMarkerLinks(result, lineIndex: lineIndex);
     }
-    if (!state.bodyDisplayProfile.showAnchorMarkers) return result;
+    return _injectBodyAnchorMarkers(result, lineIndex, state);
+  }
+
+  String _injectBodyAnchorMarkers(
+    String rawLine,
+    int lineIndex,
+    TextBookLoaded state,
+  ) {
+    if (!state.bodyDisplayProfile.showAnchorMarkers) return rawLine;
     // מהדורה חלופית: העוגנים ממופים לנוסח הראשי — במיקומים שגויים כאן.
-    if (state.book.versionTitle != null) return result;
+    if (state.book.versionTitle != null) return rawLine;
     final anchorLinks = (state.linksByLine[lineIndex + 1] ?? const <Link>[])
         .where((link) => link.anchorStart != null)
         .toList();
-    if (anchorLinks.isEmpty) return result;
+    if (anchorLinks.isEmpty) return rawLine;
     return injectLinkAnchorMarkers(
-      rawLine: result,
+      rawLine: rawLine,
       anchorLinks: anchorLinks,
       styleIndexByCommentator: _anchorStyles(state),
       lineIndex: lineIndex,
@@ -1506,14 +1516,17 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
       state: textBookState,
       settingsState: settingsState,
     );
+    final selectionLines = <int, SelectionLine>{};
+    SelectionLine lineAt(int index) =>
+        selectionLines[index] ??= renderSelectionLineWithMarkers(
+          rawText: _selectionMarkerLine(index, textBookState),
+          settings: renderSettings,
+        );
     final window = buildSelectionWindow(
       visibleIndices: sourceIndices,
       totalLines: widget.content.length,
       selectionLength: persistedText!.length,
-      renderLine: (index) => renderSelectionLine(
-        rawText: widget.content[index],
-        settings: renderSettings,
-      ),
+      renderLine: (index) => lineAt(index).text,
     );
     final renderedLines = window.lines;
     final baseIndex = window.baseIndex;
@@ -1548,26 +1561,43 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     final lineStart = pointerLocation?.lineIndex ?? location.lineStart;
     final lineEnd = pointerLocation?.lineIndex ?? location.lineEnd;
     final startColumn = pointerLocation?.column ?? location.startColumn;
+    final sourceSelection = lineStart == null || startColumn == null
+        ? null
+        : SourceSelection.strip(
+            shownText: restoredText,
+            lines: [
+              for (var i = lineStart; i <= (lineEnd ?? lineStart); i++)
+                lineAt(i),
+            ],
+            startColumn: startColumn,
+          );
 
     if (!mounted) return;
     setState(() {
       _savedSelectedText = restoredText;
+      _sourceSelection = sourceSelection;
       _savedSelectedIndex = selectedIndex;
       _selectionLineStart = lineStart;
       _selectionLineEnd = lineEnd;
       _selectionStartColumn = startColumn;
     });
+    final source = SourceSelection.resolve(
+      sourceSelection,
+      restoredText,
+      startColumn,
+    );
+    final sourceText = source.text;
     if (widget.isMainText) {
       // בבחירה רב-שורתית אין טווח חד-פסקתי תקף — start/end של השורה
       // הראשונה בלבד גרמו ל-reader.getSelection להחזיר עוגן חלקי מטעה.
-      final isSingleSectionSelection = !restoredText.contains('\n');
+      final isSingleSectionSelection = !sourceText.contains('\n');
       context.read<TextBookBloc>().add(
         UpdateSelectedTextForNote(
-          text: restoredText,
+          text: sourceText,
           sectionIndex: selectedIndex,
-          start: isSingleSectionSelection ? startColumn : null,
-          end: isSingleSectionSelection && startColumn != null
-              ? startColumn + restoredText.length
+          start: isSingleSectionSelection ? source.column : null,
+          end: isSingleSectionSelection && source.column != null
+              ? source.column! + sourceText.length
               : null,
         ),
       );
@@ -1575,7 +1605,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         PluginRuntimeDispatcher.instance.dispatchEvent(
           'reader.selection_changed',
           buildPageShapePluginSelectionPayload(
-            selectedText: restoredText,
+            selectedText: sourceText,
             bookTitle: textBookState.book.title,
             sectionIndex:
                 selectedIndex ??
@@ -1590,7 +1620,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         ),
       );
     }
-    _prefetchDictionaryLookups(restoredText);
+    _prefetchDictionaryLookups(sourceText);
   }
 
   /// האם יש לשמר את הבחירה בלחיצה ימנית בנקודה [globalPosition] על השורה
@@ -1858,9 +1888,15 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         _paragraphCommentatorsCache.isLoading(state.book, index);
 
     final entries = <AppContextMenuEntry>[];
+    final source = SourceSelection.resolve(
+      _sourceSelection,
+      capturedText,
+      _selectionStartColumn,
+    );
+    final sourceText = source.text;
 
     if (widget.isMainText) {
-      final menuSelection = ReaderMenuSelection(capturedText);
+      final menuSelection = ReaderMenuSelection(sourceText);
 
       // שורת אייקונים עליונה בסגנון Windows 11 — הרשימה המלאה נשארת מתחת.
       entries.add(
@@ -1951,7 +1987,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     entries.addAll(
       buildReaderDictionaryEntries(
         context: context,
-        selectedText: capturedText,
+        selectedText: sourceText,
         tapPosition: tapPosition,
         repository: _dictionaryLookupRepository,
       ),
@@ -2007,9 +2043,20 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
           state: state,
           lines: widget.content,
           paragraphIndex: index,
-          hasSelection: capturedText?.trim().isNotEmpty == true,
-          selectedText: capturedText,
-          anchor: _selectionAnchor,
+          hasSelection: sourceText?.trim().isNotEmpty == true,
+          selectedText: sourceText,
+          anchor: (
+            lineStart: _selectionLineStart,
+            lineEnd: _selectionLineEnd,
+            startColumn: source.column,
+            pointerColumn: SourceSelection.resolvePointerColumn(
+              _sourceSelection,
+              capturedText,
+              _selectionPointerColumn,
+              lineStart: _selectionLineStart,
+              pointerLineIndex: _selectionPointerLineIndex,
+            ),
+          ),
           settings: () => _selectionRenderSettings(
             state: state,
             settingsState: menuContext.read<SettingsBloc>().state,
@@ -2038,12 +2085,16 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     return _normalizeEntries(entries);
   }
 
-  ReaderSelectionAnchor get _selectionAnchor => (
-    lineStart: _selectionLineStart,
-    lineEnd: _selectionLineEnd,
-    startColumn: _selectionStartColumn,
-    pointerColumn: _selectionPointerColumn,
-  );
+  /// השורה כפי שהיא מוצגת לבחירה: עם ציוני המפרשים של הטור.
+  String _selectionMarkerLine(int index, TextBookLoaded state) {
+    final rawLine = widget.content[index];
+    if (widget.isMainText) {
+      return _injectBodyAnchorMarkers(rawLine, index, state);
+    }
+    return widget.anchorLinksByLine == null
+        ? rawLine
+        : _injectOwnAnchorMarkers(rawLine, index, state);
+  }
 
   /// תתי-התפריטים "מפרשים" ו"קישורים" של שורת המפרש שנלחצה — כמו בלחיצה ימנית
   /// על מפרש בחלונית הצד. נגזרים מספר המפרש עצמו, לא מקישורי הספר הראשי:
@@ -2199,7 +2250,12 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
     final state = context.read<TextBookBloc>().state;
     if (state is! TextBookLoaded) return;
 
-    final selectedText = capturedText ?? _savedSelectedText;
+    final source = SourceSelection.resolve(
+      _sourceSelection,
+      capturedText ?? _savedSelectedText,
+      _selectionStartColumn,
+    );
+    final selectedText = source.text;
     final referenceText = selectedText?.trim().isNotEmpty == true
         ? utils.removeVolwels(selectedText!.trim())
         : widget.content[index];
@@ -2214,7 +2270,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         lineNumber: index + 1,
         referenceText: referenceText,
         selectedText: selectedText?.trim(),
-        selectionColumn: _selectionStartColumn,
+        selectionColumn: source.column,
         punctuationHidden: state.commentaryRemovePunctuation,
       );
       return;
@@ -2236,7 +2292,7 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
         lineNumber: index + 1,
         referenceText: referenceText,
         selectedText: selectedText?.trim(),
-        selectionColumn: _selectionStartColumn,
+        selectionColumn: source.column,
         punctuationHidden: state.removePunctuation,
         initialContent: draft?.content ?? '',
         initialFormat: draft?.contentFormat ?? PersonalNoteContentFormat.plain,
@@ -2341,7 +2397,11 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
 
     ErrorReportHelper.showErrorReportDialog(
       context: context,
-      selectedText: selectedText,
+      selectedText: SourceSelection.resolve(
+        _sourceSelection,
+        selectedText,
+        null,
+      ).text,
       state: state,
       fontSize: widget.fontSize,
       bookTitle: resolvedBookTitle,
@@ -2476,6 +2536,8 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
             : null,
         removeNikud: removeNikud,
         copyProfile: profile,
+        copyTarget: _textTarget,
+        source: _sourceSelection,
         plainTextOnly: plainTextOnly,
       );
     } catch (e) {

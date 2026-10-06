@@ -13,6 +13,9 @@ void main() {
   const settings = RenderSettings(removeNikud: true);
   final visible = List.generate(30, (i) => 200 + i);
 
+  String Function(int) textOf(SelectionLine Function(int) lines) =>
+      (i) => lines(i).text;
+
   SelectionWindow window(String Function(int) renderLine) =>
       buildSelectionWindow(
         visibleIndices: visible,
@@ -24,12 +27,88 @@ void main() {
   test('עדכוני בחירה חוזרים מקבלים את אותן שורות בלי לרנדר מחדש', () {
     final cache = SelectionLineCache();
 
-    final first = window(cache.renderer(data, settings));
-    final again = window(cache.renderer(data, settings));
+    final first = window(textOf(cache.lines(data, settings)));
+    final again = window(textOf(cache.lines(data, settings)));
 
     for (var i = 0; i < first.lines.length; i++) {
       expect(identical(again.lines[i], first.lines[i]), isTrue);
     }
+  });
+
+  test('טעינת ציונים ושינוי פרופיל מבטלים את המטמון', () {
+    final data = ['שלום'];
+    final links = <int, Object>{};
+    final cache = SelectionLineCache();
+    expect(
+      cache.lines(data, settings, markerKey: (links, true, null))(0).text,
+      'שלום',
+    );
+    final loadedLinks = {1: Object()};
+    String inject(String raw, int index) =>
+        '<a class="link-anchor link-anchor-0">(א)</a>$raw';
+    expect(
+      cache
+          .lines(
+            data,
+            settings,
+            injectMarkers: inject,
+            markerKey: (loadedLinks, true, null),
+          )(0)
+          .text,
+      '(א)שלום',
+    );
+    expect(
+      cache
+          .lines(data, settings, markerKey: (loadedLinks, false, null))(0)
+          .text,
+      'שלום',
+    );
+    expect(
+      cache
+          .lines(
+            data,
+            settings,
+            injectMarkers: inject,
+            markerKey: (loadedLinks, true, null),
+          )(0)
+          .markers,
+      [(0, 3)],
+    );
+    expect(
+      cache
+          .lines(
+            data,
+            settings,
+            markerKey: (loadedLinks, true, 'מהדורה חלופית'),
+          )(0)
+          .text,
+      'שלום',
+    );
+  });
+
+  test('closure חדש ומפתח ציונים זהה שומרים את המטמון חם', () {
+    final data = ['שלום'];
+    final links = {1: Object()};
+    final cache = SelectionLineCache();
+    var renders = 0;
+    SelectionLine Function(int) render() => cache.lines(
+      data,
+      settings,
+      markerKey: (links, true, null),
+      injectMarkers: (raw, index) {
+        renders++;
+        return '<a class="link-anchor link-anchor-0">(א)</a>$raw';
+      },
+    );
+    final first = render()(0);
+    final again = render()(0);
+    expect(renders, 1);
+    expect(identical(first, again), isTrue);
+    cache.clear();
+    final afterClear = render()(0);
+    expect(afterClear.text, first.text);
+    expect(afterClear.markers, first.markers);
+    expect(renders, 2);
   });
 
   test('התוצאה זהה לרינדור ללא מטמון', () {
@@ -38,8 +117,8 @@ void main() {
         renderSelectionLine(rawText: data[i], settings: settings);
 
     final expected = window(direct);
-    final cachedFirst = window(cache.renderer(data, settings));
-    final cachedAgain = window(cache.renderer(data, settings));
+    final cachedFirst = window(textOf(cache.lines(data, settings)));
+    final cachedAgain = window(textOf(cache.lines(data, settings)));
 
     expect(cachedFirst.baseIndex, expected.baseIndex);
     expect(cachedFirst.lines, expected.lines);
@@ -48,36 +127,36 @@ void main() {
 
   test('שינוי הגדרות או נתונים מרנדר מחדש', () {
     final cache = SelectionLineCache();
-    final withoutNikud = cache.renderer(data, settings)(200);
+    final withoutNikud = textOf(cache.lines(data, settings))(200);
 
     const keepNikud = RenderSettings();
     expect(
-      cache.renderer(data, keepNikud)(200),
+      textOf(cache.lines(data, keepNikud))(200),
       renderSelectionLine(rawText: data[200], settings: keepNikud),
     );
-    expect(cache.renderer(data, keepNikud)(200), isNot(withoutNikud));
+    expect(textOf(cache.lines(data, keepNikud))(200), isNot(withoutNikud));
 
     final newData = [...data]..[200] = 'טקסט שנטען מחדש';
-    expect(cache.renderer(newData, keepNikud)(200), 'טקסט שנטען מחדש');
+    expect(textOf(cache.lines(newData, keepNikud))(200), 'טקסט שנטען מחדש');
   });
 
   test('ניקוי בסוף גרירה מרנדר מחדש', () {
     final cache = SelectionLineCache();
-    final before = cache.renderer(data, settings)(200);
+    final before = textOf(cache.lines(data, settings))(200);
 
     cache.clear();
 
-    final after = cache.renderer(data, settings)(200);
+    final after = textOf(cache.lines(data, settings))(200);
     expect(after, before);
     expect(identical(after, before), isFalse);
   });
 
   test('מעבר למכסת השורות אינו נשמר', () {
     final cache = SelectionLineCache();
-    final render = cache.renderer(data, settings);
+    final render = textOf(cache.lines(data, settings));
     final firstLines = [for (var i = 0; i < data.length; i++) render(i)];
 
-    final again = cache.renderer(data, settings);
+    final again = textOf(cache.lines(data, settings));
     expect(identical(again(0), firstLines[0]), isTrue);
     expect(identical(again(1999), firstLines[1999]), isTrue);
     expect(identical(again(2050), firstLines[2050]), isFalse);
@@ -86,7 +165,7 @@ void main() {
   test('שורות ארוכות אינן חורגות ממכסת התווים', () {
     final cache = SelectionLineCache();
     final longData = List.generate(4, (i) => '<b>${'אב' * 40000}</b>$i');
-    final render = cache.renderer(longData, settings);
+    final render = textOf(cache.lines(longData, settings));
     final first = render(0);
     final second = render(1);
 
@@ -105,7 +184,7 @@ void main() {
       '<b>שורה קצרה</b>',
       '<b>${'אב' * 40000}</b>',
     ];
-    final render = cache.renderer(oversized, settings);
+    final render = textOf(cache.lines(oversized, settings));
     final first = render(0);
     expect(render(0), first);
     expect(identical(render(0), first), isFalse);
@@ -114,10 +193,12 @@ void main() {
 
     render(2);
     final newData = ['<b>${'אב' * 40000}</b>'];
-    final newRender = cache.renderer(newData, settings);
+    final newRender = textOf(cache.lines(newData, settings));
     final afterDataChange = newRender(0);
     expect(identical(newRender(0), afterDataChange), isTrue);
-    final newSettingsRender = cache.renderer(newData, const RenderSettings());
+    final newSettingsRender = textOf(
+      cache.lines(newData, const RenderSettings()),
+    );
     final afterSettingsChange = newSettingsRender(0);
     expect(identical(newSettingsRender(0), afterSettingsChange), isTrue);
   });

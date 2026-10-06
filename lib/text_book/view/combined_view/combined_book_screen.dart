@@ -214,29 +214,39 @@ class SelectionLineCache {
   // עד 256 KiB של תוכן UTF-16, בנוסף לתקורת המפה והמחרוזות.
   static const _maxCharacters = 128 * 1024;
   int _characters = 0;
-  final Map<int, String> _lines = {};
+  final Map<int, SelectionLine> _lines = {};
   WeakReference<List<String>>? _data;
   RenderSettings? _settings;
+  Object? _markerKey;
 
-  String Function(int index) renderer(
+  /// [injectMarkers] מזריק ציונים; [markerKey] מזהה את נתוניהם והפרופיל,
+  /// ונשאר זהה בעדכוני גרירה שאינם משנים אותם.
+  SelectionLine Function(int index) lines(
     List<String> data,
-    RenderSettings settings,
-  ) {
-    if (!identical(_data?.target, data) || _settings != settings) {
+    RenderSettings settings, {
+    String Function(String rawLine, int index)? injectMarkers,
+    Object? markerKey,
+  }) {
+    if (!identical(_data?.target, data) ||
+        _settings != settings ||
+        _markerKey != markerKey) {
       clear();
       _data = WeakReference(data);
       _settings = settings;
+      _markerKey = markerKey;
     }
-    String render(int i) =>
-        renderSelectionLine(rawText: data[i], settings: settings);
+    SelectionLine render(int i) => renderSelectionLineWithMarkers(
+      rawText: injectMarkers?.call(data[i], i) ?? data[i],
+      settings: settings,
+    );
     return (i) {
       final cached = _lines[i];
       if (cached != null) return cached;
       final line = render(i);
       if (_lines.length < _maxLines &&
-          _characters + line.length <= _maxCharacters) {
+          _characters + line.text.length <= _maxCharacters) {
         _lines[i] = line;
-        _characters += line.length;
+        _characters += line.text.length;
       }
       return line;
     };
@@ -247,6 +257,7 @@ class SelectionLineCache {
     _characters = 0;
     _data = null;
     _settings = null;
+    _markerKey = null;
   }
 }
 
@@ -329,6 +340,8 @@ class _CombinedViewState extends State<CombinedView> {
   );
   // שמירת האינדקס של השורה שממנה הטקסט הודגש
   final ValueNotifier<int?> _savedSelectedIndex = ValueNotifier<int?>(null);
+  // הבחירה בלי ציוני המפרשים שהוזרקו לתצוגה, כפי שהיא בשורת המקור.
+  SourceSelection? _sourceSelection;
   // טווח אינדקסי השורות שבתוך הבחירה הנוכחית (כולל הקצוות). משמש כדי שלחיצה
   // ימנית ברווח שבין שורות נבחרות תזוהה כלחיצה "על הבחירה" ולא תבטל אותה.
   int? _selectionLineStart;
@@ -1406,7 +1419,13 @@ class _CombinedViewState extends State<CombinedView> {
       );
     }
 
-    final menuSelection = ReaderMenuSelection(selectedText);
+    final source = SourceSelection.resolve(
+      _sourceSelection,
+      selectedText,
+      _selectionStartColumn,
+    );
+    final sourceText = source.text;
+    final menuSelection = ReaderMenuSelection(sourceText);
 
     return [
       // שורת אייקונים עליונה בסגנון Windows 11 — הרשימה המלאה נשארת מתחת.
@@ -1470,7 +1489,7 @@ class _CombinedViewState extends State<CombinedView> {
       }(),
       ...buildReaderDictionaryEntries(
         context: context,
-        selectedText: selectedText,
+        selectedText: sourceText,
         tapPosition: tapPosition,
         repository: _dictionaryLookupRepository,
       ),
@@ -1502,8 +1521,19 @@ class _CombinedViewState extends State<CombinedView> {
         lines: widget.data,
         paragraphIndex: paragraphIndex,
         hasSelection: menuSelection.hasText,
-        selectedText: selectedText,
-        anchor: _selectionAnchor,
+        selectedText: sourceText,
+        anchor: (
+          lineStart: _selectionLineStart,
+          lineEnd: _selectionLineEnd,
+          startColumn: source.column,
+          pointerColumn: SourceSelection.resolvePointerColumn(
+            _sourceSelection,
+            selectedText,
+            _selectionPointerColumn,
+            lineStart: _selectionLineStart,
+            pointerLineIndex: _selectionPointerLineIndex,
+          ),
+        ),
         settings: () => _selectionRenderSettings(
           state,
           menuContext.read<SettingsBloc>().state,
@@ -1513,13 +1543,6 @@ class _CombinedViewState extends State<CombinedView> {
       ),
     ];
   }
-
-  ReaderSelectionAnchor get _selectionAnchor => (
-    lineStart: _selectionLineStart,
-    lineEnd: _selectionLineEnd,
-    startColumn: _selectionStartColumn,
-    pointerColumn: _selectionPointerColumn,
-  );
 
   void _prefetchParagraphCommentators(
     TextBookLoaded state,
@@ -1556,7 +1579,11 @@ class _CombinedViewState extends State<CombinedView> {
 
     ErrorReportHelper.showErrorReportDialog(
       context: context,
-      selectedText: selectedText,
+      selectedText: SourceSelection.resolve(
+        _sourceSelection,
+        selectedText,
+        null,
+      ).text,
       state: state,
       fontSize: widget.textSize,
       bookTitle: widget.tab.book.title,
@@ -1702,6 +1729,8 @@ class _CombinedViewState extends State<CombinedView> {
         fontSize: widget.textSize,
         removeNikud: removeNikud,
         copyProfile: profile,
+        copyTarget: TextTarget.body,
+        source: _sourceSelection,
         plainTextOnly: plainTextOnly,
       );
     } catch (e) {
@@ -1719,7 +1748,12 @@ class _CombinedViewState extends State<CombinedView> {
     final state = _textBookBloc.state;
     if (state is! TextBookLoaded) return;
 
-    final selectedText = capturedText ?? _savedSelectedText.value;
+    final source = SourceSelection.resolve(
+      _sourceSelection,
+      capturedText ?? _savedSelectedText.value,
+      _selectionStartColumn,
+    );
+    final selectedText = source.text;
     final hasSelection = selectedText?.trim().isNotEmpty == true;
 
     // בחירה פעילה מקבלת קדימות; בלעדיה משתמשים בשורת הלחיצה,
@@ -1756,7 +1790,7 @@ class _CombinedViewState extends State<CombinedView> {
         lineNumber: currentIndex + 1,
         referenceText: referenceText,
         selectedText: selectedText?.trim(),
-        selectionColumn: _selectionStartColumn,
+        selectionColumn: source.column,
         punctuationHidden: state.removePunctuation,
         initialContent: draft?.content ?? '',
         initialFormat: draft?.contentFormat ?? PersonalNoteContentFormat.plain,
@@ -1806,20 +1840,31 @@ class _CombinedViewState extends State<CombinedView> {
     );
   }
 
-  SelectionWindow _buildSelectionWindow(
+  ({SelectionWindow window, SelectionLine Function(int) lineAt})
+  _buildSelectionWindow(
     TextBookLoaded state,
     SettingsState settingsState,
     int selectionLength,
   ) {
     final renderSettings = _selectionRenderSettings(state, settingsState);
+    final lineAt = _selectionLineCache.lines(
+      widget.data,
+      renderSettings,
+      markerKey: (
+        state.linksByLine,
+        state.bodyDisplayProfile.showAnchorMarkers,
+        state.book.versionTitle,
+      ),
+      injectMarkers: (rawLine, index) =>
+          _injectAnchorMarkersForLine(rawLine, index, state),
+    );
     final window = buildSelectionWindow(
       visibleIndices: state.visibleIndices,
       totalLines: widget.data.length,
       selectionLength: selectionLength,
-      renderLine: _selectionLineCache.renderer(widget.data, renderSettings),
+      renderLine: (index) => lineAt(index).text,
     );
-    if (!_isSelectionPointerDown) _selectionLineCache.clear();
-    return window;
+    return (window: window, lineAt: lineAt);
   }
 
   final _selectionLineCache = SelectionLineCache();
@@ -1902,12 +1947,13 @@ class _CombinedViewState extends State<CombinedView> {
                           : null;
                       int? foundIndex;
                       var fixedPlain = plain;
+                      SourceSelection? sourceSelection;
 
                       if (loadedState != null) {
                         final settingsState = context
                             .read<SettingsBloc>()
                             .state;
-                        final window = _buildSelectionWindow(
+                        final (:window, :lineAt) = _buildSelectionWindow(
                           loadedState,
                           settingsState,
                           plain!.length,
@@ -1956,20 +2002,45 @@ class _CombinedViewState extends State<CombinedView> {
                             pointerLocation?.lineIndex ?? location.lineEnd;
                         _selectionStartColumn =
                             pointerLocation?.column ?? location.startColumn;
+                        final startLine = _selectionLineStart;
+                        final startColumn = _selectionStartColumn;
+                        if (startLine != null && startColumn != null) {
+                          sourceSelection = SourceSelection.strip(
+                            shownText: fixedPlain,
+                            lines: [
+                              for (
+                                var i = startLine;
+                                i <= (_selectionLineEnd ?? startLine);
+                                i++
+                              )
+                                lineAt(i),
+                            ],
+                            startColumn: startColumn,
+                          );
+                        }
+                        if (!_isSelectionPointerDown) {
+                          _selectionLineCache.clear();
+                        }
                       }
 
+                      final source = SourceSelection.resolve(
+                        sourceSelection,
+                        fixedPlain,
+                        _selectionStartColumn,
+                      );
                       if (mounted) {
                         _savedSelectedText.value = fixedPlain;
+                        _sourceSelection = sourceSelection;
                         _savedSelectedIndex.value = foundIndex;
                         _currentSelectedIndex.value = foundIndex;
                         widget.onSelectedTextChanged?.call(
-                          fixedPlain,
+                          source.text,
                           foundIndex,
-                          _selectionStartColumn,
+                          source.column,
                         );
 
                         // שליחת event לפלאגינים עם ה-index המדויק
-                        final selectionText = fixedPlain?.trim() ?? '';
+                        final selectionText = source.text?.trim() ?? '';
                         if (selectionText.isNotEmpty && loadedState != null) {
                           unawaited(
                             PluginRuntimeDispatcher.instance.dispatchEvent(
@@ -1992,7 +2063,7 @@ class _CombinedViewState extends State<CombinedView> {
                           );
                         }
                       }
-                      _prefetchDictionaryLookups(fixedPlain);
+                      _prefetchDictionaryLookups(source.text);
                     },
                     child: Shortcuts(
                       // Ctrl+C / Cmd+C מטופלים ב-SelectionCopyShortcuts שמעל.

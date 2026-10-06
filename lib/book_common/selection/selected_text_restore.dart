@@ -18,6 +18,130 @@ String renderSelectionLine({
   return stripped.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+/// שורת בחירה מרונדרת; [markers] — טווחי ציוני המפרשים שהתצוגה הזריקה לה.
+typedef SelectionLine = ({String text, List<(int, int)> markers});
+
+const _markerOpen = 0xE000;
+const _markerClose = 0xE001;
+final _anchorMarkerElement = RegExp(
+  r'(<(a|span) class="link-anchor [^>]*>)([^<]*)(</\2>)',
+);
+
+/// כמו [renderSelectionLine] לשורה שהוזרקו לה ציוני מפרשים: הציונים נשארים
+/// בטקסט כמו על המסך, ותווי סימון זמניים מאתרים אותם אחרי העיבוד.
+SelectionLine renderSelectionLineWithMarkers({
+  required String rawText,
+  required RenderSettings settings,
+}) {
+  final open = String.fromCharCode(_markerOpen);
+  final close = String.fromCharCode(_markerClose);
+  final tagged = rawText.replaceAllMapped(
+    _anchorMarkerElement,
+    (m) => '${m[1]}$open${m[3]}$close${m[4]}',
+  );
+  final rendered = renderSelectionLine(rawText: tagged, settings: settings);
+  if (!rendered.contains(open)) return (text: rendered, markers: const []);
+
+  final text = StringBuffer();
+  final markers = <(int, int)>[];
+  var markerStart = 0;
+  for (final unit in rendered.codeUnits) {
+    if (unit == _markerOpen) {
+      markerStart = text.length;
+    } else if (unit == _markerClose) {
+      markers.add((markerStart, text.length));
+    } else {
+      text.writeCharCode(unit);
+    }
+  }
+  return (text: text.toString(), markers: markers);
+}
+
+/// הבחירה כפי שהיא בשורות המקור, בלי ציוני המפרשים שהתצוגה הזריקה לה —
+/// כך הערה, דיווח, תוספים והעתקה שמסתירה ציונים מאתרים אותה במקור.
+class SourceSelection {
+  const SourceSelection._(this._shown, this._text, this._startLineMarkers);
+
+  final String _shown;
+  final String _text;
+  final List<(int, int)> _startLineMarkers;
+
+  /// [lines] — שורות הבחירה החל משורת ההתחלה, ו-[startColumn] בראשונה.
+  /// null כשאין מה להמיר, או כשהבחירה אינה תואמת לשורות.
+  static SourceSelection? strip({
+    required String shownText,
+    required List<SelectionLine> lines,
+    required int startColumn,
+  }) {
+    if (lines.every((line) => line.markers.isEmpty)) return null;
+    final text = StringBuffer();
+    var removed = false;
+    var line = 0;
+    var column = startColumn;
+    for (var i = 0; i < shownText.length; i++) {
+      final unit = shownText.codeUnitAt(i);
+      if (_isWhitespace(unit)) {
+        text.writeCharCode(unit);
+        continue;
+      }
+      while (line < lines.length &&
+          (column >= lines[line].text.length ||
+              _isWhitespace(lines[line].text.codeUnitAt(column)))) {
+        if (column >= lines[line].text.length) {
+          line++;
+          column = 0;
+        } else {
+          column++;
+        }
+      }
+      if (line >= lines.length || lines[line].text.codeUnitAt(column) != unit) {
+        return null;
+      }
+      final at = column++;
+      if (lines[line].markers.any((m) => at >= m.$1 && at < m.$2)) {
+        removed = true;
+      } else {
+        text.writeCharCode(unit);
+      }
+    }
+    // גם בלי ציון בבחירה, ציון לפניה בשורה מסיט את עמודת ההתחלה.
+    if (!removed && !lines.first.markers.any((m) => m.$1 < startColumn)) {
+      return null;
+    }
+    return SourceSelection._(shownText, text.toString(), lines.first.markers);
+  }
+
+  /// הטקסט ועמודת שורת ההתחלה כפי שהם במקור. בחירה שאינה זו שממנה נוצר
+  /// [selection] (או null) מוחזרת כמות שהיא.
+  static ({T text, int? column}) resolve<T extends String?>(
+    SourceSelection? selection,
+    T shownText,
+    int? column,
+  ) {
+    if (selection == null || shownText != selection._shown) {
+      return (text: shownText, column: column);
+    }
+    final text = selection._text as T;
+    if (column == null) return (text: text, column: null);
+    var shift = 0;
+    for (final (start, end) in selection._startLineMarkers) {
+      if (start < column) shift += (end < column ? end : column) - start;
+    }
+    return (text: text, column: column - shift);
+  }
+
+  /// עמודת העכבר במקור; עכבר בשורה אחרת אינו רמז לשורת תחילת הבחירה.
+  static int? resolvePointerColumn(
+    SourceSelection? selection,
+    String? shownText,
+    int? column, {
+    required int? lineStart,
+    required int? pointerLineIndex,
+  }) => lineStart != null && pointerLineIndex == lineStart
+      ? resolve(selection, shownText, column).column
+      : null;
+}
+
 /// שורות רצופות ומרונדרות לשחזור, כשהראשונה היא שורת המקור [baseIndex].
 typedef SelectionWindow = ({int baseIndex, List<String> lines});
 
