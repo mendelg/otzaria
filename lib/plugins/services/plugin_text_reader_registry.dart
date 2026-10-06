@@ -71,7 +71,10 @@ class PluginTextReaderRegistry extends ChangeNotifier {
     ...PluginBookIdentity.toJsonWithUid(tab.book),
     'title': tab.book.title,
     'currentIndex': tab.index,
-    'searchQuery': tab.searchText,
+    'searchQuery': switch (tab.bloc.state) {
+      TextBookLoaded state => state.searchText,
+      _ => tab.searchText,
+    },
     'embedded': true,
     'nativeToolbar': true,
     if (tab.bloc.state case final TextBookLoaded state)

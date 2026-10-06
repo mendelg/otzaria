@@ -10,6 +10,7 @@ import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/utils/file/file_picker_dialog_options.dart';
 import 'package:otzaria/widgets/dialogs/input_dialog.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:otzaria/plugins/plugin_constants.dart';
@@ -632,6 +633,17 @@ class _PluginNetworkRequest {
 // ===================================================================
 // Bridge Adapter - strict 1:1 with plugin_system_plan.md
 // ===================================================================
+String _transformTextReaderContent((String, TextDisplayProfile) input) {
+  final (rawText, profile) = input;
+  return rawText
+      .split('\n')
+      .map(
+        (line) =>
+            applyTextDisplayProfile(line, profile).replaceAll('\n', '<br>'),
+      )
+      .join('\n');
+}
+
 class PluginBridgeAdapter {
   final InstalledPlugin plugin;
   final TextBookTab? readerTab;
@@ -725,7 +737,7 @@ class PluginBridgeAdapter {
   // LRU קצר לכל תוסף; bookUid מפריד ספרים זהים ממסדים מצורפים שונים.
   final Map<String, String> _bookContentCache = {};
   String? _textReaderRawContent;
-  String? _textReaderDisplayContent;
+  Future<String>? _textReaderDisplayContent;
   TextDisplayProfile? _textReaderProfile;
   static const int _bookContentCacheMaxEntries = 4;
   static int _bookContentRevision = 0;
@@ -793,6 +805,10 @@ class PluginBridgeAdapter {
     _pendingNetworkFetchCancellations.clear();
     _networkFetchService?.dispose();
     _fileDownloadService?.dispose();
+    _bookContentCache.clear();
+    _textReaderRawContent = null;
+    _textReaderProfile = null;
+    _textReaderDisplayContent = null;
     _bookIndexLibrary = null;
     _booksById = const {};
     _booksByTitle = const {};
@@ -1318,18 +1334,23 @@ class PluginBridgeAdapter {
               _textReaderProfile != profile) {
             _textReaderRawContent = rawText;
             _textReaderProfile = profile;
-            // Transform each source line separately to retain TOC/search offsets.
-            _textReaderDisplayContent = rawText
-                .split('\n')
-                .map(
-                  (line) => applyTextDisplayProfile(
-                    line,
-                    profile,
-                  ).replaceAll('\n', '<br>'),
-                )
-                .join('\n');
+            // המרת הספר כולו מתבצעת מחוץ ל-UI; בקשות מקבילות חולקות אותה.
+            _textReaderDisplayContent = compute(
+              _transformTextReaderContent,
+              (rawText, profile),
+            );
           }
-          rawText = _textReaderDisplayContent!;
+          final displayContent = _textReaderDisplayContent!;
+          try {
+            rawText = await displayContent;
+          } catch (_) {
+            if (identical(_textReaderDisplayContent, displayContent)) {
+              _textReaderRawContent = null;
+              _textReaderProfile = null;
+              _textReaderDisplayContent = null;
+            }
+            rethrow;
+          }
         }
         final limit = args['limit'] as int? ?? 1000;
         final offset = args['offset'] as int? ?? 0;

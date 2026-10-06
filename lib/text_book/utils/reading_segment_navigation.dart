@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:otzaria/widgets/lists/jump_aware_item_scroll_controller.dart';
 import 'package:otzaria/text_book/utils/reading_segments.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -94,6 +95,17 @@ Future<void> scrollToSourceLine({
       )
       .toInt();
   final segmentIndex = segmentIndexForLine(segments, safeLineIndex);
+  if (scrollController is JumpAwareItemScrollController &&
+      scrollController.externalScroll != null) {
+    await scrollController.scrollTo(
+      index: segmentIndex,
+      sourceLineIndex: safeLineIndex,
+      alignment: alignment,
+      duration: duration,
+      curve: curve,
+    );
+    return;
+  }
   final segment = segments[segmentIndex];
   final fraction = lineFractionWithinSegment(
     segment,
@@ -142,8 +154,12 @@ Future<void> scrollToSourceLine({
   var confirming = false;
   for (var attempt = 0; attempt < 5; attempt++) {
     // הרשימה יורדת מהעץ באמצע האנימציה (מעבר כרטיסיה, סגירתה, העברתה לחלון
-    // אחר), ו-positionsListener שומר מדידה ישנה — רק isAttached מעיד שהיא חיה.
-    if (!scrollController.isAttached) return;
+    // אחר), או מוחלפת בקורא חיצוני — מדידות ישנות אינן מעידות שהרשימה חיה.
+    if (!scrollController.isAttached ||
+        (scrollController is JumpAwareItemScrollController &&
+            !scrollController.isNativeAttached)) {
+      return;
+    }
     final measured = _findPosition(positionsListener, segmentIndex);
     if (measured == null) {
       return;

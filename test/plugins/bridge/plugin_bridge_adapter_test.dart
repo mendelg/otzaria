@@ -73,6 +73,7 @@ import 'package:otzaria/tabs/bloc/tabs_state.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
+import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/tools/calendar/bloc/calendar_cubit.dart';
 import 'package:otzaria/utils/navigation/book_open_coordinator.dart';
 import 'package:otzaria/workspaces/bloc/workspace_bloc.dart';
@@ -1877,6 +1878,96 @@ Future<void> main() async {
                 as String;
         expect(vocalized, contains('שָׁלוֹם'));
         expect(vocalized.split('\n'), hasLength(3));
+      },
+    );
+
+    test(
+      'display conversion yields and concurrent profiles retain their own content',
+      () async {
+        final raw = List.filled(5000, 'אָב, שָׁלוֹם יהוה<br>סוף').join('\n');
+        final book = TextBook(title: 'מקביל', categoryId: 502, id: 778);
+        final key = BookCompositeKey.create(
+          title: book.title,
+          categoryId: 502,
+          fileType: 'txt',
+        );
+        final provider = _FakeBookProvider({key: raw});
+        LibraryProviderManager.instance.seedMappingsForTesting(
+          mapping: {key: provider},
+          providers: [provider],
+        );
+        final tab = TextBookTab(book: book, index: 0);
+        addTearDown(tab.dispose);
+        final loaded = TextBookLoaded.initial(
+          book: book,
+          index: 0,
+          showLeftPane: false,
+          splitView: false,
+        );
+        tab.bloc.emit(
+          loaded.copyWith(removeNikud: true, removePunctuation: true),
+        );
+        final boundAdapter = readerAdapter(tab);
+        addTearDown(boundAdapter.dispose);
+        final identity = PluginBookIdentity.toJsonWithUid(book);
+        await boundAdapter.execute('library', 'getBookContent', {
+          ...identity,
+          'limit': 1,
+        });
+        final request = {...identity, 'limit': 5000, 'textReaderDisplay': true};
+        var firstCompleted = false;
+        final first = boundAdapter
+            .execute('library', 'getBookContent', request)
+            .then((value) {
+              firstCompleted = true;
+              return value;
+            });
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          firstCompleted,
+          isFalse,
+          reason: 'conversion must let the UI event loop advance',
+        );
+        tab.bloc.emit(loaded);
+        final second = boundAdapter.execute(
+          'library',
+          'getBookContent',
+          request,
+        );
+        final sameProfile = boundAdapter.execute(
+          'library',
+          'getBookContent',
+          request,
+        );
+        final results = await Future.wait([first, second, sameProfile]);
+        String expected(TextDisplayProfile profile) => raw
+            .split('\n')
+            .map(
+              (line) => applyTextDisplayProfile(
+                line,
+                profile,
+              ).replaceAll('\n', '<br>'),
+            )
+            .join('\n')
+            .substring(0, 5000);
+        expect(
+          results[0],
+          expected(
+            loaded
+                .copyWith(removeNikud: true, removePunctuation: true)
+                .bodyDisplayProfile,
+          ),
+        );
+        expect(results[1], expected(loaded.bodyDisplayProfile));
+        expect(results[0], isNot(contains('אָב')));
+        expect(results[0], isNot(contains(',')));
+        expect(results[1], contains('אָב, שָׁלוֹם'));
+        expect(results[2], results[1]);
+        expect(
+          results.every((result) => !(result as String).contains('יהוה')),
+          isTrue,
+        );
+        expect((results[1] as String).split('\n').length, greaterThan(1));
       },
     );
 

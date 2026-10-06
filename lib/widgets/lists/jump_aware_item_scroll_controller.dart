@@ -3,12 +3,11 @@ import 'package:flutter/widgets.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 /// [ItemScrollController] שמודיע למאזינים לפני כל קפיצה לאינדקס.
-///
-/// הקפיצה מאפסת את היסט הגלילה סביב עוגן חדש, ובחירת טקסט שנשענת על ההיסט
-/// נוחתת אחריה על טקסט אחר.
 class JumpAwareItemScrollController extends ItemScrollController {
   final _beforeJumpListeners = ObserverList<VoidCallback>();
-  Future<void> Function(int index)? externalScroll;
+  Future<void> Function(int index, {int? sourceLineIndex})? externalScroll;
+
+  bool get isNativeAttached => externalScroll == null && super.isAttached;
 
   @override
   bool get isAttached => externalScroll != null || super.isAttached;
@@ -38,13 +37,16 @@ class JumpAwareItemScrollController extends ItemScrollController {
   @override
   Future<void> scrollTo({
     required int index,
+    int? sourceLineIndex,
     double alignment = 0,
     required Duration duration,
     Curve curve = Curves.linear,
     List<double> opacityAnimationWeights = const [40, 20, 40],
   }) {
     _notifyBeforeJump();
-    if (externalScroll case final navigate?) return navigate(index);
+    if (externalScroll case final navigate?) {
+      return navigate(index, sourceLineIndex: sourceLineIndex);
+    }
     return super.scrollTo(
       index: index,
       alignment: alignment,

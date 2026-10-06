@@ -48,13 +48,18 @@ class _PluginTextReaderState extends State<PluginTextReader> {
     _syncNavigation();
   }
 
-  Future<void> _navigate(int index) async {
+  Future<void> _navigate(int index, {int? sourceLineIndex}) async {
     final state = widget.tab.bloc.state;
-    final line = state is TextBookLoaded && state.readingSegments.isNotEmpty
-        ? state
-              .readingSegments[index.clamp(0, state.readingSegments.length - 1)]
-              .startLineIndex
-        : index;
+    final line =
+        sourceLineIndex ??
+        (state is TextBookLoaded && state.readingSegments.isNotEmpty
+            ? state
+                  .readingSegments[index.clamp(
+                    0,
+                    state.readingSegments.length - 1,
+                  )]
+                  .startLineIndex
+            : index);
     widget.tab.index = line;
     _lastIndex = line;
     widget.tab.bloc.add(UpdateVisibleIndecies([line]));

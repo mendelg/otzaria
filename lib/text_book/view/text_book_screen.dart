@@ -2443,12 +2443,18 @@ class _TextBookViewerBlocState extends State<TextBookViewerBloc>
 
   void _scrollToTocLine(TextBookLoaded state, int? line) {
     if (line == null) return;
-    final scroll = state.scrollController.scrollTo(
-      // ה-TOC עובד בשורות מקור; ה-ListView לפי itemIndex (=segmentIndex
-      // במצב רצף).
-      index: _itemIndexForSourceLine(state, line),
-      duration: const Duration(milliseconds: 300),
-    );
+    final controller = state.scrollController;
+    final index = _itemIndexForSourceLine(state, line);
+    final scroll = controller is JumpAwareItemScrollController
+        ? controller.scrollTo(
+            index: index,
+            sourceLineIndex: line,
+            duration: const Duration(milliseconds: 300),
+          )
+        : controller.scrollTo(
+            index: index,
+            duration: const Duration(milliseconds: 300),
+          );
     _pendingTocLine = line;
     scroll.whenComplete(() {
       if (_pendingTocLine == line) _pendingTocLine = null;
@@ -3064,31 +3070,6 @@ int _itemIndexForSourceLine(TextBookLoaded state, int lineIndex) =>
       lineIndex: lineIndex,
       readingSegments: state.readingSegments,
     );
-
-// [EDITING DISABLED]
-// // החלף את כל המחלקה הזו בקובץ text_book_screen.TXT
-//
-// Widget _buildFullFileEditorButton(BuildContext context, TextBookLoaded state) {
-//   final shortcut =
-//       Settings.getValue<String>('key-shortcut-edit-section') ?? 'ctrl+e';
-//   return IconButton(
-//     onPressed: () => _handleFullFileEditorPress(context, state),
-//     icon: const Icon(FluentIcons.document_edit_24_regular),
-//     tooltip: 'ערוך את הספר (${shortcut.toUpperCase()})',
-//   );
-// }
-//
-// void _handleTextEditorPress(BuildContext context, TextBookLoaded state) {
-//   final positions = state.positionsListener.itemPositions.value;
-//   if (positions.isEmpty) return;
-//
-//   final currentIndex = positions.first.index;
-//   context.read<TextBookBloc>().add(OpenEditor(index: currentIndex));
-// }
-//
-// void _handleFullFileEditorPress(BuildContext context, TextBookLoaded state) {
-//   context.read<TextBookBloc>().add(OpenFullFileEditor());
-// }
 
 /// Steps the text size by 3 within 15 to 50 and saves it for the book.
 Future<void> _stepFontSize(

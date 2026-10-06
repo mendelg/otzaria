@@ -12,7 +12,7 @@ void main() {
     final external = <int>[];
     var jumps = 0;
     controller.addBeforeJumpListener(() => jumps++);
-    controller.externalScroll = (index) async {
+    controller.externalScroll = (index, {int? sourceLineIndex}) async {
       external.add(index);
     };
     expect(controller.isAttached, isTrue);
