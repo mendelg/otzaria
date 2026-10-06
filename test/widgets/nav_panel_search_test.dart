@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/widgets/lists/nav_tree_tile.dart';
 import 'package:otzaria/tabs/models/tab.dart';
 import 'package:otzaria/tabs/view/split_pane_view.dart';
+import 'package:otzaria/theme/app_theme_data.dart';
 import 'package:otzaria/widgets/navigation/nav_panel_search.dart';
 import 'package:otzaria/widgets/text/otzaria_search_field.dart';
 
@@ -83,9 +84,7 @@ class _HostState extends State<_Host> {
 Widget wrap(Widget child) => MaterialApp(
   home: Directionality(
     textDirection: TextDirection.rtl,
-    child: Scaffold(
-      body: SizedBox(width: 400, height: 700, child: child),
-    ),
+    child: Scaffold(body: SizedBox(width: 400, height: 700, child: child)),
   ),
 );
 
@@ -215,10 +214,7 @@ void main() {
       await scrollBy(tester, 3000);
       expect(searchIcon(), findsOneWidget);
       expect(
-        find.descendant(
-          of: find.byType(NavTreeHeader),
-          matching: searchIcon(),
-        ),
+        find.descendant(of: find.byType(NavTreeHeader), matching: searchIcon()),
         findsOneWidget,
       );
     });
@@ -241,6 +237,38 @@ void main() {
       expect(
         tester.state<ScrollableState>(listScrollable()).position.pixels,
         offset,
+      );
+    });
+
+    // issue #1942 — רקע צף עגול חרג מריבוע הריחוף של ה-IconButton.
+    testWidgets('הרקע הצף בצורת IconButton של ערכת הנושא', (tester) async {
+      final theme = AppThemeData.light(
+        ColorScheme.fromSeed(seedColor: Colors.brown),
+        compactMenuMode: false,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: SizedBox(
+              width: 400,
+              height: 700,
+              child: const _Host(rowCount: 80),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await scrollBy(tester, -1500);
+
+      final background = tester
+          .widgetList<Material>(
+            find.ancestor(of: searchIcon(), matching: find.byType(Material)),
+          )
+          .firstWhere((m) => m.elevation > 0);
+      expect(
+        background.shape,
+        theme.iconButtonTheme.style!.shape!.resolve(const {}),
       );
     });
   });
