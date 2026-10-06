@@ -623,7 +623,8 @@ composition) אינם עובדים באוצריא x64 על ARM, ומשתמש ARM
 
 ## האשף — `installer/download_assistant.iss`
 
-```bash
+```powershell
+.\tool\release\fetch_assistant_art.ps1    # העיצוב הנעוץ -> installer\assistant_art (מדלג כשכבר שם)
 ISCC installer\download_assistant.iss     # -> installer\Otzaria-Download-Assistant-windows.exe
 ```
 
@@ -985,7 +986,22 @@ GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל 
   בשכבת התצוגה נרשמת ללוג ומפסיקה רק את העדכונים, לא את האשף.
 
 **העיצוב אינו במאגר.** `installer/assistant_art/` (מסונן ב-`.gitignore`) מגיע
-מריפו העיצוב בגרסה נעוצה לפני הבנייה, ובו גם `assistant_art.isi` עם קני המידה,
+מ-Release של [Otzaria/otzaria-design](https://github.com/Otzaria/otzaria-design)
+בגרסה שנעוצה ב-`installer/assistant_art.pin.json` (גרסה, כתובת, SHA-256 — המקום
+היחיד שמשתנה). `tool/release/fetch_assistant_art.ps1` (pwsh, וגם Windows PowerShell)
+מוריד את ה-zip לתיקייה זמנית ליד היעד, עם timeout ושלושה ניסיונות, מאמת SHA-256
+**לפני** הפריסה, מוודא ש-`AA_ART_VERSION` שב-`.isi` שווה לגרסה הנעוצה, ומחליף את
+התיקייה בבת אחת. בתיקייה נכתבת חותמת `.pinned-sha256`, והריצה הבאה מדלגת רק כשהיא
+שווה ל-hash הנעוץ — לא לפי קיום קבצים. בנייה מקומית: הפקודה שבראש הפרק.
+
+**העלאת גרסה:** בריפו העיצוב לפי ה-README שלו (`download-assistant/README.md`,
+"פרסום גרסה חדשה"): `ART_VERSION`, הפקה, `py pack_release.py` שמדפיס גרסה ו-SHA-256,
+ו-Release בתגית `download-assistant-art-v<גרסה>` עם
+`download-assistant-art-<גרסה>.zip`. כאן מעדכנים את שלושת השדות ב-`assistant_art.pin.json`
+ומריצים את הסקריפט ואת הבדיקות (הכתובת נבדקת מול הגרסה). דרישה חדשה מהעיצוב נאכפת
+ב-`#error` שבראש `download_assistant_ui.iss`.
+
+בעיצוב יש גם `assistant_art.isi` עם קני המידה,
 הגדלים, הזמנים והצבעים (`AA_*`, צבעים כ-`0xBBGGRR` — ISPP אינו מקבל `$`).
 בלעדיו הקומפילציה נעצרת ב-`#error` מוסבר. קנה המידה נבחר מה-DPI (100–250%)
 כך שכל תמונה מוצגת פיקסל-לפיקסל, וכשהחלון לא נכנס במסך — קנה מידה קטן יותר.
@@ -1053,7 +1069,9 @@ Setup ורץ Windows שלם בשביל קומפילציה של שניות.
 
 **מדיניות הכישלון: האשף אינו חוסם שחרור.** הוא כלי עזר, לא רכיב של הגרסה, ולכן
 שלב הבנייה נושא `continue-on-error: true` וההעלאה שלו מותנית ב-
-`steps.download_assistant.outcome == 'success'`. ב-`create_release` השלב
+`steps.download_assistant.outcome == 'success'`. משיכת העיצוב
+(`fetch_assistant_art.ps1`) רצה בתוך אותו שלב לפני ISCC, ולכן גם כישלון שלה (רשת,
+hash שאינו תואם) מפיל רק את המסייע. ב-`create_release` השלב
 "Stage Download Assistant" מעתיק את ארבעת המסייעים (Windows, macOS, Linux x64,
 Linux ARM64 — הטבלה ב"נכסי המסייעים") כל אחד בנפרד, ועל כל קובץ חסר מדפיס
 `::warning::` משלו וממשיך. גרסה

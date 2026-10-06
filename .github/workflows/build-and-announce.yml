@@ -515,6 +515,7 @@ jobs:
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:').Line.Split(' ')[1].Split('+')[0]
           $tag = & ./tool/version/release_tag.ps1 $version '${{ github.ref }}' '${{ github.run_number }}'
           $env:OTZARIA_ASSISTANT_RELEASE_TAG = $tag
+          & ./tool/release/fetch_assistant_art.ps1
           & "$env:ISCC" installer\download_assistant.iss
           if ($LASTEXITCODE -ne 0) {
             throw "Download Assistant build failed"

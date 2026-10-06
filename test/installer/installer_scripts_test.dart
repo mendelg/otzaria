@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -3718,6 +3719,85 @@ void main() {
           r"'${{ github.ref }}' '${{ github.run_number }}'",
         ),
       );
+    });
+  });
+
+  group('עיצוב המסייע — גרסה נעוצה מריפו העיצוב', () {
+    const pinPath = 'installer/assistant_art.pin.json';
+    const fetcher = 'tool/release/fetch_assistant_art.ps1';
+
+    test('הנעיצה: Release של Otzaria, sha256 מלא, וגרסה אחת בכל השדות', () {
+      final pin =
+          jsonDecode(File(pinPath).readAsStringSync()) as Map<String, Object?>;
+      final version = pin['version'] as String;
+
+      expect(version, matches(RegExp(r'^\d+\.\d+\.\d+$')));
+      expect(pin['sha256'], matches(RegExp(r'^[0-9a-f]{64}$')));
+      expect(
+        pin['url'],
+        'https://github.com/Otzaria/otzaria-design/releases/download/'
+        'download-assistant-art-v$version/download-assistant-art-$version.zip',
+        reason: 'התגית ושם הנכס של pack_release.py נגזרים מהגרסה',
+      );
+      expect(
+        File(fetcher).readAsStringSync(),
+        isNot(contains(version)),
+        reason: 'הנעיצה היא המקום היחיד שמעדכנים בהעלאת גרסה',
+      );
+    });
+
+    test('כל workflow שמקמפל את המסייע מושך את העיצוב לפני ISCC', () {
+      final compiling = [
+        for (final file in Directory('.github/workflows').listSync())
+          if (file is File &&
+              file.readAsStringSync().contains(
+                r'installer\download_assistant.iss',
+              ))
+            file.path,
+      ];
+      expect(compiling, isNotEmpty);
+      for (final path in compiling) {
+        final text = File(path).readAsStringSync();
+        final fetch = text.indexOf('& ./tool/release/fetch_assistant_art.ps1');
+        expect(fetch, greaterThanOrEqualTo(0), reason: path);
+        expect(
+          fetch,
+          lessThan(
+            text.indexOf(r'& "$env:ISCC" installer\download_assistant.iss'),
+          ),
+          reason: path,
+        );
+      }
+      expect(
+        _workflowStep('Build Download Assistant (non-fatal helper tool)'),
+        contains('continue-on-error: true'),
+        reason: 'כישלון בהורדת העיצוב מפיל רק את המסייע',
+      );
+    });
+
+    test('הסקריפט מאמת hash ואת AA_ART_VERSION לפני שהוא פורס ומחליף', () {
+      final script = File(fetcher).readAsStringSync().replaceAll('\r\n', '\n');
+      final hash = script.indexOf('Get-FileHash');
+      final expand = script.indexOf('Expand-Archive');
+      final version = script.indexOf('AA_ART_VERSION');
+      final replace = script.indexOf(
+        r'Move-Item -LiteralPath $staged -Destination $Destination',
+      );
+
+      expect(hash, greaterThanOrEqualTo(0));
+      expect(
+        script.substring(hash, expand),
+        contains(r'if ($actual -ne $sha256)'),
+      );
+      expect(expand, greaterThan(hash), reason: 'פריסה רק אחרי אימות');
+      expect(version, greaterThan(expand));
+      expect(replace, greaterThan(version), reason: 'מחליפים פעם אחת, בסוף');
+      // הדילוג נשען על חותמת ה-sha, לא על קיום קבצים.
+      expect(
+        script,
+        contains(r'(Get-Content -LiteralPath $stamp -Raw).Trim() -eq $sha256'),
+      );
+      expect(script, contains('-TimeoutSec'));
     });
   });
 }
