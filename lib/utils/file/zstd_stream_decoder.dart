@@ -7,7 +7,10 @@ import 'package:zstandard_native/zstandard_native_bindings.dart';
 /// מפענח zstd בזרימה שמוזן בנתחים מכל מקור (חלקים, ערוץ SAF) ומוסר את
 /// הפלט לצרכן סינכרוני, בלי קובץ ביניים.
 class ZstdStreamDecoder {
-  ZstdStreamDecoder(DynamicLibrary lib) : _zstd = ZstandardNativeBindings(lib) {
+  ZstdStreamDecoder(
+    DynamicLibrary lib, {
+    this.requireContentChecksum = false,
+  }) : _zstd = ZstandardNativeBindings(lib) {
     _inSize = _zstd.ZSTD_DStreamInSize();
     _outSize = _zstd.ZSTD_DStreamOutSize();
     _stream = _zstd.ZSTD_createDStream();
@@ -30,6 +33,8 @@ class ZstdStreamDecoder {
   }
 
   final ZstandardNativeBindings _zstd;
+  final bool requireContentChecksum;
+  final _frameHead = <int>[];
   late final int _inSize;
   late final int _outSize;
   late final Pointer<ZSTD_DCtx> _stream;
@@ -63,12 +68,25 @@ class ZstdStreamDecoder {
         ..size = take
         ..pos = 0;
       while (_inBuf.ref.pos < _inBuf.ref.size) {
+        if (requireContentChecksum && _frameHead.length < 5) {
+          final start = _inBuf.ref.pos;
+          final end = (start + 5 - _frameHead.length).clamp(start, take);
+          _frameHead.addAll(Uint8List.sublistView(inView, start, end));
+          if (_frameHead.length == 5 && !frameHasContentChecksum(_frameHead)) {
+            throw const FormatException(
+              'לא ניתן לאמת את הארכיון: חסר checksum בתוכן frame של zstd; '
+              'נדרש קובץ המניפסט שלו',
+            );
+          }
+        }
         _outBuf.ref
           ..dst = _outNative.cast()
           ..size = _outSize
           ..pos = 0;
         _lastRet = _zstd.ZSTD_decompressStream(_stream, _outBuf, _inBuf);
         _check(_lastRet, 'פענוח zstd');
+        // libzstd עוצר בסוף כל frame, גם כשבאותו נתח מתחיל ה-frame הבא.
+        if (_lastRet == 0) _frameHead.clear();
         if (_outBuf.ref.pos > 0) {
           onOutput(_outNative.asTypedList(_outBuf.ref.pos));
         }

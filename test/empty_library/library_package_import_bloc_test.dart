@@ -60,6 +60,51 @@ class _Gate extends LibraryAccessGate {
   }
 }
 
+class _FailingCache extends MemoryCacheProvider {
+  String? failingKey;
+  bool failAfterWrite = false;
+
+  @override
+  Future<void> setObject<T>(String key, T? value) async {
+    if (key == failingKey) {
+      if (failAfterWrite) {
+        failingKey = null;
+        await super.setObject<T>(key, value);
+      }
+      throw const FileSystemException('simulated settings I/O failure');
+    }
+    await super.setObject<T>(key, value);
+  }
+}
+
+class _Importer extends LibraryPackageImporter {
+  _Importer({
+    required super.runner,
+    required super.diskSpace,
+    required super.indexHost,
+    this.beforeCommit,
+    this.afterCommit,
+    this.afterDiscard,
+  });
+
+  final Future<void> Function()? beforeCommit;
+  final Future<void> Function()? afterCommit;
+  final Future<void> Function()? afterDiscard;
+
+  @override
+  Future<void> commitIndex(String indexTarget) async {
+    await beforeCommit?.call();
+    await super.commitIndex(indexTarget);
+    await afterCommit?.call();
+  }
+
+  @override
+  Future<void> discard(StagedLibraryPackage staged) async {
+    await super.discard(staged);
+    await afterDiscard?.call();
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final lib = openZstdForTests();
@@ -70,6 +115,8 @@ void main() {
   late String books;
   late List<String> indexHostCalls;
   late _Gate gate;
+  late _FailingCache cache;
+  late List<(String?, String?)> reopenedLibrary;
 
   setUp(() async {
     temp = await Directory.systemTemp.createTemp('otzaria-pkg-bloc-');
@@ -78,7 +125,8 @@ void main() {
     root = p.join(temp.path, 'ספרייה');
     books = p.join(root, 'books');
     indexHostCalls = [];
-    await Settings.init(cacheProvider: MemoryCacheProvider());
+    reopenedLibrary = [];
+    await Settings.init(cacheProvider: cache = _FailingCache());
     await Settings.setValue<String>(SettingsRepository.keyLibraryPath, '');
     await Settings.setValue<String>(SettingsRepository.keyIndexPath, '');
   });
@@ -125,16 +173,42 @@ void main() {
     );
   }
 
-  EmptyLibraryBloc build({int freeBytes = -1}) => EmptyLibraryBloc(
+  EmptyLibraryBloc build({
+    int freeBytes = -1,
+    bool failReopen = false,
+    bool failInstall = false,
+    Future<void> Function()? beforeIndexCommit,
+    Future<void> Function()? afterIndexCommit,
+    Future<void> Function()? afterStagingDiscard,
+  }) => EmptyLibraryBloc(
     accessGate: gate = _Gate(),
     downloadSpaceChecker: (_) async => null,
-    packageImporter: LibraryPackageImporter(
+    packageImporter: _Importer(
       runner: inlineRunner,
+      beforeCommit: beforeIndexCommit,
+      afterCommit: afterIndexCommit,
+      afterDiscard: afterStagingDiscard,
       diskSpace: (_) async =>
           DiskSpaceInfo(volumeId: 'test', freeBytes: freeBytes),
       indexHost: LibraryIndexHost(
-        release: () async => indexHostCalls.add('release'),
-        reopen: () async => indexHostCalls.add('reopen'),
+        release: () async {
+          indexHostCalls.add('release');
+          if (failInstall) {
+            await Directory(
+              p.join('$books.import', 'index'),
+            ).delete(recursive: true);
+          }
+        },
+        reopen: () async {
+          indexHostCalls.add('reopen');
+          final db = File(p.join(books, _dbName));
+          final meta = File(p.join(root, 'index', 'meta.json'));
+          reopenedLibrary.add((
+            db.existsSync() ? db.readAsStringSync() : null,
+            meta.existsSync() ? meta.readAsStringSync() : null,
+          ));
+          if (failReopen) throw StateError('simulated reopen failure');
+        },
       ),
     ),
   );
@@ -199,6 +273,7 @@ void main() {
       );
       expect(Settings.getValue<String>(SettingsRepository.keyIndexPath), index);
       expect(indexHostCalls, ['release', 'reopen']);
+      expect(reopenedLibrary, [('new-db', '{"new":true}')]);
       expectNoLeftovers();
     },
   );
@@ -268,6 +343,73 @@ void main() {
     },
   );
 
+  for (final replacing in [false, true]) {
+    blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+      'כשל אחרי כתיבת ההגדרות ללא אינדקס קודם, replacing=$replacing',
+      setUp: () async {
+        if (lib == null) return;
+        writeLibrary(lib);
+        writeIndex(lib);
+        packages = await scanned();
+        if (replacing) {
+          await Directory(books).create(recursive: true);
+          await File(p.join(books, _dbName)).writeAsString('old-db');
+          await Settings.setValue<String>(
+            SettingsRepository.keyLibraryPath,
+            books,
+          );
+        }
+        cache.failingKey = SettingsRepository.keyDbEffectivePath;
+        cache.failAfterWrite = true;
+      },
+      build: build,
+      act: (bloc) async {
+        if (lib == null) return;
+        bloc.add(
+          ImportLibraryPackageRequested(
+            packages: packages,
+            targetPath: books,
+            backupExistingPath: replacing ? books : null,
+          ),
+        );
+        await settle(bloc, replacing: replacing);
+      },
+      verify: (bloc) {
+        if (lib == null) return;
+        expect(bloc.state, isA<EmptyLibraryError>());
+        expect(
+          File(p.join(books, _dbName)).readAsStringSync(),
+          replacing ? 'old-db' : 'new-db',
+        );
+        expect(Directory(p.join(root, 'index')).existsSync(), isFalse);
+        expect(Directory(p.join(root, 'index.replaced')).existsSync(), isFalse);
+        expect(
+          Settings.getValue<String>(SettingsRepository.keyLibraryPath),
+          replacing ? books : '',
+        );
+        expect(Settings.getValue<String>(SettingsRepository.keyIndexPath), '');
+        expect(
+          Settings.getValue<String>(SettingsRepository.keyLibraryFolderName),
+          isNull,
+        );
+        expect(
+          Settings.getValue<String>(SettingsRepository.keyDbEffectivePath),
+          isNull,
+        );
+        expect(
+          Settings.containsKey(SettingsRepository.keyDbEffectivePath),
+          isFalse,
+        );
+        expect(
+          Settings.containsKey(SettingsRepository.keyLibraryFolderName),
+          isFalse,
+        );
+        expect(reopenedLibrary, [(replacing ? 'old-db' : 'new-db', null)]);
+        expectNoLeftovers();
+      },
+    );
+  }
+
   group('ספרייה קיימת', () {
     setUp(() async {
       await Directory(books).create(recursive: true);
@@ -318,6 +460,273 @@ void main() {
         expectNoLeftovers();
       },
     );
+
+    for (final failingKey in [
+      SettingsRepository.keyIndexPath,
+      SettingsRepository.keyLibraryPath,
+      SettingsRepository.keyLibraryFolderName,
+      SettingsRepository.keyDbEffectivePath,
+    ]) {
+      blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+        'כשל הגדרות $failingKey מחזיר DB ואינדקס תואמים',
+        setUp: () async {
+          if (lib == null) return;
+          writeLibrary(lib);
+          writeIndex(lib);
+          packages = await scanned();
+          await Settings.setValue<String>(
+            SettingsRepository.keyIndexPath,
+            p.join(root, 'index'),
+          );
+          await Settings.setValue<String>(
+            SettingsRepository.keyLibraryFolderName,
+            'ספרייה מקורית',
+          );
+          await Settings.setValue<String>(
+            SettingsRepository.keyDbEffectivePath,
+            p.join(books, _dbName),
+          );
+          cache.failingKey = failingKey;
+        },
+        build: build,
+        act: (bloc) async {
+          if (lib == null) return;
+          bloc.add(
+            ImportLibraryPackageRequested(
+              packages: packages,
+              targetPath: books,
+              backupExistingPath: books,
+            ),
+          );
+          await settle(bloc, replacing: true);
+        },
+        verify: (bloc) {
+          if (lib == null) return;
+          expect(bloc.state, isA<EmptyLibraryError>());
+          expectOldLibraryIntact();
+          expect(
+            Directory(p.join(root, 'index.replaced')).existsSync(),
+            isFalse,
+          );
+          expect(
+            Settings.getValue<String>(SettingsRepository.keyLibraryPath),
+            books,
+          );
+          expect(
+            Settings.getValue<String>(SettingsRepository.keyIndexPath),
+            p.join(root, 'index'),
+          );
+          expect(
+            Settings.getValue<String>(SettingsRepository.keyLibraryFolderName),
+            'ספרייה מקורית',
+          );
+          expect(
+            Settings.getValue<String>(SettingsRepository.keyDbEffectivePath),
+            p.join(books, _dbName),
+          );
+          expect(indexHostCalls, ['release', 'reopen']);
+          expect(reopenedLibrary, [('old-db', 'old')]);
+        },
+      );
+    }
+
+    blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+      'ביטול אחרי הפריסה אינו קוטע החלפה שכבר הוגדרה כלא ניתנת לביטול',
+      setUp: () async {
+        if (lib == null) return;
+        writeLibrary(lib);
+        writeIndex(lib);
+        packages = await scanned();
+      },
+      build: build,
+      act: (bloc) async {
+        if (lib == null) return;
+        final sub = bloc.stream.listen((state) {
+          if (state is EmptyLibraryExtracting &&
+              !state.cancellable &&
+              state.progress == 1) {
+            bloc.add(CancelLibraryImportRequested());
+          }
+        });
+        bloc.add(
+          ImportLibraryPackageRequested(
+            packages: packages,
+            targetPath: books,
+            backupExistingPath: books,
+          ),
+        );
+        await settle(bloc, replacing: true);
+        await sub.cancel();
+      },
+      verify: (bloc) {
+        if (lib == null) return;
+        expect(bloc.state, isA<EmptyLibraryDirectorySelected>());
+        expect(reopenedLibrary, [('new-db', '{"new":true}')]);
+        expectNoLeftovers();
+      },
+    );
+
+    blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+      'כשל התקנת האינדקס אינו מוחק את האינדקס שהמתקין כבר שחזר',
+      setUp: () async {
+        if (lib == null) return;
+        writeLibrary(lib);
+        writeIndex(lib);
+        packages = await scanned();
+      },
+      build: () => build(failInstall: true),
+      act: (bloc) async {
+        if (lib == null) return;
+        bloc.add(
+          ImportLibraryPackageRequested(
+            packages: packages,
+            targetPath: books,
+            backupExistingPath: books,
+          ),
+        );
+        await settle(bloc, replacing: true);
+      },
+      verify: (bloc) {
+        if (lib == null) return;
+        expect(bloc.state, isA<EmptyLibraryError>());
+        expectOldLibraryIntact();
+        expect(reopenedLibrary, [('old-db', 'old')]);
+        expect(indexHostCalls, ['release', 'reopen']);
+      },
+    );
+
+    blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+      'כשל פתיחת האינדקס לאחר commit משאיר התקנה תואמת ומחדש חלונות',
+      setUp: () async {
+        if (lib == null) return;
+        writeLibrary(lib);
+        writeIndex(lib);
+        packages = await scanned();
+      },
+      build: () => build(failReopen: true),
+      act: (bloc) async {
+        if (lib == null) return;
+        bloc.add(
+          ImportLibraryPackageRequested(
+            packages: packages,
+            targetPath: books,
+            backupExistingPath: books,
+          ),
+        );
+        await settle(bloc, replacing: true);
+      },
+      verify: (bloc) {
+        if (lib == null) return;
+        expect(bloc.state, isA<EmptyLibraryDirectorySelected>());
+        expect(reopenedLibrary, [('new-db', '{"new":true}')]);
+        expect(indexHostCalls, ['release', 'reopen']);
+        expect(Directory(p.join(root, 'index.replaced')).existsSync(), isFalse);
+        expectNoLeftovers();
+      },
+    );
+
+    if (!Platform.isWindows) {
+      blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+        'כשל ניקוי גיבוי לאחר commit אינו משחזר DB שכבר אינו תואם לאינדקס',
+        setUp: () async {
+          if (lib == null) return;
+          writeLibrary(lib);
+          writeIndex(lib);
+          packages = await scanned();
+        },
+        build: () => build(
+          afterIndexCommit: () async {
+            final backup = EmptyLibraryBloc.dbBackupDirPath;
+            addTearDown(() => Process.run('chmod', ['700', backup]));
+            final result = await Process.run('chmod', ['500', backup]);
+            expect(result.exitCode, 0);
+          },
+        ),
+        act: (bloc) async {
+          if (lib == null) return;
+          bloc.add(
+            ImportLibraryPackageRequested(
+              packages: packages,
+              targetPath: books,
+              backupExistingPath: books,
+            ),
+          );
+          await settle(bloc, replacing: true);
+        },
+        verify: (bloc) {
+          if (lib == null) return;
+          expect(bloc.state, isA<EmptyLibraryDirectorySelected>());
+          expect(reopenedLibrary, [('new-db', '{"new":true}')]);
+          expect(
+            File(
+              p.join(EmptyLibraryBloc.dbBackupDirPath, _dbName),
+            ).readAsStringSync(),
+            'old-db',
+          );
+          expect(
+            Directory(p.join(root, 'index.replaced')).existsSync(),
+            isFalse,
+          );
+        },
+      );
+    }
+
+    for (final cleanupPhase in [
+      'beforeCommit',
+      'afterCommit',
+      'afterDiscard',
+    ]) {
+      Future<void> failCleanup() async =>
+          throw const FileSystemException('simulated cleanup failure');
+      blocTest<EmptyLibraryBloc, EmptyLibraryState>(
+        'כשל ניקוי $cleanupPhase אינו הופך commit ל-rollback',
+        setUp: () async {
+          if (lib == null) return;
+          writeLibrary(lib);
+          writeIndex(lib);
+          packages = await scanned();
+        },
+        build: () => build(
+          beforeIndexCommit: cleanupPhase == 'beforeCommit'
+              ? failCleanup
+              : null,
+          afterIndexCommit: cleanupPhase == 'afterCommit' ? failCleanup : null,
+          afterStagingDiscard: cleanupPhase == 'afterDiscard'
+              ? failCleanup
+              : null,
+        ),
+        act: (bloc) async {
+          if (lib == null) return;
+          bloc.add(
+            ImportLibraryPackageRequested(
+              packages: packages,
+              targetPath: books,
+              backupExistingPath: books,
+            ),
+          );
+          await settle(bloc, replacing: true);
+        },
+        verify: (bloc) {
+          if (lib == null) return;
+          expect(bloc.state, isA<EmptyLibraryDirectorySelected>());
+          expect(reopenedLibrary, [('new-db', '{"new":true}')]);
+          expect(indexHostCalls, ['release', 'reopen']);
+          expect(
+            Settings.getValue<String>(SettingsRepository.keyLibraryPath),
+            books,
+          );
+          expect(
+            Settings.getValue<String>(SettingsRepository.keyIndexPath),
+            p.join(root, 'index'),
+          );
+          expect(
+            Directory(p.join(root, 'index.replaced')).existsSync(),
+            cleanupPhase == 'beforeCommit',
+          );
+          expectNoLeftovers();
+        },
+      );
+    }
 
     blocTest<EmptyLibraryBloc, EmptyLibraryState>(
       'חלק פגום: שגיאה עם שם החלק, והספרייה הקיימת לא נפגעת',

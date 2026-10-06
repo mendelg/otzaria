@@ -231,6 +231,79 @@ void main() {
       expect(Directory(p.join(dest.path, 'books')).existsSync(), isFalse);
     });
 
+    Uint8List multiFrameArchive({bool middleChecksum = true}) {
+      final tar = buildTar({'books/seforim.db': List.filled(64, 65)});
+      final middle = Uint8List.fromList([
+        0x28,
+        0xb5,
+        0x2f,
+        0xfd,
+        0x20,
+        64,
+        1,
+        2,
+        0,
+        ...List.filled(64, 65),
+      ]);
+      middle[9] ^= 3;
+      return Uint8List.fromList([
+        ...zstdCompress(lib!, Uint8List.sublistView(tar, 0, 512)),
+        ...(middleChecksum
+            ? zstdCompress(lib, Uint8List.sublistView(tar, 512, 576))
+            : middle),
+        ...zstdCompress(lib, Uint8List.sublistView(tar, 576)),
+      ]);
+    }
+
+    test('בלי מניפסט כל frame חייב checksum, גם באמצע תוכן קובץ', () async {
+      if (lib == null) return;
+      File(p.join(source.path, _library)).writeAsBytesSync(
+        multiFrameArchive(middleChecksum: false),
+      );
+      await expectLater(extract(await scanned()), throwsFormatException);
+    });
+
+    test('checksum בכל frame מאפשר ארכיון מרובה frames', () async {
+      if (lib == null) return;
+      File(p.join(source.path, _library)).writeAsBytesSync(multiFrameArchive());
+      await extract(await scanned());
+      expect(
+        File(p.join(dest.path, 'books', 'seforim.db')).readAsBytesSync(),
+        List.filled(64, 65),
+      );
+    });
+
+    test('בלי מניפסט כותרות frames יכולות להיחצות בין חלקים', () async {
+      if (lib == null) return;
+      writeSplitAsset(
+        source,
+        _library,
+        multiFrameArchive(),
+        partSize: 1,
+        withManifest: false,
+      );
+      await extract(await scanned());
+      expect(
+        File(p.join(dest.path, 'books', 'seforim.db')).readAsBytesSync(),
+        List.filled(64, 65),
+      );
+    });
+
+    test('עם מניפסט SHA-256 מאמת גם frames בלי checksum', () async {
+      if (lib == null) return;
+      writeSplitAsset(
+        source,
+        _library,
+        multiFrameArchive(middleChecksum: false),
+        partSize: 17,
+      );
+      await extract(await scanned());
+      expect(File(p.join(dest.path, 'books', 'seforim.db')).readAsBytesSync(), [
+        66,
+        ...List.filled(63, 65),
+      ]);
+    });
+
     test('ארכיון מורכב מאומת מול ה-sha256 שבמניפסט', () async {
       if (lib == null) return;
       final archive = libraryArchive(lib);

@@ -30,7 +30,10 @@ Future<void> extractLibraryPackage({
   void Function(int bytesRead)? onBytes,
   bool Function()? isCancelled,
 }) async {
-  final decoder = ZstdStreamDecoder(zstd);
+  final decoder = ZstdStreamDecoder(
+    zstd,
+    requireContentChecksum: !package.hasManifest,
+  );
   final tar = TarStreamExtractor(
     destination,
     rootFolder: package.kind.rootFolder,
@@ -39,7 +42,6 @@ Future<void> extractLibraryPackage({
   final wholeInput = package.hasManifest
       ? sha256.startChunkedConversion(wholeDigest)
       : null;
-  var headChecked = package.hasManifest;
   try {
     for (final part in package.parts) {
       final partDigest = AccumulatorSink<Digest>();
@@ -51,14 +53,6 @@ Future<void> extractLibraryPackage({
       var read = 0;
       await for (final chunk in folder.openRead(part.entry)) {
         if (isCancelled?.call() ?? false) throw const LibraryImportCancelled();
-        if (!headChecked) {
-          if (!ZstdStreamDecoder.frameHasContentChecksum(chunk)) {
-            throw FormatException(
-              'לא ניתן לאמת את ${package.archiveName}: חסר קובץ המניפסט שלו',
-            );
-          }
-          headChecked = true;
-        }
         partInput?.add(chunk);
         wholeInput?.add(chunk);
         read += chunk.length;

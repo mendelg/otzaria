@@ -205,6 +205,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     required String? backupPath,
     required Future<void> Function() body,
     required EmptyLibraryState Function(Object error) onError,
+    Future<void> Function()? afterReplacement,
   }) async {
     String? backupDir;
     var writeSessionStarted = false;
@@ -220,7 +221,10 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       await body();
       if (backupDir != null) {
         if (state is EmptyLibraryDirectorySelected) {
-          await _discardBackupDir(backupDir);
+          await _cleanupCommittedImport(
+            'גיבוי המסד',
+            () => _discardBackupDir(backupDir!),
+          );
         } else {
           await _restoreDatabaseFiles(backupDir, backupPath!);
         }
@@ -237,6 +241,7 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
           reopenDatabase: false,
         );
       }
+      await afterReplacement?.call();
       if (suspension != null) {
         await _accessGate.resumeAll(
           suspension,
@@ -250,23 +255,40 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
   Future<void> _onImportLibraryPackageRequested(
     ImportLibraryPackageRequested event,
     Emitter<EmptyLibraryState> emit,
-  ) => _replaceLibrarySafely(
-    emit,
-    backupPath: event.backupExistingPath,
-    body: () => _importLibraryPackage(event.packages, event.targetPath, emit),
-    onError: (e) => _error(
-      errorMessage: packageImportErrorMessage(e),
-      selectedPath: event.packages.folder.displayName,
-    ),
-  );
+  ) async {
+    var indexReleased = false;
+    await _replaceLibrarySafely(
+      emit,
+      backupPath: event.backupExistingPath,
+      body: () => _importLibraryPackage(
+        event.packages,
+        event.targetPath,
+        emit,
+        onIndexReleased: () => indexReleased = true,
+      ),
+      afterReplacement: () async {
+        // פתיחה מחדש חייבת לראות גם את המסד שהוחזר בכשל, לפני חידוש החלונות.
+        if (indexReleased) {
+          await _packageImporter.reopenIndex().catchError(
+            (Object e) => debugPrint('[EmptyLibrary] פתיחת האינדקס נכשלה: $e'),
+          );
+        }
+      },
+      onError: (e) => _error(
+        errorMessage: packageImportErrorMessage(e),
+        selectedPath: event.packages.folder.displayName,
+      ),
+    );
+  }
 
   /// פריסה ל-staging (ניתנת לביטול), בדיקת ה-DB, החלפת האינדקס והעברת
   /// הספרים ליעד. כשל לפני ההעברה אינו נוגע ביעד.
   Future<void> _importLibraryPackage(
     LibraryPackageSet packages,
     String target,
-    Emitter<EmptyLibraryState> emit,
-  ) async {
+    Emitter<EmptyLibraryState> emit, {
+    required VoidCallback onIndexReleased,
+  }) async {
     void report(String message, double progress, {bool cancellable = true}) =>
         emit(
           EmptyLibraryExtracting(
@@ -303,45 +325,82 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       cancel.dispose();
     }
 
-    var indexReleased = false;
+    final hasIndex = indexTarget != null && staged.indexDir != null;
+    final previousSettings = {
+      for (final key in [
+        SettingsRepository.keyIndexPath,
+        SettingsRepository.keyLibraryPath,
+        SettingsRepository.keyLibraryFolderName,
+        SettingsRepository.keyDbEffectivePath,
+      ])
+        key: Settings.getValue<String>(key),
+    };
+    Future<void> rollback() async {
+      if (hasIndex) await _packageImporter.rollbackIndex(indexTarget);
+      for (final entry in previousSettings.entries) {
+        if (Settings.getValue<String>(entry.key) != entry.value) {
+          await Settings.setValue<String?>(entry.key, entry.value);
+        }
+      }
+    }
+
     try {
+      report('מעביר את הספרייה למקומה...', 1, cancellable: false);
+      final stagedDb = _dbPathIn(staged.booksDir);
+      if (!await File(stagedDb).exists()) {
+        throw FormatException(
+          'בספרייה שהורדה חסר ${DatabaseConstants.databaseFileName}',
+        );
+      }
+      await _checkDbSchemaOffThread(stagedDb);
+      if (hasIndex) {
+        onIndexReleased();
+        await _packageImporter.installIndex(staged, indexTarget);
+      }
       try {
-        report('מעביר את הספרייה למקומה...', 1, cancellable: false);
-        final stagedDb = _dbPathIn(staged.booksDir);
-        if (!await File(stagedDb).exists()) {
-          throw FormatException(
-            'בספרייה שהורדה חסר ${DatabaseConstants.databaseFileName}',
-          );
-        }
-        await _checkDbSchemaOffThread(stagedDb);
-        if (indexTarget != null && staged.indexDir != null) {
-          indexReleased = true;
-          await _packageImporter.installIndex(staged, indexTarget);
-        }
-        try {
-          await promoteStagedImport(staged.booksDir, target);
-        } catch (_) {
-          if (indexReleased) await _packageImporter.rollbackIndex(indexTarget!);
-          rethrow;
-        }
-        if (indexReleased) {
-          await _packageImporter.commitIndex(indexTarget!);
+        await promoteStagedImport(staged.booksDir, target);
+        if (hasIndex) {
           await Settings.setValue<String>(
             SettingsRepository.keyIndexPath,
             indexTarget,
           );
         }
-      } finally {
+        await _handleDirectorySelection(target, emit);
+      } catch (_) {
+        await rollback();
+        rethrow;
+      }
+      if (state is EmptyLibraryDirectorySelected) {
+        if (hasIndex) {
+          await _cleanupCommittedImport(
+            'גיבוי האינדקס',
+            () => _packageImporter.commitIndex(indexTarget),
+          );
+        }
+      } else {
+        await rollback();
+      }
+    } finally {
+      if (state is EmptyLibraryDirectorySelected) {
+        await _cleanupCommittedImport(
+          'תיקיית הפריסה הזמנית',
+          () => _packageImporter.discard(staged),
+        );
+      } else {
         await _packageImporter.discard(staged);
       }
-      await _handleDirectorySelection(target, emit);
-    } finally {
-      // אחרי בחירת הספרייה: המנוע קורא בפתיחה את נתיב המסד מההגדרות.
-      if (indexReleased) {
-        await _packageImporter.reopenIndex().catchError(
-          (Object e) => debugPrint('[EmptyLibrary] פתיחת האינדקס נכשלה: $e'),
-        );
-      }
+    }
+  }
+
+  // אחרי אישור הספרייה ניקוי אינו יכול להחזיר עסקה שגיבוייה כבר נמחקו.
+  static Future<void> _cleanupCommittedImport(
+    String name,
+    Future<void> Function() cleanup,
+  ) async {
+    try {
+      await cleanup();
+    } catch (e) {
+      debugPrint('[EmptyLibrary] ניקוי $name נכשל: $e');
     }
   }
 
