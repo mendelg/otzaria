@@ -179,16 +179,28 @@ void main() {
         _routine(_script(), 'function ComponentIsRunnable('),
         contains('(AssetSize[A] >= MaxSingleOutputFileSize)'),
       );
-      for (final routine in const [
-        'function CollectByTypes(',
-        'procedure RefreshCustomPage();',
-      ]) {
-        expect(
-          _routine(_script(), routine),
-          contains('ComponentIsOffered(I)'),
-          reason: routine,
-        );
-      }
+      expect(
+        _routine(_script(), 'function CollectByTypes('),
+        contains('ComponentIsOffered(I)'),
+      );
+      expect(
+        _routine(_script(), 'function IsCustomChoice('),
+        contains('ComponentIsOffered(Index)'),
+      );
+    });
+
+    test('בבחירה האישית חלק (partOf) הוא חלק מהשורה של השלם (issue #1869)', () {
+      expect(
+        _routine(_script(), 'function IsCustomChoice('),
+        contains("(CompPartOf[Index] = '')"),
+      );
+      expect(
+        _routine(_script(), 'function CustomChoiceSize('),
+        contains('(CompPartOf[J] = CompId[Index]) and ComponentIsOffered(J)'),
+      );
+      final page = _routine(_script(), 'procedure RefreshCustomPage();');
+      expect(page, contains('if not IsCustomChoice(I) then'));
+      expect(page, contains('HumanSize(CustomChoiceSize(I))'));
     });
 
     test('בחירה אישית נסגרת כמו ההצעות', () {

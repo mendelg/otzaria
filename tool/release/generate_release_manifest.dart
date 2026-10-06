@@ -855,6 +855,20 @@ List<String> validateReleaseManifest(Object? manifest) {
         }
       }
     }
+    final partOf = component['partOf'];
+    if (partOf != null) {
+      final whole = byId[partOf];
+      final wholeDepends = whole?['dependsOn'];
+      // המסייעים אינם מציגים חלק לבדו — הוא מגיע רק דרך dependsOn של השלם.
+      if (partOf is! String ||
+          wholeDepends is! List ||
+          !wholeDepends.contains(component['id'])) {
+        errors.add(
+          'component ${component['id']}: partOf must name a component that '
+          'dependsOn it',
+        );
+      }
+    }
     final installedBy = component['installedBy'];
     if (installedBy is! List) continue;
     for (final installer in installedBy.whereType<String>()) {

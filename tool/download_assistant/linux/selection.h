@@ -53,6 +53,15 @@ GPtrArray *otz_package_format_choices(const OtzManifest *manifest,
 /* os_release is the content of /etc/os-release, or NULL off Linux. */
 char *otz_default_package_format(const char *os_release, GPtrArray *choices);
 
+/* The rows of the custom list (borrowed OtzComponent*, manifest order): offered
+ * and not partOf another component, which brings it through dependsOn. */
+GPtrArray *otz_custom_choices(const OtzManifest *manifest,
+                              const OtzTarget *target);
+/* A row's size: the component together with its offered parts. */
+gint64 otz_custom_choice_size(const OtzManifest *manifest,
+                              const OtzComponent *component,
+                              const OtzTarget *target);
+
 GPtrArray *otz_with_dependencies(const OtzManifest *manifest,
                                  GPtrArray *members, const OtzTarget *target);
 /* OtzPreset*; empty presets and duplicates of an earlier one are dropped. */

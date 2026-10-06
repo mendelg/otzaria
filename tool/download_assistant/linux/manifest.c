@@ -33,6 +33,7 @@ static void free_component(gpointer data) {
   g_free(component->package_format);
   g_ptr_array_unref(component->depends_on);
   g_ptr_array_unref(component->installed_by);
+  g_free(component->part_of);
   g_free(component->output_folder);
   g_free(component->output_note);
   g_ptr_array_unref(component->assets);
@@ -174,6 +175,7 @@ static gboolean parse_component(const OtzJson *json, OtzComponent **out,
   component->platform = dup_optional(json, "platform");
   component->architecture = dup_optional(json, "architecture");
   component->package_format = dup_optional(json, "packageFormat");
+  component->part_of = dup_optional(json, "partOf");
   component->output_folder = dup_optional(json, "outputFolder");
   component->output_note = dup_optional(json, "outputNote");
   const OtzJson *required = otz_json_get(json, "required");

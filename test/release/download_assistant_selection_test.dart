@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 
 import '../../tool/download_assistant/fixtures/generate_fixtures.dart';
 import '../../tool/release/download_assistant_selection.dart';
@@ -61,6 +62,49 @@ void main() {
             'run: dart run tool/download_assistant/fixtures/generate_fixtures.dart',
       );
     });
+
+    test(
+      'בבחירה האישית החיפוש החכם הוא אפשרות אחת בגודל של שני חלקיו (issue #1869)',
+      () {
+        Map<String, Object?> read(String name) =>
+            jsonDecode(File('$kFixtureDir/$name').readAsStringSync())
+                as Map<String, Object?>;
+        final manifest = read('release-manifest.json');
+        final byId = {
+          for (final c
+              in (manifest['components'] as List).cast<Map<String, Object?>>())
+            c['id']: c,
+        };
+        final targets = (read('expected-selections.json')['targets'] as List)
+            .cast<Map<String, Object?>>();
+        for (final platform in const ['windows', 'linux', 'macos']) {
+          final model = byId['semantic-model-$platform']!;
+          final vectors = byId['semantic-vectors-$platform']!;
+          for (final entry in targets.where(
+            (t) => (t['target'] as Map)['platform'] == platform,
+          )) {
+            final label = '${entry['target']}';
+            final choices = (entry['customChoices'] as List?)
+                ?.cast<Map<String, Object?>>();
+            expect(choices, isNotNull, reason: label);
+            final semantic = choices!
+                .where((c) => (c['id'] as String).startsWith('semantic-'))
+                .toList();
+            expect(semantic, hasLength(1), reason: label);
+            expect(
+              byId[semantic.single['id']]!['name'],
+              kSemanticSearchModeLabel,
+              reason: label,
+            );
+            expect(
+              semantic.single['downloadSize'],
+              (model['downloadSize'] as int) + (vectors['downloadSize'] as int),
+              reason: label,
+            );
+          }
+        }
+      },
+    );
   });
 
   group('כל הצעה ניתנת להתקנה', () {

@@ -105,6 +105,31 @@ gboolean otz_component_is_offered(const OtzManifest *manifest,
          otz_installer_for(manifest, component, target) != NULL;
 }
 
+GPtrArray *otz_custom_choices(const OtzManifest *manifest,
+                              const OtzTarget *target) {
+  GPtrArray *choices = g_ptr_array_new();
+  for (guint i = 0; i < manifest->components->len; i++) {
+    OtzComponent *component = g_ptr_array_index(manifest->components, i);
+    if (*component->part_of == '\0' &&
+        otz_component_is_offered(manifest, component, target))
+      g_ptr_array_add(choices, component);
+  }
+  return choices;
+}
+
+gint64 otz_custom_choice_size(const OtzManifest *manifest,
+                              const OtzComponent *component,
+                              const OtzTarget *target) {
+  gint64 total = component->download_size;
+  for (guint i = 0; i < manifest->components->len; i++) {
+    const OtzComponent *part = g_ptr_array_index(manifest->components, i);
+    if (strcmp(part->part_of, component->id) == 0 &&
+        otz_component_is_offered(manifest, part, target))
+      total += part->download_size;
+  }
+  return total;
+}
+
 GPtrArray *otz_platform_choices(const OtzManifest *manifest) {
   GPtrArray *choices = new_strings();
   for (gsize p = 0; otz_assistant_platforms[p] != NULL; p++) {

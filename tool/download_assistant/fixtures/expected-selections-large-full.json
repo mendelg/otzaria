@@ -52,6 +52,28 @@
         "semantic-model-windows",
         "semantic-vectors-windows"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-windows-portable-x64",
+          "downloadSize": 45
+        },
+        {
+          "id": "otzaria-windows-x64",
+          "downloadSize": 39
+        },
+        {
+          "id": "otzaria-windows-full-indexed",
+          "downloadSize": 60
+        },
+        {
+          "id": "library-full-indexed",
+          "downloadSize": 3215
+        },
+        {
+          "id": "semantic-vectors-windows",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -102,6 +124,20 @@
         "otzaria-windows-portable-arm64",
         "semantic-model-windows",
         "semantic-vectors-windows"
+      ],
+      "customChoices": [
+        {
+          "id": "otzaria-windows-arm64",
+          "downloadSize": 38
+        },
+        {
+          "id": "otzaria-windows-portable-arm64",
+          "downloadSize": 44
+        },
+        {
+          "id": "semantic-vectors-windows",
+          "downloadSize": 1703
+        }
       ],
       "presets": [
         {

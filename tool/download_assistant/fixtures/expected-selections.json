@@ -53,6 +53,32 @@
         "semantic-model-windows",
         "semantic-vectors-windows"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-windows-portable-x64",
+          "downloadSize": 45
+        },
+        {
+          "id": "otzaria-windows-x64",
+          "downloadSize": 39
+        },
+        {
+          "id": "otzaria-windows-full",
+          "downloadSize": 2019
+        },
+        {
+          "id": "otzaria-windows-full-indexed",
+          "downloadSize": 60
+        },
+        {
+          "id": "library-full-indexed",
+          "downloadSize": 3215
+        },
+        {
+          "id": "semantic-vectors-windows",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -101,6 +127,24 @@
         "semantic-model-windows",
         "semantic-vectors-windows"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-windows-arm64",
+          "downloadSize": 38
+        },
+        {
+          "id": "otzaria-windows-portable-arm64",
+          "downloadSize": 44
+        },
+        {
+          "id": "otzaria-windows-full-arm64",
+          "downloadSize": 1990
+        },
+        {
+          "id": "semantic-vectors-windows",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -147,6 +191,20 @@
         "otzaria-macos-full",
         "semantic-model-macos",
         "semantic-vectors-macos"
+      ],
+      "customChoices": [
+        {
+          "id": "otzaria-macos",
+          "downloadSize": 86
+        },
+        {
+          "id": "otzaria-macos-full",
+          "downloadSize": 1853
+        },
+        {
+          "id": "semantic-vectors-macos",
+          "downloadSize": 1703
+        }
       ],
       "presets": [
         {
@@ -195,6 +253,20 @@
         "semantic-model-linux",
         "semantic-vectors-linux"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-linux-deb-x64",
+          "downloadSize": 96
+        },
+        {
+          "id": "otzaria-linux-full-x64",
+          "downloadSize": 1927
+        },
+        {
+          "id": "semantic-vectors-linux",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -242,6 +314,20 @@
         "semantic-model-linux",
         "semantic-vectors-linux"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-linux-rpm-x64",
+          "downloadSize": 132
+        },
+        {
+          "id": "otzaria-linux-full-x64",
+          "downloadSize": 1927
+        },
+        {
+          "id": "semantic-vectors-linux",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -288,6 +374,16 @@
         "semantic-model-linux",
         "semantic-vectors-linux"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-linux-full-x64",
+          "downloadSize": 1927
+        },
+        {
+          "id": "semantic-vectors-linux",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -323,6 +419,20 @@
         "otzaria-linux-full-arm64",
         "semantic-model-linux",
         "semantic-vectors-linux"
+      ],
+      "customChoices": [
+        {
+          "id": "otzaria-linux-deb-arm64",
+          "downloadSize": 87
+        },
+        {
+          "id": "otzaria-linux-full-arm64",
+          "downloadSize": 1900
+        },
+        {
+          "id": "semantic-vectors-linux",
+          "downloadSize": 1703
+        }
       ],
       "presets": [
         {
@@ -371,6 +481,20 @@
         "semantic-model-linux",
         "semantic-vectors-linux"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-linux-rpm-arm64",
+          "downloadSize": 127
+        },
+        {
+          "id": "otzaria-linux-full-arm64",
+          "downloadSize": 1900
+        },
+        {
+          "id": "semantic-vectors-linux",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -417,6 +541,16 @@
         "semantic-model-linux",
         "semantic-vectors-linux"
       ],
+      "customChoices": [
+        {
+          "id": "otzaria-linux-full-arm64",
+          "downloadSize": 1900
+        },
+        {
+          "id": "semantic-vectors-linux",
+          "downloadSize": 1703
+        }
+      ],
       "presets": [
         {
           "id": "full",
@@ -450,6 +584,16 @@
       "offeredComponents": [
         "otzaria-android",
         "otzaria-android-full"
+      ],
+      "customChoices": [
+        {
+          "id": "otzaria-android",
+          "downloadSize": 96
+        },
+        {
+          "id": "otzaria-android-full",
+          "downloadSize": 1925
+        }
       ],
       "presets": [
         {

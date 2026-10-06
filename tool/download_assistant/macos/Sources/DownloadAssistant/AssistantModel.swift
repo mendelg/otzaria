@@ -69,6 +69,16 @@ final class AssistantModel: ObservableObject {
         return manifest.components.filter { componentIsOffered(manifest, $0, target) }
     }
 
+    var customChoices: [ManifestComponent] {
+        guard let manifest = manifest else { return [] }
+        return AssistantCore.customChoices(manifest, target)
+    }
+
+    func customChoiceSize(_ component: ManifestComponent) -> Int64 {
+        guard let manifest = manifest else { return component.downloadSize }
+        return AssistantCore.customChoiceSize(manifest, component, target)
+    }
+
     var canGoBack: Bool {
         !history.isEmpty && [.architecture, .packageFormat, .presets, .custom, .folder].contains(page)
     }
