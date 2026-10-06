@@ -92,6 +92,27 @@ class SearchRepository {
     return _gateway.resetSemanticIndex(await _semanticEngine());
   }
 
+  /// ביטוי ליטרלי בסדר הקטלוג, ללא הרחבות של מילות השאילתה.
+  Future<List<SearchResult>> searchLiteralPhrase(
+    String query,
+    List<String> facets,
+    int limit, {
+    int offset = 0,
+    bool includeAdjacentLine = false,
+  }) async {
+    final engine = await _engine();
+    final request = SearchEngineRequest(
+      query: query,
+      facets: facets,
+      limit: limit,
+      offset: offset,
+      order: ResultsOrder.catalogue,
+    );
+    return includeAdjacentLine
+        ? engine.searchExact(request)
+        : engine.searchInlineExact(request);
+  }
+
   Future<List<SearchResult>> searchTexts(
     String query,
     List<String> facets,

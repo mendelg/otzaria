@@ -208,6 +208,10 @@ abstract interface class SemanticSearchEngineOperations {
 /// ממשק קטן וניתן לבדיקה מעל ה-API של `search_engine`.
 abstract class SearchEngineOperations {
   Future<List<SearchResult>> searchExact(SearchEngineRequest request);
+
+  /// ביטוי מדויק בתוך שורה אחת, ללא הרחבות או התאמות בין שורות.
+  Future<List<SearchResult>> searchInlineExact(SearchEngineRequest request) =>
+      throw UnsupportedError('המנוע אינו תומך בחיפוש ביטוי בתוך שורה');
   Future<List<SearchResult>> searchAdvanced(SearchEngineRequest request);
   Future<List<SearchResult>> searchFuzzy(SearchEngineRequest request);
 
@@ -340,6 +344,20 @@ class RustSearchEngineOperations
       negativeSearchOptions: const {},
       wordMatchMode: WordMatchMode.all,
       wordMatchCount: null,
+    );
+  }
+
+  @override
+  Future<List<SearchResult>> searchInlineExact(SearchEngineRequest request) {
+    final words = queryWordSpans(query: request.query).map((span) => span.word);
+    return _engine.search(
+      regexTerms: words.map(RegExp.escape).toList(),
+      facets: request.facets,
+      limit: request.limit,
+      offset: request.offset,
+      slop: 0,
+      maxExpansions: 64,
+      order: ResultsOrder.catalogue,
     );
   }
 

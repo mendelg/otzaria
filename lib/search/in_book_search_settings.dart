@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/search_query_builder.dart';
 import 'package:otzaria/search/search_repository.dart';
+import 'package:otzaria/search/utils/smart_lexical_in_book_search.dart';
 import 'package:otzaria/search/utils/in_book_search_routing.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart' as utils;
@@ -89,7 +90,21 @@ Future<List<SearchResult>> searchBookWithEngine(
   required String bookPath,
   required int limit,
   required InBookSearchSettings settings,
-}) {
+}) async {
+  if (settings.searchMode == SearchMode.fuzzy &&
+      settings.matchPolicy.querySemantics == SearchQuerySemantics.smart) {
+    final phrases = smartSearchQuotedPhrases(query);
+    if (phrases.isNotEmpty) {
+      return searchSmartLexicalInBook(
+        repository,
+        query: query,
+        bookPath: bookPath,
+        limit: limit,
+        distance: settings.distance,
+        phrases: phrases,
+      );
+    }
+  }
   final parameters = settings.activeParameters;
   final policy = settings.matchPolicy;
   return repository.searchTexts(

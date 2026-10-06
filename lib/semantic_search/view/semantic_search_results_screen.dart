@@ -211,6 +211,7 @@ class _SemanticSearchResultsScreenState
         },
         distance: kSmartSearchFuzzyMaxDistance,
         searchOptions: const {},
+        matchPolicy: SearchMatchPolicy.smart,
       );
 
   /// מילים להדגשה בספר; תוצאה לפי עניין בלבד נפתחת בלי הדגשת מילים.
