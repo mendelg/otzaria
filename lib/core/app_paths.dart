@@ -78,6 +78,10 @@ class AppPaths {
   @visibleForTesting
   static bool? debugIsAndroidOverride;
 
+  /// שורש מערכת זמני, כדי לבדוק בחירת אינדקס בלי לגעת בנתונים משותפים.
+  @visibleForTesting
+  static String? debugSystemWideLibraryRootPath;
+
   static bool get _isAndroid => debugIsAndroidOverride ?? Platform.isAndroid;
 
   /// באנדרואיד האינדקס יושב תמיד באחסון הפנימי: Tantivy נועל קבצים ב-flock,
@@ -363,6 +367,10 @@ class AppPaths {
       return null;
     }
 
+    if (debugSystemWideLibraryRootPath != null && !isPortable) {
+      return debugSystemWideLibraryRootPath;
+    }
+
     final mode = await detectInstallMode();
     if (mode != InstallMode.systemWide) {
       return null;
@@ -383,13 +391,20 @@ class AppPaths {
   }
 
   static Future<String> _getDefaultIndexPath() async {
-    final systemWideRoot = await _getSystemWideLibraryRootIfNeeded();
-    if (systemWideRoot != null) {
-      return p.join(systemWideRoot, 'index');
-    }
     // ספרייה על כרטיס SD אינה מושכת אחריה את האינדקס (ראה androidInternalIndexPath).
     if (_isAndroid) return androidInternalIndexPath();
 
+    final systemWideRoot = await _getSystemWideLibraryRootIfNeeded();
+    final systemIndexPath = systemWideRoot == null
+        ? null
+        : p.join(systemWideRoot, 'index');
+    // תיקייה ריקה מהמתקין אינה אינדקס; אינדקס קיים עשוי להיות עדכני מה-prebuilt.
+    if (systemIndexPath != null &&
+        await File(p.join(systemIndexPath, 'meta.json')).exists()) {
+      return systemIndexPath;
+    }
+
+    // המתקין פורס אינדקס מוכן ליד הספרייה גם כשהיא מחוץ ל-ProgramData.
     final libraryPath = await getLibraryPath();
     final adjacentPath = p.join(p.dirname(libraryPath), 'index');
     final prebuiltMarker = File(
@@ -397,6 +412,10 @@ class AppPaths {
     );
     if (await prebuiltMarker.exists()) {
       return adjacentPath;
+    }
+
+    if (systemIndexPath != null) {
+      return systemIndexPath;
     }
 
     // תאימות אחורה: בעבר האינדקס תמיד נוצר תחת dataRoot (APPDATA וכדומה).

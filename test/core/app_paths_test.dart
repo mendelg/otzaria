@@ -16,12 +16,14 @@ void main() {
     AppPaths.debugOverrideDataRootPath(null);
     AppPaths.debugOverrideResolvedExecutable(null);
     AppPaths.debugOverrideDocumentsRootPath(null);
+    AppPaths.debugSystemWideLibraryRootPath = null;
   });
 
   tearDown(() async {
     AppPaths.debugOverrideDataRootPath(null);
     AppPaths.debugOverrideResolvedExecutable(null);
     AppPaths.debugOverrideDocumentsRootPath(null);
+    AppPaths.debugSystemWideLibraryRootPath = null;
     Settings.clearCache();
   });
 
@@ -1134,6 +1136,93 @@ void main() {
         );
       },
     );
+  });
+
+  group('אינדקס בהתקנה מערכתית עם ספרייה מותאמת', () {
+    late Directory root;
+    late String sharedIndex;
+    late String adjacentIndex;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('otzaria_system_index_');
+      final systemRoot = p.join(root.path, 'ProgramData', 'otzaria');
+      sharedIndex = p.join(systemRoot, 'index');
+      adjacentIndex = p.join(root.path, 'custom', 'index');
+      AppPaths.debugSystemWideLibraryRootPath = systemRoot;
+      AppPaths.debugOverrideDataRootPath(p.join(root.path, 'user'));
+      await Settings.setValue(SettingsRepository.keyIndexPath, '');
+      await Settings.setValue(
+        SettingsRepository.keyLibraryPath,
+        p.join(root.path, 'custom', 'books'),
+      );
+      await Directory(adjacentIndex).create(recursive: true);
+      await File(
+        p.join(adjacentIndex, AppPaths.prebuiltIndexMarkerFileName),
+      ).writeAsString('');
+    });
+
+    tearDown(() async {
+      await root.delete(recursive: true);
+    });
+
+    Future<void> stageExistingSharedIndex() async {
+      await Directory(sharedIndex).create(recursive: true);
+      await File(p.join(sharedIndex, 'meta.json')).writeAsString('{}');
+    }
+
+    test('אינדקס מערכת קיים גובר על prebuilt צמוד ישן', () async {
+      await stageExistingSharedIndex();
+      expect(await AppPaths.getIndexPath(), sharedIndex);
+    });
+
+    test('התקנה חדשה בלי אינדקס מערכת משתמשת ב-prebuilt הצמוד', () async {
+      expect(await AppPaths.getIndexPath(), adjacentIndex);
+    });
+
+    test('תיקיית מערכת ריקה מהמתקין אינה גוברת על prebuilt', () async {
+      await Directory(sharedIndex).create(recursive: true);
+      expect(await AppPaths.getIndexPath(), adjacentIndex);
+    });
+
+    test('ללא מסמן prebuilt נשמרת ברירת המחדל המערכתית', () async {
+      await File(
+        p.join(adjacentIndex, AppPaths.prebuiltIndexMarkerFileName),
+      ).delete();
+      expect(await AppPaths.getIndexPath(), sharedIndex);
+    });
+
+    test('נתיב אינדקס שמור גובר על שני האינדקסים', () async {
+      await stageExistingSharedIndex();
+      final savedIndex = p.join(root.path, 'selected', 'index');
+      await Settings.setValue(SettingsRepository.keyIndexPath, savedIndex);
+      expect(await AppPaths.getIndexPath(), savedIndex);
+    });
+
+    test('איפוס כולל גם את האינדקס הצמוד הישן ואינו מאמץ אותו מחדש', () async {
+      await stageExistingSharedIndex();
+      final paths = {
+        await AppPaths.getIndexPath(),
+        ...await AppPaths.getStaleDefaultIndexPaths(),
+      };
+      expect(paths, containsAll([sharedIndex, adjacentIndex]));
+      for (final path in paths) {
+        final dir = Directory(path);
+        if (await dir.exists()) await dir.delete(recursive: true);
+      }
+      expect(await AppPaths.getIndexPath(), sharedIndex);
+    });
+
+    test('portable אינו מאמץ אינדקס מערכת קיים', () async {
+      await stageExistingSharedIndex();
+      final exe = File(p.join(root.path, 'app', 'otzaria.exe'));
+      await exe.parent.create();
+      await exe.writeAsString('');
+      await File(
+        p.join(exe.parent.path, AppPaths.portableMarkerFileName),
+      ).writeAsString('');
+      AppPaths.debugOverrideResolvedExecutable(exe.path);
+      expect(await AppPaths.getIndexPath(), adjacentIndex);
+    });
   });
 
   group('AppPaths זיהוי מצב התקנה — Windows', () {
