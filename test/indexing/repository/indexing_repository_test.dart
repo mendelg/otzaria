@@ -1058,6 +1058,35 @@ void main() {
         }
       }
 
+      for (final (id, title) in [(7, 'ספר שהתרוקן'), (8, 'שורה שהתרוקנה')]) {
+        test('ספר ריק ממקור אחר אינו מוחק תוכן אישי: $title', () async {
+          final engine = _RecordingSearchEngine();
+          final provider = _RecordingTantivyDataProvider(engine);
+          final missing = TextBook(
+            id: id,
+            title: title,
+            categoryId: 7,
+            source: BookSource.user,
+          );
+          final key = IndexingRepository.buildIndexedBookFilePath(missing);
+          final library = Library(categories: [])..books.add(missing);
+          engine.fingerprints = {key: BigInt.from(42)};
+          provider.indexedFilePaths.add(key);
+          final result = await IndexingRepository(provider)
+              .reconcileIndexWithLibrary(
+                library,
+                onlyBooks: [missing],
+                onProgress: (_, _) {},
+                fingerprintOf: (_, _) async =>
+                    throw StateError('הספר במקור המבוקש חסר'),
+              );
+          expect(result.completed, isTrue);
+          expect(engine.removedFilePaths, isEmpty);
+          expect(engine.addedDocuments, isEmpty);
+          expect(provider.indexedFilePaths, {key});
+        });
+      }
+
       test('ספר שלא נמצא במסד אינו מוחלף בסמן ריק', () async {
         final engine = _RecordingSearchEngine();
         final provider = _RecordingTantivyDataProvider(engine);

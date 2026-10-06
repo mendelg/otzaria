@@ -415,6 +415,12 @@ class SqliteDataProvider {
         resolvedBook.repository,
         resolvedBook.book,
       );
+      // מסד חסר אינו ספר שהתרוקן, גם כשקיים ספר בשם זהה במקור אחר.
+      if (emptyWhenNoLines &&
+          resolvedBook.source != preferSource &&
+          (text == null || text.isEmpty)) {
+        return null;
+      }
       return text ?? (emptyWhenNoLines ? '' : null);
     } catch (e, st) {
       debugPrint(

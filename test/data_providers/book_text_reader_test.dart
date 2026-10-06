@@ -418,6 +418,22 @@ void main() {
       expect(await provider.getBookTextFromDb('ריק', 7, 'txt'), isNull);
     });
 
+    test('מסד מועדף חסר אינו מוסק כריק מתוך ספר ממקור אחר', () async {
+      final provider = SqliteDataProvider.instance;
+      for (final title in ['ריק', 'שורה ריקה']) {
+        expect(
+          await provider.getBookTextFromDb(
+            title,
+            7,
+            'txt',
+            BookSource.user,
+            true,
+          ),
+          isNull,
+        );
+      }
+    });
+
     for (final stalled in [false, true]) {
       test('id רשמי רק לספר שאין בשורותיו \\n '
           '(${stalled ? 'isolate חד-פעמי' : 'worker'})', () async {
