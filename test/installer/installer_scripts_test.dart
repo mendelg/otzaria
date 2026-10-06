@@ -2285,7 +2285,7 @@ void main() {
         _routine(script, 'procedure RefreshCustomPage('),
         allOf(
           contains('OptionCaption(Caption, CompDesc[I]),'),
-          contains('HumanSize(CompDownloadSize[I]), 0,'),
+          contains('HumanSize(CustomChoiceSize(I)), 0,'),
         ),
       );
 

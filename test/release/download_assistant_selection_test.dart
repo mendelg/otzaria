@@ -500,7 +500,6 @@ void main() {
             '$installer:locked',
             'library-full',
             'library-index',
-            'semantic-model-windows',
             'semantic-vectors-windows',
           ], reason: '${target.toJson()}');
         }
@@ -533,7 +532,6 @@ void main() {
     test('Linux בלי מנהל חבילות: החבילה המלאה לבדה, נעולה', () {
       expect(customChoices(manifest, kFixtureTargets[5]).map(describe), [
         'otzaria-linux-full-x64:locked',
-        'semantic-model-linux',
         'semantic-vectors-linux',
       ]);
     });
