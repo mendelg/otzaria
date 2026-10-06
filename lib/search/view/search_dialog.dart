@@ -181,21 +181,26 @@ class _SearchDialogState extends State<SearchDialog> {
   /// החיפוש נשלח לכרטיסייה חדשה, ולכן [SearchDialog.existingTab] זמני ומיותר.
   bool _existingTabHandedOff = false;
 
-  /// חיפוש חדש בספרייה או עריכת חיפוש חכם; לא בתוך ספר ולא בעריכת חיפוש רגיל.
+  /// חיפוש בספרייה, חדש או בעריכה; לא בתוך ספר (issue #1892).
   bool get _supportsSemanticMode =>
       widget.bookTitle == null &&
       widget.onSearch == null &&
-      !widget.returnResultOnSubmit &&
-      (widget.editTab == null || _editedSemanticTab != null);
+      !widget.returnResultOnSubmit;
 
   SemanticSearchTab? get _editedSemanticTab => switch (widget.editTab) {
     final SemanticSearchTab tab => tab,
     _ => null,
   };
 
+  /// כרטיסייה חכמה בעריכה נשארת חכמה גם לפני שהזמינות נבדקה; אחרת הדיאלוג
+  /// נפתח במצב רגיל ו"עדכן חיפוש" פותח כרטיסייה רגילה חדשה (issue #1892).
   bool _semanticVisible(SemanticAvailability? availability) =>
-      availability != null &&
-      isSemanticModeVisible(availability, debug: widget.semanticDebugPreview);
+      _editedSemanticTab != null ||
+      (availability != null &&
+          isSemanticModeVisible(
+            availability,
+            debug: widget.semanticDebugPreview,
+          ));
 
   bool get _isSemanticActive =>
       _semanticSelected && _semanticVisible(_semanticBloc?.state.availability);
@@ -266,12 +271,14 @@ class _SearchDialogState extends State<SearchDialog> {
         repository:
             widget.semanticRepository ?? SemanticSearchRepository.instance,
       )..add(const SemanticSearchStarted());
-      // מצב מבוקש במפורש (קיצור חיפוש מתקדם, איתור) גובר על זיכרון הסשן.
+      // מצב מבוקש במפורש (קיצור חיפוש מתקדם, איתור) וכרטיסייה בעריכה
+      // גוברים על זיכרון הסשן.
       _semanticSelected =
           _editedSemanticTab != null ||
           (SearchDefaults.initialSemanticForNewSearch() &&
               widget.initialSearchMode == null &&
-              widget.existingTab == null);
+              widget.existingTab == null &&
+              widget.editTab == null);
     }
     _pluginSearchSelections = Map<String, bool>.from(
       _searchTab.searchBloc.state.configuration.pluginSearchSelections,
