@@ -79,11 +79,16 @@ void main() {
     final wizard = routine(script, 'procedure UiInitializeWizard(');
     expect(wizard, contains('WizardForm.KeyPreview := True;'));
     expect(wizard, contains('WizardForm.OnKeyDown := @UiKeyDown;'));
-    final ask = routine(script, 'function UiAsk(');
+    final ask = routine(script, 'function UiAskDialog(');
     expect(ask, contains('UiDlg.OnKeyDown := @UiKeyDown;'));
     expect(ask, contains('UiDlg.ActiveControl := UiButtons[UiBtnDlgNo].Img'));
     expect(ask, contains('UiDlg.ActiveControl := UiButtons[UiBtnDlgOk].Img'));
-    expect(ask, contains('UiDlgNo.Cancel := True;'));
+    expect(ask, contains('UiDlgNo.Cancel := not NoCancel;'));
+    // במסייע Esc הוא תמיד "לא": UiAsk אינו מבקש NoCancel.
+    expect(
+      routine(script, 'function UiAsk('),
+      contains('UiAskDialog(Title, Text, Yes, No, Danger, False)'),
+    );
     expect(ask, contains('UiDlgOk.Default := False;'));
     expect(ask, contains('UiDlgNo.Default := False;'));
     expect(
@@ -105,7 +110,7 @@ void main() {
     for (final name in ['NextButton', 'BackButton', 'CancelButton']) {
       expect(chrome, contains('WizardForm.$name.TabStop := False;'));
     }
-    final ask = routine(script, 'function UiAsk(');
+    final ask = routine(script, 'function UiAskDialog(');
     for (final name in ['UiDlgOk', 'UiDlgNo']) {
       expect(ask, contains('$name.TabStop := False;'));
     }
@@ -233,5 +238,116 @@ void main() {
     final scroll = routine(script, 'procedure UiRevealCard(');
     expect(scroll, contains('Card.Top + Card.Height - UiHost.Height'));
     expect(scroll, contains('UiScrollTarget := UiScrollY;'));
+  });
+
+  // אותה שכבה, אותו מודל מקלדת: כל מה שתלוי בעמוד — במתאם של המתקינים.
+  group('מתקיני אוצריא — אותה נגישות מקלדת כמו במסייע', () {
+    for (final name in const ['otzaria.iss', 'otzaria_full.iss']) {
+      final installer = _expand(_read(name));
+      final full = name == 'otzaria_full.iss';
+
+      test('$name: כפתורי Windows, Enter, Tab וקנה המידה של הליבה', () {
+        expect(installer, contains('Img: TBitmapButton;'));
+        expect(
+          routine(installer, 'procedure UiKeyDown('),
+          contains('.Img.Focused'),
+        );
+        final wizard = routine(installer, 'procedure UiInitializeWizard(');
+        expect(wizard, contains('WizardForm.OnKeyDown := @UiKeyDown;'));
+        final chrome = routine(installer, 'procedure UiHideNativeChrome()');
+        for (final button in ['NextButton', 'BackButton', 'CancelButton']) {
+          expect(chrome, contains('WizardForm.$button.TabStop := False;'));
+        }
+        expect(chrome, contains('WizardForm.NextButton.Default := False;'));
+        expect(
+          routine(installer, 'function UiBuildFolderField('),
+          contains('Browse.TabStop := False;'),
+        );
+        expect(
+          routine(installer, 'function UiPickScale()'),
+          contains('UiHeight * S div 100 <= UiFitHeight'),
+        );
+        expect(
+          routine(installer, 'procedure UiFocusAction()'),
+          contains('UiAdapterFocusTarget(Native, I)'),
+        );
+      });
+
+      test('$name: בסיום Enter מפעיל את הפעולה שבמוקד, לא את "סיום" הנסתר', () {
+        final target = routine(installer, 'function UiAdapterFocusTarget(');
+        expect(target, contains('UiPage <> wpFinished'));
+        expect(target, contains('for J := UiBtnOpenApp to UiBtnDone do'));
+        expect(
+          routine(installer, 'function UiAdapterEnterGoesNext('),
+          contains('Result := True;'),
+        );
+        expect(
+          routine(installer, 'procedure UiAdapterBuildFinish('),
+          contains('WizardForm.RunList.TabStop := False;'),
+        );
+      });
+
+      test('$name: "איך להתקין" — רדיו אמיתי מאחורי כל כרטיס, בקבוצה משלו', () {
+        final create = routine(
+          installer,
+          'procedure CreateInstallModeChoice()',
+        );
+        expect(create, isNot(contains('.Visible := False')));
+        expect(create, contains('Group.SetBounds(-ScaleX(4000)'));
+        final focused = routine(installer, 'function UiAdapterCardFocused(');
+        for (final radio in const [
+          'CurrentUserModeRadio',
+          'AllUsersModeRadio',
+          'PortableModeRadio',
+        ]) {
+          expect(create, contains('$radio.Parent := Group;'));
+          expect(create, contains('$radio.OnClick := @UiModeRadioClick;'));
+          expect(focused, contains('$radio.Focused'));
+        }
+        // חץ לרדיו בוחר בו (VCL): אותה בחירה, תיקייה ושיגור-מחדש כמו בלחיצה.
+        final click = routine(installer, 'procedure UiModeRadioClick(');
+        expect(click, contains('ApplyInstallModeChoice();'));
+        expect(click, contains('UiSyncModePage();'));
+        expect(click, contains('(UiPage <> wpSelectDir)'));
+      });
+
+      test('$name: משימות, הכנה ואתחול — המוקד האמיתי מסומן בכרטיס', () {
+        final focused = routine(installer, 'function UiAdapterCardFocused(');
+        for (final task in const [
+          'desktopicon',
+          'calendaricon',
+          'resetsettings',
+        ]) {
+          expect(
+            focused,
+            contains(
+              "List.Focused and (List.ItemIndex = UiTaskIndex('$task'))",
+            ),
+          );
+        }
+        for (final radio in const [
+          'PreparingYesRadio',
+          'PreparingNoRadio',
+          'YesRadio',
+          'NoRadio',
+        ]) {
+          expect(focused, contains('WizardForm.$radio.Focused'));
+        }
+        if (full) expect(focused, contains('WV2Check.Focused'));
+        expect(
+          routine(installer, 'procedure UiBuildTasksPage()'),
+          contains('WizardForm.TasksList.TabStop := not PortableMode;'),
+          reason: 'בנייד אין כרטיסי משימות: Space אינו מסמן משימה נסתרת',
+        );
+        expect(
+          routine(installer, 'function UiAdapterPageHint('),
+          contains('WizardForm.PreparingMemo.Enabled := False;'),
+        );
+        expect(
+          routine(installer, 'procedure UiPollMouse()'),
+          contains('UiAdapterCardFocused(I)'),
+        );
+      });
+    }
   });
 }

@@ -898,20 +898,29 @@ end;
 
 // ─── "איך להתקין" ו-WebView2 ────────────────────────────────────────────────
 
-// שלושת סוגי ההתקנה, מודל הנתונים של הכרטיסים, בעמוד wpSelectDir. מוסתרים ולא רק מחוץ
-// לחלון: רדיו גלוי מקבל פוקוס מ-Tab, וחץ היה מסמן אחר בלי לעבור ב-ApplyInstallModeChoice.
+// שלושת סוגי ההתקנה, מודל הנתונים של כרטיסי wpSelectDir. מחוץ לחלון ובקבוצה משלהם, בשביל
+// המקלדת: רדיו שמקבל מוקד מסמן את עצמו, ו-UiModeRadioClick מעביר את הבחירה הלאה.
 procedure CreateInstallModeChoice();
+var
+  Group: TPanel;
 begin
+  // חצים עוברים רק בין הילדים של אותו הורה.
+  Group := TPanel.Create(WizardForm);
+  Group.Parent := WizardForm.SelectDirPage;
+  Group.SetBounds(-ScaleX(4000), 0, ScaleX(200), ScaleY(80));
   CurrentUserModeRadio := TNewRadioButton.Create(WizardForm);
-  CurrentUserModeRadio.Parent := WizardForm.SelectDirPage;
-  CurrentUserModeRadio.Visible := False;
+  CurrentUserModeRadio.Parent := Group;
+  CurrentUserModeRadio.SetBounds(0, 0, ScaleX(200), ScaleY(20));
   CurrentUserModeRadio.Checked := True;
+  CurrentUserModeRadio.OnClick := @UiModeRadioClick;
   AllUsersModeRadio := TNewRadioButton.Create(WizardForm);
-  AllUsersModeRadio.Parent := WizardForm.SelectDirPage;
-  AllUsersModeRadio.Visible := False;
+  AllUsersModeRadio.Parent := Group;
+  AllUsersModeRadio.SetBounds(0, ScaleY(24), ScaleX(200), ScaleY(20));
+  AllUsersModeRadio.OnClick := @UiModeRadioClick;
   PortableModeRadio := TNewRadioButton.Create(WizardForm);
-  PortableModeRadio.Parent := WizardForm.SelectDirPage;
-  PortableModeRadio.Visible := False;
+  PortableModeRadio.Parent := Group;
+  PortableModeRadio.SetBounds(0, ScaleY(48), ScaleX(200), ScaleY(20));
+  PortableModeRadio.OnClick := @UiModeRadioClick;
 end;
 
 // בחירה בכרטיס: המצב הנייד נקבע מיד, ותיקיית היעד מתחלפת לברירת המחדל של המצב

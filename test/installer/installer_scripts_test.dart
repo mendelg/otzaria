@@ -724,13 +724,21 @@ void main() {
     });
 
     test('$_regular: כשל בחלקים אינו נתקע בהתקנה שקטה', () {
-      for (final routine in const [
-        'function PrepareSplitArchive(',
-        'procedure LibraryInstallFailed(',
+      // כל הודעה עוברת בעוזר שבשקט קורא בדיוק ל-SuppressibleMsgBox, ובאשף מעוצבת.
+      final script = _script(_regular);
+      for (final (routine, helper) in const [
+        ('function PrepareSplitArchive(', 'procedure InstTellSuppressible('),
+        (
+          'procedure LibraryInstallFailed(',
+          'procedure InstReportLibraryFailure(',
+        ),
       ]) {
-        final body = _routine(_script(_regular), routine);
-        expect(body, contains('SuppressibleMsgBox('), reason: routine);
-        expect(body, isNot(contains(' MsgBox(')), reason: routine);
+        final body = _routine(script, routine);
+        expect(body, contains(helper.split(' ')[1]), reason: routine);
+        expect(body, isNot(contains('MsgBox(')), reason: routine);
+        final silent = _routine(script, helper);
+        expect(silent, contains('SuppressibleMsgBox('), reason: helper);
+        expect(silent, isNot(contains(' MsgBox(')), reason: helper);
       }
       // ההודעה המושתקת אינה מותירה קוד יציאה 0 כשהספרייה לא הותקנה.
       expect(
@@ -755,7 +763,14 @@ void main() {
       final prepare = _routine(script, 'function PrepareLibraryParts(');
       expect(prepare, contains('OtherVersionPartsName(SourceDir)'));
       // בהתקנה שקטה ברירת המחדל היא לעצור, לא להתקין בלי הספרייה.
-      expect(prepare, contains('MB_YESNO, IDNO) = IDYES'));
+      expect(prepare, contains('InstAskYesNoSuppressible('));
+      expect(prepare, contains(', IDNO);'));
+      expect(
+        _routine(script, 'function InstAskYesNoSuppressible('),
+        contains(
+          'SuppressibleMsgBox(Text, mbConfirmation, MB_YESNO, Default) = IDYES',
+        ),
+      );
     });
 
     test('$_regular: הפריסה מחליפה ספרייה ואינדקס רק אחרי חילוץ מלא', () {
@@ -3998,8 +4013,10 @@ void main() {
         const helpers = {
           'InstTell',
           'InstAskYesNo',
+          'InstAskYesNoSuppressible',
           'InstTellSuppressible',
           'InstReportFailure',
+          'InstReportLibraryFailure',
           'InitializeUninstall',
         };
         final code = installerCode(name);
@@ -4018,8 +4035,10 @@ void main() {
         for (final signature in [
           'procedure InstTell(',
           'function InstAskYesNo(',
+          'function InstAskYesNoSuppressible(',
           'procedure InstTellSuppressible(',
           'procedure InstReportFailure(',
+          'procedure InstReportLibraryFailure(',
         ]) {
           final body = _routine(script, signature);
           expect(body, matches(silentBranch), reason: signature);
@@ -4211,8 +4230,131 @@ void main() {
       expect(workflow, isNot(contains(r'\Inno Setup*\ISCC.exe')));
     });
 
+    test('$_regular: הודעות חלקי הספרייה — בעברית הנוסח של dev מילה במילה', () {
+      // בשקט (העדכון מהתוכנה) מוצגת ההודעה עצמה, ולכן הנוסח העברי לא השתנה.
+      final script = _script(_regular);
+      const restart =
+          'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את המתקין לתיקייה '
+          'אחרת כדי להתקין את התוכנה בלבד.';
+      const expected = {
+        'LibraryWhat': 'הספרייה',
+        'IndexWhat': 'אינדקס החיפוש',
+        'LibraryManifestInvalid':
+            'קובץ רשימת החלקים של %1 שבתוך המתקין אינו תקין.',
+        'LibraryPartsMissing':
+            'בתיקייה של המתקין חסרים חלקים של %1.%n%n$restart',
+        'LibraryPartsCorrupt':
+            'אימות החלקים של %1 נכשל: אחד הקבצים פגום, '
+            'או שאין מספיק מקום פנוי בדיסק.%n%n$restart',
+        'LibraryPartsArmWin10':
+            'פריסת הספרייה מהחלקים שליד המתקין דורשת Windows 11 במחשב ARM.%n%n'
+            'העבירו את המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.',
+        'UnsafeLibraryRoot':
+            'לא ניתן לקבוע תיקיית ספרייה בטוחה ויחידה. '
+            'אין להתקין ספרייה בשורש כונן או שיתוף, או בנתיב יחסי. '
+            'עדכנו תחילה את התוכנה בלבד מתיקייה ללא קובצי ספרייה, '
+            'בחרו בה את הספרייה הפעילה, ואז הפעילו שוב את המתקין.',
+        'OtherVersionParts':
+            'לצד המתקין יש קובצי ספרייה של גרסה אחרת של אוצריא, '
+            'ולכן הם לא יותקנו:%n%1%n%n'
+            'כדי להתקין גם את הספרייה, הכינו את התיקייה מחדש במסייע ההורדה.%n%n'
+            'להמשיך ולהתקין את התוכנה בלבד?',
+        'LibraryPrepTitle': 'מכין את הספרייה',
+        'LibraryPrepDesc':
+            'בודק את חלקי הספרייה שליד המתקין. הבדיקה עשויה להימשך כמה דקות.',
+        'StatusLibrary': 'מתקין את הספרייה המלאה...',
+        'StatusLibraryIndex':
+            'מתקין את הספרייה המלאה ואת אינדקס החיפוש המוכן...',
+        'LibraryNotInstalled': 'התוכנה הותקנה, אבל הספרייה לא.',
+        'LibraryExtractFailed': 'חילוץ הספרייה נכשל.',
+        'IndexExtractFailed': 'חילוץ אינדקס החיפוש נכשל.',
+        'LibraryPackageInvalid': 'מבנה חבילת הספרייה אינו תקין.',
+        'BooksSwapFailed':
+            'לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.',
+        'IndexSwapFailed':
+            'לא ניתן להחליף את תיקיית האינדקס הקיימת. ודא שאוצריא סגורה.',
+        'LibraryMoveFailed': 'העברת הספרייה למיקום שלה נכשלה.',
+        'HintNoSpace': 'אין מספיק מקום פנוי בכונן. פנה מקום ונסה להתקין שוב.',
+      };
+      for (final MapEntry(:key, :value) in expected.entries) {
+        expect(_text(script, 'hebrew', key), value, reason: key);
+        expect(_text(script, 'english', key), isNotEmpty, reason: key);
+      }
+      // ההודעה בשקט: המשפט, "התוכנה הותקנה...", הרמז, ואז הפלט — כמו ב-dev.
+      expect(
+        _routine(script, 'procedure LibraryInstallFailed('),
+        contains(
+          "InstReportLibraryFailure(Message + ' ' + "
+          "CustomMessage('LibraryNotInstalled') + Hint,",
+        ),
+      );
+      expect(
+        _routine(script, 'procedure InstReportLibraryFailure('),
+        contains('SuppressibleMsgBox(Text + #13#10#13#10 + Output,'),
+      );
+    });
+
+    test('$_regular: הכנת החלקים — עמוד בשכבה עם התקדמות אמיתית, רק באשף', () {
+      final script = _script(_regular);
+      final init = _routine(script, 'procedure InitializeWizard()');
+      final created = init.indexOf(
+        'LibraryPrepPage := CreateOutputProgressPage(',
+      );
+      expect(created, greaterThan(0));
+      expect(
+        init.substring(0, created),
+        contains('if not WizardSilent then'),
+        reason: 'בשקט אין עמוד הכנה, כמו ב-dev',
+      );
+      final prepare = _routine(script, 'function PrepareLibraryParts(');
+      expect(prepare, isNot(contains('CreateOutputProgressPage(')));
+      expect(prepare, contains('if LibraryPrepPage <> nil then'));
+      expect(
+        prepare.indexOf('LibraryPrepPage.Show'),
+        lessThan(
+          prepare.indexOf("PrepareSplitArchive('library.manifest.json'"),
+        ),
+      );
+      expect(prepare, contains('LibraryPrepPage.Hide'));
+      final split = _routine(script, 'function PrepareSplitArchive(');
+      expect(
+        split.indexOf('UiLibraryPrepStart('),
+        lessThan(split.indexOf('AssembleSplitArchive(')),
+      );
+      expect(
+        _routine(script, 'procedure UiLibraryPrepStart('),
+        contains('LibraryPrepTotal := LibraryPrepTotal + Size'),
+      );
+      expect(
+        _routine(script, 'function UiAssembledBytes()'),
+        contains('UiGetFileAttributesEx(LibraryPrepArchive'),
+      );
+      final build = _routine(script, 'procedure UiAdapterBuildPage(');
+      expect(build, contains('UiHideProgressNative(LibraryPrepPage);'));
+      expect(build, contains('UiBuildProgress(UiSrcLibraryPrep);'));
+    });
+
+    test(
+      '$_regular: ספרייה שלא נפרסה — מצב כישלון באשף, וקוד היציאה נשאר 9',
+      () {
+        final script = _script(_regular);
+        final failed = _routine(script, 'procedure LibraryInstallFailed(');
+        expect(
+          failed.indexOf('LibraryNotInstalled := True;'),
+          lessThan(failed.indexOf('InstReportLibraryFailure(')),
+        );
+        final report = _routine(script, 'procedure InstReportLibraryFailure(');
+        expect(report, contains('InstFailed := True;'));
+        expect(report, contains('InstFailTech := Output;'));
+        // כל כשל בפריסה מחזיר את הספרייה הקודמת, ולכן ההבטחה עליה נכונה תמיד.
+        final finish = _routine(script, 'procedure UiAdapterBuildFinish(');
+        final kept = finish.substring(finish.indexOf('#ifdef LibraryParts'));
+        expect(kept, contains("CustomMessage('FailLibraryKept')"));
+      },
+    );
+
     for (final name in _scripts) {
-      test('$name: הכרטיסים הם הקלט היחיד של "איך להתקין"', () {
+      test('$name: "איך להתקין" — כרטיס ורדיו מחוץ לחלון בוחרים אותו דבר', () {
         final script = _script(name);
         final create = _routine(script, 'procedure CreateInstallModeChoice(');
         for (final radio in const [
@@ -4220,10 +4362,17 @@ void main() {
           'AllUsersModeRadio',
           'PortableModeRadio',
         ]) {
-          // רדיו גלוי (גם מחוץ לחלון) מקבל פוקוס מ-Tab, וחץ מסמן אחר.
-          expect(create, contains('$radio.Visible := False;'), reason: radio);
+          // רדיו שמקבל מוקד מהמקלדת מסמן את עצמו: OnClick מעביר את הבחירה הלאה.
+          expect(
+            create,
+            contains('$radio.OnClick := @UiModeRadioClick;'),
+            reason: radio,
+          );
+          expect(create, contains('$radio.Parent := Group;'), reason: radio);
         }
-        expect(create, isNot(contains('Left :=')));
+        final click = _routine(script, 'procedure UiModeRadioClick(');
+        expect(click, contains('ApplyInstallModeChoice();'));
+        expect(click, contains('UiSyncModePage();'));
         // PortableMode נקבע רק ב-ApplyInstallModeChoice (ובשקט ב-InitializeSetup).
         final code = installerCode(name);
         final assigns = RegExp(r'\bPortableMode := ').allMatches(code).toList();

@@ -127,6 +127,11 @@ english.PrepareKeepDesc=You may need to restart the computer afterwards.
 english.OpenApp=Open Otzaria
 english.FailTitle=Setup didn't finish
 english.TechDetails=Technical details
+english.HintSharing=A destination file is locked by another process. Close Otzaria and other programs that may use the files, and try again.
+english.HintPermission=There's no permission to write to the destination. Try running setup as administrator, or choose another location.
+english.HintNoSpace=There isn't enough free space on the drive. Free up some space and install again.
+english.BooksSwapFailed=The existing books folder can't be replaced. Make sure Otzaria is closed.
+english.FailLibraryKept=A library that was already on this computer wasn't changed.
 english.CompactUpdating=Updating Otzaria %1
 english.CompactInstalling=Installing Otzaria %1
 english.PortableProtectedTitle=This folder can't be used
@@ -185,6 +190,11 @@ hebrew.PrepareKeepDesc=ייתכן שיהיה צורך להפעיל מחדש את
 hebrew.OpenApp=פתח את אוצריא
 hebrew.FailTitle=ההתקנה לא הושלמה
 hebrew.TechDetails=פרטים טכניים
+hebrew.HintSharing=קובץ היעד נעול על ידי תהליך אחר. סגור את אוצריא ותוכנות אחרות שעשויות להשתמש בקבצים ונסה שוב.
+hebrew.HintPermission=אין הרשאה לכתוב לנתיב היעד. נסה להריץ את ההתקנה כמנהל או לבחור מיקום התקנה אחר.
+hebrew.HintNoSpace=אין מספיק מקום פנוי בכונן. פנה מקום ונסה להתקין שוב.
+hebrew.BooksSwapFailed=לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.
+hebrew.FailLibraryKept=ספרייה שכבר הייתה במחשב לא שונתה.
 hebrew.CompactUpdating=מעדכן את אוצריא %1
 hebrew.CompactInstalling=מתקין את אוצריא %1
 hebrew.PortableProtectedTitle=אי אפשר להתקין בתיקייה הזאת
@@ -231,15 +241,10 @@ english.DbExtractFailed=Extracting the library database failed.
 english.PdfExtractFailed=Extracting the Babylonian Talmud books failed.
 english.PdfOpenFailed=Opening the Babylonian Talmud books archive failed.
 english.ExitCode=Exit code: %1
-english.FailLibraryKept=A library that was already on this computer wasn't changed.
 english.SeforimMissing=Extracting the library didn't finish — the seforim.db database is missing.
-english.BooksSwapFailed=The existing books folder can't be replaced. Make sure Otzaria is closed.
 english.BooksMoveFailed=Moving the library to the chosen location failed.
 english.ZstdMissing=The extraction tool zstd.exe wasn't found. Setup can't extract the bundled library files.
 english.SevenZipMissing=The extraction tool 7za.exe wasn't found. Setup can't extract the bundled PDF files.
-english.HintNoSpace=There isn't enough free space on the drive. Free up some space and install again.
-english.HintPermission=There's no permission to write to the destination. Try running setup as administrator, or choose another location.
-english.HintSharing=A destination file is locked by another process. Close Otzaria and other programs that may use the files, and try again.
 hebrew.ModePortableDesc=בלי התקנה: התוכנה, הספרייה וכל הנתונים בתיקייה אחת, למשל בדיסק-און-קי.
 hebrew.TaskResetDesc=אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים. תיקיית הגיבויים נשמרת והספרייה מותקנת מחדש.
 hebrew.WebView2Desc=נדרש לתוספים בלבד. בלעדיו שאר התוכנה עובדת כרגיל.
@@ -270,20 +275,62 @@ hebrew.DbExtractFailed=חילוץ מסד הנתונים של הספרייה נכ
 hebrew.PdfExtractFailed=חילוץ ספרי התלמוד הבבלי נכשל.
 hebrew.PdfOpenFailed=פתיחת ארכיון ספרי התלמוד הבבלי נכשלה.
 hebrew.ExitCode=קוד יציאה: %1
-hebrew.FailLibraryKept=ספרייה שכבר הייתה במחשב לא שונתה.
 hebrew.SeforimMissing=חילוץ הספרייה לא הושלם — מסד הנתונים seforim.db חסר.
-hebrew.BooksSwapFailed=לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.
 hebrew.BooksMoveFailed=העברת הספרייה למיקום שנבחר נכשלה.
 hebrew.ZstdMissing=קובץ החילוץ zstd.exe לא נמצא. ההתקנה לא יכולה לחלץ את קבצי הספרייה המצורפים.
 hebrew.SevenZipMissing=קובץ החילוץ 7za.exe לא נמצא. ההתקנה לא יכולה לחלץ את קבצי ה-PDF המצורפים.
-hebrew.HintNoSpace=אין מספיק מקום פנוי בכונן. פנה מקום ונסה להתקין שוב.
-hebrew.HintPermission=אין הרשאה לכתוב לנתיב היעד. נסה להריץ את ההתקנה כמנהל או לבחור מיקום התקנה אחר.
-hebrew.HintSharing=קובץ היעד נעול על ידי תהליך אחר. סגור את אוצריא ותוכנות אחרות שעשויות להשתמש בקבצים ונסה שוב.
 #else
 english.ModePortableDesc=No installation: everything in one folder, e.g. on a USB drive.
 english.TaskResetDesc=Warning: deletes personal notes, bookmarks, history and plugin data. The books and backups folders are kept.
 hebrew.ModePortableDesc=בלי התקנה: התוכנה וכל הנתונים בתיקייה אחת, למשל בדיסק-און-קי.
 hebrew.TaskResetDesc=אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים. תיקיות הספרים והגיבויים נשמרות.
+; הספרייה והאינדקס שמסייע ההורדה מכין לצד המתקין (חלקים, ‎#1890‎).
+english.LibraryWhat=the library
+english.IndexWhat=the search index
+english.LibraryPartsTitle=The library can't be installed
+english.LibraryManifestInvalid=The parts list of %1 inside the setup is invalid.
+english.LibraryPartsMissing=Some parts of %1 are missing from the setup's folder.%n%nPrepare the folder again in the Download Assistant, or move the setup file to another folder to install only the program.
+english.LibraryPartsCorrupt=Checking the parts of %1 failed: one of the files is damaged, or there isn't enough free disk space.%n%nPrepare the folder again in the Download Assistant, or move the setup file to another folder to install only the program.
+english.LibraryPartsArmWin10=Installing the library from the parts next to the setup requires Windows 11 on an ARM computer.%n%nMove the setup file to another folder to install only the program.
+english.UnsafeLibraryRoot=A single, safe library folder can't be determined. A library can't be installed at the root of a drive or share, or in a relative path. First update only the program from a folder without library files, choose the active library in it, and then run the setup again.
+english.OtherVersionPartsTitle=Library files of another version
+english.OtherVersionParts=Next to the setup there are library files of another version of Otzaria, so they won't be installed:%n%1%n%nTo install the library too, prepare the folder again in the Download Assistant.%n%nContinue and install only the program?
+english.LibraryPrepTitle=Preparing the library
+english.LibraryPrepDesc=Checking the library parts next to the setup. This can take a few minutes.
+english.LibraryPrepCaption=Joining and checking %1...
+english.LibraryPrepBytes=%1 of %2
+english.StatusLibrary=Installing the full library...
+english.LibraryInstallingDesc=Unpacking the library can take a few minutes.
+english.StatusLibraryIndex=Installing the full library and the ready search index...
+english.LibraryNotInstalled=The program was installed, but the library wasn't.
+english.LibraryExtractFailed=Extracting the library failed.
+english.IndexExtractFailed=Extracting the search index failed.
+english.LibraryPackageInvalid=The library package structure is invalid.
+english.IndexSwapFailed=The existing index folder can't be replaced. Make sure Otzaria is closed.
+english.LibraryMoveFailed=Moving the library to its location failed.
+hebrew.LibraryWhat=הספרייה
+hebrew.IndexWhat=אינדקס החיפוש
+hebrew.LibraryPartsTitle=לא ניתן להתקין את הספרייה
+hebrew.LibraryManifestInvalid=קובץ רשימת החלקים של %1 שבתוך המתקין אינו תקין.
+hebrew.LibraryPartsMissing=בתיקייה של המתקין חסרים חלקים של %1.%n%nהכינו את התיקייה מחדש במסייע ההורדה, או העבירו את המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.
+hebrew.LibraryPartsCorrupt=אימות החלקים של %1 נכשל: אחד הקבצים פגום, או שאין מספיק מקום פנוי בדיסק.%n%nהכינו את התיקייה מחדש במסייע ההורדה, או העבירו את המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.
+hebrew.LibraryPartsArmWin10=פריסת הספרייה מהחלקים שליד המתקין דורשת Windows 11 במחשב ARM.%n%nהעבירו את המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.
+hebrew.UnsafeLibraryRoot=לא ניתן לקבוע תיקיית ספרייה בטוחה ויחידה. אין להתקין ספרייה בשורש כונן או שיתוף, או בנתיב יחסי. עדכנו תחילה את התוכנה בלבד מתיקייה ללא קובצי ספרייה, בחרו בה את הספרייה הפעילה, ואז הפעילו שוב את המתקין.
+hebrew.OtherVersionPartsTitle=קובצי ספרייה של גרסה אחרת
+hebrew.OtherVersionParts=לצד המתקין יש קובצי ספרייה של גרסה אחרת של אוצריא, ולכן הם לא יותקנו:%n%1%n%nכדי להתקין גם את הספרייה, הכינו את התיקייה מחדש במסייע ההורדה.%n%nלהמשיך ולהתקין את התוכנה בלבד?
+hebrew.LibraryPrepTitle=מכין את הספרייה
+hebrew.LibraryPrepDesc=בודק את חלקי הספרייה שליד המתקין. הבדיקה עשויה להימשך כמה דקות.
+hebrew.LibraryPrepCaption=מחבר ומאמת את חלקי %1...
+hebrew.LibraryPrepBytes=%1 מתוך %2
+hebrew.StatusLibrary=מתקין את הספרייה המלאה...
+hebrew.LibraryInstallingDesc=חילוץ הספרייה עשוי להימשך כמה דקות.
+hebrew.StatusLibraryIndex=מתקין את הספרייה המלאה ואת אינדקס החיפוש המוכן...
+hebrew.LibraryNotInstalled=התוכנה הותקנה, אבל הספרייה לא.
+hebrew.LibraryExtractFailed=חילוץ הספרייה נכשל.
+hebrew.IndexExtractFailed=חילוץ אינדקס החיפוש נכשל.
+hebrew.LibraryPackageInvalid=מבנה חבילת הספרייה אינו תקין.
+hebrew.IndexSwapFailed=לא ניתן להחליף את תיקיית האינדקס הקיימת. ודא שאוצריא סגורה.
+hebrew.LibraryMoveFailed=העברת הספרייה למיקום שלה נכשלה.
 #endif
 
 
@@ -293,6 +340,7 @@ const
   UiBtnDone = UiBtnFirstAdapter + 1;
 
   UiSrcFiles = UiSrcFirstAdapter;
+  UiSrcLibraryPrep = UiSrcFirstAdapter + 1;
 
   { מה כל כרטיס מייצג במודל הנתונים (UiCardKind). }
   UiCardModeMe = 1;
@@ -372,6 +420,16 @@ begin
     UiTell(Title, Text);
 end;
 
+{ כמו InstAskYesNo; בשקט SuppressibleMsgBox, ש-/SUPPRESSMSGBOXES עונה בו Default. }
+function InstAskYesNoSuppressible(const Title, Text: String; Default: Integer): Boolean;
+begin
+  if WizardSilent then
+    Result := SuppressibleMsgBox(Text, mbConfirmation, MB_YESNO, Default) = IDYES
+  else
+    Result := UiAskDialog(Title, Text, CustomMessage('YesButton'), CustomMessage('NoButton'),
+      False, True);
+end;
+
 procedure UiFailLinkClick(Sender: TObject);
 begin
   if Assigned(UiFailTech) then
@@ -396,6 +454,22 @@ begin
     InstFailTech := Output;
   end;
 end;
+
+#ifdef LibraryParts
+{ הספרייה שליד המתקין הרגיל לא נפרסה (התוכנה כן): בשקט ה-SuppressibleMsgBox שהיה, באשף —
+  מצב הכישלון בעמוד הסיום. }
+procedure InstReportLibraryFailure(const Text, Output: String);
+begin
+  if WizardSilent or not UiReady or UiFailed then
+    SuppressibleMsgBox(Text + #13#10#13#10 + Output, mbCriticalError, MB_OK, IDOK)
+  else
+  begin
+    InstFailed := True;
+    InstFailText := Text;
+    InstFailTech := Output;
+  end;
+end;
+#endif
 
 { ============================ כרטיסים ============================ }
 
@@ -447,6 +521,15 @@ begin
   { השדה האמיתי מוצג או מוסתר יחד עם המצויר. }
   UiScrollTo(UiScrollY);
   UiSetButton(UiBtnBrowse, not Relaunch, True, UiStrip(WizardForm.DirBrowseButton.Caption));
+end;
+
+{ רדיו שמקבל מוקד מהמקלדת מסמן את עצמו: אותה בחירה כמו לחיצה על הכרטיס. }
+procedure UiModeRadioClick(Sender: TObject);
+begin
+  if not UiReady or UiFailed or (UiPage <> wpSelectDir) then
+    exit;
+  ApplyInstallModeChoice();
+  UiSyncModePage();
 end;
 
 procedure UiAdapterCardClick(I: Integer);
@@ -541,6 +624,16 @@ begin
   UiSyncModePage();
 end;
 
+function UiTaskIndex(const Name: String): Integer;
+begin
+  if Name = 'desktopicon' then
+    Result := WizardForm.TasksList.Items.IndexOf(CustomMessage('CreateDesktopIcon'))
+  else if Name = 'calendaricon' then
+    Result := WizardForm.TasksList.Items.IndexOf(CustomMessage('CalendarIconTask'))
+  else
+    Result := WizardForm.TasksList.Items.IndexOf(CustomMessage('ResetSettingsTask'));
+end;
+
 procedure UiBuildTasksPage();
 var
   Y: Integer;
@@ -568,6 +661,10 @@ begin
     Y := UiInstCard(UiCardReset, 'reset_settings', CustomMessage('TaskResetTitle'),
       CustomMessage('TaskResetDesc'), CustomMessage('TaskResetSide'), True, Y);
   UiEndCards(Y);
+  { בנייד אין כרטיסי משימות: Space לא יסמן משימה שאינה על המסך. }
+  WizardForm.TasksList.TabStop := not PortableMode;
+  if not PortableMode and (WizardForm.TasksList.ItemIndex < 0) then
+    WizardForm.TasksList.ItemIndex := UiTaskIndex('desktopicon');
 end;
 
 #ifdef InstallerFull
@@ -677,10 +774,69 @@ end;
 { ============================ התקדמות ============================ }
 
 
+#ifdef LibraryParts
+{ אותן יחידות כמו בתוכנה; בעברית עטופות ב-LtrUnit. }
+function HumanSize(Bytes: Int64): String;
+var
+  Tenths: Int64;
+begin
+  if Bytes >= Int64(1073741824) then
+  begin
+    Tenths := (Bytes * 10) div Int64(1073741824);
+    Result := LtrUnit(IntToStr(Tenths div 10) + '.' + IntToStr(Tenths mod 10) + #$00A0 + 'GB');
+  end
+  else
+    Result := LtrUnit(IntToStr(Bytes div 1048576) + #$00A0 + 'MB');
+end;
+
+type
+  TUiFileData = record
+    Attributes: LongWord;
+    CreationLow, CreationHigh, AccessLow, AccessHigh, WriteLow, WriteHigh: LongWord;
+    SizeHigh, SizeLow: LongWord;
+  end;
+
+function UiGetFileAttributesEx(Name: String; Level: Integer; var Data: TUiFileData): BOOL;
+  external 'GetFileAttributesExW@kernel32.dll stdcall';
+
+{ החלקים מחוברים ברצף לארכיון אחד: ההתקדמות היא גודלו מול סכום החלקים. }
+procedure UiLibraryPrepStart(const What, Archive, PartsDir: String;
+  const PartNames: TArrayOfString);
+var
+  I: Integer;
+  Size: Int64;
+begin
+  LibraryPrepWhat := What;
+  LibraryPrepArchive := Archive;
+  LibraryPrepTotal := 0;
+  for I := 0 to GetArrayLength(PartNames) - 1 do
+    if FileSize64(AddBackslash(PartsDir) + PartNames[I], Size) then
+      LibraryPrepTotal := LibraryPrepTotal + Size;
+end;
+
+{ הגודל מרשומת הקובץ ולא מהתיקייה: הארכיון פתוח לכתיבה, ורשומת התיקייה מתעדכנת רק בסגירה. }
+function UiAssembledBytes(): Int64;
+var
+  Data: TUiFileData;
+begin
+  Result := 0;
+  if LibraryPrepArchive = '' then
+    exit;
+  if UiGetFileAttributesEx(LibraryPrepArchive, 0, Data) then
+  begin
+    Result := Data.SizeHigh;
+    Result := Result * 65536 * 65536 + Data.SizeLow;
+  end;
+end;
+#endif
+
 function UiAdapterProgress(Source: Integer; var Caption, Speed, Bytes: String;
   var Bar: TNewProgressBar; var Fraction: Extended; var Known: Boolean): Boolean;
 var
   FileName: String;
+#ifdef LibraryParts
+  Done: Int64;
+#endif
 begin
   Result := True;
   if Source = UiSrcFiles then
@@ -691,6 +847,23 @@ begin
       Speed := LtrUnit(MinimizePathName(FileName, UiProgSpeed.Font, Px(UiContentW)));
     Bar := WizardForm.ProgressGauge;
   end;
+#ifdef LibraryParts
+  if (Source = UiSrcLibraryPrep) and (LibraryPrepWhat <> '') then
+  begin
+    Caption := Msg1('LibraryPrepCaption', LibraryPrepWhat);
+    Done := UiAssembledBytes();
+    if LibraryPrepTotal > 0 then
+    begin
+      Fraction := Done;
+      Fraction := Fraction / LibraryPrepTotal;
+      if Fraction > 1 then
+        Fraction := 1;
+      Known := True;
+      Bytes := FmtMessage(CustomMessage('LibraryPrepBytes'), [HumanSize(Done),
+        HumanSize(LibraryPrepTotal)]);
+    end;
+  end;
+#endif
 end;
 
 { ============================ שלבים ============================ }
@@ -719,10 +892,14 @@ begin
       if Pages[I] = PageID then
         Result := Total;
     end;
-  { ההכנה וההתקנה — שלב אחד. }
+  { ההכנה, הכנת הספרייה וההתקנה — שלב אחד. }
   Total := Total + 1;
   if (PageID = wpPreparing) or (PageID = wpInstalling) then
     Result := Total;
+#ifdef LibraryParts
+  if (LibraryPrepPage <> nil) and (PageID = LibraryPrepPage.ID) then
+    Result := Total;
+#endif
 end;
 
 { ============================ סיום ============================ }
@@ -751,6 +928,7 @@ begin
   WizardForm.FinishedHeadingLabel.Visible := False;
   WizardForm.FinishedLabel.Visible := False;
   WizardForm.RunList.Left := -Px(4000);
+  WizardForm.RunList.TabStop := False;
   WizardForm.YesRadio.Left := -Px(4000);
   WizardForm.NoRadio.Left := -Px(4000);
   { בכישלון Enter ("סיום" האמיתי) לא יפעיל את התוכנה ולא יאתחל את המחשב בלי לשאול. }
@@ -812,12 +990,17 @@ begin
   if InstFailed then
   begin
     UiPlaceHost(Page, Y + Px(8), Bottom - Px(12));
-    { מה עכשיו: אפשר לנסות שוב, ובמלא — הספרייה הקודמת שלמה כל עוד ההחלפה לא התחילה. }
+    { מה עכשיו: אפשר לנסות שוב; הספרייה הקודמת שלמה כל עוד ההחלפה לא התחילה (ברגיל —
+      תמיד: כל כשל שם מחזיר אותה). }
     Body := InstFailText + #13#10#13#10 + CustomMessage('FailRetry');
 #ifdef InstallerFull
     if not LibrarySwapStarted then
       Body := InstFailText + #13#10#13#10 + CustomMessage('FailLibraryKept') + ' ' +
         CustomMessage('FailRetry');
+#endif
+#ifdef LibraryParts
+    Body := InstFailText + #13#10#13#10 + CustomMessage('FailLibraryKept') + ' ' +
+      CustomMessage('FailRetry');
 #endif
     UiFailBody := UiLabel(UiContent, 14, False, UiSecondaryColor, taCenter);
     Y := UiPlaceLabel(UiFailBody, Body, 0, 0, Px(UiContentW));
@@ -905,12 +1088,18 @@ begin
     WizardForm.PreparingLabel.Visible := False;
     WizardForm.PreparingErrorBitmapImage.Visible := False;
     WizardForm.PreparingMemo.Left := -Px(4000);
+    { הרשימה מוצגת בסיכום; בלי מוקד בה, החצים נשארים בין שני הרדיו. }
+    WizardForm.PreparingMemo.Enabled := False;
     WizardForm.PreparingYesRadio.Left := -Px(4000);
     WizardForm.PreparingNoRadio.Left := -Px(4000);
     { הכותרת מוצגת כבר בזמן ש-Restart Manager בודק: "אוצריא פתוחה" רק כשהוא מצא משהו. }
     if WizardForm.PreparingMemo.Visible then
       WizardForm.PageDescriptionLabel.Caption := CustomMessage('PrepareAppsOpen');
   end;
+#ifdef LibraryParts
+  if (PageID = wpInstalling) and (PreparedLibraryArchive <> '') then
+    WizardForm.PageDescriptionLabel.Caption := CustomMessage('LibraryInstallingDesc');
+#endif
 #ifdef InstallerFull
   if PageID = BooksPage.ID then
     Result := CustomMessage('BooksHint');
@@ -937,6 +1126,13 @@ begin
 #ifdef InstallerFull
   if PageID = BooksPage.ID then
     UiBuildBooksPage();
+#endif
+#ifdef LibraryParts
+  if (LibraryPrepPage <> nil) and (PageID = LibraryPrepPage.ID) then
+  begin
+    UiHideProgressNative(LibraryPrepPage);
+    UiBuildProgress(UiSrcLibraryPrep);
+  end;
 #endif
 end;
 
@@ -979,17 +1175,38 @@ procedure UiAdapterSyncFooter();
 begin
 end;
 
+{ הכרטיס שהפקד האמיתי שמאחוריו במוקד: רדיו, שורה ברשימת המשימות או תיבת סימון. }
 function UiAdapterCardFocused(I: Integer): Boolean;
+var
+  List: TNewCheckListBox;
 begin
   Result := False;
+  List := WizardForm.TasksList;
+  case UiCardKind[I] of
+    UiCardModeMe: Result := CurrentUserModeRadio.Focused;
+    UiCardModeAll: Result := AllUsersModeRadio.Focused;
+    UiCardModePortable: Result := PortableModeRadio.Focused;
+    UiCardDesktop: Result := List.Focused and (List.ItemIndex = UiTaskIndex('desktopicon'));
+    UiCardCalendar: Result := List.Focused and (List.ItemIndex = UiTaskIndex('calendaricon'));
+    UiCardReset: Result := List.Focused and (List.ItemIndex = UiTaskIndex('resetsettings'));
+#ifdef InstallerFull
+    UiCardWebView2: Result := WV2Check.Focused;
+#endif
+    UiCardCloseApps: Result := WizardForm.PreparingYesRadio.Focused;
+    UiCardKeepApps: Result := WizardForm.PreparingNoRadio.Focused;
+    UiCardRestartNow: Result := WizardForm.YesRadio.Focused;
+    UiCardRestartLater: Result := WizardForm.NoRadio.Focused;
+  end;
 end;
 
-{ בסיום המוקד עובר לפעולה הראשונה, כמו במסייע. }
+{ בסיום המוקד עובר לפעולה הראשונה, כמו במסייע; Inno שם אותו ברשימת ההפעלה הנסתרת. }
 function UiAdapterFocusTarget(Native: TWinControl; I: Integer): Integer;
 var
   J: Integer;
 begin
   Result := I;
+  if Native = WizardForm.RunList then
+    Result := UiBtnDone;
   if (Result < 0) or (UiPage <> wpFinished) then
     exit;
   Result := -1;

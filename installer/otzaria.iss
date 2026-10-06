@@ -238,6 +238,10 @@ var
   // הארכיונים שהורכבו ואומתו מהחלקים; ריק = אין (בלי ספרייה — התקנה רגילה).
   PreparedLibraryArchive, PreparedIndexArchive: String;
   LibraryNotInstalled: Boolean;
+  // עמוד ההכנה (רק באשף) והארכיון שמורכב עכשיו, שההתקדמות נמדדת בגודלו.
+  LibraryPrepPage: TOutputProgressWizardPage;
+  LibraryPrepWhat, LibraryPrepArchive: String;
+  LibraryPrepTotal: Int64;
 #endif
 
 // משמש גם את Uninstallable/CreateUninstallRegKey וגם רשומות Check.
@@ -261,20 +265,29 @@ end;
 
 #include "otzaria_ui_installer.iss"
 
-// שלושת סוגי ההתקנה, מודל הנתונים של הכרטיסים, בעמוד wpSelectDir. מוסתרים ולא רק מחוץ
-// לחלון: רדיו גלוי מקבל פוקוס מ-Tab, וחץ היה מסמן אחר בלי לעבור ב-ApplyInstallModeChoice.
+// שלושת סוגי ההתקנה, מודל הנתונים של כרטיסי wpSelectDir. מחוץ לחלון ובקבוצה משלהם, בשביל
+// המקלדת: רדיו שמקבל מוקד מסמן את עצמו, ו-UiModeRadioClick מעביר את הבחירה הלאה.
 procedure CreateInstallModeChoice();
+var
+  Group: TPanel;
 begin
+  // חצים עוברים רק בין הילדים של אותו הורה.
+  Group := TPanel.Create(WizardForm);
+  Group.Parent := WizardForm.SelectDirPage;
+  Group.SetBounds(-ScaleX(4000), 0, ScaleX(200), ScaleY(80));
   CurrentUserModeRadio := TNewRadioButton.Create(WizardForm);
-  CurrentUserModeRadio.Parent := WizardForm.SelectDirPage;
-  CurrentUserModeRadio.Visible := False;
+  CurrentUserModeRadio.Parent := Group;
+  CurrentUserModeRadio.SetBounds(0, 0, ScaleX(200), ScaleY(20));
   CurrentUserModeRadio.Checked := True;
+  CurrentUserModeRadio.OnClick := @UiModeRadioClick;
   AllUsersModeRadio := TNewRadioButton.Create(WizardForm);
-  AllUsersModeRadio.Parent := WizardForm.SelectDirPage;
-  AllUsersModeRadio.Visible := False;
+  AllUsersModeRadio.Parent := Group;
+  AllUsersModeRadio.SetBounds(0, ScaleY(24), ScaleX(200), ScaleY(20));
+  AllUsersModeRadio.OnClick := @UiModeRadioClick;
   PortableModeRadio := TNewRadioButton.Create(WizardForm);
-  PortableModeRadio.Parent := WizardForm.SelectDirPage;
-  PortableModeRadio.Visible := False;
+  PortableModeRadio.Parent := Group;
+  PortableModeRadio.SetBounds(0, ScaleY(48), ScaleX(200), ScaleY(20));
+  PortableModeRadio.OnClick := @UiModeRadioClick;
 end;
 
 // בחירה בכרטיס: המצב הנייד נקבע מיד, ותיקיית היעד מתחלפת לברירת המחדל של המצב
@@ -319,6 +332,11 @@ begin
   // בהתקנה שקטה המצב נקבע ב-InitializeSetup בלבד, ו-/DIR חייב להישמר.
   if not WizardSilent then
     ApplyInstallModeChoice();
+#ifdef LibraryParts
+  if not WizardSilent then
+    LibraryPrepPage := CreateOutputProgressPage(CustomMessage('LibraryPrepTitle'),
+      CustomMessage('LibraryPrepDesc'));
+#endif
   UiInstallerInitializeWizard();
 end;
 
@@ -746,25 +764,22 @@ begin
   ManifestPath := ExpandConstant('{tmp}\') + ManifestFile;
   if not ReadSplitManifest(ManifestPath, ArchiveName, PartNames) then
   begin
-    SuppressibleMsgBox('קובץ רשימת החלקים של ' + What + ' שבתוך המתקין אינו תקין.',
-      mbCriticalError, MB_OK, IDOK);
+    InstTellSuppressible(CustomMessage('LibraryPartsTitle'),
+      Msg1('LibraryManifestInvalid', What));
     exit;
   end;
   if not LocalPartsAreComplete(SourceDir, PartNames) then
   begin
-    SuppressibleMsgBox('בתיקייה של המתקין חסרים חלקים של ' + What + '.' + #13#10#13#10 +
-      'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את ' +
-      'המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.',
-      mbCriticalError, MB_OK, IDOK);
+    InstTellSuppressible(CustomMessage('LibraryPartsTitle'),
+      Msg1('LibraryPartsMissing', What));
     exit;
   end;
+  UiLibraryPrepStart(What, ExpandConstant('{tmp}\') + ArchiveName, SourceDir, PartNames);
   if not AssembleSplitArchive(ManifestPath, SourceDir,
     ExpandConstant('{tmp}\') + ArchiveName) then
   begin
-    SuppressibleMsgBox('אימות החלקים של ' + What + ' נכשל: אחד הקבצים פגום, ' +
-      'או שאין מספיק מקום פנוי בדיסק.' + #13#10#13#10 +
-      'הכינו את התיקייה מחדש במסייע ההורדה, או העבירו את המתקין לתיקייה ' +
-      'אחרת כדי להתקין את התוכנה בלבד.', mbCriticalError, MB_OK, IDOK);
+    InstTellSuppressible(CustomMessage('LibraryPartsTitle'),
+      Msg1('LibraryPartsCorrupt', What));
     exit;
   end;
   ArchivePath := ExpandConstant('{tmp}\') + ArchiveName;
@@ -807,7 +822,6 @@ var
   OtherParts: String;
 var
   SourceDir: String;
-  ProgressPage: TOutputProgressWizardPage;
 begin
   Result := True;
   if PreparedLibraryArchive <> '' then
@@ -825,11 +839,8 @@ begin
     begin
       Log('Library parts of another version next to the installer: ' + OtherParts);
       // בהתקנה שקטה עוצרים: מי שהכין ספרייה לא מצפה להתקנה בלעדיה.
-      Result := SuppressibleMsgBox('לצד המתקין יש קובצי ספרייה של גרסה אחרת של אוצריא, ' +
-        'ולכן הם לא יותקנו:' + #13#10 + OtherParts + #13#10#13#10 +
-        'כדי להתקין גם את הספרייה, הכינו את התיקייה מחדש במסייע ההורדה.' + #13#10#13#10 +
-        'להמשיך ולהתקין את התוכנה בלבד?',
-        mbConfirmation, MB_YESNO, IDNO) = IDYES;
+      Result := InstAskYesNoSuppressible(CustomMessage('OtherVersionPartsTitle'),
+        Msg1('OtherVersionParts', UiDialogPath(OtherParts)), IDNO);
     end;
     exit;
   end;
@@ -840,30 +851,23 @@ begin
   // zstd ו-7za שבמתקין הם x64, ו-Windows 10 על ARM מאמלץ רק x86.
   if GetWindowsVersion < $0A0055F0 then
   begin
-    SuppressibleMsgBox('פריסת הספרייה מהחלקים שליד המתקין דורשת Windows 11 במחשב ARM.' + #13#10#13#10 +
-      'העבירו את המתקין לתיקייה אחרת כדי להתקין את התוכנה בלבד.',
-      mbCriticalError, MB_OK, IDOK);
+    InstTellSuppressible(CustomMessage('LibraryPartsTitle'), CustomMessage('LibraryPartsArmWin10'));
     exit;
   end;
 #endif
-  ProgressPage := nil;
-  if not WizardSilent then
-  begin
-    ProgressPage := CreateOutputProgressPage('מכין את הספרייה',
-      'בודק את חלקי הספרייה שליד המתקין. הבדיקה עשויה להימשך כמה דקות.');
-    ProgressPage.Show;
-  end;
+  if LibraryPrepPage <> nil then
+    LibraryPrepPage.Show;
   try
     Result := PrepareSplitArchive('library.manifest.json',
-      '{#LibraryArchiveName}', 'הספרייה', SourceDir, PreparedLibraryArchive);
+      '{#LibraryArchiveName}', CustomMessage('LibraryWhat'), SourceDir, PreparedLibraryArchive);
 #ifdef LibraryIndexParts
     if Result and HasSplitArchiveParts(SourceDir, '{#IndexArchiveName}') then
       Result := PrepareSplitArchive('library_index.manifest.json',
-        '{#IndexArchiveName}', 'אינדקס החיפוש', SourceDir, PreparedIndexArchive);
+        '{#IndexArchiveName}', CustomMessage('IndexWhat'), SourceDir, PreparedIndexArchive);
 #endif
   finally
-    if ProgressPage <> nil then
-      ProgressPage.Hide;
+    if LibraryPrepPage <> nil then
+      LibraryPrepPage.Hide;
   end;
   if not Result then
   begin
@@ -901,11 +905,7 @@ begin
 #endif
     if HasLibraryPayload and (GetLibraryBooksPath() = '') then
     begin
-      SuppressibleMsgBox('לא ניתן לקבוע תיקיית ספרייה בטוחה ויחידה. ' +
-        'אין להתקין ספרייה בשורש כונן או שיתוף, או בנתיב יחסי. ' +
-        'עדכנו תחילה את התוכנה בלבד מתיקייה ללא קובצי ספרייה, ' +
-        'בחרו בה את הספרייה הפעילה, ואז הפעילו שוב את המתקין.',
-        mbCriticalError, MB_OK, IDOK);
+      InstTellSuppressible(CustomMessage('LibraryPartsTitle'), CustomMessage('UnsafeLibraryRoot'));
       Result := False;
       exit;
     end;
@@ -1635,11 +1635,11 @@ begin
   LowerOutput := Lowercase(ErrOutput);
   Result := '';
   if Pos('no space left on device', LowerOutput) > 0 then
-    Result := 'אין מספיק מקום פנוי בכונן. פנה מקום ונסה להתקין שוב.'
+    Result := CustomMessage('HintNoSpace')
   else if Pos('permission denied', LowerOutput) > 0 then
-    Result := 'אין הרשאה לכתוב לנתיב היעד. נסה להריץ את ההתקנה כמנהל או לבחור מיקום התקנה אחר.'
+    Result := CustomMessage('HintPermission')
   else if Pos('sharing violation', LowerOutput) > 0 then
-    Result := 'קובץ היעד נעול על ידי תהליך אחר. סגור את אוצריא ותוכנות אחרות שעשויות להשתמש בקבצים ונסה שוב.';
+    Result := CustomMessage('HintSharing');
 end;
 
 procedure LibraryInstallFailed(const Message, ErrOutput: String);
@@ -1651,8 +1651,8 @@ begin
   Hint := FriendlyErrorHint(ErrOutput);
   if Hint <> '' then
     Hint := #13#10#13#10 + Hint;
-  SuppressibleMsgBox(Message + ' התוכנה הותקנה, אבל הספרייה לא.' + Hint + #13#10#13#10 +
-    ErrOutput, mbCriticalError, MB_OK, IDOK);
+  InstReportLibraryFailure(Message + ' ' + CustomMessage('LibraryNotInstalled') + Hint,
+    ErrOutput);
 end;
 
 // עם /SUPPRESSMSGBOXES ההודעה נבלעת; קוד היציאה מסמן שהתוכנה הותקנה והספרייה לא.
@@ -1722,7 +1722,7 @@ begin
     DelTree(StagingRoot, True, True, True);
     if WithIndex then
       DelTree(IndexStagingRoot, True, True, True);
-    LibraryInstallFailed('חילוץ הספרייה נכשל.', ErrOutput);
+    LibraryInstallFailed(CustomMessage('LibraryExtractFailed'), ErrOutput);
     exit;
   end;
   if WithIndex and not UnpackArchive(PreparedIndexArchive, IndexStagingRoot,
@@ -1731,7 +1731,7 @@ begin
     DelTree(StagingRoot, True, True, True);
     if WithIndex then
       DelTree(IndexStagingRoot, True, True, True);
-    LibraryInstallFailed('חילוץ אינדקס החיפוש נכשל.', ErrOutput);
+    LibraryInstallFailed(CustomMessage('IndexExtractFailed'), ErrOutput);
     exit;
   end;
 
@@ -1741,7 +1741,7 @@ begin
     DelTree(StagingRoot, True, True, True);
     if WithIndex then
       DelTree(IndexStagingRoot, True, True, True);
-    LibraryInstallFailed('מבנה חבילת הספרייה אינו תקין.', '');
+    LibraryInstallFailed(CustomMessage('LibraryPackageInvalid'), '');
     exit;
   end;
 
@@ -1754,7 +1754,7 @@ begin
     DelTree(StagingRoot, True, True, True);
     if WithIndex then
       DelTree(IndexStagingRoot, True, True, True);
-    LibraryInstallFailed('לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.', '');
+    LibraryInstallFailed(CustomMessage('BooksSwapFailed'), '');
     exit;
   end;
   IndexBackedUp := (not WithIndex) or (not DirExists(TargetIndex)) or
@@ -1766,7 +1766,7 @@ begin
     DelTree(StagingRoot, True, True, True);
     if WithIndex then
       DelTree(IndexStagingRoot, True, True, True);
-    LibraryInstallFailed('לא ניתן להחליף את תיקיית האינדקס הקיימת. ודא שאוצריא סגורה.', '');
+    LibraryInstallFailed(CustomMessage('IndexSwapFailed'), '');
     exit;
   end;
 
@@ -1785,7 +1785,7 @@ begin
     DelTree(StagingRoot, True, True, True);
     if WithIndex then
       DelTree(IndexStagingRoot, True, True, True);
-    LibraryInstallFailed('העברת הספרייה למיקום שלה נכשלה.', '');
+    LibraryInstallFailed(CustomMessage('LibraryMoveFailed'), '');
     exit;
   end;
 
@@ -1804,9 +1804,9 @@ begin
   if PreparedLibraryArchive = '' then
     exit;
   if PreparedIndexArchive <> '' then
-    WizardForm.StatusLabel.Caption := 'מתקין את הספרייה המלאה ואת אינדקס החיפוש המוכן...'
+    WizardForm.StatusLabel.Caption := CustomMessage('StatusLibraryIndex')
   else
-    WizardForm.StatusLabel.Caption := 'מתקין את הספרייה המלאה...';
+    WizardForm.StatusLabel.Caption := CustomMessage('StatusLibrary');
   WizardForm.StatusLabel.Update;
   WizardForm.ProgressGauge.Style := npbstMarquee;
   try
