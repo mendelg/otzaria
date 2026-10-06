@@ -1321,6 +1321,13 @@ class _CombinedViewState extends State<CombinedView> {
       scrollOffsetController: widget.tab.mainOffsetController,
       positionsListener: widget.tab.positionsListener,
       segments: state.readingSegments,
+      // טעינת רקע מחליפה את הרשימה תוך כדי הגלילה (issue #1973).
+      latestSegments: () {
+        final latest = _textBookBloc.state;
+        return latest is TextBookLoaded
+            ? latest.readingSegments
+            : state.readingSegments;
+      },
       lineIndex: lineIndex,
       viewportExtent: _viewportHeight > 0
           ? _viewportHeight
