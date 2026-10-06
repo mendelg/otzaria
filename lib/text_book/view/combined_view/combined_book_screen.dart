@@ -294,6 +294,58 @@ bool shouldRestoreScrollOnContinuousModeChange({
   return previousMode != null && previousMode != currentMode;
 }
 
+/// שומר גובה של פריט שלא השתנה, או נקודת מקור בתוך פסקה שהתארכה.
+@visibleForTesting
+({int index, double alignment, double fraction, double estimatedExtent})?
+reflowAnchor({
+  required Iterable<ItemPosition> positions,
+  required List<ReadingSegment> previous,
+  required List<ReadingSegment> current,
+}) {
+  final visible =
+      positions
+          .where((p) => p.itemTrailingEdge > 0 && p.itemLeadingEdge < 1)
+          .toList()
+        ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+  ({int index, double alignment, double fraction, double estimatedExtent})?
+  fallback;
+  for (final position in visible) {
+    if (position.index < 0 || position.index >= previous.length) continue;
+    final old = previous[position.index];
+    if (!old.isLoaded) continue;
+    final nextIndex = segmentIndexForLine(current, old.startLineIndex);
+    if (nextIndex >= current.length) continue;
+    final next = current[nextIndex];
+    if (next.startLineIndex == old.startLineIndex &&
+        next.endLineIndex == old.endLineIndex) {
+      if (nextIndex == position.index && fallback == null) return null;
+      return (
+        index: nextIndex,
+        alignment: position.itemLeadingEdge,
+        fraction: 0,
+        estimatedExtent: 0,
+      );
+    }
+    final extent = position.itemTrailingEdge - position.itemLeadingEdge;
+    if (!next.isLoaded || !extent.isFinite || extent <= 0) continue;
+    final point = (-position.itemLeadingEdge / extent).clamp(0.0, 1.0);
+    final start = lineFractionWithinSegment(next, old.startLineIndex);
+    final end = lineFractionWithinSegment(
+      next,
+      old.endLineIndex,
+      intraLineFraction: 1,
+    );
+    if (end <= start) continue;
+    fallback ??= (
+      index: nextIndex,
+      alignment: position.itemLeadingEdge.clamp(0.0, 1.0),
+      fraction: start + point * (end - start),
+      estimatedExtent: extent / (end - start),
+    );
+  }
+  return fallback;
+}
+
 @visibleForTesting
 bool shouldHandleCommentaryScrollTarget({
   required int cardIndex,
@@ -740,6 +792,10 @@ class _CombinedViewState extends State<CombinedView> {
   // מצב הרצף האחרון שנצפה — לזיהוי החלפת מצב שמחייבת שחזור מיקום.
   bool? _lastContinuousReadingMode;
 
+  // רשימת הסגמנטים והמצב שהרשימה נבנתה מהם לאחרונה — לזיהוי שינוי במספור
+  // הפסקאות שמחייב עיגון מחדש (issue #1973).
+  ({List<ReadingSegment> segments, bool continuous})? _reflowBasis;
+
   // באנר קרדיט מקור המוצג מעל השורה הראשונה (נטען פעם אחת לכל ספר), אם קיים.
   BookSourceBannerKind? _sourceBannerKind;
 
@@ -771,7 +827,10 @@ class _CombinedViewState extends State<CombinedView> {
     setState(() {});
   }
 
+  int _scrollGeneration = 0;
+
   void _clearSelectionBeforeJump() {
+    _scrollGeneration++;
     if (_savedSelectedText.value == null) return;
     _selectionAreaKey.currentState?.selectableRegion.clearSelection();
   }
@@ -831,6 +890,13 @@ class _CombinedViewState extends State<CombinedView> {
     }
     // שמירת ה-BLoC מראש
     _textBookBloc = context.read<TextBookBloc>();
+    final initialBlocState = _textBookBloc.state;
+    if (initialBlocState is TextBookLoaded) {
+      _reflowBasis = (
+        segments: initialBlocState.readingSegments,
+        continuous: initialBlocState.continuousReadingMode,
+      );
+    }
 
     _siblingController = SiblingCommentariesController(
       loadSiblings: (sourceLink) {
@@ -1228,6 +1294,94 @@ class _CombinedViewState extends State<CombinedView> {
     });
   }
 
+  // המדידות שייכות לפריסה הקודמת; כמה emits לפני frame נבנים יחד.
+  void _keepPlaceAcrossSegmentReflow(TextBookLoaded state) {
+    final previous = _reflowBasis;
+    final current = state.readingSegments;
+    final basis = (segments: current, continuous: state.continuousReadingMode);
+    if (previous != null &&
+        identical(previous.segments, current) &&
+        previous.continuous == basis.continuous) {
+      return;
+    }
+    final anchor =
+        previous != null &&
+            previous.continuous == basis.continuous &&
+            basis.continuous &&
+            widget.tab.scrollController.isNativeAttached
+        ? reflowAnchor(
+            positions: widget.tab.positionsListener.itemPositions.value,
+            previous: previous.segments,
+            current: current,
+          )
+        : null;
+    var generation = _scrollGeneration;
+    final navigationGeneration =
+        widget.tab.scrollController.navigationGeneration;
+    bool isCurrent() {
+      final latest = _textBookBloc.state;
+      return mounted &&
+          generation == _scrollGeneration &&
+          navigationGeneration ==
+              widget.tab.scrollController.navigationGeneration &&
+          widget.tab.scrollController.isNativeAttached &&
+          latest is TextBookLoaded &&
+          latest.continuousReadingMode == basis.continuous &&
+          identical(latest.readingSegments, current);
+    }
+
+    // הרשימה מפרסמת מדידות ב-postFrame; משתמשים בהן אחרי כל ה-callbacks.
+    void afterLayout(VoidCallback action) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => scheduleMicrotask(action),
+      );
+    }
+
+    afterLayout(() {
+      if (!mounted) return;
+      _reflowBasis = basis;
+      if (anchor == null || !isCurrent()) return;
+      ItemPosition? measured() {
+        for (final position
+            in widget.tab.positionsListener.itemPositions.value) {
+          if (position.index == anchor.index) return position;
+        }
+        return null;
+      }
+
+      final position = measured();
+      final extent = position == null
+          ? anchor.estimatedExtent
+          : position.itemTrailingEdge - position.itemLeadingEdge;
+      final alignment = anchor.alignment - anchor.fraction * extent;
+      widget.tab.scrollController.jumpTo(
+        index: anchor.index,
+        alignment: alignment,
+      );
+      if (anchor.fraction == 0 || position != null) return;
+      generation = _scrollGeneration;
+      // יעד שלא נבנה מעוגן תחילה לפי גובהו המשוער, ואז לפי מדידתו.
+      afterLayout(() {
+        if (!isCurrent()) return;
+        final position = measured();
+        if (position == null ||
+            (position.itemLeadingEdge - alignment).abs() >
+                kAnchorLandingEpsilon) {
+          return;
+        }
+        final corrected =
+            anchor.alignment -
+            anchor.fraction *
+                (position.itemTrailingEdge - position.itemLeadingEdge);
+        if ((corrected - alignment).abs() <= kAnchorLandingEpsilon) return;
+        widget.tab.scrollController.jumpTo(
+          index: anchor.index,
+          alignment: corrected,
+        );
+      });
+    });
+  }
+
   Future<void> _scrollToSourceLine(
     TextBookLoaded state,
     int lineIndex, {
@@ -1240,6 +1394,13 @@ class _CombinedViewState extends State<CombinedView> {
       scrollOffsetController: widget.tab.mainOffsetController,
       positionsListener: widget.tab.positionsListener,
       segments: state.readingSegments,
+      // טעינת רקע מחליפה את הרשימה תוך כדי הגלילה (issue #1973).
+      latestSegments: () {
+        final latest = _textBookBloc.state;
+        return latest is TextBookLoaded
+            ? latest.readingSegments
+            : state.readingSegments;
+      },
       lineIndex: lineIndex,
       viewportExtent: _viewportHeight > 0
           ? _viewportHeight
@@ -1880,6 +2041,7 @@ class _CombinedViewState extends State<CombinedView> {
         if (state is! TextBookLoaded) {
           return const Center(child: CircularProgressIndicator());
         }
+        _keepPlaceAcrossSegmentReflow(state);
         return LayoutBuilder(
           builder: (context, constraints) {
             // שומר את גובה הבלוק בפועל לשימוש בחישובי הגלילה
@@ -1894,7 +2056,10 @@ class _CombinedViewState extends State<CombinedView> {
               onCopy: _copyFormattedText,
               child: RtlSelectionShortcuts(
                 child: Listener(
+                  onPointerSignal: (_) => _scrollGeneration++,
+                  onPointerPanZoomStart: (_) => _scrollGeneration++,
                   onPointerDown: (event) {
+                    _scrollGeneration++;
                     if (event.buttons == kPrimaryMouseButton) {
                       _isSelectionPointerDown = true;
                     }
