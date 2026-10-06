@@ -297,6 +297,24 @@ typedef _CommentaryScrollTarget = ({
   String? linkKey,
 });
 
+final _detailsTag = RegExp(r'<details\b', caseSensitive: false);
+
+// מעבר אנימציה בונה שתי רשימות; scope מבדיל בין עותקי אותו פריט.
+class _ParagraphStateKey extends GlobalKey {
+  const _ParagraphStateKey(this.scope, this.index) : super.constructor();
+  final Object scope;
+  final int index;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _ParagraphStateKey &&
+      identical(scope, other.scope) &&
+      index == other.index;
+
+  @override
+  int get hashCode => Object.hash(identityHashCode(scope), index);
+}
+
 class _CombinedViewState extends State<CombinedView> {
   bool _anchorHandledCurrentTap = false;
   final ParagraphCommentatorsCache _paragraphCommentatorsCache =
@@ -2283,19 +2301,15 @@ class _CombinedViewState extends State<CombinedView> {
       return null;
     }();
 
-    return Column(
-      key: PageStorageKey(
-        'segment-${segment?.startLineIndex ?? primaryLineIndex}',
-      ),
+    Widget paragraph(Key key) => Column(
+      key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // הטקסט של הספר - ללא SelectionArea נפרד, כי יש SelectionArea כללי
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeInOut,
-          // decoration קבוע (גם כשהצבע null) — מעבר null<->BoxDecoration היה
-          // מוסיף/מסיר DecoratedBox ומשנה את עומק הטקסט ב-tree, מה שאיפס מצב
-          // <details> פתוח (טקסט מוסתר) בכל בחירת שורה.
+          // decoration קבוע שומר על עומק הטקסט ועל מצב <details> בבחירה.
           decoration: BoxDecoration(color: backgroundColor),
           child: Listener(
             onPointerDown: (event) {
@@ -2350,22 +2364,50 @@ class _CombinedViewState extends State<CombinedView> {
                   // רק אם יש מפרשים להצגה ואנחנו במצב ExpansionTiles
                   if (widget.showCommentaryAsExpansionTiles &&
                       _hasCommentaries(state, primaryLineIndex)) {
+                    final tapped = widget
+                        .tab
+                        .positionsListener
+                        .itemPositions
+                        .value
+                        .where(
+                          (p) => p.index == index && p.itemLeadingEdge >= 0,
+                        )
+                        .firstOrNull;
+                    // עיגון על הפסקה בגובה הנוכחי (התצוגה לא זזה): הכרטיס נפתח
+                    // כלפי מטה גם כשעוגן הרשימה מתחתיה, ולא דוחף אותה מהמסך.
+                    if (tapped != null) {
+                      widget.tab.scrollController.jumpTo(
+                        index: index,
+                        alignment: tapped.itemLeadingEdge,
+                      );
+                    }
                     // מחכים שה-UI יתעדכן עם פתיחת המפרש, ואז קופצים למיקום
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       Future.delayed(const Duration(milliseconds: 300), () {
                         if (mounted && widget.tab.scrollController.isAttached) {
-                          // גלילה חכמה: נגלול כך שהטקסט הבא (index + 1) יהיה בתחתית
-                          // המפרשים תופסים עד 75% מהבלוק
-                          // נרצה שהטקסט הבא יהיה ב-90% מהבלוק (כלומר 10% מלמטה)
-                          // כך נוודא שרואים: 15% טקסט למעלה, 75% מפרשים, 10% טקסט למטה
-                          final nextIndex = (index + 1).clamp(
-                            0,
-                            widget.data.length - 1,
-                          );
+                          // הטקסט הבא ב-90% מגובה המסך, כך שהכרטיס (עד 75%) נראה כולו.
+                          final itemCount = state.readingSegments.isNotEmpty
+                              ? state.readingSegments.length
+                              : widget.data.length;
+                          final hasNext = index + 1 < itemCount;
+                          final next = widget
+                              .tab
+                              .positionsListener
+                              .itemPositions
+                              .value
+                              .where((p) => p.index == index + 1)
+                              .firstOrNull;
+                          // הגלילה רק חושפת את הכרטיס: טקסט הבא שכבר מעל קו ה-90%
+                          // (בסוף הספר) היה נגרר אליו למטה, והרשימה קופצת אחורה.
+                          if (tapped != null &&
+                              next != null &&
+                              next.itemLeadingEdge <= 0.9) {
+                            return;
+                          }
                           widget.tab.scrollController.scrollTo(
-                            index: nextIndex,
-                            alignment:
-                                0.9, // הטקסט הבא יהיה ב-90% מלמעלה (כלומר 10% מלמטה)
+                            // לפסקה האחרונה אין טקסט הבא — מעלים אותה ככל שסוף הספר מאפשר.
+                            index: hasNext ? index + 1 : index,
+                            alignment: hasNext ? 0.9 : 0,
                             duration: const Duration(milliseconds: 300),
                             curve: Curves.easeInOut,
                           );
@@ -2703,6 +2745,16 @@ class _CombinedViewState extends State<CombinedView> {
           _buildCommentaryCard(state, selectedLineIndex),
       ],
     );
+
+    // החלפת עוגן מחליפה slivers; רק תוכן אינטראקטיבי צריך לעבור ביניהם.
+    if (_detailsTag.hasMatch(widget.data[primaryLineIndex])) {
+      return Builder(
+        builder: (itemContext) => paragraph(
+          _ParagraphStateKey(Scrollable.of(itemContext), primaryLineIndex),
+        ),
+      );
+    }
+    return paragraph(PageStorageKey('segment-$primaryLineIndex'));
   }
 
   /// כרטיס המפרשים שמוצג מתחת לשורה נבחרת במצב "מפרשים מתחת לטקסט".
