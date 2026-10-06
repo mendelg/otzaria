@@ -2372,10 +2372,18 @@ class _CombinedViewState extends State<CombinedView> {
       return null;
     }();
 
+    // לא בקריאה רציפה — שם הקטע הוא פסקה אחת מכמה שורות.
+    final sectionHeadings = isContinuousParagraph
+        ? null
+        : _sectionHeadingsByLine[primaryLineIndex];
+
     Widget paragraph(Key key) => Column(
       key: key,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // הכותרת אינה חלק מהשורה: מחוץ לרקע הבחירה ולמחוות שלה.
+        if (sectionHeadings != null)
+          _buildSectionHeadings(state, sectionHeadings),
         // הטקסט של הספר - ללא SelectionArea נפרד, כי יש SelectionArea כללי
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -2662,12 +2670,6 @@ class _CombinedViewState extends State<CombinedView> {
                             data,
                             _sectionMarkersByLine[primaryLineIndex],
                           );
-                          // רק כאן ולא בקריאה רציפה — שם השורות זורמות
-                          // בפסקה אחת ובלוק כותרת היה נבלע בתוכה.
-                          data = prependSectionHeadings(
-                            data,
-                            _sectionHeadingsByLine[primaryLineIndex],
-                          );
 
                           // סימוני הערות אישיות — אחרונים.
                           final dataWithLinks = buildAnnotatedLineHtml(
@@ -2826,6 +2828,42 @@ class _CombinedViewState extends State<CombinedView> {
       );
     }
     return paragraph(PageStorageKey('segment-$primaryLineIndex'));
+  }
+
+  /// כותרות נושא/פרשה שמוזרקות מעל השורה, ברוחב עמודת הטקסט.
+  Widget _buildSectionHeadings(TextBookLoaded state, List<String> headings) {
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          BlocBuilder<SettingsBloc, SettingsState>(
+            builder: (context, settingsState) {
+              final textMaxWidth = widget.isPreviewMode
+                  ? 0.0
+                  : textColumnMaxWidthOf(
+                      context,
+                      setting: settingsState.textMaxWidth,
+                      availableWidth: constraints.maxWidth,
+                    );
+              final text = SmartTextWidget(
+                text: sectionHeadingsHtml(headings),
+                settings: RenderSettings.fromProfile(
+                  state.bodyDisplayProfile,
+                  fontSize: widget.textSize,
+                  fontFamily: settingsState.fontFamily,
+                  fontWeight: settingsState.fontBold ? FontWeight.bold : null,
+                  lineHeight: settingsState.lineHeight,
+                ),
+              );
+              return textMaxWidth > 0
+                  ? Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: textMaxWidth),
+                        child: text,
+                      ),
+                    )
+                  : text;
+            },
+          ),
+    );
   }
 
   /// כרטיס המפרשים שמוצג מתחת לשורה נבחרת במצב "מפרשים מתחת לטקסט".

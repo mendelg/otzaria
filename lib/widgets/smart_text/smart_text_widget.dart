@@ -384,16 +384,9 @@ class SmartTextWidget extends StatelessWidget {
                 return {
                   ...headingCss,
                   'color': toCssHex(colorScheme.onSurfaceVariant),
-                  // הכותרת צמודה לתוכן שהיא פותחת — באותה שורה.
+                  // הכותרת צמודה לשורה שהיא פותחת, שמוצגת מיד מתחתיה.
                   'margin-bottom': '0',
                 };
-              }
-              // כותרת הסימן שמתחת לכותרת נושא — צמודה אליה, בלי השוליים העליונים.
-              if (element.previousElementSibling?.classes.contains(
-                    kSectionHeadingClass,
-                  ) ??
-                  false) {
-                return {...headingCss, 'margin-top': '0'};
               }
               if (!hasMarkdownBlock) {
                 return headingCss.isEmpty ? null : headingCss;
