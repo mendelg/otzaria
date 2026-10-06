@@ -19,6 +19,7 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
 import 'package:otzaria/indexing/utils/book_facet_metadata_cache.dart';
+import 'package:otzaria/indexing/utils/book_fingerprint_worker.dart';
 import 'package:otzaria/indexing/utils/pdf_extraction_prefetcher.dart';
 import 'package:otzaria/indexing/models/catalogue_order_resolver.dart';
 import 'package:otzaria/indexing/models/indexing_run_result.dart';
@@ -2250,7 +2251,7 @@ class IndexingRepository {
   /// [onProgress] מדווח על שלב האינדוקס-מחדש של הספרים שנמצאו שונים.
   /// מחזיר תוצאה מפורטת; ריצה ללא שינויים נחשבת השלמה נקייה.
   ///
-  /// [loadText] ו-[fingerprintOf] ניתנים להזרקה בטסטים בלבד.
+  /// [loadText], [fingerprintOf] ו-[fingerprintLibraryPath] ניתנים להזרקה בבדיקות.
   Future<IndexingRunResult> reconcileIndexWithLibrary(
     Library library, {
     List<Book>? onlyBooks,
@@ -2260,6 +2261,7 @@ class IndexingRepository {
     @visibleForTesting Future<String?> Function(TextBook book)? loadText,
     @visibleForTesting
     Future<BigInt> Function(TextBook book, String text)? fingerprintOf,
+    @visibleForTesting String? fingerprintLibraryPath,
   }) async {
     if (WindowRole.isSecondary) {
       return const IndexingRunResult.cancelled(
@@ -2289,18 +2291,22 @@ class IndexingRepository {
       ReferenceBooksCache.instance.warmUp(),
       BookFacetMetadataCache.instance.warmUp(),
     ]);
-    // computeBookFingerprint היא קריאת FFI סינכרונית; העטיפה ה-async
-    // נשמרת רק כדי לא לשבור את חתימת ההזרקה של הטסטים.
+    BookFingerprintWorker? worker;
     final fingerprint =
         fingerprintOf ??
-        ((TextBook book, String text) async => computeBookFingerprint(
-          text: text,
-          title: book.title,
-          topics: _bookTopics(book),
-          catalogueOrder: catalogueOrder.orderFor(catalogueOrderKey(book)),
-          generationOrder: chronologicalOrderForBook(book),
-          extraFacets: _bookExtraFacets(book),
-        ));
+        (TextBook book, String text) async {
+          worker ??= await BookFingerprintWorker.start(
+            nativeLibraryPath: fingerprintLibraryPath,
+          );
+          return worker!.compute(
+            text: text,
+            title: book.title,
+            topics: _bookTopics(book),
+            catalogueOrder: catalogueOrder.orderFor(catalogueOrderKey(book)),
+            generationOrder: chronologicalOrderForBook(book),
+            extraFacets: _bookExtraFacets(book),
+          );
+        };
 
     final hidden = hiddenStore.load();
     final categoryHiddenBooks = hidden.booksHiddenByCategory(library);
@@ -2358,6 +2364,10 @@ class IndexingRepository {
         // hash אפס = "לא ניתן לאימות" (מסמכים סותרים / אינדוקס ישן) —
         // מאנדקסים מחדש כדי לרכוש טביעת אצבע תקינה.
         final dbHash = await fingerprint(textBook, text);
+        if (!_tantivyDataProvider.isIndexing.value) {
+          cancelled = true;
+          break;
+        }
         if (indexHash == BigInt.zero || dbHash != indexHash) {
           changed.add(book);
         }
@@ -2365,11 +2375,17 @@ class IndexingRepository {
         onScanProgress?.call(processed, total);
         await Future.delayed(Duration.zero);
       }
+      cancelled = cancelled || !_tantivyDataProvider.isIndexing.value;
       debugPrint(
         '🔎 reconcile: סריקת $processed/$total ספרים ב-${scanStopwatch.elapsed}',
       );
     } finally {
-      _tantivyDataProvider.isIndexing.value = false;
+      try {
+        await worker?.close();
+        cancelled = cancelled || !_tantivyDataProvider.isIndexing.value;
+      } finally {
+        _tantivyDataProvider.isIndexing.value = false;
+      }
     }
 
     if (cancelled) {

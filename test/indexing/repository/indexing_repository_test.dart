@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -18,6 +19,7 @@ import 'package:otzaria/migration/database/daos/database.dart';
 import 'package:otzaria/migration/database/repository/seforim_repository.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import '../../test_helpers/memory_cache_provider.dart';
+import '../../support/search_engine_test_init.dart';
 
 import 'package:otzaria/data/constants/database_constants.dart';
 import 'package:otzaria/data/data_providers/tantivy_data_provider.dart';
@@ -1260,6 +1262,140 @@ void main() {
       );
 
       expect(result.completed, isTrue);
+      expect(repository.indexedBooks, isNull);
+      expect(engine.removedFilePaths, isEmpty);
+    });
+
+    for (final cancelDuringHash in [false, true]) {
+      test('סריקה עם עובד native וטיימר פעיל ($cancelDuringHash)', () async {
+        final engine = _RecordingSearchEngine();
+        final provider = _RecordingTantivyDataProvider(engine);
+        final books = [
+          book(1, 'שבת'),
+          if (!cancelDuringHash) book(2, 'עירובין'),
+        ];
+        final library = _buildLibrary(bavliBooks: const []);
+        library.books.addAll(books);
+        engine.fingerprints = {
+          for (final b in books) 'id:${b.id}': BigInt.zero,
+        };
+        final repository = _ReindexProbeRepository(provider);
+        final text = 'טקסט גדול\n' * 300000;
+        final timers = <Timer>[];
+        var fired = false;
+        final result = await repository.reconcileIndexWithLibrary(
+          library,
+          onlyBooks: books,
+          onProgress: (_, _) {},
+          onScanProgress: (_, _) => expect(fired, isTrue),
+          fingerprintLibraryPath: searchEngineLoadedLibraryPath!,
+          loadText: (_) async {
+            fired = false;
+            timers.add(
+              Timer(Duration.zero, () {
+                fired = true;
+                if (cancelDuringHash) provider.isIndexing.value = false;
+              }),
+            );
+            return text;
+          },
+        );
+        for (final timer in timers) {
+          timer.cancel();
+        }
+        expect(fired, isTrue);
+        expect(result.completed, !cancelDuringHash);
+        expect(provider.isIndexing.value, isFalse);
+        if (cancelDuringHash) {
+          expect(repository.indexedBooks, isNull);
+          expect(engine.removedFilePaths, isEmpty);
+        } else {
+          expect(repository.indexedBooks, books);
+          expect(engine.removedFilePaths, ['id:1', 'id:2']);
+        }
+      });
+    }
+
+    test('כשל אתחול native בסריקה שומר את האינדקס ומאפס מצב עבודה', () async {
+      final engine = _RecordingSearchEngine();
+      final provider = _RecordingTantivyDataProvider(engine);
+      final b = book(1, 'שבת');
+      final library = _buildLibrary(bavliBooks: const []);
+      library.books.add(b);
+      engine.fingerprints = {'id:1': BigInt.from(9)};
+      final repository = _ReindexProbeRepository(provider);
+      await expectLater(
+        repository.reconcileIndexWithLibrary(
+          library,
+          onlyBooks: [b],
+          onProgress: (_, _) {},
+          loadText: (_) async => 'טקסט',
+          fingerprintLibraryPath: '/missing/search_engine',
+        ),
+        throwsA(isA<RemoteError>()),
+      );
+      expect(provider.isIndexing.value, isFalse);
+      expect(repository.indexedBooks, isNull);
+      expect(engine.removedFilePaths, isEmpty);
+    });
+
+    for (final cancelInProgressCallback in [false, true]) {
+      test(
+        'ביטול בספר האחרון לפני האינדוקס ($cancelInProgressCallback)',
+        () async {
+          final engine = _RecordingSearchEngine();
+          final provider = _RecordingTantivyDataProvider(engine);
+          final b = book(1, 'שבת');
+          final library = _buildLibrary(bavliBooks: const []);
+          library.books.add(b);
+          engine.fingerprints = {'id:1': BigInt.from(9)};
+          final repository = _ReindexProbeRepository(provider);
+          final hashing = Completer<void>();
+          final release = Completer<BigInt>();
+          final run = repository.reconcileIndexWithLibrary(
+            library,
+            onlyBooks: [b],
+            onProgress: (_, _) {},
+            onScanProgress: (_, _) {
+              if (cancelInProgressCallback) provider.isIndexing.value = false;
+            },
+            loadText: (_) async => 'טקסט',
+            fingerprintOf: (_, _) {
+              hashing.complete();
+              return release.future;
+            },
+          );
+          await hashing.future;
+          if (!cancelInProgressCallback) provider.isIndexing.value = false;
+          release.complete(BigInt.one);
+          final result = await run;
+          expect(result.completed, isFalse);
+          expect(repository.indexedBooks, isNull);
+          expect(engine.removedFilePaths, isEmpty);
+          expect(provider.isIndexing.value, isFalse);
+        },
+      );
+    }
+
+    test('כשל בחישוב חתימה מאפס מצב עבודה ומשמר את האינדקס', () async {
+      final engine = _RecordingSearchEngine();
+      final provider = _RecordingTantivyDataProvider(engine);
+      final b = book(1, 'שבת');
+      final library = _buildLibrary(bavliBooks: const []);
+      library.books.add(b);
+      engine.fingerprints = {'id:1': BigInt.from(9)};
+      final repository = _ReindexProbeRepository(provider);
+      await expectLater(
+        repository.reconcileIndexWithLibrary(
+          library,
+          onlyBooks: [b],
+          onProgress: (_, _) {},
+          loadText: (_) async => 'טקסט',
+          fingerprintOf: (_, _) async => throw StateError('worker failed'),
+        ),
+        throwsStateError,
+      );
+      expect(provider.isIndexing.value, isFalse);
       expect(repository.indexedBooks, isNull);
       expect(engine.removedFilePaths, isEmpty);
     });

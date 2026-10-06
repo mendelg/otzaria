@@ -1126,6 +1126,7 @@ class _FakeIndexingRepository extends IndexingRepository {
     required void Function(int processed, int total) onProgress,
     Future<String?> Function(TextBook book)? loadText,
     Future<BigInt> Function(TextBook book, String text)? fingerprintOf,
+    String? fingerprintLibraryPath,
   }) {
     reconcileCalls++;
     for (final (processed, total) in scanProgressReports) {
