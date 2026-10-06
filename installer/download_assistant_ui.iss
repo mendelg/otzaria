@@ -1532,6 +1532,25 @@ begin
     L.Caption := S;
 end;
 
+{ שם רכיב ארוך (בעיקר באנגלית) נשבר לשורה שנייה: מה שמתחת לכיתוב זז לפי גובהו. }
+procedure UiSetProgressCaption(const S: String);
+var
+  Bottom, Shift: Integer;
+begin
+  if not Assigned(UiProgCaption) or (UiProgCaption.Caption = S) then
+    exit;
+  Bottom := UiProgCaption.Top;
+  if UiProgCaption.Visible then
+    Bottom := Bottom + UiProgCaption.Height;
+  Shift := UiPlaceLabel(UiProgCaption, S, 0, UiProgCaption.Top, Px(UiContentW)) - Bottom;
+  if Shift = 0 then
+    exit;
+  UiProgBar.Top := UiProgBar.Top + Shift;
+  UiProgSpeed.Top := UiProgSpeed.Top + Shift;
+  UiProgBytes.Top := UiProgBytes.Top + Shift;
+  UiSetContentHeight(UiProgBytes.Top + UiProgBytes.Height);
+end;
+
 procedure UiUpdateProgress();
 var
   Page: TOutputProgressWizardPage;
@@ -1548,7 +1567,7 @@ begin
   Speed := '';
   if UiProgSource = UiSrcConnect then
   begin
-    UiSetCaption(UiProgCaption, CustomMessage('ConnectingProgress'));
+    UiSetProgressCaption(CustomMessage('ConnectingProgress'));
     UiSetCaption(UiProgPercent, '');
     UiRenderBar(0, True);
     exit;
@@ -1589,7 +1608,7 @@ begin
     Fraction := Fraction / Bar.Max;
     Known := True;
   end;
-  UiSetCaption(UiProgCaption, Caption);
+  UiSetProgressCaption(Caption);
   UiSetCaption(UiProgSpeed, Speed);
   UiSetCaption(UiProgBytes, Bytes);
   if Known then
