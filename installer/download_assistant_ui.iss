@@ -602,31 +602,6 @@ end;
 
 { ============================ שגיאות ============================ }
 
-{ RTF משמאל לימין: הפרטים הטכניים באנגלית, וצריך לבחור ולהעתיק אותם. }
-function UiRtf(const Text: String): String;
-var
-  I: Integer;
-  C: Char;
-begin
-  Result := '{\rtf1\ansi\deff0{\fonttbl{\f0 Consolas;}}{\colortbl;\red79\green69\blue57;}' +
-    '\ltrpar\ql\f0\fs18\cf1 ';
-  for I := 1 to Length(Text) do
-  begin
-    C := Text[I];
-    if (C = '\') or (C = '{') or (C = '}') then
-      Result := Result + '\' + C
-    else if C = #10 then
-      Result := Result + '\par '
-    else if C = #13 then
-      Continue
-    else if Ord(C) > 127 then
-      Result := Result + '\u' + IntToStr(Ord(C)) + '?'
-    else
-      Result := Result + C;
-  end;
-  Result := Result + '}';
-end;
-
 procedure UiErrLinkClick(Sender: TObject);
 begin
   UiErrTech.Visible := not UiErrTech.Visible;

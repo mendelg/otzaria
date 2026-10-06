@@ -522,7 +522,7 @@ void main() {
       final script = _script(_full);
       // שורת המשך של Inno (`\` בסוף שורה) מצורפת לשורה אחת.
       final files = _squeeze(
-        _section(script, 'Files').replaceAll('\\\n', ' '),
+        _sections(script, 'Files').join().replaceAll('\\\n', ' '),
       );
       expect(
         files,
@@ -545,7 +545,11 @@ void main() {
     // "מלאה" ב-x64 עם מתקין FULL גדול היא המתקין הרגיל + חלקים + נתוני החיפוש.
     test('$_regular: מעתיק גם הוא, בכל ארכיטקטורה ובלי תלות בחלקים', () {
       final script = _script(_regular);
-      final filesSection = _section(script, 'Files').replaceAll('\\\n', ' ');
+      // כל מקטעי [Files]: העיצוב של שכבת התצוגה במקטע משלו לפניהם.
+      final filesSection = _sections(
+        script,
+        'Files',
+      ).join().replaceAll('\\\n', ' ');
       final line = _squeeze(
         filesSection,
       ).split('\n').singleWhere((l) => l.contains(kSemanticImportFolderName));
@@ -829,7 +833,7 @@ void main() {
     });
 
     test('$_regular: הקבצים הזמניים ראשונים ב-[Files]', () {
-      final files = _section(_script(_regular), 'Files');
+      final files = _sections(_script(_regular), 'Files').join();
       final app = files.indexOf(r'Source: "..\build\windows\');
 
       for (final entry in const [
@@ -1233,17 +1237,44 @@ void main() {
 
   group('שיגור-מחדש עם מצב מפורש — בלי לשאול שוב', () {
     for (final name in _scripts) {
-      test('$name: ShouldSkipPage מדלג על עמודי הפתיחה והמצב', () {
-        // בלי הדילוג, בחירת "לכל המשתמשים" מציגה את אותן שאלות פעמיים —
-        // פעם בריצה המקורית ופעם בריצה המשוגרת-מחדש.
-        final body = _routine(
-          _script(name),
-          'function ShouldSkipPage(',
+      test(
+        '$name: ShouldSkipPage מדלג על הפתיחה, ו"איך להתקין" מסומן מראש',
+        () {
+          // בלי הדילוג הריצה המשוגרת-מחדש הייתה מתחילה שוב בפתיחה. "איך להתקין"
+          // נשאר: בו נבחרת התיקייה, והבחירה כבר מסומנת לפי מצב התהליך.
+          final script = _script(name);
+          final body = _routine(script, 'function ShouldSkipPage(');
+          expect(body, contains("CmdLineParamExists('/ALLUSERS')"));
+          expect(body, contains("CmdLineParamExists('/CURRENTUSER')"));
+          expect(body, contains('(PageID = wpWelcome)'));
+          expect(body, isNot(contains('wpSelectDir')));
+          final wizard = _routine(script, 'procedure InitializeWizard');
+          expect(
+            wizard,
+            contains("(IsAdmin and not CmdLineParamExists('/CURRENTUSER'))"),
+          );
+          expect(wizard, contains('AllUsersModeRadio.Checked := True'));
+        },
+      );
+
+      test('$name: שיגור-מחדש להחלפת מצב נסגר בלי שאלת "לצאת?"', () {
+        // אירוע CancelButtonClick של שכבת התצוגה רץ לפני זה של הסקריפט, ושואל
+        // אלא אם UiClosing — לכן הדגל מורם לפני הסגירה, יחד עם הדגל של הסקריפט.
+        final next = _routine(_script(name), 'function NextButtonClick(');
+        final closes = RegExp(
+          r'RelaunchingForModeChange := True;\s*UiClosing := True;\s*WizardForm\.Close;',
+        ).allMatches(next);
+        expect(closes, isNotEmpty);
+        expect(
+          RegExp(r'WizardForm\.Close;').allMatches(next).length,
+          closes.length,
+          reason: 'כל סגירה לשיגור-מחדש חייבת להרים את UiClosing',
         );
-        expect(body, contains("CmdLineParamExists('/ALLUSERS')"));
-        expect(body, contains("CmdLineParamExists('/CURRENTUSER')"));
-        expect(body, contains('FeaturesPage.ID'));
-        expect(body, contains('ModePage.ID'));
+        final cancel = _routine(
+          _script(name),
+          'procedure UiCancelButtonClick(',
+        );
+        expect(cancel, contains('if UiClosing then'));
       });
     }
   });
@@ -1335,18 +1366,31 @@ void main() {
       });
 
       test('$name: תיאור משימת האיפוס מוביל באזהרה ולא ממליץ עליה', () {
-        final tasks = _section(_script(name), 'Tasks');
+        final script = _script(name);
+        final tasks = _section(script, 'Tasks');
         final line = tasks
             .split('\n')
             .firstWhere((l) => l.contains('resetsettings'));
-
+        final key = RegExp(
+          r'Description: "\{cm:(\w+)\}"',
+        ).firstMatch(line)![1]!;
+        // גם הכרטיס שבעמוד האפשרויות.
+        for (final text in [
+          _text(script, 'hebrew', key),
+          _text(script, 'hebrew', 'TaskResetDesc'),
+        ]) {
+          expect(
+            text,
+            isNot(contains('מומלץ')),
+            reason: 'הניסוח "מומלץ למעדכנים" גרם למשתמשים לסמן ולאבד נתונים',
+          );
+          expect(text.indexOf('אזהרה'), greaterThanOrEqualTo(0));
+          expect(text.indexOf('אזהרה'), lessThan(text.indexOf('ימחק')));
+        }
         expect(
-          line,
-          isNot(contains('מומלץ')),
-          reason: 'הניסוח "מומלץ למעדכנים" גרם למשתמשים לסמן ולאבד נתונים',
+          _text(script, 'english', key),
+          startsWith('Reset user settings — warning'),
         );
-        expect(line.indexOf('אזהרה'), greaterThanOrEqualTo(0));
-        expect(line.indexOf('אזהרה'), lessThan(line.indexOf('ימחק')));
       });
     }
   });
@@ -1464,7 +1508,7 @@ void main() {
     });
 
     test('$_full: קבצי האפליקציה נלקחים מתיקיית ה-build של הארכיטקטורה', () {
-      final files = _section(_script(_full), 'Files');
+      final files = _sections(_script(_full), 'Files').join();
 
       expect(files, isNot(contains(r'..\build\windows\x64\')));
       expect(
@@ -1844,10 +1888,16 @@ void main() {
 
       expect(ask, contains('if not PortableMode then'));
       expect(ask, contains('FindExistingLibraryPath()'));
+      // ברירת המחדל (Yes, וב-Enter בדו-שיח המעוצב) חייבת להישאר חילוץ — דילוג
+      // רק בבחירה מפורשת ב"לא".
+      expect(ask, contains('PortableSkipLibrary := not InstAskYesNo('));
+      expect(ask, contains('mbConfirmation, MB_YESNO)'));
+      final yesNo = _routine(script, 'function InstAskYesNo(');
+      expect(yesNo, contains('MsgBox(Text, Typ, Flags) = IDYES'));
       expect(
-        ask,
-        contains('MB_YESNO) = IDNO'),
-        reason: 'ברירת המחדל (Yes) חייבת להישאר חילוץ — דילוג רק בבחירה מפורשת',
+        yesNo.replaceAll(RegExp(r'\s+'), ' '),
+        contains("CustomMessage('NoButton'), False)"),
+        reason: 'Danger=False: "כן" הוא כפתור ברירת המחדל',
       );
 
       final next = _routine(script, 'function NextButtonClick(');
@@ -2324,13 +2374,19 @@ void main() {
         // פריימי הספר הם רוב גודל הקובץ: עותק לכל קנה מידה מגדיל אותו פי 2.4.
         expect(
           entries.where(
-            (e) => source(e).contains('book_') || source(e).contains('title_'),
+            (e) =>
+                source(e).contains('book_') ||
+                source(e).contains('title_') ||
+                source(e).contains('UiTitleFiles'),
           ),
           [
             r'Source: "assistant_art\book_*_{#AA_BOOK_SRC_SCALE}.png"; Flags: dontcopy nocompression',
-            r'Source: "assistant_art\title_*_{#AA_TITLE_SRC_SCALE}.png"; Flags: dontcopy nocompression',
+            r'Source: "assistant_art\{#UiTitleFiles}_{#AA_TITLE_SRC_SCALE}.png"; Excludes: "{#UiTitleSkip}"; Flags: dontcopy nocompression',
           ],
         );
+        // המסייע מטמיע את title_* בלי כותרות המתקינים (title_inst_*).
+        expect(script, contains('#define UiTitleFiles "title_*"'));
+        expect(script, contains('#define UiTitleSkip "title_inst_*"'));
         final perScale = entries.where(
           (e) => RegExp(r'^assistant_art\\\*_\d+\.png$').hasMatch(source(e)),
         );
@@ -2338,7 +2394,7 @@ void main() {
         for (final entry in perScale) {
           expect(
             entry,
-            contains('Excludes: "book_*,title_*"'),
+            contains('Excludes: "book_*,title_*{#UiArtSkip}"'),
             reason: 'עיצוב ישן עם ספר בכל קנה מידה היה מוטמע שוב: $entry',
           );
         }
@@ -3751,6 +3807,338 @@ void main() {
     });
   });
 
+  group('המתקינים בשכבת התצוגה של אוצריא', () {
+    const adapter = 'otzaria_ui_installer.iss';
+    const core = 'otzaria_ui_core.iss';
+
+    /// הסקריפט המורחב בלי הליבה: הקוד שהמתקינים עצמם מוסיפים.
+    String installerCode(String name) =>
+        _script(name).replaceFirst(_expandIncludes(_read(core)), '');
+
+    /// שם השגרה שבתוכה נמצא [offset] בטקסט.
+    String enclosingRoutine(String text, int offset) {
+      final starts = RegExp(
+        r'^(?:procedure|function) (\w+)',
+        multiLine: true,
+      ).allMatches(text.substring(0, offset)).toList();
+      return starts.isEmpty ? '' : starts.last[1]!;
+    }
+
+    for (final name in _scripts) {
+      test('$name: העיצוב ראשון ב-[Files], והליבה לפני [Code]', () {
+        final raw = _read(name);
+        final product = raw.indexOf('#define OtzariaUiProduct "installer"');
+        final art = raw.indexOf('#include "otzaria_ui_art.iss"');
+        final coreAt = raw.indexOf('#include "otzaria_ui_core.iss"');
+        expect(product, greaterThanOrEqualTo(0));
+        expect(art, greaterThan(product));
+        expect(
+          art,
+          lessThan(raw.indexOf(RegExp(r'^\[Files\]', multiLine: true))),
+          reason: 'עם SolidCompression תמונה מאוחרת ממתינה לפריסת האפליקציה',
+        );
+        expect(
+          coreAt,
+          lessThan(raw.indexOf(RegExp(r'^\[Code\]', multiLine: true))),
+        );
+        expect(raw, contains('#include "$adapter"'));
+
+        final sources = [
+          for (final files in _sections(_script(name), 'Files'))
+            ...RegExp(
+              r'^Source:\s*"([^"]+)"',
+              multiLine: true,
+            ).allMatches(files).map((m) => m[1]!),
+        ];
+        final firstOther = sources.indexWhere(
+          (s) => !s.startsWith(r'assistant_art\'),
+        );
+        expect(firstOther, greaterThan(0));
+        expect(
+          sources.skip(firstOther).where((s) => s.startsWith('assistant_art')),
+          isEmpty,
+        );
+        expect(
+          sources.where((s) => s.toLowerCase().endsWith('.bmp')),
+          isEmpty,
+          reason: 'דף "תכונות עיקריות" והמצגת הוסרו',
+        );
+        // חלון ההסרה אינו מקבל את העיצוב, ולכן נשארת לו התמונה הקטנה.
+        expect(
+          _script(name),
+          matches(RegExp(r'^WizardImageFile=\s*$', multiLine: true)),
+        );
+        expect(
+          _script(name),
+          contains('WizardSmallImageFile=wizard_small.bmp'),
+        );
+        expect(_script(name), contains('DisableWelcomePage=no'));
+      });
+
+      test(
+        '$name: אנגלית ועברית לפי שפת Windows, ושמות התוכנה אינם מתורגמים',
+        () {
+          final script = _script(name);
+          final languages =
+              RegExp(
+                    r'^Name:\s*"(\w+)";\s*MessagesFile:\s*"([^"]+)"',
+                    multiLine: true,
+                  )
+                  .allMatches(_section(script, 'Languages'))
+                  .map((m) => '${m[1]}|${m[2]}');
+          expect(languages, [
+            'english|compiler:Default.isl',
+            r'hebrew|compiler:Languages\Hebrew.isl',
+          ]);
+          expect(script, contains('LanguageDetectionMethod=uilanguage'));
+          expect(script, contains('ShowLanguageDialog=no'));
+          // שדרוג בממשק אנגלי חייב למצוא את אותה רשומה, קבוצה וקיצורים.
+          expect(script, contains('#define MyAppName "אוצריא"'));
+          expect(script, contains('AppName={#MyAppName}'));
+          expect(script, contains('DefaultGroupName={#MyAppName}'));
+          for (final section in [
+            'Icons',
+            'Registry',
+            'InstallDelete',
+            'Dirs',
+            'INI',
+          ]) {
+            expect(
+              _section(script, section),
+              isNot(contains('{cm:')),
+              reason: section,
+            );
+          }
+          final icons = [
+            for (final m in RegExp(
+              r'^Name:\s*"([^"]+)"',
+              multiLine: true,
+            ).allMatches(_section(script, 'Icons')))
+              m[1]!,
+          ];
+          expect(icons, [
+            r'{autoprograms}\{#MyAppName}',
+            r'{autodesktop}\{#MyAppName}',
+            r'{autodesktop}\לוח שנה - {#MyAppName}',
+          ]);
+        },
+      );
+
+      test('$name: כל טקסט בשתי השפות, וכל מפתח מוגדר בשימוש', () {
+        final script = _script(name);
+        final byLang = _messages(script, 'CustomMessages');
+        expect(byLang.keys.toSet(), {'english', 'hebrew'});
+        expect(
+          byLang['english']!.keys.toSet(),
+          byLang['hebrew']!.keys.toSet(),
+          reason: 'מפתח שחסר באחת השפות',
+        );
+        final hebrew = RegExp(r'[֐-׿]');
+        for (final MapEntry(key: key, value: value)
+            in byLang['english']!.entries) {
+          expect(value, isNot(matches(hebrew)), reason: 'english.$key בעברית');
+        }
+        final used = {
+          for (final m in RegExp(
+            r"(?:CustomMessage\('|Msg1\('|\{cm:)(\w+)",
+          ).allMatches(script))
+            m[1]!,
+        };
+        final defined = {for (final e in byLang.values) ...e.keys};
+        // CreateDesktopIcon ו-AdditionalIcons מגיעים מקובצי השפה של Inno.
+        expect(
+          used.difference(defined),
+          {'CreateDesktopIcon', 'AdditionalIcons'},
+        );
+      });
+
+      test('$name: אין טקסט עברי מילולי בקוד — רק דרך CustomMessage', () {
+        final hebrew = RegExp(r'[֐-׿]');
+        // נתיבים ושמות קבצים ישנים בעברית הם נתונים, לא טקסט מוצג.
+        const allowed = [
+          r'C:\אוצריא',
+          r'{localappdata}\אוצריא',
+          'תלמוד בבלי',
+          r'{autopf}\אוצריא',
+        ];
+        final offenders = [
+          for (final l in _codeLiterals(_script(name)))
+            if (hebrew.hasMatch(l.literal) &&
+                !allowed.any((a) => l.literal.contains(a)))
+              l.literal,
+        ];
+        expect(offenders, isEmpty, reason: offenders.join('\n'));
+      });
+
+      test('$name: התקנה שקטה אינה מציגה שום חלון חדש', () {
+        final script = _script(name);
+        // /VERYSILENT — בלי שכבת התצוגה כלל; /SILENT — חלון ההתקדמות המצומצם.
+        final init = _routine(
+          script,
+          'procedure UiInstallerInitializeWizard()',
+        );
+        final silent = init.indexOf('if WizardSilent then');
+        final very = init.indexOf("CmdLineParamExists('/VERYSILENT')");
+        final compact = init.indexOf('UiInitializeCompact(');
+        final full = init.indexOf('UiInitializeWizard(');
+        expect(silent, greaterThan(0));
+        expect(very, greaterThan(silent));
+        expect(init.substring(very, compact), contains('exit;'));
+        expect(full, greaterThan(compact));
+        expect(init.substring(compact, full), contains('exit;'));
+
+        // כל MsgBox של המתקין יושב בענף השקט של העוזרים — בשקט בדיוק הקריאה שהייתה.
+        const helpers = {
+          'InstTell',
+          'InstAskYesNo',
+          'InstTellSuppressible',
+          'InstReportFailure',
+          'InitializeUninstall',
+        };
+        final code = installerCode(name);
+        for (final m in RegExp(
+          r'\b(?:Suppressible)?MsgBox\(',
+        ).allMatches(code)) {
+          final routine = enclosingRoutine(code, m.start);
+          if (routine.isEmpty) continue;
+          expect(helpers, contains(routine), reason: 'MsgBox בתוך $routine');
+        }
+        for (final signature in [
+          'procedure InstTell(',
+          'function InstAskYesNo(',
+          'procedure InstTellSuppressible(',
+          'procedure InstReportFailure(',
+        ]) {
+          final body = _routine(script, signature);
+          final guard = body.indexOf('WizardSilent');
+          expect(guard, greaterThan(0), reason: signature);
+          expect(guard, lessThan(body.indexOf('MsgBox(')), reason: signature);
+        }
+      });
+
+      test('$name: כל דו-שיח מעוצב שמור מאחורי not WizardSilent', () {
+        final code = installerCode(name);
+        for (final m in RegExp(
+          r'\bUi(?:Ask|Tell|AskExit)\(',
+        ).allMatches(code)) {
+          final routineStart = code.lastIndexOf(
+            RegExp(r'^(?:procedure|function) ', multiLine: true),
+            m.start,
+          );
+          final before = code.substring(routineStart, m.start);
+          expect(
+            before,
+            contains('WizardSilent'),
+            reason:
+                'UiAsk אינו MsgBox ואינו מושפע מ-/SUPPRESSMSGBOXES: '
+                '${code.substring(routineStart, routineStart + 60)}',
+          );
+        }
+      });
+
+      test('$name: המתאם מממש את כל חוזה המתאם שהליבה מצהירה', () {
+        final coreText = _read(core);
+        final forwards = RegExp(
+          r'^(procedure|function) (\w+)\(',
+          multiLine: true,
+        ).allMatches(coreText).where((m) => _isForward(coreText, m.start));
+        final script = _script(name);
+        for (final m in forwards) {
+          _routine(script, '${m[1]} ${m[2]}(');
+        }
+      });
+
+      test('$name: קוד ההסרה זהה בשני המתקינים', () {
+        // AppId משותף: המסיר מריץ את [Code] של ההתקנה האחרונה, רגילה או FULL.
+        for (final signature in [
+          'function InitializeUninstall(',
+          'procedure CurUninstallStepChanged(',
+          'procedure DeleteAllUserData(',
+        ]) {
+          expect(
+            _routine(_script(_regular), signature),
+            _routine(_script(_full), signature),
+            reason: signature,
+          );
+        }
+        final ask = _routine(_script(name), 'function InitializeUninstall(');
+        expect(ask, contains('MB_YESNO or MB_DEFBUTTON2) = IDYES'));
+        expect(ask, isNot(contains('UiAsk')));
+        final script = _script(name);
+        expect(
+          _text(script, 'hebrew', 'UninstallDeleteIntro'),
+          startsWith('האם למחוק גם את הספרים וכל הנתונים של אוצריא?'),
+        );
+        expect(
+          _messages(script, 'Messages')['english']!['ConfirmUninstall'],
+          contains('Otzaria'),
+        );
+      });
+    }
+
+    test('כל טקסט שמוגדר למתקינים מוצג באחד מהם', () {
+      final used = <String>{};
+      final defined = <String>{};
+      for (final name in _scripts) {
+        final script = _script(name);
+        used.addAll([
+          for (final m in RegExp(
+            r"(?:CustomMessage\('|Msg1\('|\{cm:)(\w+)",
+          ).allMatches(script))
+            m[1]!,
+        ]);
+        for (final e in _messages(script, 'CustomMessages').values) {
+          defined.addAll(e.keys);
+        }
+      }
+      expect(defined.difference(used), isEmpty, reason: 'טקסט שאיש אינו מציג');
+    });
+
+    test('המתקין המלא מגדיר InstallerFull לפני שכבת התצוגה, והרגיל לא', () {
+      final full = _read(_full);
+      expect(
+        full.indexOf('#define InstallerFull'),
+        lessThan(full.indexOf('#include "otzaria_ui_art.iss"')),
+      );
+      expect(_read(_regular), isNot(contains('InstallerFull')));
+      final art = _read('otzaria_ui_art.iss');
+      expect(
+        art,
+        contains('#if !Defined(AA_TITLE_INST) || !Defined(AA_LOGO_SM_SIZE)'),
+      );
+      expect(
+        art.substring(art.indexOf('#if OtzariaUiProduct == "installer"')),
+        matches(RegExp(r'^\s*#error ', multiLine: true)),
+      );
+      expect(art, contains('#define UiTitleFiles "title_inst_*"'));
+      final ui = _read(adapter);
+      expect(ui, contains('#ifdef InstallerFull'));
+      // המתקין המאונדקס הנפרד בוטל (#1890): גם לא עמוד הורדה משלו בשכבה.
+      expect(ui, isNot(contains('IndexedSplitFull')));
+    });
+
+    test('חלון /SILENT המצומצם: בלי פתיחה, שלבים וכפתורים', () {
+      final coreText = _read(core);
+      final compact = _routine(coreText, 'procedure UiInitializeCompact(');
+      expect(compact, contains('UiHeight := UiCompactHeight;'));
+      expect(compact, contains('UiHeroDone := True;'));
+      final render = _routine(coreText, 'procedure UiRenderPage(');
+      expect(
+        render.indexOf('if UiCompact then'),
+        lessThan(render.indexOf('UiBuildHero()')),
+      );
+      expect(
+        _routine(coreText, 'procedure UiRenderSteps('),
+        contains('if UiCompact then'),
+      );
+      expect(
+        _routine(coreText, 'procedure UiSyncFooter('),
+        contains('if UiCompact then'),
+      );
+      expect(coreText, contains('UiCompactHeight = 260;'));
+    });
+  });
+
   group('שכבת התצוגה המשותפת — ליבה בלי מוצר', () {
     const core = 'otzaria_ui_core.iss';
 
@@ -3858,6 +4246,28 @@ void main() {
         contains('continue-on-error: true'),
         reason: 'כישלון בהורדת העיצוב מפיל רק את המסייע',
       );
+    });
+
+    test('כל שלב שמקמפל מתקין של אוצריא מושך את העיצוב לפני ISCC, וקטלני', () {
+      // המתקין אינו נבנה בלי העיצוב (#error), ולכן כישלון המשיכה מפיל את השלב.
+      const steps = {
+        'Build Inno Setup installer': true,
+        'Build Inno Setup FULL installer (ARM64)': false,
+        'Build regular installer': true,
+        'Build regular installer (ARM64)': true,
+      };
+      for (final MapEntry(key: name, value: fatal) in steps.entries) {
+        final step = _workflowStep(name);
+        final fetch = step.indexOf('& ./tool/release/fetch_assistant_art.ps1');
+        expect(fetch, greaterThanOrEqualTo(0), reason: name);
+        for (final m in RegExp(
+          r'& "\$env:ISCC"[^\n]*otzaria(?:_full)?\.iss',
+        ).allMatches(step)) {
+          expect(fetch, lessThan(m.start), reason: name);
+        }
+        // ה-FULL ל-ARM64 אינו חוסם שחרור ממילא (continue-on-error).
+        expect(step.contains('continue-on-error: true'), !fatal, reason: name);
+      }
     });
 
     test('הסקריפט מאמת hash ואת AA_ART_VERSION לפני שהוא פורס ומחליף', () {

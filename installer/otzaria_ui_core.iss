@@ -36,13 +36,13 @@ const
   UiShadeAlpha = 34;
 
   UiWidth = 400;
-  UiHeight = 660;
+  UiFullHeight = 660;
+  UiFullFooterTop = 592;
+  { חלון ההתקדמות בלבד (UiInitializeCompact): בלי שלבים, כותרת תחתונה וכפתורים. }
+  UiCompactHeight = 260;
   UiBarH = {#AA_TITLE_BAR_H};
   { רצועת נקודות השלבים שמעל כל עמוד פנימי. }
   UiStepsH = 44;
-  UiFooterTop = 592;
-  { תחתית כפתורי הכותרת התחתונה: גם ערימת הכפתורים בעמודי התוצאה והפתיחה נגמרת כאן. }
-  UiActionsBottom = UiFooterTop + (UiHeight - UiFooterTop + {#AA_BTN_PRIMARY_H}) div 2;
   UiStackGap = 8;
   UiBadgeTop = 72;
   UiMargin = 24;
@@ -161,6 +161,11 @@ type
 
 var
   UiScale, UiFitWidth, UiFitHeight: Integer;
+  { גובה החלון וראש הכותרת התחתונה; נקבעים ב-UiPrepare או ב-UiInitializeCompact. }
+  UiHeight, UiFooterTop: Integer;
+  UiCompact: Boolean;
+  UiCompactTitle: String;
+  UiCompactPanel: TPanel;
   { עברית: הפריסה כפי שהיא כתובה. אנגלית: כל מיקום אופקי משוקף ב-UiX. }
   UiRtl: Boolean;
   UiTitleArt: String;
@@ -370,6 +375,12 @@ begin
 end;
 
 { X של פריט ברוחב W בתוך Total, כפי שהוא ממוקם בעברית; באנגלית — מהצד השני. }
+{ תחתית כפתורי הכותרת התחתונה: גם ערימת הכפתורים בעמודי התוצאה והפתיחה נגמרת כאן. }
+function UiActionsBottom(): Integer;
+begin
+  Result := UiFooterTop + (UiHeight - UiFooterTop + {#AA_BTN_PRIMARY_H}) div 2;
+end;
+
 function UiX(X, W, Total: Integer): Integer;
 begin
   if UiRtl then
@@ -600,6 +611,11 @@ procedure UiPrepare();
 begin
   if Assigned(UiArtNames) then
     exit;
+  if UiHeight = 0 then
+  begin
+    UiHeight := UiFullHeight;
+    UiFooterTop := UiFullFooterTop;
+  end;
   UiRtl := not EnglishUi();
   UiScale := UiPickScale();
   UiArtNames := TStringList.Create;
@@ -1064,6 +1080,8 @@ begin
 end;
 
 procedure UiScrollTo(Y: Integer);
+var
+  T: Integer;
 begin
   if Y > UiMaxScroll() then
     Y := UiMaxScroll();
@@ -1072,6 +1090,15 @@ begin
   UiScrollY := Y;
   UiContent.Top := -Y;
   UiPlaceThumb();
+  { השדה האמיתי יושב מעל התוכן ולא בתוכו, ולכן זז כאן איתו ומוסתר מחוץ למארח. }
+  if Assigned(UiFolderField) and Assigned(UiFolderEdit) then
+  begin
+    T := UiHost.Top + UiFolderField.Top - Y +
+      (UiFolderField.Height - UiFolderEdit.Height) div 2;
+    UiFolderEdit.Top := T;
+    UiFolderEdit.Visible := UiFolderField.Visible and (T >= UiHost.Top) and
+      (T + UiFolderEdit.Height <= UiHost.Top + UiHost.Height);
+  end;
 end;
 
 procedure UiRevealCard(const Card: TUiCard);
@@ -1461,6 +1488,34 @@ begin
   UiBuildProgress(UiSrcInstalling);
 end;
 
+{ החלון המצומצם מציג תמיד את עמוד ההתקנה של Inno: הסטטוס והקובץ הנוכחי בשורה משלו. }
+procedure UiUpdateCompact();
+var
+  Bar: TNewProgressBar;
+  Fraction: Extended;
+  Known: Boolean;
+  FileName: String;
+begin
+  Bar := WizardForm.ProgressGauge;
+  Fraction := 0;
+  Known := Bar.Visible and (Bar.Style = npbstNormal) and (Bar.Max > 0);
+  if Known then
+  begin
+    Fraction := Bar.Position;
+    Fraction := Fraction / Bar.Max;
+  end;
+  UiSetCaption(UiProgCaption, WizardForm.StatusLabel.Caption);
+  FileName := WizardForm.FilenameLabel.Caption;
+  if FileName <> '' then
+    FileName := LtrUnit(MinimizePathName(FileName, UiProgBytes.Font, UiProgBytes.Width));
+  UiSetCaption(UiProgBytes, FileName);
+  if Known then
+    UiSetCaption(UiProgPercent, IntToStr(Trunc(Fraction * 100)) + '%')
+  else
+    UiSetCaption(UiProgPercent, '');
+  UiRenderBar(Fraction, not Known);
+end;
+
 procedure UiUpdateProgress();
 var
   Caption, Speed, Bytes: String;
@@ -1468,6 +1523,12 @@ var
   Fraction: Extended;
   Known: Boolean;
 begin
+  if UiCompact then
+  begin
+    if Assigned(UiProgBar) then
+      UiUpdateCompact();
+    exit;
+  end;
   if (UiProgSource = UiSrcNone) or not Assigned(UiProgBar) then
     exit;
   Caption := '';
@@ -1509,6 +1570,8 @@ var
   Bmp: TBitmap;
   Key: String;
 begin
+  if UiCompact then
+    exit;
   Step := UiAdapterStepOf(UiPage, Total);
   Key := IntToStr(Step) + '/' + IntToStr(Total);
   if Key = UiStepDrawn then
@@ -1849,6 +1912,51 @@ begin
     UiHeroPlaceFinal();
 end;
 
+{ ============================ חלון מצומצם ============================ }
+
+procedure UiFrameToFront();
+var
+  I: Integer;
+begin
+  for I := 0 to GetArrayLength(UiFrame) - 1 do
+    UiFrame[I].BringToFront;
+end;
+
+function UiCompactLabel(Size: Integer; Bold: Boolean; Color: TColor; Y, H: Integer): TNewStaticText;
+begin
+  Result := UiLabel(UiCompactPanel, Size, Bold, Color, taCenter);
+  Result.WordWrap := False;
+  Result.SetBounds(Px(UiMargin), Px(Y), Px(UiContentW), Px(H));
+  Result.Caption := '';
+end;
+
+{ סמל אוצריא, הכותרת, אחוז, פס ושורות הסטטוס והקובץ, מעל כל העמודים של Inno. }
+procedure UiBuildCompact();
+var
+  Logo: TBitmapImage;
+begin
+  if not Assigned(UiCompactPanel) then
+  begin
+    UiCompactPanel := UiPanel(WizardForm, UiPageColor);
+    UiCompactPanel.SetBounds(0, Px(UiBarH), Px(UiWidth), Px(UiHeight - UiBarH));
+    Logo := UiImage(UiCompactPanel);
+    Logo.SetBounds(0, Px(18), 1, 1);
+    UiShowArt(Logo, 'logo_sm');
+    Logo.Left := (Px(UiWidth) - Logo.Width) div 2;
+    UiCompactLabel(16, True, UiTextColor, 68, 24).Caption := UiCompactTitle;
+    UiProgPercent := UiCompactLabel(26, True, UiPrimaryColor, 98, 36);
+    UiProgBar := UiImage(UiCompactPanel);
+    UiProgBar.SetBounds(Px(UiMargin), Px(142), Px(UiContentW), Px(8));
+    UiProgCaption := UiCompactLabel(13, False, UiSecondaryColor, 162, 20);
+    UiProgBytes := UiCompactLabel(12, False, UiFaintColor, 184, 18);
+  end;
+  UiProgSource := UiSrcInstalling;
+  UiProgDrawn := '';
+  UiCompactPanel.Visible := True;
+  UiCompactPanel.BringToFront;
+  UiFrameToFront();
+end;
+
 { ============================ בניית עמוד ============================ }
 
 procedure UiRenderPage(PageID: Integer);
@@ -1858,6 +1966,13 @@ var
   Bottom: Integer;
 begin
   UiPage := PageID;
+  if UiCompact then
+  begin
+    UiFooter.Visible := False;
+    UiBuildCompact();
+    UiUpdateProgress();
+    exit;
+  end;
   { יציאה באמצע הפתיחה (Enter) משחררת את הפריימים; בחזרה מוצג המצב הסופי. }
   if (PageID <> wpWelcome) and Assigned(UiHeroBook) and not UiHeroDone then
   begin
@@ -2085,6 +2200,8 @@ procedure UiSyncFooter();
 var
   Next, Back: TNewButton;
 begin
+  if UiCompact then
+    exit;
   Next := WizardForm.NextButton;
   Back := WizardForm.BackButton;
   UiSetButton(UiBtnNext, Next.Visible and (UiPage <> wpWelcome), Next.Enabled,
@@ -2174,6 +2291,9 @@ begin
   UiButtons[UiBtnClose].Img.Left := UiX(0, UiButtons[UiBtnClose].Img.Width, W);
   UiButtons[UiBtnMin].Img.Left := UiX(UiButtons[UiBtnClose].Img.Width,
     UiButtons[UiBtnMin].Img.Width, W);
+  { בחלון המצומצם רק הסגירה, כלומר ביטול. }
+  if UiCompact then
+    UiSetButton(UiBtnMin, False, True, '');
 
   Y := Px(UiFooterTop) + (Px(UiHeight - UiFooterTop) - UiArt('btn_primary_n').Height) div 2 -
     UiFooter.Top;
@@ -2284,14 +2404,6 @@ begin
   UiFrame[1].SetBounds(0, H - 1, W, 1);
   UiFrame[2].SetBounds(0, 0, 1, H);
   UiFrame[3].SetBounds(W - 1, 0, 1, H);
-end;
-
-procedure UiFrameToFront();
-var
-  I: Integer;
-begin
-  for I := 0 to GetArrayLength(UiFrame) - 1 do
-    UiFrame[I].BringToFront;
 end;
 
 function UiButtonWidth(const Caption: String): Integer;
@@ -2521,6 +2633,31 @@ begin
     PostMessage(WizardForm.Handle, UiWmSysCommand, UiScClose, 0);
 end;
 
+{ RTF משמאל לימין: הפרטים הטכניים באנגלית, וצריך לבחור ולהעתיק אותם. }
+function UiRtf(const Text: String): String;
+var
+  I: Integer;
+  C: Char;
+begin
+  Result := '{\rtf1\ansi\deff0{\fonttbl{\f0 Consolas;}}{\colortbl;\red79\green69\blue57;}' +
+    '\ltrpar\ql\f0\fs18\cf1 ';
+  for I := 1 to Length(Text) do
+  begin
+    C := Text[I];
+    if (C = '\') or (C = '{') or (C = '}') then
+      Result := Result + '\' + C
+    else if C = #10 then
+      Result := Result + '\par '
+    else if C = #13 then
+      Continue
+    else if Ord(C) > 127 then
+      Result := Result + '\u' + IntToStr(Ord(C)) + '?'
+    else
+      Result := Result + C;
+  end;
+  Result := Result + '}';
+end;
+
 { ============================ חיבור לאשף ============================ }
 
 procedure UiHideNativeChrome();
@@ -2635,6 +2772,18 @@ begin
   UiTickProc := CreateCallback(@UiTick);
   UiTickRate := UiTickMs;
   UiTimerId := UiSetTimer(0, 0, UiTickRate, UiTickProc);
+end;
+
+{ חלון התקדמות בלבד, בגובה UiCompactHeight: סמל אוצריא, Title, אחוז, פס והקובץ הנוכחי.
+  בלי פתיחה, שלבים וכפתורים מלבד הסגירה, שהיא ביטול. }
+procedure UiInitializeCompact(const Title: String);
+begin
+  UiCompact := True;
+  UiHeight := UiCompactHeight;
+  UiFooterTop := UiCompactHeight;
+  UiCompactTitle := Title;
+  UiHeroDone := True;
+  UiInitializeWizard('', '', '');
 end;
 
 procedure UiCurPageChanged(CurPageID: Integer);
