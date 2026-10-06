@@ -81,6 +81,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-windows-x64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3-windows.exe"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-windows-full",
@@ -100,17 +111,6 @@
             "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-windows-x64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3-windows.exe"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -157,6 +157,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-windows-arm64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3-windows_arm64.exe"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-windows-full-arm64",
@@ -176,17 +187,6 @@
             "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-windows-arm64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3-windows_arm64.exe"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -224,6 +224,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-macos"
+          ],
+          "outputFiles": [
+            "otzaria-macos.dmg"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-macos-full",
@@ -243,17 +254,6 @@
             "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-macOS"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-macos"
-          ],
-          "outputFiles": [
-            "otzaria-macos.dmg"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -291,6 +291,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-linux-deb-x64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3+143-linux.deb"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-linux-full-x64",
@@ -310,17 +321,6 @@
             "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Linux"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-linux-deb-x64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3+143-linux.deb"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -358,6 +358,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-linux-rpm-x64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3+143-143.x86_64.rpm"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-linux-full-x64",
@@ -377,17 +388,6 @@
             "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Linux"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-linux-rpm-x64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3+143-143.x86_64.rpm"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -474,6 +474,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-linux-deb-arm64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3+143-linux-arm64.deb"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-linux-full-arm64",
@@ -493,17 +504,6 @@
             "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Linux"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-linux-deb-arm64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3+143-linux-arm64.deb"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -541,6 +541,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-linux-rpm-arm64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3+143-143.aarch64.rpm"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-linux-full-arm64",
@@ -560,17 +571,6 @@
             "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Linux"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-linux-rpm-arm64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3+143-143.aarch64.rpm"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -649,23 +649,23 @@
       ],
       "presets": [
         {
-          "id": "full",
-          "members": [
-            "otzaria-android-full"
-          ],
-          "outputFiles": [
-            "otzaria-android-full.zip"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
-        },
-        {
           "id": "basic",
           "members": [
             "otzaria-android"
           ],
           "outputFiles": [
             "app-release.apk"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
+          "id": "full",
+          "members": [
+            "otzaria-android-full"
+          ],
+          "outputFiles": [
+            "otzaria-android-full.zip"
           ],
           "outputNotes": [],
           "outputSubfolder": ""

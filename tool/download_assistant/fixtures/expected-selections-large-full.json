@@ -80,6 +80,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-windows-x64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3-windows.exe"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-windows-x64",
@@ -104,17 +115,6 @@
             "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-windows-x64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3-windows.exe"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
@@ -160,6 +160,17 @@
       ],
       "presets": [
         {
+          "id": "basic",
+          "members": [
+            "otzaria-windows-arm64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3-windows_arm64.exe"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
           "id": "full",
           "members": [
             "otzaria-windows-arm64",
@@ -184,17 +195,6 @@
             "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-windows-arm64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3-windows_arm64.exe"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     }

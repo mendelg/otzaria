@@ -23,7 +23,7 @@ static GOptionEntry entries[] = {
      "DEV ONLY: read the release manifest from a local file", "FILE"},
     {"dev-auto-preset", 0, 0, G_OPTION_ARG_STRING, &dev_auto_preset,
      "DEV ONLY: walk the pages with their defaults, pick this preset "
-     "(full/basic/update), print a report and exit",
+     "(basic/full-indexed/full/update), print a report and exit",
      "ID"},
     {"dev-platform", 0, 0, G_OPTION_ARG_STRING, &dev_platform,
      "DEV ONLY: preselect this target platform", "PLATFORM"},

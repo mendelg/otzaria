@@ -6,7 +6,9 @@
     {
       "id": "otzaria-android",
       "name": "אוצריא ל-Android",
+      "nameEn": "Otzaria for Android",
       "description": "קובץ התקנה (APK) לטלפון או לטאבלט. ללא ספרייה.",
+      "descriptionEn": "An installation file (APK) for a phone or tablet. Library not included.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -28,7 +30,9 @@
     {
       "id": "otzaria-linux-deb-arm64",
       "name": "אוצריא ל-Linux (DEB, ARM64)",
+      "nameEn": "Otzaria for Linux (DEB, ARM64)",
       "description": "חבילת התקנה ל-Ubuntu, Debian, Mint והפצות דומות, למחשבי ARM64. ללא ספרייה.",
+      "descriptionEn": "An installation package for Ubuntu, Debian, Mint and similar distributions, for ARM64 computers. Library not included.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -52,7 +56,9 @@
     {
       "id": "otzaria-linux-deb-x64",
       "name": "אוצריא ל-Linux (DEB)",
+      "nameEn": "Otzaria for Linux (DEB)",
       "description": "חבילת התקנה ל-Ubuntu, Debian, Mint והפצות דומות, למעבדי x64. ללא ספרייה.",
+      "descriptionEn": "An installation package for Ubuntu, Debian, Mint and similar distributions, for x64 processors. Library not included.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -76,7 +82,9 @@
     {
       "id": "otzaria-linux-rpm-arm64",
       "name": "אוצריא ל-Linux (RPM, ARM64)",
+      "nameEn": "Otzaria for Linux (RPM, ARM64)",
       "description": "חבילת התקנה ל-Fedora, openSUSE והפצות דומות, למחשבי ARM64. ללא ספרייה.",
+      "descriptionEn": "An installation package for Fedora, openSUSE and similar distributions, for ARM64 computers. Library not included.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -100,7 +108,9 @@
     {
       "id": "otzaria-linux-rpm-x64",
       "name": "אוצריא ל-Linux (RPM)",
+      "nameEn": "Otzaria for Linux (RPM)",
       "description": "חבילת התקנה ל-Fedora, openSUSE והפצות דומות, למעבדי x64. ללא ספרייה.",
+      "descriptionEn": "An installation package for Fedora, openSUSE and similar distributions, for x64 processors. Library not included.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -124,7 +134,9 @@
     {
       "id": "otzaria-macos",
       "name": "אוצריא ל-macOS",
+      "nameEn": "Otzaria for macOS",
       "description": "קובץ DMG: גוררים ממנו את אוצריא לתיקיית היישומים. ללא ספרייה.",
+      "descriptionEn": "A DMG file: drag Otzaria from it into the Applications folder. Library not included.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -146,7 +158,9 @@
     {
       "id": "otzaria-windows-arm64",
       "name": "אוצריא ל-Windows (ARM64)",
+      "nameEn": "Otzaria for Windows (ARM64)",
       "description": "התוכנה עצמה למחשבי ARM64, ללא ספרייה.",
+      "descriptionEn": "Otzaria itself for ARM64 computers, without the library.",
       "type": "application",
       "required": false,
       "origin": "built",
@@ -169,7 +183,9 @@
     {
       "id": "otzaria-windows-portable-arm64",
       "name": "אוצריא ל-Windows — גרסה ניידת (ARM64)",
+      "nameEn": "Otzaria for Windows — Portable Version (ARM64)",
       "description": "ארכיון ZIP שאינו דורש התקנה, למחשבי ARM64.",
+      "descriptionEn": "A ZIP archive that needs no installation, for ARM64 computers.",
       "type": "application-portable",
       "required": false,
       "origin": "built",
@@ -192,7 +208,9 @@
     {
       "id": "otzaria-windows-portable-x64",
       "name": "אוצריא ל-Windows — גרסה ניידת",
+      "nameEn": "Otzaria for Windows — Portable Version",
       "description": "ארכיון ZIP שאינו דורש התקנה, למעבדי x64.",
+      "descriptionEn": "A ZIP archive that needs no installation, for x64 processors.",
       "type": "application-portable",
       "required": false,
       "origin": "built",
@@ -215,7 +233,9 @@
     {
       "id": "otzaria-windows-x64",
       "name": "אוצריא ל-Windows",
+      "nameEn": "Otzaria for Windows",
       "description": "התוכנה עצמה, ללא ספרייה. מתקין רגיל למעבדי x64.",
+      "descriptionEn": "Otzaria itself, without the library. A standard installer for x64 processors.",
       "type": "application",
       "required": true,
       "origin": "built",
@@ -238,7 +258,9 @@
     {
       "id": "otzaria-android-full",
       "name": "אוצריא ל-Android עם ספרייה מלאה",
+      "nameEn": "Otzaria for Android with the Full Library",
       "description": "ארכיון ZIP (או כמה כרכי ZIP שמחלצים לאותה תיקייה) ובו קובץ ה-APK והספרייה המלאה, להעתקה אל המכשיר.",
+      "descriptionEn": "A ZIP archive (or several ZIP volumes extracted into the same folder) with the APK file and the full library, to copy to the device.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",
@@ -260,7 +282,9 @@
     {
       "id": "otzaria-linux-full-arm64",
       "name": "אוצריא ל-Linux עם ספרייה מלאה (ARM64)",
+      "nameEn": "Otzaria for Linux with the Full Library (ARM64)",
       "description": "ארכיון tar.zst ובו התוכנה והספרייה המלאה, למחשבי ARM64. פורסים אותו ומפעילים ללא התקנה.",
+      "descriptionEn": "A tar.zst archive with Otzaria and the full library, for ARM64 computers. Extract it and run Otzaria, no installation needed.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",
@@ -283,7 +307,9 @@
     {
       "id": "otzaria-linux-full-x64",
       "name": "אוצריא ל-Linux עם ספרייה מלאה",
+      "nameEn": "Otzaria for Linux with the Full Library",
       "description": "ארכיון tar.zst ובו התוכנה והספרייה המלאה, למעבדי x64. פורסים אותו ומפעילים ללא התקנה.",
+      "descriptionEn": "A tar.zst archive with Otzaria and the full library, for x64 processors. Extract it and run Otzaria, no installation needed.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",
@@ -321,7 +347,9 @@
     {
       "id": "otzaria-macos-full",
       "name": "אוצריא ל-macOS עם ספרייה מלאה",
+      "nameEn": "Otzaria for macOS with the Full Library",
       "description": "ארכיון tar.zst ובו התוכנה והספרייה המלאה. פורסים אותו ומפעילים ללא התקנה.",
+      "descriptionEn": "A tar.zst archive with Otzaria and the full library. Extract it and run Otzaria, no installation needed.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",
@@ -343,7 +371,9 @@
     {
       "id": "otzaria-windows-full",
       "name": "אוצריא ל-Windows עם ספרייה מלאה",
+      "nameEn": "Otzaria for Windows with the Full Library",
       "description": "מתקין הכולל את התוכנה ואת הספרייה המלאה, בלי אינדקס חיפוש בנוי מראש.",
+      "descriptionEn": "An installer with Otzaria and the full library, without a prebuilt search index.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",
@@ -386,7 +416,9 @@
     {
       "id": "otzaria-windows-full-arm64",
       "name": "אוצריא ל-Windows עם ספרייה מלאה (ARM64)",
+      "nameEn": "Otzaria for Windows with the Full Library (ARM64)",
       "description": "מתקין הכולל את התוכנה ואת הספרייה המלאה, למחשבי ARM64, בלי אינדקס חיפוש בנוי מראש.",
+      "descriptionEn": "An installer with Otzaria and the full library for ARM64 computers, without a prebuilt search index.",
       "type": "application-bundle",
       "required": false,
       "origin": "built",
@@ -428,7 +460,9 @@
     {
       "id": "library-full",
       "name": "ספרייה מלאה",
+      "nameEn": "Full Library",
       "description": "כל ספריית הספרים, למחשב שאין בו אינטרנט. המתקין פורס אותה בעצמו, ואת אינדקס החיפוש התוכנה בונה אחרי ההתקנה.",
+      "descriptionEn": "The complete library for an offline computer. The installer extracts it, and the app builds the search index after installation.",
       "type": "library",
       "required": false,
       "origin": "built",
@@ -441,6 +475,7 @@
       ],
       "downloadSize": 3015,
       "outputNote": "מתקין אוצריא שבתיקייה פורס את הספרייה מהחלקים שלצדו בזמן ההתקנה, בלי אינטרנט.",
+      "outputNoteEn": "The Otzaria installer in this folder extracts the library from the parts beside it without an internet connection.",
       "assets": [
         {
           "kind": "split",
@@ -475,7 +510,9 @@
     {
       "id": "library-index",
       "name": "אינדקס חיפוש מוכן (למחשבים חלשים)",
+      "nameEn": "Prebuilt Search Index (for Slower Computers)",
       "description": "בדרך כלל אין בו צורך: התוכנה בונה את אינדקס החיפוש בעצמה אחרי ההתקנה. מומלץ רק למחשב חלש, שבו בניית האינדקס איטית מאוד. מגיע יחד עם הספרייה המלאה.",
+      "descriptionEn": "Usually unnecessary: the app builds its search index after installation. Recommended only for a slow computer where indexing takes a long time. Includes the full library.",
       "type": "library-index",
       "required": false,
       "origin": "built",
@@ -490,6 +527,7 @@
       ],
       "downloadSize": 600,
       "outputNote": "אינדקס החיפוש המוכן נפרס יחד עם הספרייה, ולכן התוכנה אינה בונה אותו אחרי ההתקנה.",
+      "outputNoteEn": "The prebuilt search index is extracted with the library, so the app does not need to build it after installation.",
       "assets": [
         {
           "kind": "split",
@@ -514,7 +552,9 @@
     {
       "id": "semantic-model-linux",
       "name": "חיפוש חכם — מודל השאילתות",
+      "nameEn": "Smart Search — Query Model",
       "description": "הרכיב שמבין את מילות החיפוש במצב \"חיפוש חכם\".",
+      "descriptionEn": "The component that understands your search words in Smart Search.",
       "type": "semantic-model",
       "required": false,
       "origin": "imported",
@@ -525,6 +565,7 @@
       "downloadSize": 46,
       "outputFolder": "semantic-import/meivin-round2-onnx",
       "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "outputNoteEn": "On the target computer, copy the semantic-import folder into the folder that contains the Otzaria library folder. When you turn on Smart Search there (after giving consent), the data will be installed from it without downloading.",
       "compatibility": {
         "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
       },
@@ -566,7 +607,9 @@
     {
       "id": "semantic-model-macos",
       "name": "חיפוש חכם — מודל השאילתות",
+      "nameEn": "Smart Search — Query Model",
       "description": "הרכיב שמבין את מילות החיפוש במצב \"חיפוש חכם\". ב-macOS: רק במחשב עם מעבד Apple Silicon ו-macOS 14 ומעלה.",
+      "descriptionEn": "The component that understands your search words in Smart Search. On macOS: only on a Mac with an Apple Silicon processor and macOS 14 or later.",
       "type": "semantic-model",
       "required": false,
       "origin": "imported",
@@ -577,6 +620,7 @@
       "downloadSize": 46,
       "outputFolder": "semantic-import/meivin-round2-onnx",
       "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "outputNoteEn": "On the target computer, copy the semantic-import folder into the folder that contains the Otzaria library folder. When you turn on Smart Search there (after giving consent), the data will be installed from it without downloading.",
       "compatibility": {
         "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
       },
@@ -618,7 +662,9 @@
     {
       "id": "semantic-model-windows",
       "name": "חיפוש חכם — מודל השאילתות",
+      "nameEn": "Smart Search — Query Model",
       "description": "הרכיב שמבין את מילות החיפוש במצב \"חיפוש חכם\".",
+      "descriptionEn": "The component that understands your search words in Smart Search.",
       "type": "semantic-model",
       "required": false,
       "origin": "imported",
@@ -629,6 +675,7 @@
       "downloadSize": 46,
       "outputFolder": "semantic-import/meivin-round2-onnx",
       "outputNote": "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
+      "outputNoteEn": "The regular or full Otzaria installer in this folder copies the semantic-import folder next to the library folder by itself. When you turn on Smart Search (after giving consent), the data will be installed from it without downloading. If you install using a portable ZIP, copy the folder yourself into the folder that contains the Otzaria library folder.",
       "compatibility": {
         "modelFamilyId": "ArieLLL123/judaic-semantic-round2-onnx-zayit@1ec8dc68"
       },
@@ -670,7 +717,9 @@
     {
       "id": "semantic-vectors-linux",
       "name": "חיפוש חכם (ניסיוני)",
+      "nameEn": "Smart Search (Experimental)",
       "description": "מה שמצב \"חיפוש חכם\" צריך כדי לעבוד בלי אינטרנט: המודל שמבין את מילות החיפוש, והנתונים לגרסת הספרייה 30, זו שבהתקנה המלאה.",
+      "descriptionEn": "What Smart Search needs to work without internet: the model that understands your search words, and the data for library version 30, the one included in the full installation.",
       "type": "semantic-vectors",
       "required": false,
       "origin": "imported",
@@ -682,6 +731,7 @@
       "downloadSize": 1657,
       "outputFolder": "semantic-import/vectors",
       "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "outputNoteEn": "On the target computer, copy the semantic-import folder into the folder that contains the Otzaria library folder. When you turn on Smart Search there (after giving consent), the data will be installed from it without downloading.",
       "compatibility": {
         "libraryReleaseTag": "v30-20260930165019",
         "libraryVersion": 30,
@@ -710,7 +760,9 @@
     {
       "id": "semantic-vectors-macos",
       "name": "חיפוש חכם (ניסיוני)",
+      "nameEn": "Smart Search (Experimental)",
       "description": "מה שמצב \"חיפוש חכם\" צריך כדי לעבוד בלי אינטרנט: המודל שמבין את מילות החיפוש, והנתונים לגרסת הספרייה 30, זו שבהתקנה המלאה. ב-macOS: רק במחשב עם מעבד Apple Silicon ו-macOS 14 ומעלה.",
+      "descriptionEn": "What Smart Search needs to work without internet: the model that understands your search words, and the data for library version 30, the one included in the full installation. On macOS: only on a Mac with an Apple Silicon processor and macOS 14 or later.",
       "type": "semantic-vectors",
       "required": false,
       "origin": "imported",
@@ -722,6 +774,7 @@
       "downloadSize": 1657,
       "outputFolder": "semantic-import/vectors",
       "outputNote": "במחשב היעד העתק את התיקייה semantic-import אל התיקייה שמכילה את תיקיית הספרייה של אוצריא. כשתפעיל שם את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה.",
+      "outputNoteEn": "On the target computer, copy the semantic-import folder into the folder that contains the Otzaria library folder. When you turn on Smart Search there (after giving consent), the data will be installed from it without downloading.",
       "compatibility": {
         "libraryReleaseTag": "v30-20260930165019",
         "libraryVersion": 30,
@@ -750,7 +803,9 @@
     {
       "id": "semantic-vectors-windows",
       "name": "חיפוש חכם (ניסיוני)",
+      "nameEn": "Smart Search (Experimental)",
       "description": "מה שמצב \"חיפוש חכם\" צריך כדי לעבוד בלי אינטרנט: המודל שמבין את מילות החיפוש, והנתונים לגרסת הספרייה 30, זו שבהתקנה המלאה.",
+      "descriptionEn": "What Smart Search needs to work without internet: the model that understands your search words, and the data for library version 30, the one included in the full installation.",
       "type": "semantic-vectors",
       "required": false,
       "origin": "imported",
@@ -762,6 +817,7 @@
       "downloadSize": 1657,
       "outputFolder": "semantic-import/vectors",
       "outputNote": "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא.",
+      "outputNoteEn": "The regular or full Otzaria installer in this folder copies the semantic-import folder next to the library folder by itself. When you turn on Smart Search (after giving consent), the data will be installed from it without downloading. If you install using a portable ZIP, copy the folder yourself into the folder that contains the Otzaria library folder.",
       "compatibility": {
         "libraryReleaseTag": "v30-20260930165019",
         "libraryVersion": 30,

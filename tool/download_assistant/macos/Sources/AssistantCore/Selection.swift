@@ -20,7 +20,10 @@ public let portablePackageFormat = "portable"
 /// ההצעה המסומנת מראש: במחשב עם אינטרנט הספרייה יורדת מתוך התוכנה.
 public let defaultPresetId = "basic"
 
-/// נתונים שהתוכנה המותקנת קוראת מתיקיית הפלט: חלק מ"מלאה" בלבד.
+/// סדר ההצגה. אינו סדר ההערכה ב-buildPresets, שקובע איזו כפולה מושמטת.
+public let presetDisplayOrder = ["basic", "full-indexed", "full", "update"]
+
+/// נתוני החיפוש החכם, שהתוכנה קוראת מתיקיית הפלט: חלק מ"full" ומ"full-indexed" בלבד.
 public let offlineDataTypes: Set<String> = ["semantic-model", "semantic-vectors"]
 
 /// מחשב היעד. ארכיטקטורה ריקה כשלפלטפורמה אין רכיבים תלויי ארכיטקטורה; פורמט ריק מחוץ ל-Linux.
@@ -251,41 +254,67 @@ public func withDependencies(
     return manifest.components.filter { closed.contains($0.id) }.map { $0.id }
 }
 
-/// ההצעות לפי סדר ההצגה. הצעה ריקה, או זהה להצעה קודמת, מושמטת. "בחירה אישית" אינה כאן.
+/// ההצעות ב-presetDisplayOrder. הצעה ריקה, או זהה להצעה שהוערכה לפניה (מלאה + אינדקס,
+/// מלאה, בסיסית, עדכון — השם המפורט נשאר), מושמטת. "בחירה אישית" אינה כאן.
 public func buildPresets(_ manifest: ReleaseManifest, _ target: AssistantTarget) -> [AssistantPreset] {
     let components = manifest.components
+    let offline = collect(manifest, target, types: offlineDataTypes)
+
+    // חבילה יחד עם כל רכיב מוצע שהיא ב-`installedBy` שלו.
+    func withInstalled(_ bundle: ManifestComponent) -> [String] {
+        [bundle.id] + components.filter {
+            $0.installedBy.contains(bundle.id) && componentIsOffered(manifest, $0, target)
+        }.map { $0.id }
+    }
+    func sizeOf(_ ids: [String]) -> Int64 {
+        components.filter { ids.contains($0.id) }.reduce(Int64(0)) { $0 + $1.downloadSize }
+    }
 
     var bundle: ManifestComponent?
+    var indexed: ManifestComponent?
     for component in components
     where componentIsOffered(manifest, component, target) && component.type == "application-bundle" {
         if bundle == nil || component.downloadSize > bundle!.downloadSize {
             bundle = component
+        }
+        // החבילה המאונדקסת: ספרייה מוצעת מותקנת על ידה.
+        let installsLibrary = components.contains {
+            $0.type == "library" && $0.installedBy.contains(component.id)
+                && componentIsOffered(manifest, $0, target)
+        }
+        if installsLibrary
+            && (indexed == nil || sizeOf(withInstalled(component)) > sizeOf(withInstalled(indexed!))) {
+            indexed = component
         }
     }
 
     // בלי חבילה, "מלאה" היא התוכנה עם ספרייה — ובלי ספרייה אין "מלאה".
     let full: [String]
     if let bundle = bundle {
-        full = [bundle.id] + components.filter {
-            $0.installedBy.contains(bundle.id) && componentIsOffered(manifest, $0, target)
-        }.map { $0.id } + collect(manifest, target, types: offlineDataTypes)
+        full = withInstalled(bundle) + offline
     } else {
         let collected = collect(manifest, target, types: ["application", "library", "dependency"])
         let hasLibrary = components.contains { collected.contains($0.id) && $0.type == "library" }
-        full = hasLibrary ? collected + collect(manifest, target, types: offlineDataTypes) : []
+        full = hasLibrary ? collected + offline : []
     }
 
     let candidates: [(id: String, caption: String, description: String, members: [String])] = [
         (
+            "full-indexed",
+            "התקנה מלאה + אינדקס חיפוש",
+            "למחשב שאין בו אינטרנט — אינדקס החיפוש מוכן, והחיפוש עובד מיד. כולל חיפוש חכם.",
+            indexed.map { withInstalled($0) + offline } ?? []
+        ),
+        (
             "full",
-            "התקנה מלאה (למחשב בלי אינטרנט)",
-            "התוכנה יחד עם כל ספריית הספרים — למחשב שאין בו אינטרנט.",
+            "התקנה מלאה",
+            "למחשב שאין בו אינטרנט — אינדקס החיפוש ייבנה בתוכנה, וזה לוקח זמן. כולל חיפוש חכם.",
             full
         ),
         (
             "basic",
             "התקנה בסיסית (מומלצת)",
-            "מומלץ כשבמחשב שבו תותקן אוצריא יש אינטרנט — הספרייה תרד מתוך התוכנה.",
+            "למחשב שיש בו אינטרנט — הספרייה תרד מתוך התוכנה.",
             collect(manifest, target, types: ["application"])
                 + collect(manifest, target, requiredOnly: true)
         ),
@@ -309,7 +338,16 @@ public func buildPresets(_ manifest: ReleaseManifest, _ target: AssistantTarget)
             members: closed
         ))
     }
-    return presets
+    return presetDisplayOrder.compactMap { id in presets.first { $0.id == id } }
+}
+
+/// מזהה ההצעה המסומנת מראש: defaultPresetId, ובלעדיה "full" — לא "full-indexed" הגדולה ממנה;
+/// בלי שתיהן — הראשונה. nil כשאין הצעות.
+public func defaultPresetIdFor(_ presets: [AssistantPreset]) -> String? {
+    for id in [defaultPresetId, "full"] where presets.contains(where: { $0.id == id }) {
+        return id
+    }
+    return presets.first?.id
 }
 
 /// ל-Windows: רק exe מתחת ל-4 GiB (ארכיון נשאר חלקים — המתקין קורא אותם).
