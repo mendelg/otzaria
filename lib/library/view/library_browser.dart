@@ -1729,7 +1729,11 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     );
   }
 
-  Widget _buildCategoryGridItem(Category category, {FocusNode? focusNode}) {
+  Widget _buildCategoryGridItem(
+    Category category, {
+    FocusNode? focusNode,
+    String? parentPath,
+  }) {
     return _withCategorySelection(
       category,
       (isSelected, onTap, onDoubleTap) => GestureDetector(
@@ -1739,6 +1743,7 @@ class _LibraryBrowserState extends State<LibraryBrowser>
           isSelected: isSelected,
           onCategoryClickCallback: onTap,
           focusNode: focusNode,
+          parentPath: parentPath,
         ),
       ),
     );
@@ -1793,12 +1798,28 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     List<Category> categories, {
     required bool firstFocus,
   }) {
+    final textTheme = Theme.of(context).textTheme;
+    final textScaler = MediaQuery.textScalerOf(context);
+    double lineHeight(TextStyle style) =>
+        textScaler.scale(style.fontSize!) * (style.height ?? 1);
+    // שתי שורות כותרת, שורת נתיב, רווח 3 וריפוד אנכי 20.
+    final minItemHeight =
+        categories.any(
+          (category) => categoryParentPath(category).isNotEmpty,
+        )
+        ? (23 +
+                  2 * lineHeight(textTheme.titleMedium!) +
+                  lineHeight(textTheme.bodySmall!))
+              .ceilToDouble()
+        : 0.0;
     return MyGridView(
+      minItemHeight: minItemHeight,
       items: [
         for (final (i, category) in categories.indexed)
           _buildCategoryGridItem(
             category,
             focusNode: firstFocus && i == 0 ? _firstGridItemFocusNode : null,
+            parentPath: categoryParentPath(category),
           ),
       ],
     );

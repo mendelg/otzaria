@@ -268,17 +268,14 @@ class HeaderItem extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  CategoryGridItem
-//  Layout RTL: [info-icon?] [folder-icon] [12px] [Expanded text (right-aligned)]
-//  במצב RTL: טקסט מימין, אייקונים משמאל כדי לשמור ויזואלית תקינה.
-// ─────────────────────────────────────────────────────────────────────────────
-
 class CategoryGridItem extends StatelessWidget {
   final Category category;
   final VoidCallback onCategoryClickCallback;
   final FocusNode? focusNode;
   final bool isSelected;
+
+  /// נתיב האב שמוצג מתחת לכותרת — בתוצאות חיפוש, כדי להבחין בין תיקיות באותו שם.
+  final String? parentPath;
 
   const CategoryGridItem({
     super.key,
@@ -286,6 +283,7 @@ class CategoryGridItem extends StatelessWidget {
     required this.onCategoryClickCallback,
     this.focusNode,
     this.isSelected = false,
+    this.parentPath,
   });
 
   @override
@@ -311,18 +309,17 @@ class CategoryGridItem extends StatelessWidget {
                     text: category.title,
                     isFolder: true,
                   ),
-                  // זמני: התיאור הקצר הוסר מגוף הכרטיס.
-                  // if (category.shortDescription.isNotEmpty) ...[
-                  //   const SizedBox(height: 3),
-                  //   LibraryOverflowTooltipText(
-                  //     text: category.shortDescription,
-                  //     maxLines: 2,
-                  //     textAlign: TextAlign.right,
-                  //     style: theme.textTheme.bodySmall?.copyWith(
-                  //       color: cs.onSecondaryContainer,
-                  //     ),
-                  //   ),
-                  // ],
+                  if (parentPath != null && parentPath!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    LibraryOverflowTooltipText(
+                      text: parentPath!,
+                      maxLines: 1,
+                      textAlign: TextAlign.right,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: cs.secondary,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -916,8 +913,14 @@ class LibraryGridKeyNavigator extends StatelessWidget {
 class MyGridView extends StatelessWidget {
   final List<Widget> items;
   final VoidCallback? onExitTop;
+  final double minItemHeight;
 
-  const MyGridView({super.key, required this.items, this.onExitTop});
+  const MyGridView({
+    super.key,
+    required this.items,
+    this.onExitTop,
+    this.minItemHeight = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -939,12 +942,12 @@ class MyGridView extends StatelessWidget {
 
         // בתצוגה צרה (<800) הכרטיסים גבוהים במיוחד: מקטינים את גובהם בחצי,
         // עם רצפת גובה שמותירה מקום לשם הספר, למחבר ולטור האייקונים.
+        final gridWidth = width - 2 * _kGridPadding;
+        final cellWidth =
+            (gridWidth - kLibraryGridSpacing * (crossAxisCount - 1)) /
+            crossAxisCount;
         final double childAspectRatio;
         if (width < 800) {
-          final gridWidth = width - 2 * _kGridPadding;
-          final cellWidth =
-              (gridWidth - kLibraryGridSpacing * (crossAxisCount - 1)) /
-              crossAxisCount;
           final halfHeight = cellWidth / (2 * baseRatio * textAdjustment);
           final minHeight = kNarrowGridCardMinHeight * textScale;
           childAspectRatio = cellWidth / max(minHeight, halfHeight);
@@ -968,6 +971,9 @@ class MyGridView extends StatelessWidget {
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: crossAxisCount,
                   childAspectRatio: childAspectRatio,
+                  mainAxisExtent: minItemHeight > 0
+                      ? max(minItemHeight, cellWidth / childAspectRatio)
+                      : null,
                   crossAxisSpacing: kLibraryGridSpacing,
                   mainAxisSpacing: kLibraryGridSpacing,
                 ),
