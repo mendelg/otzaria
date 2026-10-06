@@ -230,6 +230,8 @@ class _TabbedCommentaryPanelState extends State<TabbedCommentaryPanel>
                         openBookCallback: widget.openBookCallback,
                         fontSize: settingsState.commentatorsFontSize,
                         showSearch: widget.showSearch,
+                        // ב-shrinkWrap כיווץ מפרש מעלים מהציור את המפרש שמעליו
+                        shrinkWrap: false,
                         selectionSyncController: widget.selectionSyncController,
                         openFilterRequest: widget.openFilterRequest,
                         highlightQueryListenable:
