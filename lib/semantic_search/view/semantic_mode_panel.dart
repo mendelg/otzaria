@@ -359,7 +359,7 @@ class SemanticNarrowScopeHint extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       context.settingsText(
-        'החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימים.',
+        'החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימות.',
       ),
       key: const ValueKey('semantic-narrow-scope-hint'),
       style: style,
