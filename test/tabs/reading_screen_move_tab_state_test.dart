@@ -146,6 +146,47 @@ void main() {
     });
   });
 
+  testWidgets('הבולען האנכי לא גובר על גלילת ה-PDF במגע (#1982)', (
+    tester,
+  ) async {
+    final tabs = [_tab('א')];
+    addTearDown(tabs.single.dispose);
+    await pumpReadingScreen(tester, tabs);
+    final detector = tester.widget<RawGestureDetector>(
+      find.byWidgetPredicate(
+        (widget) => widget is RawGestureDetector && widget.child is PageView,
+      ),
+    );
+
+    var contentPanUpdates = 0;
+    await tester.pumpWidget(
+      RawGestureDetector(
+        gestures: {
+          VerticalDragGestureRecognizer:
+              detector.gestures[VerticalDragGestureRecognizer]!,
+        },
+        // מדמה את ה-InteractiveViewer של pdfrx (ScaleGestureRecognizer).
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onScaleUpdate: (_) => contentPanUpdates++,
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+
+    final gesture = await tester.startGesture(
+      const Offset(300, 300),
+      kind: PointerDeviceKind.touch,
+    );
+    for (var i = 0; i < 10; i++) {
+      await gesture.moveBy(const Offset(0, -10));
+    }
+    await gesture.up();
+    await tester.pump();
+
+    expect(contentPanUpdates, greaterThan(0));
+  });
+
   testWidgets('גלילה אנכית ב-trackpad אינה גוררת את ה-PageView', (
     tester,
   ) async {

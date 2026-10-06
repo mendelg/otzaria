@@ -13,6 +13,7 @@ import 'package:otzaria/pdf_book/bloc/pdf_book_bloc.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_event.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_state.dart';
 import 'package:otzaria/pdf_book/utils/pdf_viewer_activity.dart';
+import 'package:otzaria/pdf_book/view/pdf_book_screen.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
@@ -1155,6 +1156,39 @@ void main() {
       skip: 3,
       expect: () => [isA<PdfBookLoaded>()],
     );
+
+    test(
+      'פתיחה איטית מעבר לכפתור — הצפיין נשאר פתוח כדי שההצלחה תגיע (#1930)',
+      () async {
+        final bloc = _makeBloc(
+          _tab(path: existingPdfPath),
+          loadTimeout: const Duration(milliseconds: 30),
+        );
+        addTearDown(bloc.close);
+        bloc.add(const LoadPdfDocument());
+        final error =
+            await bloc.stream.firstWhere((s) => s is PdfBookError)
+                as PdfBookError;
+        expect(error.autoRetry, isFalse);
+        expect(pdfViewerStaysMountedFor(error), isTrue);
+
+        bloc.add(DocumentReady(documentRef: _FakeDocumentRef(), totalPages: 5));
+        await bloc.stream.firstWhere((s) => s is PdfBookLoaded);
+      },
+    );
+
+    test('retry אוטומטי בונה את הצפיין מחדש', () {
+      expect(
+        pdfViewerStaysMountedFor(
+          PdfBookError(
+            book: _book(path: existingPdfPath),
+            message: 'הטעינה ארכה זמן רב מדי',
+            autoRetry: true,
+          ),
+        ),
+        isFalse,
+      );
+    });
 
     blocTest<PdfBookBloc, PdfBookState>(
       'אחרי שני timeouts (auto-retry + show-button) → PdfBookError עם autoRetry=false',

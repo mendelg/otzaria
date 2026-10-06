@@ -313,6 +313,12 @@ PdfViewerCalculateCurrentPageNumberFunction pdfCurrentPageCalculatorFor(
     : (visibleRect, pageRects, controller) =>
           pdfTopmostVisiblePage(visibleRect, pageRects);
 
+/// מתחת לכפתור "נסה שוב" הצפיין נשאר פתוח, כדי שפתיחה איטית שתסתיים תגבור
+/// על השגיאה; הסרתו נוטשת את הפתיחה (#1930). ב-retry אוטומטי הוא נבנה מחדש.
+@visibleForTesting
+bool pdfViewerStaysMountedFor(PdfBookState state) =>
+    !(state is PdfBookError && state.autoRetry);
+
 class PdfBookScreen extends StatefulWidget {
   final PdfBookTab tab;
   final bool isInCombinedView;
@@ -1899,6 +1905,10 @@ class _PdfBookScreenState extends State<PdfBookScreen>
     );
   }
 
+  /// אותו מצב שהבלוק בוחר בהצלחה מאוחרת, כדי שהצפיין לא ייבנה מחדש.
+  PdfLayoutMode get _layoutModeBehindErrorOverlay =>
+      widget.tab.savedLayoutMode ?? PdfLayoutMode.regularView;
+
   Widget _buildPdfViewerFromFile(String filePath) {
     return BlocBuilder<PdfBookBloc, PdfBookState>(
       bloc: _bloc,
@@ -1907,13 +1917,16 @@ class _PdfBookScreenState extends State<PdfBookScreen>
           if (state is PdfBookInitial) return state.layoutMode;
           if (state is PdfBookLoading) return state.layoutMode;
           if (state is PdfBookLoaded) return state.layoutMode;
+          if (state is PdfBookError && !state.autoRetry) {
+            return _layoutModeBehindErrorOverlay;
+          }
           return null;
         }
 
         return layoutModeFor(prev) != layoutModeFor(curr);
       },
       builder: (context, state) {
-        if (state is PdfBookError || !_pdfFileExists) {
+        if (!pdfViewerStaysMountedFor(state) || !_pdfFileExists) {
           return const SizedBox.shrink();
         }
 
@@ -1921,7 +1934,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
           PdfBookInitial initial => initial.layoutMode,
           PdfBookLoading loading => loading.layoutMode,
           PdfBookLoaded loaded => loaded.layoutMode,
-          _ => PdfLayoutMode.regularView,
+          _ => _layoutModeBehindErrorOverlay,
         };
 
         return Focus(

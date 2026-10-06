@@ -212,7 +212,13 @@ class _ReadingScreenState extends State<ReadingScreen>
                 },
               ),
               (recognizer) {
-                recognizer.onStart = (_) {};
+                recognizer
+                  // סף גבוה מזה של הגלילה ב-PDF (kPanSlop), אחרת הבולען זוכה
+                  // לפניה ובולע כל גרירה אנכית במגע (#1982).
+                  ..gestureSettings = const DeviceGestureSettings(
+                    touchSlop: kPanSlop * 2,
+                  )
+                  ..onStart = (_) {};
               },
             ),
         HorizontalDragGestureRecognizer:
