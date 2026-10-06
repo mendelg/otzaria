@@ -32,6 +32,7 @@ import 'package:otzaria/tabs/models/tool_tab.dart';
 import 'package:otzaria/tabs/resolving_tab_screen.dart';
 import 'package:otzaria/tools/view/tool_tab_screen.dart';
 import 'package:otzaria/tabs/utils/tab_swipe_direction.dart';
+import 'package:otzaria/tabs/utils/tab_content_vertical_drag_recognizer.dart';
 import 'package:otzaria/tabs/utils/touch_tab_swipe_recognizer.dart';
 import 'package:otzaria/tabs/view/active_pane_marker.dart';
 import 'package:otzaria/tabs/view/pane_drag_handle.dart';
@@ -201,19 +202,13 @@ class _ReadingScreenState extends State<ReadingScreen>
     if (_isTouchPlatform) return child;
     return RawGestureDetector(
       gestures: <Type, GestureRecognizerFactory>{
-        // "בולען" אנכי: מעל WebView של תוסף אין Scrollable שמתחרה בזירה,
-        // והאופקי כחבר יחיד זכה מיד בכל גלילה אנכית (רעד ומעבר טאב בטעות).
-        VerticalDragGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<VerticalDragGestureRecognizer>(
-              () => VerticalDragGestureRecognizer(
-                supportedDevices: const {
-                  PointerDeviceKind.trackpad,
-                  PointerDeviceKind.touch,
-                },
-              ),
-              (recognizer) {
-                recognizer.onStart = (_) {};
-              },
+        // מעל WebView אין מזהה גלילה פנימי שימנע מעבר טאב בגלילה אנכית.
+        TabContentVerticalDragRecognizer:
+            GestureRecognizerFactoryWithHandlers<
+              TabContentVerticalDragRecognizer
+            >(
+              TabContentVerticalDragRecognizer.new,
+              (recognizer) => recognizer.onStart = (_) {},
             ),
         HorizontalDragGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<
