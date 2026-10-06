@@ -916,10 +916,10 @@ void main() {
       ]);
 
       expect(await refsFor(bookId, title, 'דף ב:'), {
-        '$title $title פרק א דף ב ע"ב',
+        '$title פרק א דף ב ע"ב',
       });
       expect(await refsFor(bookId, title, 'דף ג.'), {
-        '$title $title פרק א דף ג ע"א',
+        '$title פרק א דף ג ע"א',
       });
     });
 
@@ -933,11 +933,11 @@ void main() {
       ], parent: 'פסחים');
 
       expect(await refsFor(bookId, title, 'דף ב.'), {
-        '$title $title פסחים ב.',
+        '$title פסחים ב.',
       });
       expect(await refsFor(bookId, title, 'דף ב'), {
-        '$title $title פסחים ב.',
-        '$title $title פסחים ב:',
+        '$title פסחים ב.',
+        '$title פסחים ב:',
       });
     });
 

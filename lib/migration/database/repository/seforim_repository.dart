@@ -3384,9 +3384,33 @@ extension BookAcronymRepository on SeforimRepository {
       entryParentIds[e.id] = e.parentId;
     }
 
+    // קיצור מותר רק לשם מלא של הספר; כותרת עם הקשר נוסף נשארת בכתובת.
+    String titleKey(String text) => normalizeForFindRefMatch(text)
+        .replaceFirst(RegExp(r'^(?:(?:ספר|שות) )+'), '')
+        .replaceAll('על מסכת ', 'על ')
+        .split(' ')
+        .map((word) => word == 'חידושי' ? 'חדושי' : word)
+        .join(' ');
+    final title = titleKey(bookTitle);
+    final roots = tocEntries
+        .where((e) {
+          final parentLevel = entryLevels[e.parentId];
+          return e.level != 0 && (parentLevel == null || parentLevel == 0);
+        })
+        .toList(growable: false);
+    final titleHeadingId =
+        roots.length == 1 &&
+            roots.single.level == 1 &&
+            roots.single.parentId == null &&
+            roots.single.lineIndex == 0 &&
+            title.isNotEmpty &&
+            titleKey(roots.single.text) == title
+        ? roots.single.id
+        : null;
+
     final pathById = <int, String>{};
     String buildPath(int? id) {
-      if (id == null) return bookTitle;
+      if (id == null || id == titleHeadingId) return bookTitle;
       final lvl = entryLevels[id];
       if (lvl == null || lvl == 0) return bookTitle;
       return pathById[id] ??=
@@ -3409,7 +3433,7 @@ extension BookAcronymRepository on SeforimRepository {
       final parentId = e.parentId;
 
       final ancestorPath = buildPath(parentId);
-      final fullRef = text.isNotEmpty ? '$ancestorPath $text' : ancestorPath;
+      final fullRef = text.isEmpty ? ancestorPath : buildPath(id);
 
       // `tocText` ייחודי, וכותרת חוזרת ("פרק א") מופיעה באלפי ערכים באותו
       // ספר — 30 אלף ערכים חולקים כ-1,000 טקסטים. בלי המטמון אותה מחרוזת
@@ -3457,6 +3481,9 @@ extension BookAcronymRepository on SeforimRepository {
       all: built,
       rootEntries: rootEntries,
       childrenByParentId: childrenByParentId,
+      titleHeadingTokens: titleHeadingId == null
+          ? const []
+          : tokensByTextId[roots.single.textId]!,
       hasBareDafHeadings: hasBareDafMark('.') && hasBareDafMark(':'),
     );
     _putTocCache(bookId, cache);
@@ -3608,7 +3635,11 @@ extension BookAcronymRepository on SeforimRepository {
       ).split(' ').where((t) => t.isNotEmpty).toList(growable: false);
       for (final token in tokens) {
         final alts = hebrewTokenAlternatives(token);
-        if (!alts.any((a) => pathTokens.contains(a))) return false;
+        if (!alts.any(
+          (a) => pathTokens.contains(a) || cache.titleHeadingTokens.contains(a),
+        )) {
+          return false;
+        }
       }
       return true;
     }).toList();
@@ -3975,6 +4006,9 @@ class _TocBookCache {
   /// מיפוי id → ילדים ישירים (ממוינים לפי segment).
   final Map<int, List<_CachedTocEntry>> childrenByParentId;
 
+  /// מילות השורש שקוצר בתצוגה; משותפות רק לספר שכל ערכיו תחת אותו שורש.
+  final List<String> titleHeadingTokens;
+
   /// כותרות דף בלי "דף" בשני העמודים ("ב." וגם "ב:") — ספר שבנוי מדפים, ולא
   /// סעיפים ממוספרים ("א.", "ב.").
   final bool hasBareDafHeadings;
@@ -3990,5 +4024,6 @@ class _TocBookCache {
     required this.rootEntries,
     required this.childrenByParentId,
     this.hasBareDafHeadings = false,
+    this.titleHeadingTokens = const [],
   });
 }
