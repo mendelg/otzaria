@@ -85,26 +85,38 @@ Widget buildTabFallbackIcon(
 ///
 /// `TextOverflow.fade` מציג בעברית את *סוף* הכותרת, ולכן ההצמדה נעשית ידנית:
 /// OverflowBox ברוחב טבעי מיושר ל-start, ClipRect חותך, ו-ShaderMask מדהה.
-Widget buildFadedTabTitle(BuildContext context, String title) {
-  final isLtr = Directionality.of(context) == TextDirection.ltr;
-  return ClipRect(
-    child: ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (rect) => LinearGradient(
-        begin: isLtr ? Alignment.centerLeft : Alignment.centerRight,
-        end: isLtr ? Alignment.centerRight : Alignment.centerLeft,
-        stops: const [0.0, 0.82, 1.0],
-        colors: const [Colors.white, Colors.white, Colors.transparent],
-      ).createShader(rect),
-      child: OverflowBox(
-        alignment: AlignmentDirectional.centerStart,
-        minWidth: 0,
-        maxWidth: double.infinity,
-        child: Text(title, maxLines: 1, softWrap: false),
+/// כותרת שנכנסת במלואה אינה נדהית, אחרת הדהייה מסתירה את אותיותיה האחרונות.
+Widget buildFadedTabTitle(BuildContext context, String title) => LayoutBuilder(
+  builder: (context, constraints) {
+    final direction = Directionality.of(context);
+    final titleBox = OverflowBox(
+      alignment: AlignmentDirectional.centerStart,
+      minWidth: 0,
+      maxWidth: double.infinity,
+      child: Text(title, maxLines: 1, softWrap: false),
+    );
+    final width = _measuredTitleWidth(
+      title,
+      DefaultTextStyle.of(context).style,
+      MediaQuery.textScalerOf(context),
+      direction,
+    );
+    if (width <= constraints.maxWidth + 0.5) return ClipRect(child: titleBox);
+    final isLtr = direction == TextDirection.ltr;
+    return ClipRect(
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (rect) => LinearGradient(
+          begin: isLtr ? Alignment.centerLeft : Alignment.centerRight,
+          end: isLtr ? Alignment.centerRight : Alignment.centerLeft,
+          stops: const [0.0, 0.82, 1.0],
+          colors: const [Colors.white, Colors.white, Colors.transparent],
+        ).createShader(rect),
+        child: titleBox,
       ),
-    ),
-  );
-}
+    );
+  },
+);
 
 /// רוחבי כותרות שנמדדו. המדידה חוזרת בכל שינוי אילוצים — הנפשת רוחב כרטיסיות
 /// או שינוי גודל חלון מייצרים אחרת פריסת טקסט מלאה לכל כרטיסיה בכל פריים.
