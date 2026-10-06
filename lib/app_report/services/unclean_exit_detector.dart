@@ -57,6 +57,7 @@ class CrashCandidate {
     required this.signature,
     required this.hasStartupStall,
     required this.hasMinidump,
+    this.minidump,
   });
 
   final SessionLock previousSession;
@@ -69,6 +70,9 @@ class CrashCandidate {
   final CrashSignature? signature;
   final bool hasStartupStall;
   final bool hasMinidump;
+
+  /// ה-dump החדש ביותר מאז תחילת ההפעלה הקודמת, לצירוף בהסכמת המשתמש.
+  final File? minidump;
 }
 
 /// מזהה יציאה לא נקייה של ההפעלה הקודמת. לוגיקה בלבד — הקריאה מהעלייה
@@ -177,6 +181,7 @@ class UncleanExitDetector {
           : await readMinidumpSignature(newestDump),
       hasStartupStall: hasStall,
       hasMinidump: dump.found,
+      minidump: newestDump,
     );
   }
 

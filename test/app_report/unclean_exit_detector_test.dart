@@ -254,6 +254,7 @@ void main() {
           '0xc0000005 flutter_windows.dll+0x1e220',
         );
         expect(candidate.signature!.frames, ['flutter_windows.dll+0x1e220']);
+        expect(p.basename(candidate.minidump!.path), 'new.dmp');
         expect(
           CrashReportDecision.titleFor(candidate),
           '0xc0000005 flutter_windows.dll+0x1e220',

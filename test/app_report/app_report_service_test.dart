@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:otzaria/app_report/models/app_report.dart';
 import 'package:otzaria/app_report/models/app_report_image.dart';
+import 'package:otzaria/app_report/models/app_report_minidump.dart';
 import 'package:otzaria/app_report/services/app_report_service.dart';
 import 'package:otzaria/core/user_state/pending_report_store.dart';
 import 'package:otzaria/core/user_state/user_state_database.dart';
@@ -146,6 +147,63 @@ void main() {
     expect(ids.last, isNot(report.reportId));
     expect(result.isSent, isTrue);
     expect(result.report.reportId, ids.last);
+  });
+
+  group('minidump שנדחה נשלח שוב בלעדיו (issue #1978)', () {
+    final withDump = _report().copyWith(
+      minidump: AppReportMinidump(
+        gzipBytes: Uint8List.fromList(gzip.encode(utf8.encode('MDMP...'))),
+        fileName: 'a.dmp',
+      ),
+    );
+
+    for (final (status, field) in [
+      (422, 'attachments.minidump'),
+      (413, null),
+    ]) {
+      test('$status', () async {
+        final bodies = <Map<String, dynamic>>[];
+        final service = build(
+          MockClient((request) async {
+            final body = jsonDecode(utf8.decode(request.bodyBytes));
+            bodies.add(body as Map<String, dynamic>);
+            final attachments = body['attachments'] as Map;
+            if (attachments.containsKey('minidump')) {
+              return _json(status, {'error': 'x', 'field': ?field});
+            }
+            return _json(200, {'success': true, 'issueNumber': 7});
+          }),
+        );
+        final result = await service.send(withDump);
+        expect(result.isSent, isTrue);
+        expect(bodies, hasLength(2));
+        expect((bodies.first['attachments'] as Map)['minidump'], isNotNull);
+        expect(bodies.last['reportId'], bodies.first['reportId']);
+        expect((bodies.last['attachments'] as Map)['diagnostics'], isNotNull);
+      });
+    }
+
+    test('422 על שדה אחר — דחייה רגילה, בלי ניסיון נוסף', () async {
+      var calls = 0;
+      final service = build(
+        MockClient((_) async {
+          calls++;
+          return _json(422, {'error': 'x', 'field': 'reporterEmail'});
+        }),
+      );
+      final result = await service.send(withDump);
+      expect(result.isFailed, isTrue);
+      expect(calls, 1);
+    });
+
+    test('ה-dump לא נשמר בהיסטוריה', () async {
+      final service = build(
+        MockClient((_) async => _json(200, {'success': true})),
+      );
+      await service.send(withDump);
+      final sent = await service.getSentReports();
+      expect(sent.single.minidump, isNull);
+    });
   });
 
   test('422: דחייה קבועה, לא נכנס לתור', () async {
