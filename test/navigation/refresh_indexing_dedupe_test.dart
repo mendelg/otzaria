@@ -96,6 +96,26 @@ void main() {
       expect((events[1] as ReindexChangedBooks).books, [regular]);
     });
 
+    test('PDF ממסד מצורף שהשתנה — אינדוקס מחדש מלא, בלי טביעת אצבע', () {
+      final attachedPdf = PdfBook(
+        id: 2,
+        title: 'סרוק ממסד',
+        path: '/tmp/attached.pdf',
+        source: BookSource.attached('lib-a'),
+      );
+      final events = buildRefreshIndexingPlan(
+        library: library,
+        newBooks: const [],
+        changedBooks: [attachedPdf],
+        indexWholeLibrary: false,
+        reconcile: false,
+        autoUpdateIndex: true,
+      );
+
+      expect(events.map((event) => event.runtimeType), [ReindexChangedBooks]);
+      expect((events.single as ReindexChangedBooks).books, [attachedPdf]);
+    });
+
     test('עדכון דלתא בלי reconcile — ReindexChangedBooks כן רץ', () {
       final events = plan(indexWholeLibrary: true);
 
