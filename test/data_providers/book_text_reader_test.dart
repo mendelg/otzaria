@@ -1,3 +1,4 @@
+import 'package:otzaria/models/book_source.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -390,6 +391,31 @@ void main() {
 
       expect(BookTextReader.mainConnectionReads, 0);
       expect(DbReadWorker.sentMessageCount - sentBefore, 6);
+    });
+
+    test('קריאת reconciliation מבדילה ספר ללא שורות מספר שאינו קיים', () async {
+      final provider = SqliteDataProvider.instance;
+      expect(
+        await provider.getBookTextFromDb(
+          'ריק',
+          7,
+          'txt',
+          BookSource.official,
+          true,
+        ),
+        '',
+      );
+      expect(
+        await provider.getBookTextFromDb(
+          'לא קיים',
+          7,
+          'txt',
+          BookSource.official,
+          true,
+        ),
+        isNull,
+      );
+      expect(await provider.getBookTextFromDb('ריק', 7, 'txt'), isNull);
     });
 
     for (final stalled in [false, true]) {

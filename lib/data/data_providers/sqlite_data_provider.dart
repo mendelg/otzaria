@@ -390,12 +390,13 @@ class SqliteDataProvider {
     }
   }
 
-  /// Retrieves the full text content of a book from the database
+  /// טקסט הספר מהמסד; [emptyWhenNoLines] מבדיל ספר קיים שהתרוקן מכשל קריאה.
   Future<String?> getBookTextFromDb(
     String title, [
     int? categoryId,
     String? fileType,
     BookSource preferSource = BookSource.official,
+    bool emptyWhenNoLines = false,
   ]) async {
     if (!_isInitialized) {
       await initialize();
@@ -410,10 +411,11 @@ class SqliteDataProvider {
         preferSource: preferSource,
       );
       if (resolvedBook == null) return null;
-      return await BookTextReader.text(
+      final text = await BookTextReader.text(
         resolvedBook.repository,
         resolvedBook.book,
       );
+      return text ?? (emptyWhenNoLines ? '' : null);
     } catch (e, st) {
       debugPrint(
         '[SqliteDataProvider] getBookTextFromDb failed for '

@@ -1449,18 +1449,13 @@ class IndexingRepository {
         book.categoryId,
         book.fileType ?? 'txt',
         book.source,
+        true,
       );
     }
 
-    if (text == null || text.isEmpty) {
+    if (text == null) {
       text = await _loadTextForIndex(book);
-    }
-
-    if (text.isEmpty) {
-      debugPrint(
-        '⚠️ ספר ריק: ${book.title} (categoryId: ${book.categoryId}) - מדלג',
-      );
-      return null;
+      if (text.isEmpty) return null;
     }
 
     // עקבי עם מסלול האינדוקס — טביעת האצבע מחושבת על הטקסט המנוקה.
