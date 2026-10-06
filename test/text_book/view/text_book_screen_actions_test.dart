@@ -42,6 +42,8 @@ import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_book/utils/book_versions_action.dart';
+import 'package:otzaria/text_book/utils/reading_segments.dart';
+import 'package:otzaria/widgets/lists/jump_aware_item_scroll_controller.dart';
 import 'package:otzaria/text_book/view/splited_view/splited_view_screen.dart';
 import 'package:otzaria/text_book/view/text_book_screen.dart';
 import 'package:otzaria/tools/shamor_zachor/providers/shamor_zachor_data_provider.dart';
@@ -81,6 +83,61 @@ void main() {
   });
 
   group('TextBookViewerBloc actions', () {
+    testWidgets(
+      'next TOC toolbar command preserves the source line for an external reader',
+      (tester) async {
+        final book = TextBook(title: 'ספר בדיקה');
+        final controller = JumpAwareItemScrollController();
+        final loaded = _loadedState(book).copyWith(
+          scrollController: controller,
+          continuousReadingMode: true,
+          readingSegments: buildReadingSegments([
+            'שורה א',
+            'שורה ב',
+            'שורה ג',
+          ], continuous: true),
+          tableOfContents: [
+            TocEntry(text: 'פרק ב', index: 2, level: 1),
+          ],
+        );
+        final bloc = _TestTextBookBloc(loaded);
+        final tab = TextBookTab(book: book, index: 0, blocOverride: bloc);
+        final tabsBloc = _TestTabsBloc(
+          TabsState(tabs: [tab], currentTabIndex: 0),
+        );
+        final settingsBloc = _TestSettingsBloc(SettingsState.initial());
+        addTearDown(() async {
+          await tester.pumpWidget(const SizedBox.shrink());
+          await bloc.close();
+          await tabsBloc.close();
+          await settingsBloc.close();
+          tab.dispose();
+        });
+        await _setSurfaceSize(tester, const Size(1600, 900));
+        await _pumpTextBookScreen(
+          tester,
+          tab: tab,
+          textBookBloc: bloc,
+          tabsBloc: tabsBloc,
+          settingsBloc: settingsBloc,
+          focusRepository: focusRepository,
+          shamorZachorDataProvider: shamorZachorDataProvider,
+          shamorZachorProgressProvider: shamorZachorProgressProvider,
+          bookmarkBloc: bookmarkBloc,
+          personalNotesBloc: personalNotesBloc,
+          tourCubit: tourCubit,
+          isInCombinedView: false,
+        );
+        final targets = <int>[];
+        controller.externalScroll = (index, {int? sourceLineIndex}) async {
+          targets.add(sourceLineIndex ?? index);
+        };
+        await tester.tap(find.byTooltip('הדף/פרק הבא'));
+        await tester.pump();
+        expect(targets, [2]);
+      },
+    );
+
     testWidgets('כפתורי הזום מציגים את הקיצור שהמשתמש הגדיר', (tester) async {
       await Settings.setValue<String>(
         ShortcutValidator.zoomInKey,

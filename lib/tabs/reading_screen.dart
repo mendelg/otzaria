@@ -15,6 +15,7 @@ import 'package:otzaria/navigation/bloc/navigation_state.dart' show Screen;
 import 'package:otzaria/pdf_book/view/pdf_book_screen.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/bloc/tabs_event.dart';
 import 'package:otzaria/tabs/bloc/tabs_state.dart';
@@ -100,16 +101,33 @@ class _ReadingScreenState extends State<ReadingScreen>
     // זריעה מיידית ולא רק מה-listener: בעלייה עם טאב תוסף משוחזר, קבוצה ריקה
     // הייתה גורמת ל-onForegroundInstanceReady להשהות מיד את התוסף שעל המסך.
     _syncVisiblePluginTabs(context.read<TabsBloc>().state);
+    PluginTextReaderRegistry.instance.addListener(_onTextReaderChanged);
+  }
+
+  void _onTextReaderChanged() {
+    if (mounted) _syncVisiblePluginTabs(context.read<TabsBloc>().state);
   }
 
   void _syncVisiblePluginTabs(TabsState state) {
+    final registry = PluginTextReaderRegistry.instance;
     PluginRuntimeDispatcher.instance.setVisiblePluginInstances(
-      ToolTab.visiblePluginInstancesOf(state.currentTab),
+      {
+        ...ToolTab.visiblePluginInstancesOf(state.currentTab),
+        if (registry.activePlugin case final plugin?)
+          if (state.currentTab case final currentTab?)
+            for (final tab in leafPanes(currentTab).whereType<TextBookTab>())
+              if (registry.usesPlugin(tab))
+                (
+                  pluginId: plugin.pluginId,
+                  instanceId: registry.instanceIdFor(tab),
+                ),
+      },
     );
   }
 
   @override
   void dispose() {
+    PluginTextReaderRegistry.instance.removeListener(_onTextReaderChanged);
     // Check if widget is still mounted before accessing context
     if (mounted) {
       try {

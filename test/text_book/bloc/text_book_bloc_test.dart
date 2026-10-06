@@ -87,6 +87,49 @@ void main() {
       });
     });
 
+    test(
+      'קורא מובנה שנוצר אחרי קריאה בתוסף מתחיל במיקום הכרטיסייה המעודכן',
+      () async {
+        final bloc = _createBloc(
+          repository: _FakeTextBookRepository(),
+          showPageShapeView: false,
+          initialIndex: 0,
+        );
+        addTearDown(bloc.close);
+        bloc.add(
+          const LoadContent(
+            startIndex: 25,
+            fontSize: 20,
+            showSplitView: false,
+            removeNikud: false,
+            loadCommentators: false,
+          ),
+        );
+        await _waitFor(
+          () => bloc.state is TextBookLoaded,
+          description: 'TextBookLoaded',
+        );
+        expect((bloc.state as TextBookLoaded).visibleIndices.first, 25);
+        bloc.add(
+          const LoadContent(
+            startIndex: 2,
+            preserveState: true,
+            fontSize: 22,
+            showSplitView: false,
+            removeNikud: false,
+            loadCommentators: false,
+          ),
+        );
+        await _waitFor(
+          () =>
+              bloc.state is TextBookLoaded &&
+              (bloc.state as TextBookLoaded).fontSize == 22,
+          description: 'font reload',
+        );
+        expect((bloc.state as TextBookLoaded).visibleIndices.first, 25);
+      },
+    );
+
     test('במפרשים למטה טוען קישורים מיד עבור הטווח הגלוי', () async {
       final repository = _FakeTextBookRepository();
       final bloc = _createBloc(

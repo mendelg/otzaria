@@ -10,6 +10,7 @@ import 'package:otzaria/models/book_source.dart';
 import 'package:otzaria/utils/file/file_picker_dialog_options.dart';
 import 'package:otzaria/widgets/dialogs/input_dialog.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
 import 'package:otzaria/plugins/plugin_constants.dart';
@@ -71,9 +72,10 @@ import 'package:otzaria/tabs/models/tab.dart';
 import 'package:otzaria/tabs/models/tool_tab.dart';
 import 'package:otzaria/tools/tools_launcher_controller.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
 import 'package:otzaria/tabs/models/pdf_tab.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
-import 'package:otzaria/text_display/models/text_display_slot.dart';
+import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/history/bloc/history_bloc.dart';
 import 'package:otzaria/settings/services/custom_folders/bloc/custom_folders_bloc.dart';
@@ -631,8 +633,20 @@ class _PluginNetworkRequest {
 // ===================================================================
 // Bridge Adapter - strict 1:1 with plugin_system_plan.md
 // ===================================================================
+String _transformTextReaderContent((String, TextDisplayProfile) input) {
+  final (rawText, profile) = input;
+  return rawText
+      .split('\n')
+      .map(
+        (line) =>
+            applyTextDisplayProfile(line, profile).replaceAll('\n', '<br>'),
+      )
+      .join('\n');
+}
+
 class PluginBridgeAdapter {
   final InstalledPlugin plugin;
+  final TextBookTab? readerTab;
 
   /// מזהה מופע הריצה שה-adapter משרת (טאב או 'background') — רישומי ה-UI
   /// וההדגשות ממופתחים לפיו, וניקויים ב-dispose מסיר רק אותם.
@@ -647,6 +661,7 @@ class PluginBridgeAdapter {
     this.plugin, {
     required this._dependencies,
     this.instanceId = PluginInstanceIds.defaultForeground,
+    this.readerTab,
     PluginRegistryRepository? pluginRepository,
     NotificationService? notificationService,
     PluginDatabaseService? databaseService,
@@ -721,6 +736,9 @@ class PluginBridgeAdapter {
 
   // LRU קצר לכל תוסף; bookUid מפריד ספרים זהים ממסדים מצורפים שונים.
   final Map<String, String> _bookContentCache = {};
+  String? _textReaderRawContent;
+  Future<String>? _textReaderDisplayContent;
+  TextDisplayProfile? _textReaderProfile;
   static const int _bookContentCacheMaxEntries = 4;
   static int _bookContentRevision = 0;
   int _seenBookContentRevision = 0;
@@ -787,6 +805,10 @@ class PluginBridgeAdapter {
     _pendingNetworkFetchCancellations.clear();
     _networkFetchService?.dispose();
     _fileDownloadService?.dispose();
+    _bookContentCache.clear();
+    _textReaderRawContent = null;
+    _textReaderProfile = null;
+    _textReaderDisplayContent = null;
     _bookIndexLibrary = null;
     _booksById = const {};
     _booksByTitle = const {};
@@ -1292,9 +1314,44 @@ class PluginBridgeAdapter {
         if (book == null && bookId == null) {
           throw Exception('error.not_found: book not found');
         }
-        final rawText = book == null
+        var rawText = book == null
             ? await DataRepository.instance.getBookText(bookId!)
             : await _loadBookRawText(book);
+        if (args['textReaderDisplay'] == true) {
+          final tab = readerTab;
+          final state = tab?.bloc.state;
+          if (tab == null ||
+              state is! TextBookLoaded ||
+              book == null ||
+              PluginBookIdentity.uidOf(book) !=
+                  PluginBookIdentity.uidOf(tab.book)) {
+            throw Exception(
+              'error.unavailable: Display content requires the bound reader',
+            );
+          }
+          final profile = state.bodyDisplayProfile;
+          if (!identical(_textReaderRawContent, rawText) ||
+              _textReaderProfile != profile) {
+            _textReaderRawContent = rawText;
+            _textReaderProfile = profile;
+            // המרת הספר כולו מתבצעת מחוץ ל-UI; בקשות מקבילות חולקות אותה.
+            _textReaderDisplayContent = compute(
+              _transformTextReaderContent,
+              (rawText, profile),
+            );
+          }
+          final displayContent = _textReaderDisplayContent!;
+          try {
+            rawText = await displayContent;
+          } catch (_) {
+            if (identical(_textReaderDisplayContent, displayContent)) {
+              _textReaderRawContent = null;
+              _textReaderProfile = null;
+              _textReaderDisplayContent = null;
+            }
+            rethrow;
+          }
+        }
         final limit = args['limit'] as int? ?? 1000;
         final offset = args['offset'] as int? ?? 0;
         final section = args['section'] as String?;
@@ -2024,6 +2081,22 @@ class PluginBridgeAdapter {
 
   /// מחזיר את סוג הספר כמחרוזת עבור ה-Plugin SDK.
   Book? _findPluginBook(Library library, Map<String, dynamic> args) {
+    final bound = readerTab?.book;
+    final uid = args['bookUid'] as String?;
+    if (bound != null &&
+        ((uid != null && uid == PluginBookIdentity.uidOf(bound)) ||
+            (uid == null &&
+                PluginBookIdentity.parseId(args['id']) == bound.id &&
+                bound.id != null)) &&
+        PluginBookIdentity.matches(
+          bound,
+          id: PluginBookIdentity.parseId(args['id']),
+          bookId: (args['bookId'] ?? args['title']) as String?,
+          type: args['type'] as String?,
+          source: args['source'] as String?,
+        )) {
+      return bound;
+    }
     _ensureBookIndex(library);
     // `bookUid` הוא מזהה יציב וחד-משמעי — אם סופק, פותר ישירות בלי ניחוש.
     final bookUid = (args['bookUid'] as String?)?.trim();
@@ -2290,6 +2363,92 @@ class PluginBridgeAdapter {
     Map<String, dynamic> args,
   ) async {
     switch (action) {
+      case 'getDefaultTextReader':
+        final registry = PluginTextReaderRegistry.instance;
+        return {
+          'pluginId': registry.selectedPluginId,
+          'enabled': registry.selectedPluginId == plugin.pluginId,
+          'available': registry.activePlugin != null,
+        };
+      case 'setDefaultTextReader':
+        final enabled = args['enabled'];
+        if (enabled is! bool) {
+          throw Exception('error.invalid_params: enabled must be boolean');
+        }
+        final check =
+            _dependencies.hasUserActivation ?? _defaultHasUserActivation;
+        if (instanceId == PluginInstanceIds.background ||
+            !await check(plugin.pluginId, instanceId)) {
+          throw Exception('error.forbidden: Requires a user gesture');
+        }
+        final granted = await _getGrantedPermissions();
+        if (!plugin.enabled ||
+            !plugin.hasToolPage ||
+            !PluginTextReaderRegistry.requiredPermissions.every(
+              granted.contains,
+            )) {
+          throw Exception(
+            'error.forbidden: Reader and library permissions required',
+          );
+        }
+        await PluginTextReaderRegistry.instance.select(plugin, enabled);
+        return {'enabled': enabled};
+      case 'setTextReaderFontSize':
+        final tab = readerTab;
+        final registry = PluginTextReaderRegistry.instance;
+        final size = args['fontSize'];
+        if (tab == null ||
+            instanceId == PluginInstanceIds.background ||
+            !registry.usesPlugin(tab) ||
+            registry.activePlugin?.pluginId != plugin.pluginId ||
+            tab.bloc.isClosed) {
+          throw Exception(
+            'error.unavailable: Not an active embedded text reader',
+          );
+        }
+        if (size is! num || !size.isFinite || size < 14 || size > 60) {
+          throw Exception(
+            'error.invalid_params: fontSize must be between 14 and 60',
+          );
+        }
+        tab.bloc.add(UpdateFontSize(size.toDouble()));
+        return true;
+      case 'reportTextReaderLocation':
+        final tab = readerTab;
+        final registry = PluginTextReaderRegistry.instance;
+        if (tab == null ||
+            instanceId == PluginInstanceIds.background ||
+            !registry.usesPlugin(tab) ||
+            registry.activePlugin?.pluginId != plugin.pluginId ||
+            tab.bloc.isClosed) {
+          throw Exception(
+            'error.unavailable: Not an active embedded text reader',
+          );
+        }
+        final index = args['index'];
+        if (index is! int || index < 0) {
+          throw Exception('error.invalid_params: index must be nonnegative');
+        }
+        tab.index = index;
+        final currentState = tab.bloc.state;
+        if (currentState is TextBookLoaded &&
+            (currentState.visibleIndices.isEmpty ||
+                currentState.visibleIndices.first != index)) {
+          // toJson שומר את visibleIndices כשהקורא המובנה כבר נטען.
+          // מחכים לעדכון לפני SaveTabs, כדי שלא ישמור מיקום ישן.
+          final updated = tab.bloc.stream.firstWhere(
+            (state) =>
+                state is TextBookLoaded &&
+                state.visibleIndices.isNotEmpty &&
+                state.visibleIndices.first == index,
+          );
+          tab.bloc.add(UpdateVisibleIndecies([index]));
+          await updated.timeout(const Duration(seconds: 2));
+        }
+        final ref = args['ref'];
+        if (ref is String && ref.length <= 500) tab.currentTitle.value = ref;
+        _dependencies.tabsBloc.add(const SaveTabs());
+        return true;
       case 'openBook':
         // spec: openBook({ id?, bookId?, type?, index?, searchQuery?,
         //   navigateToPositionIfReused?, matchPages?, matchedTerms? })
@@ -2310,7 +2469,7 @@ class PluginBridgeAdapter {
               'error.invalid_params: id, bookUid or bookId required',
             );
           }
-          if (args['external'] != null) {
+          if (args['external'] != null && args['reader'] != 'native') {
             final access = DeclarativeLibraryBookAccess.otzaria(
               _dependencies.bookOpenCoordinator,
             );
@@ -2323,11 +2482,41 @@ class PluginBridgeAdapter {
               externalMatches: externalMatches,
             );
           }
-          final book = _findPluginBook(
-            await DataRepository.instance.library,
-            args,
-          );
+          final book = args['external'] != null
+              ? (await DeclarativeLibraryBookAccess.otzaria(
+                  _dependencies.bookOpenCoordinator,
+                ).findUniqueBooks([_identityFields(args)])).single
+              : _findPluginBook(
+                  await DataRepository.instance.library,
+                  args,
+                );
           if (book == null) return false;
+          if (args['reader'] == 'native' && book is TextBook) {
+            final registry = PluginTextReaderRegistry.instance;
+            final coordinator = _dependencies.bookOpenCoordinator;
+            final tab = coordinator.buildTab(
+              book,
+              index,
+              searchQuery,
+              ignoreHistory: true,
+            );
+            if (tab is TextBookTab) registry.useNative(tab);
+            for (final existing
+                in _dependencies.tabsBloc.state.tabs
+                    .expand(leafPanes)
+                    .whereType<TextBookTab>()) {
+              if (PluginBookIdentity.uidOf(existing.book) ==
+                  PluginBookIdentity.uidOf(book)) {
+                registry.useNative(existing);
+              }
+            }
+            coordinator.openTab(
+              tab,
+              navigateToPositionIfReused: true,
+              inSidePane: openInSidePane,
+            );
+            return true;
+          }
           _dependencies.bookOpenCoordinator.openBook(
             book,
             index,

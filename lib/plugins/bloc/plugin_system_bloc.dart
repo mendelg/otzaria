@@ -14,6 +14,7 @@ import 'package:otzaria/plugins/services/context_menu_registry.dart';
 import 'package:otzaria/plugins/services/plugin_shortcut_registry.dart';
 import 'package:otzaria/plugins/services/plugin_toolbar_registry.dart';
 import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
+import 'package:otzaria/plugins/services/plugin_text_reader_registry.dart';
 import 'package:otzaria/plugins/services/plugin_highlight_registry.dart';
 import 'package:otzaria/plugins/services/plugin_startup_contributions_service.dart';
 import 'package:otzaria/plugins/services/plugin_lazy_activation_service.dart';
@@ -172,6 +173,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
         return;
       }
       devWatchService.syncWatchers(await repository.getDevelopmentPlugins());
+      await PluginTextReaderRegistry.instance.sync(plugins, repository);
       _registerPluginShortcuts(plugins);
       await PluginStartupContributionsService.instance.sync(
         plugins,
@@ -728,6 +730,7 @@ class PluginSystemBloc extends Bloc<PluginSystemEvent, PluginSystemState> {
   }
 
   void _clearPluginRegistrations(String pluginId) {
+    PluginTextReaderRegistry.instance.remove(pluginId);
     _removeDeclarative(pluginId);
     ContextMenuRegistry.instance.removeAll(pluginId);
     PluginToolbarRegistry.instance.removeAll(pluginId);
