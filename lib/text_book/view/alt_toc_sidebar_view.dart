@@ -271,13 +271,23 @@ class _AltTocSidebarViewState extends State<AltTocSidebarView>
             if (_hasDibburimEntries) dibburimStructure,
           ];
           _isLoading = false;
-
-          // מבנה יחיד נפתח כברירת מחדל; הדיבורים נשארים מכווצים עד לחיצה.
-          if (_structures.length == 1 &&
-              _structures.single.id != kDibburimStructureId) {
-            _toggleStructure(_structures.first);
-          }
         });
+
+        if (_structures.length == 1) {
+          final structure = _structures.single;
+          if (structure.id == kDibburimStructureId) {
+            await _loadEntriesForStructure(structure.id);
+            if (!mounted) return;
+          }
+          // השמטת שם הספר יכולה להשאיר דיבורים ישירות בשורש.
+          if (structure.id != kDibburimStructureId ||
+              _structureRoots[structure.id]?.every(
+                    (entry) => entry.hasChildren,
+                  ) ==
+                  true) {
+            _toggleStructure(structure);
+          }
+        }
 
         // הפאנל בונה את התצוגה רק כשהוא נפתח, וה-BlocListener לא יירה על
         // ה-state ההתחלתי. גלילה ראשונית למיקום הפעיל אחרי טעינת המבנים.
