@@ -472,6 +472,8 @@ class FindRefDbIsolate {
           .cast<int, List<String>>(),
       bookIdsByBigram: (raw['bookIdsByBigram'] as Map).cast<int, Int32List>(),
       rowCount: raw['rowCount'] as int,
+      quotedWordsByBookId: (raw['quotedWordsByBookId'] as Map)
+          .cast<int, Set<String>>(),
     );
   }
 
@@ -1065,6 +1067,7 @@ void _workerMain(_Bootstrap bootstrap) {
           'acronymsByBookId': data.acronymsByBookId,
           'bookIdsByBigram': data.bookIdsByBigram,
           'rowCount': data.rowCount,
+          'quotedWordsByBookId': data.quotedWordsByBookId,
         };
       case 'bookToc':
         final repo = await ensureRepo();
