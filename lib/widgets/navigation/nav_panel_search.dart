@@ -424,7 +424,7 @@ class _NavPanelCollapsibleSearchState extends State<NavPanelCollapsibleSearch> {
                     child: _toggleOffscreen && !_isOpen
                         ? Material(
                             color: AppSurfaces.navPanelBackground(context),
-                            shape: const CircleBorder(),
+                            shape: AppTokens.roundedShape,
                             elevation: 1,
                             child: _SearchToggleButton(
                               hintText: widget.delegate.hintText,
