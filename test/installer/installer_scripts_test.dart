@@ -503,41 +503,49 @@ void main() {
       expect(script, isNot(contains('CreateDownloadPage')));
     });
 
-    test('$_regular: בלי החלק הראשון של הספרייה — בדיקת קובץ אחת ויציאה', () {
-      final prepare = _routine(
-        _script(_regular),
-        'function PrepareLibraryParts(): Boolean;',
-      );
-      final quickCheck = prepare.indexOf("'{#LibraryArchiveName}.part-000'");
+    test(
+      '$_regular: בלי חלקי ספרייה — בדיקת תיקייה ויציאה לפני PowerShell',
+      () {
+        final prepare = _routine(
+          _script(_regular),
+          'function PrepareLibraryParts(): Boolean;',
+        );
+        final quickCheck = prepare.indexOf(
+          "HasSplitArchiveParts(SourceDir, '{#LibraryArchiveName}')",
+        );
 
-      expect(prepare, contains(r"ExpandConstant('{srcexe}')"));
-      expect(quickCheck, greaterThan(0));
-      expect(
-        quickCheck,
-        lessThan(prepare.indexOf('PrepareSplitArchive(')),
-        reason: 'עדכון רגיל (גם שקט) לא מחלץ קבצים ולא מריץ PowerShell',
-      );
-      final split = _routine(
-        _script(_regular),
-        'function PrepareSplitArchive(',
-      );
-      expect(split, contains('LocalPartsAreComplete(SourceDir, PartNames)'));
-      expect(split, contains('AssembleSplitArchive(ManifestPath, SourceDir,'));
-      // מתקין בשורש כונן: "E:\" היה הופך את \" למרכאה מילולית בשורת הפקודה.
-      expect(
-        _routine(_script(_regular), 'function AssembleSplitArchive('),
-        contains("AddBackslash(PartsDir) + '.\"'"),
-      );
-      expect(
-        _script(_regular),
-        isNot(contains('CreateDownloadPage')),
-        reason: 'המתקין הרגיל אינו מוריד את החלקים בעצמו',
-      );
-      expect(
-        File('tool/release/assemble_split_asset.ps1').readAsStringSync(),
-        contains(r'$part.sha256'),
-      );
-    });
+        expect(prepare, contains(r"ExpandConstant('{srcexe}')"));
+        expect(quickCheck, greaterThan(0));
+        expect(
+          quickCheck,
+          lessThan(prepare.indexOf('PrepareSplitArchive(')),
+          reason: 'עדכון רגיל (גם שקט) לא מחלץ קבצים ולא מריץ PowerShell',
+        );
+        final split = _routine(
+          _script(_regular),
+          'function PrepareSplitArchive(',
+        );
+        expect(split, contains('LocalPartsAreComplete(SourceDir, PartNames)'));
+        expect(
+          split,
+          contains('AssembleSplitArchive(ManifestPath, SourceDir,'),
+        );
+        // מתקין בשורש כונן: "E:\" היה הופך את \" למרכאה מילולית בשורת הפקודה.
+        expect(
+          _routine(_script(_regular), 'function AssembleSplitArchive('),
+          contains("AddBackslash(PartsDir) + '.\"'"),
+        );
+        expect(
+          _script(_regular),
+          isNot(contains('CreateDownloadPage')),
+          reason: 'המתקין הרגיל אינו מוריד את החלקים בעצמו',
+        );
+        expect(
+          File('tool/release/assemble_split_asset.ps1').readAsStringSync(),
+          contains(r'$part.sha256'),
+        );
+      },
+    );
 
     test('$_regular: אינדקס בלי ספרייה אינו נפרס', () {
       final prepare = _routine(
@@ -545,11 +553,16 @@ void main() {
         'function PrepareLibraryParts(): Boolean;',
       );
       final noLibrary = prepare.substring(
-        prepare.indexOf("'{#LibraryArchiveName}.part-000'"),
+        prepare.indexOf(
+          "HasSplitArchiveParts(SourceDir, '{#LibraryArchiveName}')",
+        ),
         prepare.indexOf("Result := False;"),
       );
 
-      expect(noLibrary, contains("'{#IndexArchiveName}.part-000'"));
+      expect(
+        noLibrary,
+        contains("HasSplitArchiveParts(SourceDir, '{#IndexArchiveName}')"),
+      );
       expect(noLibrary, contains('Log('));
       expect(noLibrary, contains('exit;'));
       expect(noLibrary, isNot(contains('PrepareSplitArchive')));
@@ -613,10 +626,10 @@ void main() {
       final finder = _routine(script, 'function OtherVersionPartsName(');
       expect(
         finder,
-        contains("'otzaria-*-library*.tar.zst.part-000'"),
+        contains("'otzaria-*-library*.tar.zst.part-*'"),
         reason: 'גם חלקי אינדקס של גרסה אחרת',
       );
-      expect(finder, contains("'{#LibraryArchiveName}.part-000'"));
+      expect(finder, contains("'{#LibraryArchiveName}.part-'"));
       final prepare = _routine(script, 'function PrepareLibraryParts(');
       expect(prepare, contains('OtherVersionPartsName(SourceDir)'));
       // בהתקנה שקטה ברירת המחדל היא לעצור, לא להתקין בלי הספרייה.
@@ -657,7 +670,10 @@ void main() {
 
     test('$_regular: הספרייה נפרסת לנתיב שהאפליקציה קוראת ממנו', () {
       final script = _script(_regular);
-      final body = _routine(script, 'function GetLibraryBooksPath(');
+      final body = _routine(
+        script,
+        'function GetLibraryBooksPath(): String;\nvar',
+      );
 
       expect(
         _routine(script, 'procedure InstallPreparedLibrary('),
@@ -666,6 +682,18 @@ void main() {
       expect(body, contains(r"'\otzaria_data\books'"));
       expect(body, contains('GetCustomLibraryPath()'));
       expect(body, contains('IsOtzariaBooksFolder(CustomPath)'));
+      expect(
+        body,
+        contains(
+          "ReadLibraryPreference('${SettingsRepository.keyLibraryFolderName}')",
+        ),
+      );
+      expect(
+        script,
+        contains(
+          "LibraryDatabasePathRecordFileName = '${AppPaths.libraryDatabasePathRecordFileName}';",
+        ),
+      );
       expect(body, contains(r"GetDataDir('') + '\books'"));
     });
 
@@ -776,16 +804,26 @@ void main() {
         final script = _script(name);
         final key = SettingsRepository.keyLibraryPath;
 
-        expect(
-          script,
-          contains('"flutter.$key":'),
-          reason: 'שינוי keyLibraryPath ב-Dart מחייב עדכון המתקין',
-        );
-        expect(script, contains('"$key":'));
-        expect(
-          _routine(script, 'function GetCustomLibraryPath('),
-          contains(r'{userappdata}\otzaria\shared_preferences.json'),
-        );
+        if (name == _regular) {
+          final reader = _routine(script, 'function ReadLibraryPreference(');
+          expect(reader, contains("KeyStr := '\"flutter.' + KeyName"));
+          expect(reader, contains("KeyStr := '\"' + KeyName"));
+          expect(
+            reader,
+            contains(r'{userappdata}\otzaria\shared_preferences.json'),
+          );
+          expect(
+            _routine(script, 'function GetCustomLibraryPath('),
+            contains("ReadLibraryPreference('$key')"),
+          );
+        } else {
+          expect(script, contains('"flutter.$key":'));
+          expect(script, contains('"$key":'));
+          expect(
+            _routine(script, 'function GetCustomLibraryPath('),
+            contains(r'{userappdata}\otzaria\shared_preferences.json'),
+          );
+        }
       });
     }
 
@@ -934,7 +972,11 @@ void main() {
         final body = _routine(script, 'function GetCustomLibraryPath(');
 
         final recordCall = body.indexOf('ReadLibraryPathRecord(');
-        final prefsRead = body.indexOf('shared_preferences.json');
+        final prefsRead = body.indexOf(
+          name == _regular
+              ? "ReadLibraryPreference('key-library-path')"
+              : 'shared_preferences.json',
+        );
         expect(
           recordCall,
           greaterThanOrEqualTo(0),

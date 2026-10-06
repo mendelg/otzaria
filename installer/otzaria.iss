@@ -203,6 +203,7 @@ const
   UserEnvironmentKey = 'Environment';
   // האפליקציה רושמת כאן את נתיב הספרייה הפעיל (lib/core/app_paths.dart).
   LibraryPathRecordFileName = 'library_path.txt';
+  LibraryDatabasePathRecordFileName = 'library_database_path.txt';
 
 var
   FeaturesPage: TWizardPage;
@@ -725,6 +726,8 @@ begin
          'או חזור ובחר התקנה רגילה.', mbError, MB_OK);
 end;
 
+function GetLibraryBooksPath(): String; forward;
+
 #ifdef LibraryParts
 // מריץ קובץ ולוכד את הפלט שלו, כדי להציג בכשל את השגיאה האמיתית ולא רק קוד יציאה.
 function RunAndCaptureErrors(const Exe, Params: String;
@@ -897,17 +900,26 @@ begin
   Result := True;
 end;
 
+function HasSplitArchiveParts(const SourceDir, ArchiveName: String): Boolean;
+var
+  FindRec: TFindRec;
+begin
+  Result := FindFirst(AddBackslash(SourceDir) + ArchiveName + '.part-*', FindRec);
+  if Result then
+    FindClose(FindRec);
+end;
+
 // חלקי ספרייה או אינדקס של גרסה אחרת: שמם כולל את הגרסה, ולכן אינם נפרסים.
 function OtherVersionPartsName(const SourceDir: String): String;
 var
   FindRec: TFindRec;
 begin
   Result := '';
-  if FindFirst(AddBackslash(SourceDir) + 'otzaria-*-library*.tar.zst.part-000', FindRec) then
+  if FindFirst(AddBackslash(SourceDir) + 'otzaria-*-library*.tar.zst.part-*', FindRec) then
   try
     repeat
-      if (CompareText(FindRec.Name, '{#LibraryArchiveName}.part-000') <> 0) and
-        (CompareText(FindRec.Name, 'otzaria-{#MyAppVersion}-library-index.tar.zst.part-000') <> 0) then
+      if (Pos(Lowercase('{#LibraryArchiveName}.part-'), Lowercase(FindRec.Name)) <> 1) and
+        (Pos(Lowercase('otzaria-{#MyAppVersion}-library-index.tar.zst.part-'), Lowercase(FindRec.Name)) <> 1) then
       begin
         Result := FindRec.Name;
         exit;
@@ -918,7 +930,7 @@ begin
   end;
 end;
 
-// בלי החלק הראשון של הספרייה לצד המתקין זו התקנה רגילה: בלי PowerShell.
+// בלי חלקי ספרייה לצד המתקין זו התקנה רגילה: בלי PowerShell.
 function PrepareLibraryParts(): Boolean;
 var
   OtherParts: String;
@@ -930,11 +942,11 @@ begin
   if PreparedLibraryArchive <> '' then
     exit;
   SourceDir := ExtractFileDir(ExpandConstant('{srcexe}'));
-  if not FileExists(AddBackslash(SourceDir) + '{#LibraryArchiveName}.part-000') then
+  if not HasSplitArchiveParts(SourceDir, '{#LibraryArchiveName}') then
   begin
 #ifdef LibraryIndexParts
     // המסייע מוריד אינדקס רק עם הספרייה; אינדקס לבד אינו מותאם בהכרח לספרייה המותקנת.
-    if FileExists(AddBackslash(SourceDir) + '{#IndexArchiveName}.part-000') then
+    if HasSplitArchiveParts(SourceDir, '{#IndexArchiveName}') then
       Log('Search index parts without library parts are ignored');
 #endif
     OtherParts := OtherVersionPartsName(SourceDir);
@@ -974,8 +986,7 @@ begin
     Result := PrepareSplitArchive('library.manifest.json',
       '{#LibraryArchiveName}', 'הספרייה', SourceDir, PreparedLibraryArchive);
 #ifdef LibraryIndexParts
-    if Result and FileExists(AddBackslash(SourceDir) +
-      '{#IndexArchiveName}.part-000') then
+    if Result and HasSplitArchiveParts(SourceDir, '{#IndexArchiveName}') then
       Result := PrepareSplitArchive('library_index.manifest.json',
         '{#IndexArchiveName}', 'אינדקס החיפוש', SourceDir, PreparedIndexArchive);
 #endif
@@ -1001,8 +1012,26 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 var
   ResultCode: Integer;
   Launched: Boolean;
+  HasLibraryPayload: Boolean;
 begin
   Result := True;
+  if CurPageID = wpReady then
+  begin
+    HasLibraryPayload := DirExists(ExpandConstant('{src}\semantic-import'));
+#ifdef LibraryParts
+    HasLibraryPayload := HasLibraryPayload or HasSplitArchiveParts(
+      ExtractFileDir(ExpandConstant('{srcexe}')), '{#LibraryArchiveName}');
+#endif
+    if HasLibraryPayload and (GetLibraryBooksPath() = '') then
+    begin
+      SuppressibleMsgBox('נמצאו כמה תיקיות ספרייה בנתיב המוגדר. ' +
+        'עדכנו תחילה את התוכנה בלבד מתיקייה ללא קובצי ספרייה, ' +
+        'בחרו בה את הספרייה הפעילה, ואז הפעילו שוב את המתקין.',
+        mbCriticalError, MB_OK, IDOK);
+      Result := False;
+      exit;
+    end;
+  end;
 #ifdef LibraryParts
   // גם בהתקנה שקטה Inno "לוחץ" Next כאן, ו-False עוצר אותה לפני תחילת ההתקנה.
   if CurPageID = wpReady then
@@ -1333,12 +1362,7 @@ begin
   end;
 end;
 
-// מחזיר את נתיב תיקיית הספרים שהמשתמש בחר (אם שונה מברירת המחדל),
-// כפי שנשמר ב-shared_preferences.json תחת המפתח flutter.key-library-path.
-// המתקין FULL כותב נתיב זה אם המשתמש שינה את ברירת המחדל.
-// קורא את נתיב הספרייה שהאפליקציה רשמה תחת [DataRoot]. ההגדרות עצמן
-// יושבות ב-Hive בינארי שהמתקין אינו יכול לקרוא, ולכן זה המקור
-// לנתיב שהמשתמש שינה מתוך התוכנה (issue #1020).
+// ה-root נשאר נפרד מתיקיית ה-DB כדי לשמר את נתיבי האינדקס וההסרה.
 function ReadLibraryPathRecord(const DataRoot: String): String;
 var
   RecordFile: String;
@@ -1354,15 +1378,12 @@ begin
     Delete(Result, 1, 1);
 end;
 
-function GetCustomLibraryPath(): String;
+function ReadLibraryPreference(const KeyName: String): String;
 var
   PrefsFile, JsonContent, KeyStr, Value: String;
   KeyPos, ValueStart, ValueEnd: Integer;
 begin
-  Result := ReadLibraryPathRecord(ExpandConstant('{userappdata}\otzaria'));
-  if Result <> '' then
-    exit;
-
+  Result := '';
   PrefsFile := ExpandConstant('{userappdata}\otzaria\shared_preferences.json');
   if not FileExists(PrefsFile) then
     exit;
@@ -1371,11 +1392,11 @@ begin
   if JsonContent = '' then
     exit;
 
-  KeyStr := '"flutter.key-library-path":';
+  KeyStr := '"flutter.' + KeyName + '":';
   KeyPos := Pos(KeyStr, JsonContent);
   if KeyPos = 0 then
   begin
-    KeyStr := '"key-library-path":';
+    KeyStr := '"' + KeyName + '":';
     KeyPos := Pos(KeyStr, JsonContent);
   end;
   if KeyPos = 0 then
@@ -1406,6 +1427,19 @@ begin
   Result := Value;
 end;
 
+function GetCustomLibraryPath(): String;
+begin
+  Result := ReadLibraryPathRecord(ExpandConstant('{userappdata}\otzaria'));
+  if Result = '' then
+    Result := ReadLibraryPreference('key-library-path');
+end;
+
+function NormalizeLibraryPath(Path: String): String;
+begin
+  StringChangeEx(Path, '/', '\', True);
+  Result := RemoveBackslash(Path);
+end;
+
 // בודק שהתיקייה נראית כמו תיקיית ספרים של אוצריא — כלומר מכילה לפחות
 // אחד מהסימנים הייחודיים שמותקנים ע"י המתקין FULL. נחוץ לפני DelTree על
 // נתיב שמגיע מהמשתמש (prefs), כדי שלא נמחק תיקייה אישית רחבה שהמשתמש
@@ -1424,21 +1458,97 @@ begin
     Result := True;
 end;
 
-// הספרייה הקיימת של המשתמש; אחרת — נתיב ברירת המחדל.
+// רשומות ישנות מכילות רק root; בלי הגדרה מפורשת מותר לאמץ רק DB יחיד.
 function GetLibraryBooksPath(): String;
 var
-  CustomPath: String;
+  CustomPath, RecordedPath, DatabasePath, FolderName, Candidate: String;
+  CandidateCount: Integer;
+  FindRec: TFindRec;
 begin
   if PortableMode then
   begin
     Result := ExpandConstant('{app}') + '\otzaria_data\books';
     exit;
   end;
-  CustomPath := RemoveBackslash(GetCustomLibraryPath());
+  RecordedPath := ReadLibraryPathRecord(GetDataDir(''));
+  if RecordedPath = '' then
+    RecordedPath := ReadLibraryPathRecord(ExpandConstant('{userappdata}\otzaria'));
+  CustomPath := NormalizeLibraryPath(RecordedPath);
+  if CustomPath = '' then
+    CustomPath := NormalizeLibraryPath(GetCustomLibraryPath());
+  Result := GetDataDir('') + '\books';
+  if CustomPath = '' then
+    exit;
+  DatabasePath := Trim(UninstallReadTextFile(AddBackslash(GetDataDir('')) +
+    LibraryDatabasePathRecordFileName));
+  if (DatabasePath <> '') and (DatabasePath[1] = #$FEFF) then
+    Delete(DatabasePath, 1, 1);
+  DatabasePath := NormalizeLibraryPath(DatabasePath);
+  if FileExists(AddBackslash(DatabasePath) + 'seforim.db') and
+    ((CompareText(DatabasePath, CustomPath) = 0) or
+    (Pos(Lowercase(AddBackslash(CustomPath)), Lowercase(DatabasePath)) = 1)) then
+  begin
+    Result := DatabasePath;
+    exit;
+  end;
+  // prefs נטושים אינם רשאים לבחור folderName מול רשומת Hive עדכנית.
+  if (RecordedPath = '') and
+    (CompareText(NormalizeLibraryPath(ReadLibraryPreference('key-library-path')),
+    CustomPath) = 0) then
+  begin
+    FolderName := ReadLibraryPreference('key-library-folder-name');
+    if FolderName <> '' then
+    begin
+      DatabasePath := NormalizeLibraryPath(AddBackslash(CustomPath) + FolderName);
+      if (Pos(Lowercase(AddBackslash(CustomPath)), Lowercase(DatabasePath)) = 1) and
+        (Pos('..', FolderName) = 0) and
+        FileExists(AddBackslash(DatabasePath) + 'seforim.db') then
+      begin
+        Result := DatabasePath;
+        exit;
+      end;
+    end;
+  end;
+  CandidateCount := 0;
   if IsOtzariaBooksFolder(CustomPath) then
-    Result := CustomPath
+    Result := CustomPath;
+  if FileExists(AddBackslash(CustomPath) + 'seforim.db') then
+    CandidateCount := 1;
+  if FindFirst(AddBackslash(CustomPath) + '*', FindRec) then
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0) and
+        (FindRec.Name <> '.') and (FindRec.Name <> '..') and
+        FileExists(AddBackslash(CustomPath) + FindRec.Name + '\seforim.db') then
+      begin
+        Candidate := AddBackslash(CustomPath) + FindRec.Name;
+        CandidateCount := CandidateCount + 1;
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+  if (CandidateCount = 1) and (Candidate <> '') then
+    Result := Candidate;
+  if CandidateCount > 1 then
+    Result := '';
+end;
+
+// האינדקס נצמד ל-root המוגדר; SemanticPaths נצמד להורה של ה-DB.
+function GetLibraryIndexPath(const BooksPath: String): String;
+var
+  CustomPath: String;
+begin
+  CustomPath := NormalizeLibraryPath(GetCustomLibraryPath());
+  if PortableMode then
+    Result := ExtractFileDir(BooksPath) + '\index'
+  else if IsAdminInstallMode then
+    Result := GetDataDir('') + '\index'
+  else if (CustomPath <> '') and ((CompareText(BooksPath, CustomPath) = 0) or
+    (Pos(Lowercase(AddBackslash(CustomPath)), Lowercase(BooksPath)) = 1)) then
+    Result := ExtractFileDir(CustomPath) + '\index'
   else
-    Result := GetDataDir('') + '\books';
+    Result := ExtractFileDir(BooksPath) + '\index';
 end;
 
 // ההורה של תיקיית הספרייה הוא SemanticPaths.root באפליקציה.
@@ -1708,7 +1818,7 @@ end;
 // כשל משאיר את הקיימים. בלי אינדקס — index הקיימת אינה נוגעת, כמו במתקין ה-FULL.
 procedure ExtractLibraryArchives(const BooksPath: String);
 var
-  LibraryRoot, StagingRoot, SourceBooks, SourceIndex, TargetIndex: String;
+  LibraryRoot, StagingRoot, IndexStagingRoot, SourceBooks, SourceIndex, TargetIndex: String;
   BooksBackup, IndexBackup, ErrOutput: String;
   WithIndex, BooksBackedUp, IndexBackedUp, NewBooksMoved: Boolean;
 begin
@@ -1716,27 +1826,38 @@ begin
   LibraryRoot := ExtractFileDir(BooksPath);
   StagingRoot := LibraryRoot + '\.otzaria-library-install';
   SourceBooks := StagingRoot + '\books';
-  SourceIndex := StagingRoot + '\index';
-  TargetIndex := LibraryRoot + '\index';
+  TargetIndex := GetLibraryIndexPath(BooksPath);
+  IndexStagingRoot := ExtractFileDir(TargetIndex) + '\.otzaria-index-install';
+  SourceIndex := IndexStagingRoot + '\index';
   BooksBackup := LibraryRoot + '\.otzaria-books-backup';
-  IndexBackup := LibraryRoot + '\.otzaria-index-backup';
+  IndexBackup := TargetIndex + '.otzaria-install-backup';
   ExtractTemporaryFile('zstd.exe');
   ExtractTemporaryFile('7za.exe');
 
   ForceDirectories(LibraryRoot);
   DelTree(StagingRoot, True, True, True);
   ForceDirectories(StagingRoot);
+  // גם כשספרים ואינדקס בכוננים שונים, ההחלפה נעשית ב-rename באותו כונן.
+  if WithIndex then
+  begin
+    DelTree(IndexStagingRoot, True, True, True);
+    ForceDirectories(IndexStagingRoot);
+  end;
 
   if not UnpackArchive(PreparedLibraryArchive, StagingRoot, ErrOutput) then
   begin
     DelTree(StagingRoot, True, True, True);
+    if WithIndex then
+      DelTree(IndexStagingRoot, True, True, True);
     LibraryInstallFailed('חילוץ הספרייה נכשל.', ErrOutput);
     exit;
   end;
-  if WithIndex and not UnpackArchive(PreparedIndexArchive, StagingRoot,
+  if WithIndex and not UnpackArchive(PreparedIndexArchive, IndexStagingRoot,
     ErrOutput) then
   begin
     DelTree(StagingRoot, True, True, True);
+    if WithIndex then
+      DelTree(IndexStagingRoot, True, True, True);
     LibraryInstallFailed('חילוץ אינדקס החיפוש נכשל.', ErrOutput);
     exit;
   end;
@@ -1745,6 +1866,8 @@ begin
     not FileExists(SourceIndex + '\.otzaria_prebuilt_index')) then
   begin
     DelTree(StagingRoot, True, True, True);
+    if WithIndex then
+      DelTree(IndexStagingRoot, True, True, True);
     LibraryInstallFailed('מבנה חבילת הספרייה אינו תקין.', '');
     exit;
   end;
@@ -1756,6 +1879,8 @@ begin
   if not BooksBackedUp then
   begin
     DelTree(StagingRoot, True, True, True);
+    if WithIndex then
+      DelTree(IndexStagingRoot, True, True, True);
     LibraryInstallFailed('לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.', '');
     exit;
   end;
@@ -1766,6 +1891,8 @@ begin
     if DirExists(BooksBackup) then
       RenameFile(BooksBackup, BooksPath);
     DelTree(StagingRoot, True, True, True);
+    if WithIndex then
+      DelTree(IndexStagingRoot, True, True, True);
     LibraryInstallFailed('לא ניתן להחליף את תיקיית האינדקס הקיימת. ודא שאוצריא סגורה.', '');
     exit;
   end;
@@ -1783,6 +1910,8 @@ begin
     if DirExists(IndexBackup) then
       RenameFile(IndexBackup, TargetIndex);
     DelTree(StagingRoot, True, True, True);
+    if WithIndex then
+      DelTree(IndexStagingRoot, True, True, True);
     LibraryInstallFailed('העברת הספרייה למיקום שלה נכשלה.', '');
     exit;
   end;
@@ -1790,6 +1919,8 @@ begin
   DelTree(BooksBackup, True, True, True);
   DelTree(IndexBackup, True, True, True);
   DelTree(StagingRoot, True, True, True);
+  if WithIndex then
+    DelTree(IndexStagingRoot, True, True, True);
 end;
 
 // ב-ssPostInstall, אחרי ש-[Dirs] נתנה למשתמשים הרשאה על תיקיית הנתונים.
