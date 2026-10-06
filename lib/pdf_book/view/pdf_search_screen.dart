@@ -376,6 +376,9 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
       distance: widget.initialSearchDistance,
       matchPolicy: widget.initialMatchPolicy,
     );
+    if (searchableInBookQuery(widget.searchController.text) == null) {
+      _settings = InBookSearchSettings.savedDefaults();
+    }
     // התצורה הממתינה כבר משוקפת בערכי האתחול; אין להחילה שוב.
     widget.incomingSearchConfiguration?.value = null;
     widget.incomingSearchConfiguration?.addListener(
@@ -739,6 +742,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
     // תדליק אותו מחדש אם תרוץ.
     _simpleSearchReversed = false;
     final searchable = searchableInBookQuery(widget.searchController.text);
+    _settings = _settings.forQuery(searchable ?? '');
 
     // בלי ההודעה הזו מסלול המנוע במסכת PDF מצורפת מציג "אין תוצאות" גנרי.
     if (searchable != null && !_isSimpleSearch && _isBundledTalmudPdf) {
@@ -1011,16 +1015,16 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
           _searchResults = [];
           _resultsTruncated = false;
           _searchErrorMessage = null;
-          _settings = const InBookSearchSettings();
+          _settings = InBookSearchSettings.savedDefaults();
         });
         context.read<PdfBookBloc>().add(
-          const UpdateSearchOptions(
-            searchOptions: {},
-            alternativeWords: {},
-            spacingValues: {},
-            searchMode: SearchMode.exact,
-            searchDistance: 0,
-            matchPolicy: SearchMatchPolicy.standard,
+          UpdateSearchOptions(
+            searchOptions: const {},
+            alternativeWords: const {},
+            spacingValues: const {},
+            searchMode: _searchMode,
+            searchDistance: _searchDistance,
+            matchPolicy: _matchPolicy,
           ),
         );
         _schedulePdfHighlight(null);
@@ -1046,6 +1050,7 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
           searchOptions: _searchOptions,
           alternativeWords: _alternativeWords,
           spacingValues: _spacingValues,
+          optionsForEveryWord: _settings.optionsForEveryWord,
         );
 
         if (!mounted || result == null) {

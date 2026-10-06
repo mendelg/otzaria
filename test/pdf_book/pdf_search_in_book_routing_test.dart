@@ -14,6 +14,7 @@ import 'package:otzaria/pdf_book/bloc/pdf_book_event.dart';
 import 'package:otzaria/pdf_book/bloc/pdf_book_state.dart';
 import 'package:otzaria/pdf_book/view/pdf_search_screen.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
+import 'package:otzaria/search/search_defaults.dart';
 import 'package:otzaria/search/search_repository.dart';
 import 'package:otzaria/search/view/search_dialog.dart';
 import 'package:otzaria/tabs/models/reading_tab_search_state.dart';
@@ -121,6 +122,24 @@ Future<void> main() async {
     expect(repository.requests.last.query, 'תדע זרעך');
 
     await tester.pump(const Duration(milliseconds: 800));
+  }, skip: !engineReady);
+
+  // issue #1937: ברירת מחדל שנשמרה מחלון החיפוש לא חלה על חיפוש בספר.
+  testWidgets('מרווח שנקבע כברירת מחדל חל על הקלדה בספר PDF', (tester) async {
+    SearchDefaults.saveDistanceDefault(3);
+    addTearDown(() => SearchDefaults.saveDistanceDefault(0));
+    final repository = await pumpPdfSearch(
+      tester,
+      query: '',
+      searchMode: SearchMode.exact,
+      searchDistance: 0,
+    );
+
+    await tester.enterText(find.byType(TextField).first, 'תדע זרעך');
+    await tester.pump(const Duration(milliseconds: 800));
+
+    expect(repository.requests, isNotEmpty);
+    expect(repository.requests.last.distance, 3);
   }, skip: !engineReady);
 
   // הרגרסיה של issue #936: החלונית בנתה את ה-facet בלי מזהי הספר בעוד
