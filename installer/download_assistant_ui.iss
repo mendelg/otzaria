@@ -51,6 +51,7 @@ english.StartButton=Let's Get Started
 english.InstallNow=Install Now on This Computer
 english.OpenFolder=Open the Installation Folder
 english.Close=Close
+english.Minimize=Minimize
 english.OK=OK
 english.ExitYes=Exit
 english.ExitNo=Continue
@@ -82,6 +83,7 @@ hebrew.StartButton=בואו נתחיל
 hebrew.InstallNow=התקן עכשיו במחשב הזה
 hebrew.OpenFolder=פתח את תיקיית ההתקנה
 hebrew.Close=סגור
+hebrew.Minimize=מזער
 hebrew.OK=אישור
 hebrew.ExitYes=יציאה
 hebrew.ExitNo=המשך
@@ -215,7 +217,7 @@ type
   end;
 
   TUiButton = record
-    Img: TBitmapImage;
+    Img: TBitmapButton;
     Art: String;
     Caption: String;
     Shown, Enabled, Hover, Down: Boolean;
@@ -250,7 +252,7 @@ type
   end;
 
 var
-  UiScale: Integer;
+  UiScale, UiFitWidth, UiFitHeight: Integer;
   { עברית: הפריסה כפי שהיא כתובה. אנגלית: כל מיקום אופקי משוקף ב-UiX. }
   UiRtl: Boolean;
   UiTitleArt: String;
@@ -381,6 +383,8 @@ function UiMonitorFromWindow(Wnd: Longint; Flags: LongWord): Longint;
   external 'MonitorFromWindow@user32.dll stdcall';
 function UiGetMonitorInfo(Monitor: Longint; var Info: TUiMonitorInfo): BOOL;
   external 'GetMonitorInfoW@user32.dll stdcall';
+function UiEnumDisplayMonitors(DC, Clip: Longint; Callback, Data: LongWord): BOOL;
+  external 'EnumDisplayMonitors@user32.dll stdcall';
 function UiSetWindowPos(Wnd, After: Longint; X, Y, W, H: Integer; Flags: LongWord): BOOL;
   external 'SetWindowPos@user32.dll stdcall';
 function UiCreateRoundRectRgn(X1, Y1, X2, Y2, W, H: Integer): Longint;
@@ -423,28 +427,53 @@ begin
     Result := DT_LEFT;
 end;
 
-{ קנה המידה של התמונות לפי ה-DPI, כך שכל תמונה מוצגת פיקסל-לפיקסל. מסך נמוך
-  מגודל החלון מקבל קנה מידה קטן יותר, ולא חלון שנחתך. }
+function UiMeasureMonitor(Monitor, DC, Rect, Data: Longint): BOOL;
+var
+  Info: TUiMonitorInfo;
+  W, H: Integer;
+begin
+  Info.Size := 40;
+  if UiGetMonitorInfo(Monitor, Info) then
+  begin
+    W := Info.Work.Right - Info.Work.Left;
+    H := Info.Work.Bottom - Info.Work.Top;
+    if (W > 0) and (W < UiFitWidth) then
+      UiFitWidth := W;
+    if (H > 0) and (H < UiFitHeight) then
+      UiFitHeight := H;
+  end;
+  Result := True;
+end;
+
+{ קנה מידה קבוע שמתאים לכל המסכים המחוברים: גרירה ביניהם אינה בונה מחדש
+  עמוד הורדה או דו-שיח פעיל. }
 function UiPickScale(): Integer;
 var
   DC, Dpi: Integer;
   Area: TUiRect;
   Scales: TArrayOfString;
-  I, S, Fit: Integer;
+  I, S: Integer;
 begin
   DC := UiGetDC(0);
   Dpi := UiGetDeviceCaps(DC, 88);
   UiReleaseDC(0, DC);
-  Fit := 100000;
+  UiFitWidth := 100000;
+  UiFitHeight := 100000;
+  { המסך הראשי נשאר גיבוי אם מניית המסכים או קריאת אחד מהם נכשלת. }
   if UiGetWorkArea(48, 0, Area, 0) then
-    Fit := Area.Bottom - Area.Top;
+  begin
+    UiFitWidth := Area.Right - Area.Left;
+    UiFitHeight := Area.Bottom - Area.Top;
+  end;
+  UiEnumDisplayMonitors(0, 0, CreateCallback(@UiMeasureMonitor), 0);
   Result := 100;
   Scales := StringSplitEx('{#AA_SCALES}', [','], #0, stExcludeEmpty);
   for I := 0 to GetArrayLength(Scales) - 1 do
   begin
     S := StrToIntDef(Scales[I], 0);
     if (S > Result) and (S * 96 <= Dpi * 100 + 300) and
-       (UiHeight * S div 100 <= Fit) then
+       (UiWidth * S div 100 <= UiFitWidth) and
+       (UiHeight * S div 100 <= UiFitHeight) then
       Result := S;
   end;
 end;
@@ -777,31 +806,30 @@ begin
     Result := 'n';
 end;
 
-procedure UiDrawButtonArt(C: TCanvas; Art: TBitmap; W: Integer);
+procedure UiDrawButtonArt(C: TCanvas; Art: TBitmap; W, H: Integer);
 var
   Cap: Integer;
 begin
   if (Art.Width <= 0) or (W = Art.Width) then
   begin
-    UiDraw(C, 0, 0, Art);
+    UiDrawStretch(C, 0, 0, W, H, Art);
     exit;
   end;
   Cap := Px(14);
-  UiAlphaBlend(C.Handle, 0, 0, Cap, Art.Height, Art.Canvas.Handle, 0, 0, Cap, Art.Height,
+  UiAlphaBlend(C.Handle, 0, 0, Cap, H, Art.Canvas.Handle, 0, 0, Cap, Art.Height,
     $01FF0000);
-  UiAlphaBlend(C.Handle, Cap, 0, W - 2 * Cap, Art.Height, Art.Canvas.Handle,
+  UiAlphaBlend(C.Handle, Cap, 0, W - 2 * Cap, H, Art.Canvas.Handle,
     Art.Width div 2, 0, 1, Art.Height, $01FF0000);
-  UiAlphaBlend(C.Handle, W - Cap, 0, Cap, Art.Height, Art.Canvas.Handle, Art.Width - Cap, 0,
+  UiAlphaBlend(C.Handle, W - Cap, 0, Cap, H, Art.Canvas.Handle, Art.Width - Cap, 0,
     Cap, Art.Height, $01FF0000);
 end;
 
 procedure UiRenderButton(I: Integer);
 var
   State, Key, Art: String;
-  Png: TBitmap;
-  Bmp: TBitmap;
+  Png, Bmp: TBitmap;
   Color: TColor;
-  W: Integer;
+  W, H: Integer;
 begin
   State := UiButtonState(I);
   Key := State + '|' + UiButtons[I].Caption + '|' + IntToStr(UiButtons[I].Width);
@@ -812,35 +840,44 @@ begin
   if (I = UiBtnClose) or (I = UiBtnMin) then
   begin
     if (State = 'h') or (State = 'p') then
-      UiShowArt(UiButtons[I].Img, Art + 'h')
+      Png := UiArt(Art + 'h')
     else
-      UiShowArt(UiButtons[I].Img, Art);
-    exit;
-  end;
-  { לכפתור הטקסט אין מצב מושבת משלו. }
-  if (State = 'd') and (Art = 'btn_ghost') then
+      Png := UiArt(Art);
+  end
+  else if (State = 'd') and (Art = 'btn_ghost') then
     Png := UiArt(Art + '_n')
   else
     Png := UiArt(Art + '_' + State);
   W := UiButtons[I].Width;
   if W <= 0 then
     W := Png.Width;
-  Bmp := UiCanvas(W, Png.Height, UiButtons[I].Back);
-  UiDrawButtonArt(Bmp.Canvas, Png, W);
-  if State = 'd' then
-    Color := UiDisabledTextColor
-  else if UiButtons[I].Danger then
-    Color := UiErrorColor
-  else if (Art = 'btn_primary') or (Art = 'btn_wide') then
-    Color := UiOnPrimaryColor
-  else if (Art = 'btn_tonal') or (Art = 'btn_tonalwide') then
-    Color := UiOnTonalColor
+  H := Png.Height;
+  { תמונה חסרה נטענת ריקה; אין ליצור bitmap בעל מידה שלילית אחרי שוליי המוקד. }
+  if (W <= 4) or (H <= 4) then
+    exit;
+  Bmp := UiCanvas(W - 4, H - 4, UiButtons[I].Back);
+  if (I = UiBtnClose) or (I = UiBtnMin) then
+    UiDrawStretch(Bmp.Canvas, 0, 0, W - 4, H - 4, Png)
   else
-    Color := UiPrimaryColor;
-  UiText(Bmp.Canvas, UiButtons[I].Caption, 0, 0, Bmp.Width, Bmp.Height, 14, True, Color,
-    DT_CENTER or DT_VCENTER or DT_SINGLELINE or DT_NOPREFIX or
-    UiReading(UiButtons[I].Caption));
-  UiShowBitmap(UiButtons[I].Img, Bmp);
+  begin
+    UiDrawButtonArt(Bmp.Canvas, Png, W - 4, H - 4);
+    if State = 'd' then
+      Color := UiDisabledTextColor
+    else if UiButtons[I].Danger then
+      Color := UiErrorColor
+    else if (Art = 'btn_primary') or (Art = 'btn_wide') then
+      Color := UiOnPrimaryColor
+    else if (Art = 'btn_tonal') or (Art = 'btn_tonalwide') then
+      Color := UiOnTonalColor
+    else
+      Color := UiPrimaryColor;
+    UiText(Bmp.Canvas, UiButtons[I].Caption, 0, 0, Bmp.Width, Bmp.Height, 14, True, Color,
+      DT_CENTER or DT_VCENTER or DT_SINGLELINE or DT_NOPREFIX or
+      UiReading(UiButtons[I].Caption));
+  end;
+  UiButtons[I].Img.Bitmap := Bmp;
+  UiButtons[I].Img.SetBounds(UiButtons[I].Img.Left, UiButtons[I].Img.Top, W, H);
+  Bmp.Free;
 end;
 
 procedure UiSetButton(I: Integer; Shown, Enabled: Boolean; const Caption: String);
@@ -848,6 +885,9 @@ begin
   UiButtons[I].Shown := Shown;
   UiButtons[I].Enabled := Enabled;
   UiButtons[I].Caption := Caption;
+  UiButtons[I].Img.Caption := Caption;
+  UiButtons[I].Img.Enabled := Enabled;
+  UiButtons[I].Img.BackColor := UiButtons[I].Back;
   if UiButtons[I].Img.Visible <> Shown then
     UiButtons[I].Img.Visible := Shown;
   if Shown then
@@ -866,7 +906,13 @@ procedure UiButtonClick(Sender: TObject); forward;
 
 procedure UiMakeButton(I: Integer; Parent: TWinControl; const Art: String; X, Y: Integer);
 begin
-  UiButtons[I].Img := UiImage(Parent);
+  UiButtons[I].Img := TBitmapButton.Create(WizardForm);
+  UiButtons[I].Img.Parent := Parent;
+  UiButtons[I].Img.ParentBackground := True;
+  UiButtons[I].Img.BackColor := UiPageColor;
+  { שוליי המוקד הם 2px מכל צד: רק הרקע מותאם פנימה, הטקסט נשאר בגודלו. }
+  UiButtons[I].Img.Stretch := False;
+  UiButtons[I].Img.TabStop := True;
   UiButtons[I].Img.SetBounds(X, Y, 1, 1);
   UiButtons[I].Img.Cursor := crHand;
   UiButtons[I].Img.OnClick := @UiButtonClick;
@@ -874,7 +920,10 @@ begin
   UiButtons[I].Art := Art;
   UiButtons[I].Drawn := '';
   UiButtons[I].Width := 0;
-  UiButtons[I].Back := UiPageColor;
+  if Parent = UiTitleBar then
+    UiButtons[I].Back := UiBarColor
+  else
+    UiButtons[I].Back := UiPageColor;
   UiButtons[I].Danger := False;
 end;
 
@@ -1241,6 +1290,7 @@ var
   FieldH, EditH, Y: Integer;
 begin
   FolderPage.Buttons[0].Left := -Px(4000);
+  FolderPage.Buttons[0].TabStop := False;
   UiFolderField := UiImage(UiContent);
   UiFolderField.SetBounds(0, 0, 1, 1);
   UiFolderFocused := -1;
@@ -2308,12 +2358,14 @@ begin
   begin
     UiHideProgressNative(DownloadPage);
     DownloadPage.AbortButton.Left := -Px(4000);
+    DownloadPage.AbortButton.TabStop := False;
     UiBuildProgress(UiSrcDownload);
   end
   else if PageID = ConnectPage.ID then
   begin
     UiHideProgressNative(ConnectPage);
     ConnectPage.AbortButton.Left := -Px(4000);
+    ConnectPage.AbortButton.TabStop := False;
     UiBuildProgress(UiSrcConnect);
   end
   else if PageID = WorkPage.ID then
@@ -2394,6 +2446,38 @@ begin
     PostMessage(UiDlg.Handle, UiWmCommand, 0, UiDlgNo.Handle);
 end;
 
+{ ל-TBitmapButton אין Default של VCL: Enter נשלח לפעולה הגלויה שבמוקד,
+  ולא לכפתור "סיום" המקורי שמחוץ לחלון. Space ו-Tab נשארים טבעיים של BUTTON. }
+procedure UiKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+var
+  I: Integer;
+begin
+  if Key <> 13 then
+    exit;
+  if Assigned(UiDlg) and (Sender <> UiDlg) then
+  begin
+    Key := 0;
+    exit;
+  end;
+  for I := 0 to UiBtnCount - 1 do
+    if Assigned(UiButtons[I].Img) and UiButtons[I].Shown and UiButtons[I].Enabled and
+       UiButtons[I].Img.Focused then
+    begin
+      Key := 0;
+      if (I = UiBtnDlgOk) or (I = UiBtnDlgNo) then
+        UiDialogButtonClick(UiButtons[I].Img)
+      else
+        UiButtonClick(UiButtons[I].Img);
+      exit;
+    end;
+  if (Sender = WizardForm) and (UiPage <> wpFinished) and
+     (not Assigned(UiErrPanel) or not UiErrPanel.Visible) then
+  begin
+    Key := 0;
+    UiClickReal(WizardForm.NextButton);
+  end;
+end;
+
 { שכבה כהה ושקופה למחצה מעל החלון הראשי, כמו מאחורי דו-שיח בתוכנה. }
 procedure UiShowShade();
 begin
@@ -2441,6 +2525,8 @@ begin
     UiDlg.CenterOnShow := False;
     UiDlg.Color := UiBarColor;
     UiDlg.Caption := Title;
+    UiDlg.KeyPreview := True;
+    UiDlg.OnKeyDown := @UiKeyDown;
     UiDlg.SetBounds(WizardForm.Left + (WizardForm.Width - W) div 2,
       WizardForm.Top + (WizardForm.Height - H) div 2, W, H);
     UiRoundCorners(UiDlg.Handle);
@@ -2457,13 +2543,15 @@ begin
     UiDlgOk := TNewButton.Create(UiDlg);
     UiDlgOk.Parent := UiDlg;
     UiDlgOk.ModalResult := mrOk;
-    UiDlgOk.Default := not Danger;
+    UiDlgOk.TabStop := False;
+    UiDlgOk.Default := False;
     UiDlgOk.SetBounds(-Px(4000), 0, Px(80), Px(24));
     UiDlgNo := TNewButton.Create(UiDlg);
     UiDlgNo.Parent := UiDlg;
     UiDlgNo.ModalResult := mrCancel;
+    UiDlgNo.TabStop := False;
     UiDlgNo.Cancel := True;
-    UiDlgNo.Default := Danger;
+    UiDlgNo.Default := False;
     UiDlgNo.SetBounds(-Px(4000), 0, Px(80), Px(24));
 
     Y := H - Pad - BtnH;
@@ -2493,10 +2581,10 @@ begin
     end;
     UiButtons[UiBtnDlgOk].Img.Left := UiX(UiButtons[UiBtnDlgOk].Img.Left,
       UiButtons[UiBtnDlgOk].Img.Width, W);
-    if Danger then
-      UiDlg.ActiveControl := UiDlgNo
+    if Danger and (No <> '') then
+      UiDlg.ActiveControl := UiButtons[UiBtnDlgNo].Img
     else
-      UiDlg.ActiveControl := UiDlgOk;
+      UiDlg.ActiveControl := UiButtons[UiBtnDlgOk].Img;
     UiShowShade();
     try
       Result := UiDlg.ShowModal() = mrOk;
@@ -2738,7 +2826,7 @@ end;
 
 { ============================ עכבר ============================ }
 
-function UiHitsX(Img: TBitmapImage; X: Integer): Boolean;
+function UiHitsX(Img: TControl; X: Integer): Boolean;
 begin
   Result := (X >= Img.Left) and (X < Img.Left + Img.Width);
 end;
@@ -2852,6 +2940,11 @@ begin
     (Q.X < Img.Left + Img.Width) and (Q.Y < Img.Top + Img.Height);
 end;
 
+function UiHitButton(Img: TBitmapButton; Wnd: Longint): Boolean;
+begin
+  Result := Assigned(Img) and Img.Visible and (Wnd = Img.Handle);
+end;
+
 procedure UiPollMouse();
 var
   P: TUiPoint;
@@ -2888,7 +2981,7 @@ begin
   for I := 0 to UiBtnCount - 1 do
     if Assigned(UiButtons[I].Img) and UiButtons[I].Shown then
     begin
-      Hover := UiHitImage(UiButtons[I].Img, Wnd, P);
+      Hover := UiHitButton(UiButtons[I].Img, Wnd);
       if (Hover <> UiButtons[I].Hover) or ((Hover and Down) <> UiButtons[I].Down) then
       begin
         UiButtons[I].Hover := Hover;
@@ -2942,6 +3035,44 @@ begin
       UiStrip(DownloadPage.AbortButton.Caption));
 end;
 
+procedure UiFocusAction();
+var
+  I: Integer;
+  Native: TWinControl;
+begin
+  if Assigned(UiDlg) then
+    exit;
+  Native := WizardForm.ActiveControl;
+  if Native = WizardForm.NextButton then
+    I := UiBtnNext
+  else if Native = WizardForm.BackButton then
+    I := UiBtnBack
+  else if Native = WizardForm.CancelButton then
+    I := UiBtnClose
+  else if Native = DownloadPage.AbortButton then
+    I := UiBtnAbort
+  else if Native = ConnectPage.AbortButton then
+    I := UiBtnAbort
+  else
+    exit;
+  if Assigned(UiErrPanel) and UiErrPanel.Visible then
+    I := UiBtnRetry
+  else if UiPage = wpFinished then
+  begin
+    for I := UiBtnInstall to UiBtnDone do
+      if Assigned(UiButtons[I].Img) and UiButtons[I].Img.CanFocus then
+      begin
+        WizardForm.ActiveControl := UiButtons[I].Img;
+        exit;
+      end;
+    exit;
+  end
+  else if (UiPage = wpWelcome) and UiHeroDone then
+    I := UiBtnStart;
+  if UiButtons[I].Img.CanFocus then
+    WizardForm.ActiveControl := UiButtons[I].Img;
+end;
+
 { ============================ שעון ============================ }
 
 { החלון כמעט בגובה מסך נמוך: אחרי שחזור ממזעור, שינוי מסך או גרירה הוא מוחזר
@@ -2993,8 +3124,8 @@ begin
 
   UiMakeButton(UiBtnClose, UiTitleBar, 'cap_close', 0, 0);
   UiMakeButton(UiBtnMin, UiTitleBar, 'cap_min', 0, 0);
-  UiSetButton(UiBtnClose, True, True, '');
-  UiSetButton(UiBtnMin, True, True, '');
+  UiSetButton(UiBtnClose, True, True, CustomMessage('Close'));
+  UiSetButton(UiBtnMin, True, True, CustomMessage('Minimize'));
   UiButtons[UiBtnClose].Img.Left := UiX(0, UiButtons[UiBtnClose].Img.Width, W);
   UiButtons[UiBtnMin].Img.Left := UiX(UiButtons[UiBtnClose].Img.Width,
     UiButtons[UiBtnMin].Img.Width, W);
@@ -3053,6 +3184,7 @@ begin
       UiPaceTimer();
       UiAnimateScroll();
       UiSyncFooter();
+      UiFocusAction();
       UiPollMouse();
       UiRenderSteps();
       UiRenderFolderField();
@@ -3083,10 +3215,14 @@ begin
   WizardForm.FinishedPage.Color := UiPageColor;
   for I := 0 to WizardForm.InnerNotebook.PageCount - 1 do
     WizardForm.InnerNotebook.Pages[I].Color := UiPageColor;
-  { הכפתורים האמיתיים נשארים פעילים ל-Enter ו-Esc, אבל מחוץ לחלון. }
+  { פקדי התיווך נשארים פעילים ל-Enter ו-Esc, אך אינם יעדי Tab. }
   WizardForm.NextButton.Top := Px(UiHeight + 100);
+  WizardForm.NextButton.TabStop := False;
+  WizardForm.NextButton.Default := False;
   WizardForm.BackButton.Top := Px(UiHeight + 100);
+  WizardForm.BackButton.TabStop := False;
   WizardForm.CancelButton.Top := Px(UiHeight + 100);
+  WizardForm.CancelButton.TabStop := False;
 end;
 
 procedure UiInitializeWizard();
@@ -3094,6 +3230,8 @@ var
   Corner: Integer;
   Version: TWindowsVersion;
 begin
+  WizardForm.KeyPreview := True;
+  WizardForm.OnKeyDown := @UiKeyDown;
   UiRtl := not EnglishUi();
 #ifdef AA_TITLE_EN
   if UiRtl then

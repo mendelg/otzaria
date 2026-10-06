@@ -3100,10 +3100,10 @@ void main() {
       final ask = _routine(script, 'function UiAsk(');
 
       // כמו AppDialog.warning: הבטוחה מלאה וממוקדת, ההרסנית כפתור טקסט אדום.
-      expect(ask, contains('UiDlgOk.Default := not Danger;'));
-      expect(ask, contains('UiDlgNo.Default := Danger;'));
+      expect(ask, contains('UiDlgOk.Default := False;'));
+      expect(ask, contains('UiDlgNo.Default := False;'));
       expect(ask, contains('UiDlgNo.Cancel := True;'));
-      expect(ask, contains('UiDlg.ActiveControl := UiDlgNo'));
+      expect(ask, contains('UiDlg.ActiveControl := UiButtons[UiBtnDlgNo].Img'));
       final flat = script.replaceAll(RegExp(r'\s+'), ' ');
       for (final pair in const [
         ('ExitYes', 'ExitNo'),
