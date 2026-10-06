@@ -438,14 +438,14 @@ class DesignSettingsTab extends StatelessWidget {
                           value: _SidebarMode.pinned,
                           label: context.settingsText('הצגה'),
                           subtitle: context.settingsText(
-                            'החלונית תוצג באופן קבוע',
+                            'החלונית פתוחה ונעוצה תמיד',
                           ),
                         ),
                         SegmentOption(
                           value: _SidebarMode.openOnBook,
                           label: context.settingsText('אוטומטי'),
                           subtitle: context.settingsText(
-                            'החלונית תוצג בפתיחת ספר ותיסגר בעת גלילה',
+                            'החלונית נפתחת נעוצה עם הספר, ואפשר לבטל את הנעיצה או לסגור אותה',
                           ),
                         ),
                         SegmentOption(

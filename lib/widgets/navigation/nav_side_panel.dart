@@ -200,7 +200,11 @@ class NavPanelPinButton extends StatelessWidget {
     final effectivePinned = isPinned || globalPin;
     return AnimatedPinButton(
       isPinned: effectivePinned,
-      tooltip: effectivePinned ? 'בטל נעיצה' : 'נעץ את החלונית',
+      tooltip: globalPin
+          ? 'החלונית נעוצה לפי ההגדרות'
+          : effectivePinned
+          ? 'בטל נעיצה'
+          : 'נעץ את החלונית',
       onPressed: globalPin ? null : onToggle,
     );
   }
