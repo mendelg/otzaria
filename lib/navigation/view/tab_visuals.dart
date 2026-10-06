@@ -81,11 +81,8 @@ Widget buildTabFallbackIcon(
   color: color ?? Theme.of(context).colorScheme.onSurface,
 );
 
-/// כותרת כרטיסיה בשורה אחת שמוצגת מההתחלה (RTL: מימין) ונדהית רק בקצה הסוף.
-///
-/// `TextOverflow.fade` מציג בעברית את *סוף* הכותרת, ולכן ההצמדה נעשית ידנית:
-/// OverflowBox ברוחב טבעי מיושר ל-start, ClipRect חותך, ו-ShaderMask מדהה.
-/// כותרת שנכנסת במלואה אינה נדהית, אחרת הדהייה מסתירה את אותיותיה האחרונות.
+/// כותרת מוצמדת ל-start ונדהית בסוף רק כשהיא נחתכת.
+/// TextOverflow.fade מציג בעברית את הסוף, לכן משתמשים ב-OverflowBox וב-ClipRect.
 Widget buildFadedTabTitle(BuildContext context, String title) => LayoutBuilder(
   builder: (context, constraints) {
     final direction = Directionality.of(context);
@@ -97,7 +94,7 @@ Widget buildFadedTabTitle(BuildContext context, String title) => LayoutBuilder(
     );
     final width = _measuredTitleWidth(
       title,
-      DefaultTextStyle.of(context).style,
+      _effectiveTitleStyle(context, DefaultTextStyle.of(context).style),
       MediaQuery.textScalerOf(context),
       direction,
     );
@@ -117,6 +114,12 @@ Widget buildFadedTabTitle(BuildContext context, String title) => LayoutBuilder(
     );
   },
 );
+
+// Text מחיל boldText גם על משקל מפורש; המדידה והמטמון צריכים אותו סגנון.
+TextStyle _effectiveTitleStyle(BuildContext context, TextStyle style) =>
+    MediaQuery.boldTextOf(context)
+    ? style.merge(const TextStyle(fontWeight: FontWeight.bold))
+    : style;
 
 /// רוחבי כותרות שנמדדו. המדידה חוזרת בכל שינוי אילוצים — הנפשת רוחב כרטיסיות
 /// או שינוי גודל חלון מייצרים אחרת פריסת טקסט מלאה לכל כרטיסיה בכל פריים.
@@ -241,7 +244,7 @@ class TabTitleTooltip extends StatelessWidget {
   ) {
     final width = _measuredTitleWidth(
       title,
-      style,
+      _effectiveTitleStyle(context, style),
       MediaQuery.textScalerOf(context),
       Directionality.of(context),
     );
