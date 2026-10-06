@@ -9,6 +9,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/core/focus_repository.dart';
 import 'package:otzaria/core/messages/library_messages.dart';
+import 'package:otzaria/core/messages/semantic_search_messages.dart';
 import 'package:otzaria/history/bloc/history_bloc.dart';
 import 'package:otzaria/history/bloc/history_event.dart';
 import 'package:otzaria/history/bloc/history_state.dart';
@@ -1076,9 +1077,31 @@ class _SearchDialogState extends State<SearchDialog> {
         )) {
       return;
     }
-    final query = _searchTab.queryController.text;
+    final library = context.read<LibraryBloc>().state.library;
+    final parsedCategory = parseCategoryQuery(
+      _searchTab.queryController.text,
+      library,
+    );
+    if (parsedCategory.hasCategoryToken && !parsedCategory.categoryFound) {
+      UiSnack.showError(
+        LibraryMessages.categoryOrBookNotFound(parsedCategory.notFoundNames),
+      );
+      return;
+    }
+    final query = parsedCategory.query;
     if (query.trim().isEmpty) {
       UiSnack.show(LibraryMessages.emptySearchQuery);
+      return;
+    }
+    final isOfficialCategory = officialCategoryFilter(library);
+    if (parsedCategory.categoryFound &&
+        !parsedCategory.facets!.toSet().every(
+          (facet) => isSemanticScopeFacetSupported(
+            facet,
+            isOfficialCategory: isOfficialCategory,
+          ),
+        )) {
+      UiSnack.showError(SemanticSearchMessages.unsupportedScope);
       return;
     }
     _semanticSubmitted = true;
@@ -1087,10 +1110,15 @@ class _SearchDialogState extends State<SearchDialog> {
     final options = SemanticQueryOptions(
       query: query,
       facets: semanticScopeFacets(
-        _scopeSelection,
-        isOfficialCategory: officialCategoryFilter(
-          context.read<LibraryBloc>().state.library,
-        ),
+        parsedCategory.categoryFound
+            ? [
+                ...parsedCategory.facets!,
+                ...FacetHelper.dimensionFacetsOf(_scopeSelection),
+              ]
+            : _scopeSelection,
+        isOfficialCategory: parsedCategory.categoryFound
+            ? null
+            : isOfficialCategory,
       ),
       includeLexical: _semanticIncludeLexical,
       groupIdenticalText: _semanticGroupIdentical,

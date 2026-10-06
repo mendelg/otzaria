@@ -49,7 +49,10 @@ List<String> semanticScopeFacets(
   final facets = [
     for (final facet in selection.toSet())
       if (FacetHelper.isDimensionFacet(facet) ||
-          _isOfficialScopeFacet(facet, isOfficialCategory))
+          isSemanticScopeFacetSupported(
+            facet,
+            isOfficialCategory: isOfficialCategory,
+          ))
         facet,
   ];
   if (facets.contains('/')) {
@@ -60,10 +63,11 @@ List<String> semanticScopeFacets(
   return facets..sort();
 }
 
-bool _isOfficialScopeFacet(
-  String facet,
+/// האם facet של ספר או קטגוריה נתמך, לפני נרמול של בחירת כל הספרייה.
+bool isSemanticScopeFacetSupported(
+  String facet, {
   bool Function(String facet)? isOfficialCategory,
-) {
+}) {
   if (facet == '/') return true;
   if (BookDatabaseResolver.likelySource(categoryPath: facet) !=
       BookSource.official) {
