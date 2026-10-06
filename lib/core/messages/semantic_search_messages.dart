@@ -68,24 +68,14 @@ abstract class SemanticSearchMessages {
   static String progressAction(SemanticDownloadProgress progress) =>
       progress.checking ? checkingStagedFiles : stepAction(progress.item);
 
-  /// התווית בעברית, עם האחוז הכולל של כל ההורדה.
-  static String progressLabel(SemanticDownloadProgress progress) {
-    final label = progressAction(progress);
-    final percent = progressPercent(progress);
-    return percent == null
-        ? label
-        : percentTemplate
-              .replaceAll('{label}', label)
-              .replaceAll('{percent}', percent);
-  }
-
   /// האחוז הכולל להצגה, או `null` בהתקנה ובגודל לא ידוע.
   static String? progressPercent(SemanticDownloadProgress progress) {
     final fraction = progress.fraction;
     if (fraction == null || progress.item == SemanticDownloadItem.install) {
       return null;
     }
-    return (fraction * 100).toStringAsFixed(0);
+    // כלפי מטה, כמו בכרטיס חיווי העבודה: אחרת יוצג 100% לפני הסיום.
+    return '${(fraction * 100).floor()}';
   }
 
   /// כל ההודעות של [failure] — לבדיקות הכיסוי של התרגום.

@@ -30,8 +30,9 @@ WorkStatusItem? semanticWorkStatusItem(
     return WorkStatusItem(
       id: kSemanticDataWorkStatusId,
       title: title,
+      // האחוז מוצג בכותרת הכרטיס מתוך progress; אחוז כפול כאן מתעגל אחרת ממנו.
       message: progress != null
-          ? SemanticSearchMessages.progressLabel(progress)
+          ? SemanticSearchMessages.progressAction(progress)
           : installing
           ? SemanticSearchMessages.installingData
           : SemanticSearchMessages.downloadingData,
