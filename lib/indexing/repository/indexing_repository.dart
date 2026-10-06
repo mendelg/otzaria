@@ -19,6 +19,7 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/data/data_providers/user_books_database_holder.dart';
 import 'package:otzaria/find_ref/repository/reference_books_cache.dart';
 import 'package:otzaria/indexing/utils/book_facet_metadata_cache.dart';
+import 'package:otzaria/indexing/utils/book_fingerprint_worker.dart';
 import 'package:otzaria/indexing/utils/pdf_extraction_prefetcher.dart';
 import 'package:otzaria/indexing/models/catalogue_order_resolver.dart';
 import 'package:otzaria/indexing/models/indexing_run_result.dart';
@@ -1449,18 +1450,13 @@ class IndexingRepository {
         book.categoryId,
         book.fileType ?? 'txt',
         book.source,
+        true,
       );
     }
 
-    if (text == null || text.isEmpty) {
+    if (text == null) {
       text = await _loadTextForIndex(book);
-    }
-
-    if (text.isEmpty) {
-      debugPrint(
-        '⚠️ ספר ריק: ${book.title} (categoryId: ${book.categoryId}) - מדלג',
-      );
-      return null;
+      if (text.isEmpty) return null;
     }
 
     // עקבי עם מסלול האינדוקס — טביעת האצבע מחושבת על הטקסט המנוקה.
@@ -2250,19 +2246,22 @@ class IndexingRepository {
   /// ע"י זיהוי mtime/גודל בסריקת הקבצים. ספר שאינו באינדקס מדולג — מסלול
   /// הספרים החדשים (StartIndexing/IndexSpecificBooks) מטפל בו.
   ///
+  /// [onlyBooks] מגביל את הסריקה לספרים אלה בלבד.
   /// [onScanProgress] מדווח על שלב הסריקה (קריאת ה-DB והשוואה);
   /// [onProgress] מדווח על שלב האינדוקס-מחדש של הספרים שנמצאו שונים.
   /// מחזיר תוצאה מפורטת; ריצה ללא שינויים נחשבת השלמה נקייה.
   ///
-  /// [loadText] ו-[fingerprintOf] ניתנים להזרקה בטסטים בלבד.
+  /// [loadText], [fingerprintOf] ו-[fingerprintLibraryPath] ניתנים להזרקה בבדיקות.
   Future<IndexingRunResult> reconcileIndexWithLibrary(
     Library library, {
+    List<Book>? onlyBooks,
     void Function(int processed, int total)? onScanProgress,
     void Function()? onActualIndexingStarted,
     required void Function(int processed, int total) onProgress,
     @visibleForTesting Future<String?> Function(TextBook book)? loadText,
     @visibleForTesting
     Future<BigInt> Function(TextBook book, String text)? fingerprintOf,
+    @visibleForTesting String? fingerprintLibraryPath,
   }) async {
     if (WindowRole.isSecondary) {
       return const IndexingRunResult.cancelled(
@@ -2292,26 +2291,32 @@ class IndexingRepository {
       ReferenceBooksCache.instance.warmUp(),
       BookFacetMetadataCache.instance.warmUp(),
     ]);
-    // computeBookFingerprint היא קריאת FFI סינכרונית; העטיפה ה-async
-    // נשמרת רק כדי לא לשבור את חתימת ההזרקה של הטסטים.
+    BookFingerprintWorker? worker;
     final fingerprint =
         fingerprintOf ??
-        ((TextBook book, String text) async => computeBookFingerprint(
-          text: text,
-          title: book.title,
-          topics: _bookTopics(book),
-          catalogueOrder: catalogueOrder.orderFor(catalogueOrderKey(book)),
-          generationOrder: chronologicalOrderForBook(book),
-          extraFacets: _bookExtraFacets(book),
-        ));
+        (TextBook book, String text) async {
+          worker ??= await BookFingerprintWorker.start(
+            nativeLibraryPath: fingerprintLibraryPath,
+          );
+          return worker!.compute(
+            text: text,
+            title: book.title,
+            topics: _bookTopics(book),
+            catalogueOrder: catalogueOrder.orderFor(catalogueOrderKey(book)),
+            generationOrder: chronologicalOrderForBook(book),
+            extraFacets: _bookExtraFacets(book),
+          );
+        };
 
     final hidden = hiddenStore.load();
     final categoryHiddenBooks = hidden.booksHiddenByCategory(library);
+    final onlyKeys = onlyBooks?.map(catalogueOrderKey).toSet();
     final candidates = library
         .getIndexableBooks()
         .where(
           (b) =>
               (b is TextBook || b is ConvertibleDocumentBook) &&
+              (onlyKeys == null || onlyKeys.contains(catalogueOrderKey(b))) &&
               !hidden.excludesFromIndex(
                 b,
                 categoryHiddenBooks: categoryHiddenBooks,
@@ -2359,6 +2364,10 @@ class IndexingRepository {
         // hash אפס = "לא ניתן לאימות" (מסמכים סותרים / אינדוקס ישן) —
         // מאנדקסים מחדש כדי לרכוש טביעת אצבע תקינה.
         final dbHash = await fingerprint(textBook, text);
+        if (!_tantivyDataProvider.isIndexing.value) {
+          cancelled = true;
+          break;
+        }
         if (indexHash == BigInt.zero || dbHash != indexHash) {
           changed.add(book);
         }
@@ -2366,11 +2375,17 @@ class IndexingRepository {
         onScanProgress?.call(processed, total);
         await Future.delayed(Duration.zero);
       }
+      cancelled = cancelled || !_tantivyDataProvider.isIndexing.value;
       debugPrint(
         '🔎 reconcile: סריקת $processed/$total ספרים ב-${scanStopwatch.elapsed}',
       );
     } finally {
-      _tantivyDataProvider.isIndexing.value = false;
+      try {
+        await worker?.close();
+        cancelled = cancelled || !_tantivyDataProvider.isIndexing.value;
+      } finally {
+        _tantivyDataProvider.isIndexing.value = false;
+      }
     }
 
     if (cancelled) {

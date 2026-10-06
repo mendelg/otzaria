@@ -226,6 +226,7 @@ class IndexingBloc extends Bloc<IndexingEvent, IndexingState> {
 
     final totalCandidates = _repository.eligibleBookCount(
       event.library,
+      books: event.books,
       includePdfBooks: false,
     );
     if (totalCandidates == 0) {
@@ -244,6 +245,7 @@ class IndexingBloc extends Bloc<IndexingEvent, IndexingState> {
     try {
       final result = await _repository.reconcileIndexWithLibrary(
         event.library,
+        onlyBooks: event.books,
         // שלב הסריקה מדווח דרך emit ישיר (ולא UpdateIndexingProgress) כדי
         // ש-processed==total בסוף הסריקה לא ייתפס כ"אינדוקס הושלם" לפני
         // שלב האינדוקס-מחדש.
