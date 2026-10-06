@@ -57,6 +57,8 @@ class ComponentSpec {
     required this.required,
     required this.installOrder,
     required this.assets,
+    this.nameEn,
+    this.descriptionEn,
     this.platform,
     this.architecture,
     this.packageFormat,
@@ -66,11 +68,16 @@ class ComponentSpec {
     this.installedSize,
     this.compatibilityFromLibraryIndexProvenance = false,
     this.outputNote,
+    this.outputNoteEn,
   });
 
   final String id;
   final String name;
   final String description;
+
+  /// הטקסט למסייע שרץ באנגלית. חסר = הצרכן מציג את [name] / [description].
+  final String? nameEn;
+  final String? descriptionEn;
   final String type;
   final bool required;
   final int installOrder;
@@ -94,6 +101,7 @@ class ComponentSpec {
 
   /// משפט שעמוד הסיום של המסייע מוסיף כשהרכיב הוכן.
   final String? outputNote;
+  final String? outputNoteEn;
 }
 
 /// טבלת הרכיבים הידועים. הוספת רכיב = הוספת שורה כאן בלבד.
@@ -102,6 +110,10 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-windows-x64',
     name: 'אוצריא ל-Windows',
     description: 'התוכנה עצמה, ללא ספרייה. מתקין רגיל למעבדי x64.',
+    nameEn: 'Otzaria for Windows',
+    descriptionEn:
+        'Otzaria itself, without the library. A standard installer for x64 '
+        'processors.',
     type: 'application',
     required: true,
     platform: 'windows',
@@ -113,6 +125,8 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-windows-arm64',
     name: 'אוצריא ל-Windows (ARM64)',
     description: 'התוכנה עצמה למחשבי ARM64, ללא ספרייה.',
+    nameEn: 'Otzaria for Windows (ARM64)',
+    descriptionEn: 'Otzaria itself for ARM64 computers, without the library.',
     type: 'application',
     required: false,
     platform: 'windows',
@@ -124,6 +138,9 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-windows-portable-x64',
     name: 'אוצריא ל-Windows — גרסה ניידת',
     description: 'ארכיון ZIP שאינו דורש התקנה, למעבדי x64.',
+    nameEn: 'Otzaria for Windows — Portable Version',
+    descriptionEn:
+        'A ZIP archive that needs no installation, for x64 processors.',
     // צורה חלופית של אותה תוכנה ולא רכיב נוסף — סוג משלה מונע מההצעות
     // לצרף אותה יחד עם המתקין.
     type: 'application-portable',
@@ -137,6 +154,9 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-windows-portable-arm64',
     name: 'אוצריא ל-Windows — גרסה ניידת (ARM64)',
     description: 'ארכיון ZIP שאינו דורש התקנה, למחשבי ARM64.',
+    nameEn: 'Otzaria for Windows — Portable Version (ARM64)',
+    descriptionEn:
+        'A ZIP archive that needs no installation, for ARM64 computers.',
     type: 'application-portable',
     required: false,
     platform: 'windows',
@@ -149,6 +169,10 @@ const List<ComponentSpec> kKnownComponents = [
     name: 'אוצריא ל-Windows עם ספרייה מלאה',
     description:
         'מתקין הכולל את התוכנה ואת הספרייה המלאה, בלי אינדקס חיפוש בנוי מראש.',
+    nameEn: 'Otzaria for Windows with the Full Library',
+    descriptionEn:
+        'An installer with Otzaria and the full library, without a prebuilt '
+        'search index.',
     type: 'application-bundle',
     required: false,
     platform: 'windows',
@@ -169,6 +193,10 @@ const List<ComponentSpec> kKnownComponents = [
     description:
         'מתקין הכולל את התוכנה ואת הספרייה המלאה, למחשבי ARM64, בלי אינדקס '
         'חיפוש בנוי מראש.',
+    nameEn: 'Otzaria for Windows with the Full Library (ARM64)',
+    descriptionEn:
+        'An installer with Otzaria and the full library for ARM64 computers, '
+        'without a prebuilt search index.',
     type: 'application-bundle',
     required: false,
     platform: 'windows',
@@ -187,6 +215,10 @@ const List<ComponentSpec> kKnownComponents = [
     name: 'אוצריא ל-Linux (DEB)',
     description:
         'חבילת התקנה ל-Ubuntu, Debian, Mint והפצות דומות, למעבדי x64. ללא ספרייה.',
+    nameEn: 'Otzaria for Linux (DEB)',
+    descriptionEn:
+        'An installation package for Ubuntu, Debian, Mint and similar '
+        'distributions, for x64 processors. Library not included.',
     type: 'application',
     required: false,
     platform: 'linux',
@@ -200,6 +232,10 @@ const List<ComponentSpec> kKnownComponents = [
     name: 'אוצריא ל-Linux (DEB, ARM64)',
     description:
         'חבילת התקנה ל-Ubuntu, Debian, Mint והפצות דומות, למחשבי ARM64. ללא ספרייה.',
+    nameEn: 'Otzaria for Linux (DEB, ARM64)',
+    descriptionEn:
+        'An installation package for Ubuntu, Debian, Mint and similar '
+        'distributions, for ARM64 computers. Library not included.',
     type: 'application',
     required: false,
     platform: 'linux',
@@ -213,6 +249,10 @@ const List<ComponentSpec> kKnownComponents = [
     name: 'אוצריא ל-Linux (RPM)',
     description:
         'חבילת התקנה ל-Fedora, openSUSE והפצות דומות, למעבדי x64. ללא ספרייה.',
+    nameEn: 'Otzaria for Linux (RPM)',
+    descriptionEn:
+        'An installation package for Fedora, openSUSE and similar '
+        'distributions, for x64 processors. Library not included.',
     type: 'application',
     required: false,
     platform: 'linux',
@@ -226,6 +266,10 @@ const List<ComponentSpec> kKnownComponents = [
     name: 'אוצריא ל-Linux (RPM, ARM64)',
     description:
         'חבילת התקנה ל-Fedora, openSUSE והפצות דומות, למחשבי ARM64. ללא ספרייה.',
+    nameEn: 'Otzaria for Linux (RPM, ARM64)',
+    descriptionEn:
+        'An installation package for Fedora, openSUSE and similar '
+        'distributions, for ARM64 computers. Library not included.',
     type: 'application',
     required: false,
     platform: 'linux',
@@ -239,6 +283,10 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-linux-portable-x64',
     name: 'אוצריא ל-Linux — גרסה ניידת',
     description: 'ארכיון ZIP שאינו דורש התקנה, למעבדי x64. ללא ספרייה.',
+    nameEn: 'Otzaria for Linux — Portable Version',
+    descriptionEn:
+        'A ZIP archive that needs no installation, for x64 processors. '
+        'Library not included.',
     type: 'application-portable',
     required: false,
     platform: 'linux',
@@ -250,6 +298,10 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-linux-portable-arm64',
     name: 'אוצריא ל-Linux — גרסה ניידת (ARM64)',
     description: 'ארכיון ZIP שאינו דורש התקנה, למחשבי ARM64. ללא ספרייה.',
+    nameEn: 'Otzaria for Linux — Portable Version (ARM64)',
+    descriptionEn:
+        'A ZIP archive that needs no installation, for ARM64 computers. '
+        'Library not included.',
     type: 'application-portable',
     required: false,
     platform: 'linux',
@@ -263,6 +315,10 @@ const List<ComponentSpec> kKnownComponents = [
     description:
         'ארכיון tar.zst ובו התוכנה והספרייה המלאה, למעבדי x64. פורסים אותו '
         'ומפעילים ללא התקנה.',
+    nameEn: 'Otzaria for Linux with the Full Library',
+    descriptionEn:
+        'A tar.zst archive with Otzaria and the full library, for x64 '
+        'processors. Extract it and run Otzaria, no installation needed.',
     type: 'application-bundle',
     required: false,
     platform: 'linux',
@@ -282,6 +338,10 @@ const List<ComponentSpec> kKnownComponents = [
     description:
         'ארכיון tar.zst ובו התוכנה והספרייה המלאה, למחשבי ARM64. פורסים אותו '
         'ומפעילים ללא התקנה.',
+    nameEn: 'Otzaria for Linux with the Full Library (ARM64)',
+    descriptionEn:
+        'A tar.zst archive with Otzaria and the full library, for ARM64 '
+        'computers. Extract it and run Otzaria, no installation needed.',
     type: 'application-bundle',
     required: false,
     platform: 'linux',
@@ -302,6 +362,10 @@ const List<ComponentSpec> kKnownComponents = [
     name: 'אוצריא ל-macOS',
     description:
         'קובץ DMG: גוררים ממנו את אוצריא לתיקיית היישומים. ללא ספרייה.',
+    nameEn: 'Otzaria for macOS',
+    descriptionEn:
+        'A DMG file: drag Otzaria from it into the Applications folder. '
+        'Library not included.',
     type: 'application',
     required: false,
     platform: 'macos',
@@ -314,6 +378,10 @@ const List<ComponentSpec> kKnownComponents = [
     description:
         'ארכיון tar.zst ובו התוכנה והספרייה המלאה. פורסים אותו ומפעילים ללא '
         'התקנה.',
+    nameEn: 'Otzaria for macOS with the Full Library',
+    descriptionEn:
+        'A tar.zst archive with Otzaria and the full library. Extract it and '
+        'run Otzaria, no installation needed.',
     type: 'application-bundle',
     required: false,
     platform: 'macos',
@@ -331,6 +399,10 @@ const List<ComponentSpec> kKnownComponents = [
     id: 'otzaria-android',
     name: 'אוצריא ל-Android',
     description: 'קובץ התקנה (APK) לטלפון או לטאבלט. ללא ספרייה.',
+    nameEn: 'Otzaria for Android',
+    descriptionEn:
+        'An installation file (APK) for a phone or tablet. Library not '
+        'included.',
     type: 'application',
     required: false,
     platform: 'android',
@@ -343,6 +415,11 @@ const List<ComponentSpec> kKnownComponents = [
     description:
         'ארכיון ZIP (או כמה כרכי ZIP שמחלצים לאותה תיקייה) ובו קובץ ה-APK '
         'והספרייה המלאה, להעתקה אל המכשיר.',
+    nameEn: 'Otzaria for Android with the Full Library',
+    descriptionEn:
+        'A ZIP archive (or several ZIP volumes extracted into the same '
+        'folder) with the APK file and the full library, to copy to the '
+        'device.',
     type: 'application-bundle',
     required: false,
     platform: 'android',
@@ -360,6 +437,10 @@ const List<ComponentSpec> kKnownComponents = [
     description:
         'כל ספריית הספרים, למחשב שאין בו אינטרנט. המתקין פורס אותה בעצמו, '
         'ואת אינדקס החיפוש התוכנה בונה אחרי ההתקנה.',
+    nameEn: 'Full Library',
+    descriptionEn:
+        'The complete library for an offline computer. The installer extracts '
+        'it, and the app builds the search index after installation.',
     type: 'library',
     required: false,
     platform: 'any',
@@ -369,6 +450,9 @@ const List<ComponentSpec> kKnownComponents = [
     outputNote:
         'מתקין אוצריא שבתיקייה פורס את הספרייה מהחלקים שלצדו בזמן ההתקנה, '
         'בלי אינטרנט.',
+    outputNoteEn:
+        'The Otzaria installer in this folder extracts the library from the '
+        'parts beside it without an internet connection.',
     assets: [
       AssetSpec(
         pattern: r'^otzaria-.+-library\.tar\.zst\.manifest\.json$',
@@ -384,6 +468,11 @@ const List<ComponentSpec> kKnownComponents = [
         'בדרך כלל אין בו צורך: התוכנה בונה את אינדקס החיפוש בעצמה אחרי '
         'ההתקנה. מומלץ רק למחשב חלש, שבו בניית האינדקס איטית מאוד. מגיע '
         'יחד עם הספרייה המלאה.',
+    nameEn: 'Prebuilt Search Index (for Slower Computers)',
+    descriptionEn:
+        'Usually unnecessary: the app builds its search index after '
+        'installation. Recommended only for a slow computer where indexing '
+        'takes a long time. Includes the full library.',
     type: kLibraryIndexType,
     required: false,
     platform: 'any',
@@ -394,6 +483,9 @@ const List<ComponentSpec> kKnownComponents = [
     outputNote:
         'אינדקס החיפוש המוכן נפרס יחד עם הספרייה, ולכן התוכנה אינה בונה אותו '
         'אחרי ההתקנה.',
+    outputNoteEn:
+        'The prebuilt search index is extracted with the library, so the app '
+        'does not need to build it after installation.',
     assets: [
       AssetSpec(
         pattern: r'^otzaria-.+-library-index\.tar\.zst\.manifest\.json$',
@@ -492,7 +584,9 @@ Map<String, Object?> buildReleaseManifest({
     components.add({
       'id': spec.id,
       'name': spec.name,
+      if (spec.nameEn != null) 'nameEn': spec.nameEn,
       'description': spec.description,
+      if (spec.descriptionEn != null) 'descriptionEn': spec.descriptionEn,
       'type': spec.type,
       'required': spec.required,
       'origin': spec.origin,
@@ -507,6 +601,7 @@ Map<String, Object?> buildReleaseManifest({
       if (spec.compatibilityFromLibraryIndexProvenance && provenance != null)
         'compatibility': provenance,
       if (spec.outputNote != null) 'outputNote': spec.outputNote,
+      if (spec.outputNoteEn != null) 'outputNoteEn': spec.outputNoteEn,
       'assets': assets,
     });
   }
@@ -852,10 +947,16 @@ List<String> validateReleaseManifest(Object? manifest) {
         'component $label: outputFolder must be a relative path of safe names',
       );
     }
-    final outputNote = component['outputNote'];
-    if (outputNote != null &&
-        (outputNote is! String || outputNote.trim().isEmpty)) {
-      errors.add('component $label: outputNote must be a non-empty string');
+    for (final key in const [
+      'outputNote',
+      'nameEn',
+      'descriptionEn',
+      'outputNoteEn',
+    ]) {
+      final value = component[key];
+      if (value != null && (value is! String || value.trim().isEmpty)) {
+        errors.add('component $label: $key must be a non-empty string');
+      }
     }
     final compatibility = component['compatibility'];
     if (compatibility != null && compatibility is! Map) {

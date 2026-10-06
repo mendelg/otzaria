@@ -75,9 +75,14 @@ gint64 otz_custom_choice_size(const OtzManifest *manifest,
 
 GPtrArray *otz_with_dependencies(const OtzManifest *manifest,
                                  GPtrArray *members, const OtzTarget *target);
-/* OtzPreset*; empty presets and duplicates of an earlier one are dropped. */
+/* OtzPreset* in display order: basic, full-indexed, full, update. Empty ones,
+ * and duplicates of one evaluated earlier (full-indexed, full, basic, update —
+ * the more specific label stays), are dropped. */
 GPtrArray *otz_build_presets(const OtzManifest *manifest,
                              const OtzTarget *target);
+/* The pre-selected preset: "basic", else "full" (not the larger
+ * "full-indexed"), else the first. -1 when there are no presets. */
+int otz_default_preset_index(GPtrArray *presets);
 
 gboolean otz_should_assemble_split_asset(const OtzAsset *asset,
                                          const char *target_platform);

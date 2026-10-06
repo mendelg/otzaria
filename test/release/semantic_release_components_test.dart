@@ -5,8 +5,10 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/models/semantic_model_identity.dart';
 import 'package:otzaria/semantic_search/models/semantic_model_release.dart';
+import 'package:otzaria/settings/l10n/settings_catalogs.g.dart';
 
 import '../../tool/download_assistant/fixtures/generate_fixtures.dart';
 import '../../tool/release/download_assistant_selection.dart';
@@ -162,6 +164,31 @@ void main() {
       expect(assets.last['sha256'], _sha(_vectorsManifest()));
     });
 
+    test('שם, תיאור והסבר באנגלית לכל רכיב', () async {
+      final hebrew = RegExp(r'[֐-׿]');
+      for (final component in await _GitHub().resolve()) {
+        final id = component['id'];
+        for (final key in const ['nameEn', 'descriptionEn', 'outputNoteEn']) {
+          expect(component[key], isA<String>(), reason: '$id $key');
+          expect(component[key], isNot(contains(hebrew)), reason: '$id $key');
+          expect(component[key], contains('Smart Search'), reason: '$id $key');
+        }
+        expect(
+          (component['descriptionEn'] as String).contains('Apple Silicon'),
+          component['platform'] == 'macos',
+          reason: '$id',
+        );
+      }
+    });
+
+    // אותו שם שהמשתמש רואה באפליקציה באנגלית.
+    test('שם המצב באנגלית הוא התרגום שבאפליקציה', () {
+      expect(
+        kSettingsCatalogs['en']![kSemanticSearchModeName],
+        kSemanticSearchModeNameEn,
+      );
+    });
+
     test('הרכיבים עוברים את אימות המניפסט כ---external', () async {
       final dir = Directory.systemTemp.createTempSync('semantic-manifest');
       addTearDown(() => dir.deleteSync(recursive: true));
@@ -296,27 +323,33 @@ void main() {
   group('הבחירה במסייעים', () {
     final manifest = buildFixtureManifest();
 
-    test('"מלאה" כוללת את נתוני החיפוש החכם, "בסיסית" לא', () {
-      for (final target in kFixtureTargets) {
-        final presets = {
-          for (final preset in buildPresets(manifest, target))
-            preset.id: preset.members,
-        };
-        final semantic = [
-          'semantic-model-${target.platform}',
-          'semantic-vectors-${target.platform}',
-        ];
-        if (target.platform == 'android') {
-          expect(
-            presets.values.expand((m) => m),
-            isNot(contains(semantic.first)),
-          );
-          continue;
+    test(
+      '"מלאה" ו"מלאה + אינדקס" כוללות את נתוני החיפוש החכם, "בסיסית" לא',
+      () {
+        for (final target in kFixtureTargets) {
+          final presets = {
+            for (final preset in buildPresets(manifest, target))
+              preset.id: preset.members,
+          };
+          final semantic = [
+            'semantic-model-${target.platform}',
+            'semantic-vectors-${target.platform}',
+          ];
+          if (target.platform == 'android') {
+            expect(
+              presets.values.expand((m) => m),
+              isNot(contains(semantic.first)),
+            );
+            continue;
+          }
+          expect(presets['full'], containsAll(semantic), reason: '$target');
+          if (presets.containsKey('full-indexed')) {
+            expect(presets['full-indexed'], containsAll(semantic));
+          }
+          expect(presets['basic'] ?? const [], isNot(contains(semantic.first)));
         }
-        expect(presets['full'], containsAll(semantic), reason: '$target');
-        expect(presets['basic'] ?? const [], isNot(contains(semantic.first)));
-      }
-    });
+      },
+    );
 
     test('קובצי הנתונים נכתבים בתיקייה שהאפליקציה מזהה', () {
       const target = AssistantTarget(platform: 'windows', architecture: 'x64');
@@ -339,6 +372,33 @@ void main() {
       expect(plannedOutputNotes(manifest, const ['semantic-vectors-linux']), [
         kSemanticOutputNote,
       ]);
+    });
+
+    test('ההסבר בעמוד הסיום באנגלית, ובלעדיו — בעברית', () {
+      expect(
+        plannedOutputNotes(manifest, const [
+          'semantic-model-windows',
+          'semantic-vectors-windows',
+        ], english: true),
+        [kSemanticWindowsOutputNoteEn],
+      );
+      expect(
+        plannedOutputNotes(manifest, const [
+          'semantic-vectors-linux',
+        ], english: true),
+        [kSemanticOutputNoteEn],
+      );
+
+      final old = jsonDecode(jsonEncode(manifest)) as Map<String, Object?>;
+      for (final component in (old['components'] as List).cast<Map>()) {
+        component.remove('outputNoteEn');
+      }
+      expect(
+        plannedOutputNotes(old, const [
+          'semantic-vectors-linux',
+        ], english: true),
+        [kSemanticOutputNote],
+      );
     });
 
     test('וקטורים שנבחרו לבדם מגיעים עם המודל', () {

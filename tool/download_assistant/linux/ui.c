@@ -347,12 +347,8 @@ static void prepare_presets(Ui *ui) {
   ui->presets = otz_build_presets(ui->manifest, &target);
   if (ui->preset_index != PRESET_CUSTOM &&
       (ui->preset_index < 0 || ui->preset_index >= (int)ui->presets->len)) {
-    ui->preset_index = ui->presets->len > 0 ? 0 : PRESET_CUSTOM;
-    for (guint i = 0; i < ui->presets->len; i++) {
-      const OtzPreset *preset = g_ptr_array_index(ui->presets, i);
-      if (strcmp(preset->id, OTZ_DEFAULT_PRESET_ID) == 0)
-        ui->preset_index = (int)i;
-    }
+    int index = otz_default_preset_index(ui->presets);
+    ui->preset_index = index >= 0 ? index : PRESET_CUSTOM;
   }
 
   g_autoptr(GPtrArray) captions = g_ptr_array_new_with_free_func(g_free);

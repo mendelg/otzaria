@@ -59,6 +59,30 @@ const String kSemanticWindowsOutputNote =
 String semanticOutputNote(String platform) =>
     platform == 'windows' ? kSemanticWindowsOutputNote : kSemanticOutputNote;
 
+/// שם המצב באנגלית — התרגום של [kSemanticSearchModeName] באפליקציה.
+const String kSemanticSearchModeNameEn = 'Smart Search';
+
+/// התרגום של [kSemanticSearchModeLabel] באפליקציה (settings_en.arb).
+const String kSemanticSearchModeLabelEn = 'Smart Search (Experimental)';
+
+const String kSemanticOutputNoteEn =
+    'On the target computer, copy the $kSemanticImportFolderName folder into '
+    'the folder that contains the Otzaria library folder. When you turn on '
+    '$kSemanticSearchModeNameEn there (after giving consent), the data will be '
+    'installed from it without downloading.';
+
+const String kSemanticWindowsOutputNoteEn =
+    'The full Otzaria installer in this folder copies the '
+    '$kSemanticImportFolderName folder next to the library folder by itself. '
+    'When you turn on $kSemanticSearchModeNameEn (after giving consent), the '
+    'data will be installed from it without downloading. If you install '
+    'without the full installer, copy the folder yourself into the folder '
+    'that contains the Otzaria library folder.';
+
+String semanticOutputNoteEn(String platform) => platform == 'windows'
+    ? kSemanticWindowsOutputNoteEn
+    : kSemanticOutputNoteEn;
+
 final RegExp _modelBaseUrl = RegExp(
   r'^https://github\.com/(Otzaria/[A-Za-z0-9._-]+)/releases/download/'
   r'([A-Za-z0-9._+-]+)$',
@@ -146,14 +170,22 @@ List<Map<String, Object?>> buildSemanticComponents({
       assets.fold(0, (sum, a) => sum + (a['size'] as int));
 
   const macNote = ' ב-macOS: רק במחשב עם מעבד Apple Silicon ו-macOS 14 ומעלה.';
+  const macNoteEn =
+      ' On macOS: only on a Mac with an Apple Silicon processor and macOS 14 '
+      'or later.';
   return [
     for (final platform in platforms) ...[
       {
         'id': 'semantic-model-$platform',
         'name': '$kSemanticSearchModeName — מודל השאילתות',
+        'nameEn': '$kSemanticSearchModeNameEn — Query Model',
         'description':
             'הרכיב שמבין את מילות החיפוש במצב "$kSemanticSearchModeName".'
             '${platform == 'macos' ? macNote : ''}',
+        'descriptionEn':
+            'The component that understands your search words in '
+            '$kSemanticSearchModeNameEn.'
+            '${platform == 'macos' ? macNoteEn : ''}',
         'type': kSemanticModelComponentType,
         'required': false,
         'origin': 'imported',
@@ -165,17 +197,25 @@ List<Map<String, Object?>> buildSemanticComponents({
         'downloadSize': total(modelAssets),
         'outputFolder': kSemanticModelOutputFolder,
         'outputNote': semanticOutputNote(platform),
+        'outputNoteEn': semanticOutputNoteEn(platform),
         'compatibility': {'modelFamilyId': modelFamilyId},
         'assets': modelAssets,
       },
       {
         'id': 'semantic-vectors-$platform',
         'name': kSemanticSearchModeLabel,
+        'nameEn': kSemanticSearchModeLabelEn,
         'description':
             'מה שמצב "$kSemanticSearchModeName" צריך כדי לעבוד בלי אינטרנט: '
             'המודל שמבין את מילות החיפוש, והנתונים לגרסת הספרייה '
             '${vectors.toLibraryVersion}, זו שבהתקנה המלאה.'
             '${platform == 'macos' ? macNote : ''}',
+        'descriptionEn':
+            'What $kSemanticSearchModeNameEn needs to work without internet: '
+            'the model that understands your search words, and the data for '
+            'library version ${vectors.toLibraryVersion}, the one included in '
+            'the full installation.'
+            '${platform == 'macos' ? macNoteEn : ''}',
         'type': kSemanticVectorsComponentType,
         'required': false,
         'origin': 'imported',
@@ -185,6 +225,7 @@ List<Map<String, Object?>> buildSemanticComponents({
         'downloadSize': total(vectorsAssets),
         'outputFolder': kSemanticVectorsOutputFolder,
         'outputNote': semanticOutputNote(platform),
+        'outputNoteEn': semanticOutputNoteEn(platform),
         'compatibility': {
           'libraryReleaseTag': vectors.libraryTag,
           'libraryVersion': vectors.toLibraryVersion,

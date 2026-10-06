@@ -540,6 +540,9 @@ void main() {
       expect(model['type'], 'semantic-model');
       expect(model['origin'], 'imported');
       expect(model['installOrder'], 40);
+      // בלי טקסט באנגלית אין מפתח ריק — הצרכן נופל לעברית.
+      expect(model.containsKey('nameEn'), isFalse);
+      expect(model.containsKey('descriptionEn'), isFalse);
       // נספח אחרון בסדר ההתקנה.
       expect((decoded['components'] as List).last['id'], 'semantic-model');
     });
@@ -1011,6 +1014,73 @@ void main() {
         nameOf('otzaria-windows-full'),
         'אוצריא ל-Windows עם ספרייה מלאה',
       );
+    });
+  });
+
+  group('הטקסט באנגלית (nameEn, descriptionEn, outputNoteEn)', () {
+    final hebrew = RegExp(r'[֐-׿]');
+
+    // מסייע באנגלית מציג כל רכיב בנוי באנגלית; בלי השדה היה נופל לעברית.
+    test('לכל רכיב ידוע שם ותיאור באנגלית, בלי אותיות עבריות', () {
+      const displayNames = {
+        'windows': 'Windows',
+        'linux': 'Linux',
+        'macos': 'macOS',
+        'android': 'Android',
+      };
+      for (final spec in kKnownComponents) {
+        for (final text in [spec.nameEn, spec.descriptionEn]) {
+          expect(text?.trim(), isNotEmpty, reason: spec.id);
+          expect(text, isNot(contains(hebrew)), reason: spec.id);
+        }
+        final displayName = displayNames[spec.platform];
+        if (displayName != null) {
+          expect(spec.nameEn, contains(displayName), reason: spec.id);
+        }
+      }
+    });
+
+    test('הגנרטור כותב אותם לצד העברית, והם שורדים JSON', () {
+      writeRealisticRelease();
+      final decoded = jsonDecode(jsonEncode(build())) as Map<String, Object?>;
+      expect(validateReleaseManifest(decoded), isEmpty);
+      final app = componentById(decoded, 'otzaria-windows-x64');
+      expect(app['name'], 'אוצריא ל-Windows');
+      expect(app['nameEn'], 'Otzaria for Windows');
+      expect(app['description'], startsWith('התוכנה עצמה'));
+      expect(app['descriptionEn'], startsWith('Otzaria itself'));
+      final library = componentById(decoded, 'library-full-indexed');
+      expect(library['nameEn'], 'Full Library with Search Index');
+    });
+
+    test('מניפסט ישן בלי השדות עדיין תקין', () {
+      writeRealisticRelease();
+      final manifest = build();
+      for (final component
+          in (manifest['components'] as List).cast<Map<String, Object?>>()) {
+        component
+          ..remove('nameEn')
+          ..remove('descriptionEn')
+          ..remove('outputNoteEn');
+      }
+      expect(validateReleaseManifest(manifest), isEmpty);
+    });
+
+    test('אופציונליים, אבל אם קיימים — מחרוזת לא ריקה', () {
+      for (final MapEntry(key: key, value: bad) in const {
+        'nameEn': '',
+        'descriptionEn': 42,
+        'outputNoteEn': '   ',
+      }.entries) {
+        writeRealisticRelease();
+        final manifest = build();
+        componentById(manifest, 'otzaria-windows-x64')[key] = bad;
+        expect(
+          validateReleaseManifest(manifest),
+          [contains('$key must be a non-empty string')],
+          reason: key,
+        );
+      }
     });
   });
 }

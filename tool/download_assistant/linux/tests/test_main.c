@@ -259,6 +259,76 @@ static void test_package_format_any(void) {
   g_assert_cmpstr(g_ptr_array_index(choices, 1), ==, OTZ_PORTABLE_PACKAGE_FORMAT);
 }
 
+static void assert_preset(GPtrArray *presets, guint index, const char *id,
+                          const char *const *members) {
+  g_assert_cmpuint(index, <, presets->len);
+  const OtzPreset *preset = g_ptr_array_index(presets, index);
+  g_assert_cmpstr(preset->id, ==, id);
+  guint count = 0;
+  while (members[count] != NULL) count++;
+  g_assert_cmpuint(preset->members->len, ==, count);
+  for (guint i = 0; i < count; i++)
+    g_assert_cmpstr(g_ptr_array_index(preset->members, i), ==, members[i]);
+}
+
+/* "full-indexed" is the bundle that installs a library, with that library;
+ * both full presets carry the smart-search data. Shown basic, full-indexed,
+ * full, update; pre-selected basic, else full, else the first. */
+static void test_full_indexed_preset(void) {
+  const char *text =
+      "{\"schemaVersion\":1,\"components\":["
+      "{\"id\":\"app\",\"name\":\"n\",\"type\":\"application\",\"platform\":\"windows\","
+      TEST_ASSET("app.exe") "},"
+      "{\"id\":\"runtime\",\"name\":\"n\",\"type\":\"dependency\",\"required\":true,"
+      "\"platform\":\"windows\"," TEST_ASSET("runtime.bin") "},"
+      "{\"id\":\"full\",\"name\":\"n\",\"type\":\"application-bundle\",\"downloadSize\":9,"
+      "\"platform\":\"windows\"," TEST_ASSET("full.exe") "},"
+      "{\"id\":\"indexed\",\"name\":\"n\",\"type\":\"application-bundle\",\"downloadSize\":1,"
+      "\"platform\":\"windows\"," TEST_ASSET("indexed.exe") "},"
+      "{\"id\":\"lib\",\"name\":\"n\",\"type\":\"library\",\"platform\":\"windows\","
+      "\"installedBy\":[\"indexed\"]," TEST_ASSET("lib.bin") "},"
+      "{\"id\":\"model\",\"name\":\"n\",\"type\":\"semantic-model\",\"platform\":\"windows\","
+      TEST_ASSET("model.bin") "},"
+      "{\"id\":\"vectors\",\"name\":\"n\",\"type\":\"semantic-vectors\",\"platform\":\"windows\","
+      "\"dependsOn\":[\"model\"]," TEST_ASSET("vectors.bin") "}]}";
+  g_autoptr(GError) error = NULL;
+  g_autoptr(OtzManifest) manifest = otz_manifest_parse(text, strlen(text), &error);
+  g_assert_no_error(error);
+  OtzTarget x64 = {"windows", "x64", ""};
+  g_autoptr(GPtrArray) presets = otz_build_presets(manifest, &x64);
+  g_assert_cmpuint(presets->len, ==, 4);
+  assert_preset(presets, 0, "basic", (const char *const[]){"app", "runtime", NULL});
+  assert_preset(presets, 1, "full-indexed",
+                (const char *const[]){"indexed", "lib", "model", "vectors", NULL});
+  assert_preset(presets, 2, "full",
+                (const char *const[]){"full", "model", "vectors", NULL});
+  assert_preset(presets, 3, "update", (const char *const[]){"app", NULL});
+
+  g_assert_cmpint(otz_default_preset_index(presets), ==, 0);
+  g_ptr_array_remove_index(presets, 0); /* basic */
+  g_assert_cmpint(otz_default_preset_index(presets), ==, 1); /* not full-indexed */
+  g_ptr_array_remove_index(presets, 1); /* full */
+  g_assert_cmpint(otz_default_preset_index(presets), ==, 0);
+  g_ptr_array_set_size(presets, 0);
+  g_assert_cmpint(otz_default_preset_index(presets), ==, -1);
+
+  /* No other target has a bundle that installs a library. */
+  gsize length;
+  g_autofree char *fixture = read_fixture("release-manifest.json", &length);
+  g_autoptr(OtzManifest) release = otz_manifest_parse(fixture, length, &error);
+  g_assert_no_error(error);
+  OtzTarget android = {"android", "", ""};
+  g_autoptr(GPtrArray) mobile = otz_build_presets(release, &android);
+  g_assert_cmpuint(mobile->len, ==, 2);
+  g_assert_cmpstr(((const OtzPreset *)g_ptr_array_index(mobile, 0))->id, ==,
+                  OTZ_DEFAULT_PRESET_ID);
+  g_assert_cmpstr(((const OtzPreset *)g_ptr_array_index(mobile, 1))->id, ==, "full");
+  OtzTarget portable = {"linux", "x64", OTZ_PORTABLE_PACKAGE_FORMAT};
+  g_autoptr(GPtrArray) offline = otz_build_presets(release, &portable);
+  g_assert_cmpuint(offline->len, ==, 1);
+  g_assert_cmpint(otz_default_preset_index(offline), ==, 0);
+}
+
 static void test_manifest_rejects(void) {
   static const char *const bad[] = {
       /* schema version from the future */
@@ -1007,6 +1077,7 @@ int main(int argc, char **argv) {
   g_test_add_func("/selection/library-brings-its-installer",
                   test_library_brings_its_installer);
   g_test_add_func("/selection/package-format-any", test_package_format_any);
+  g_test_add_func("/selection/full-indexed-preset", test_full_indexed_preset);
   g_test_add_func("/manifest/rejects", test_manifest_rejects);
   g_test_add_func("/json/hebrew-escapes", test_json_hebrew_escapes);
   g_test_add_func("/json/values", test_json_values);

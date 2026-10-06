@@ -102,6 +102,60 @@ final class FixtureTests: XCTestCase {
             manifest, library, AssistantTarget(platform: "linux", architecture: "x64", packageFormat: "deb")))
     }
 
+    /// "full-indexed" רק כשחבילה מתקינה ספרייה (Windows x64); שתי ההצעות המלאות עם החיפוש החכם.
+    func testFullIndexedOnlyWithAnIndexedBundle() throws {
+        let presets = buildPresets(manifest, AssistantTarget(platform: "windows", architecture: "x64"))
+        XCTAssertEqual(presets.map { $0.id }, ["basic", "full-indexed", "full"])
+        XCTAssertEqual(presets.first?.id, defaultPresetId)
+        let semantic = ["semantic-model-windows", "semantic-vectors-windows"]
+        XCTAssertEqual(
+            try XCTUnwrap(presets.first { $0.id == "full-indexed" }).members,
+            ["otzaria-windows-full-indexed", "library-full-indexed"] + semantic
+        )
+        XCTAssertEqual(try XCTUnwrap(presets.first { $0.id == "full" }).members, ["otzaria-windows-full"] + semantic)
+        for target in [AssistantTarget(platform: "macos"), AssistantTarget(platform: "android"),
+                       AssistantTarget(platform: "windows", architecture: "arm64")] {
+            XCTAssertEqual(buildPresets(manifest, target).map { $0.id }, ["basic", "full"], target.platform)
+        }
+    }
+
+    /// המסומנת מראש: "basic", אחריה "full" (לא "full-indexed" הגדולה), אחרת הראשונה.
+    func testDefaultPresetFallsBackToFull() {
+        let portable = buildPresets(
+            manifest, AssistantTarget(platform: "linux", architecture: "x64", packageFormat: portablePackageFormat)
+        )
+        XCTAssertEqual(defaultPresetIdFor(portable), "full")
+        func only(_ ids: [String]) -> [AssistantPreset] {
+            ids.map { AssistantPreset(id: $0, caption: "", description: "", members: []) }
+        }
+        XCTAssertEqual(defaultPresetIdFor(only(["full-indexed", "full"])), "full")
+        XCTAssertEqual(defaultPresetIdFor(only(["full-indexed", "update"])), "full-indexed")
+        XCTAssertNil(defaultPresetIdFor([]))
+    }
+
+    /// סדר ההצגה, והחבילה המאונדקסת היא הגדולה בסך הכול (עם הספרייה), לא לפי גודלה לבדה.
+    func testDisplayOrderAndIndexedBundleChoice() {
+        let x64 = AssistantTarget(platform: "windows", architecture: "x64")
+        let synthetic = ReleaseManifest(components: [
+            ManifestComponent(id: "app", type: "application", platform: "windows"),
+            ManifestComponent(id: "runtime", type: "dependency", required: true, platform: "windows"),
+            ManifestComponent(id: "full", type: "application-bundle", platform: "windows", downloadSize: 9),
+            ManifestComponent(id: "indexed", type: "application-bundle", platform: "windows", downloadSize: 1),
+            ManifestComponent(id: "lib", type: "library", platform: "windows", installedBy: ["indexed"]),
+        ])
+        let presets = buildPresets(synthetic, x64)
+        XCTAssertEqual(presets.map { $0.id }, presetDisplayOrder)
+        XCTAssertEqual(presets.map { $0.members }, [["app", "runtime"], ["indexed", "lib"], ["full"], ["app"]])
+
+        let twoIndexed = ReleaseManifest(components: [
+            ManifestComponent(id: "idx-a", type: "application-bundle", downloadSize: 10),
+            ManifestComponent(id: "lib-a", type: "library", installedBy: ["idx-a"], downloadSize: 1),
+            ManifestComponent(id: "idx-b", type: "application-bundle", downloadSize: 5),
+            ManifestComponent(id: "lib-b", type: "library", installedBy: ["idx-b"], downloadSize: 50),
+        ])
+        XCTAssertEqual(buildPresets(twoIndexed, x64).map { $0.members }, [["idx-b", "lib-b"], ["idx-a", "lib-a"]])
+    }
+
     private func checkTargets(_ manifest: ReleaseManifest, _ targets: [[String: Any]]) throws {
         for entry in targets {
             let raw = try XCTUnwrap(entry["target"] as? [String: String])

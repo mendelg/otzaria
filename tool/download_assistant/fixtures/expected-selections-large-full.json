@@ -80,7 +80,18 @@
       ],
       "presets": [
         {
-          "id": "full",
+          "id": "basic",
+          "members": [
+            "otzaria-windows-x64"
+          ],
+          "outputFiles": [
+            "otzaria-0.10.3-windows.exe"
+          ],
+          "outputNotes": [],
+          "outputSubfolder": ""
+        },
+        {
+          "id": "full-indexed",
           "members": [
             "otzaria-windows-x64",
             "library-full",
@@ -104,17 +115,6 @@
             "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
-        },
-        {
-          "id": "basic",
-          "members": [
-            "otzaria-windows-x64"
-          ],
-          "outputFiles": [
-            "otzaria-0.10.3-windows.exe"
-          ],
-          "outputNotes": [],
-          "outputSubfolder": ""
         }
       ]
     },
