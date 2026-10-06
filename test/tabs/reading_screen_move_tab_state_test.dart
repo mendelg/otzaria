@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:otzaria/tabs/utils/touch_tab_swipe_recognizer.dart';
+import 'package:otzaria/tabs/utils/tab_content_vertical_drag_recognizer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
@@ -135,7 +136,7 @@ void main() {
 
     // ה"בולען" האנכי — המתחרה שמונע מהאופקי לזכות מיד כחבר יחיד בזירה
     // מעל תוכן ללא Scrollable (WebView של תוסף).
-    final verticalFactory = detector.gestures[VerticalDragGestureRecognizer];
+    final verticalFactory = detector.gestures[TabContentVerticalDragRecognizer];
     expect(verticalFactory, isNotNull);
     final vertical =
         verticalFactory!.constructor() as VerticalDragGestureRecognizer;
@@ -162,8 +163,8 @@ void main() {
     await tester.pumpWidget(
       RawGestureDetector(
         gestures: {
-          VerticalDragGestureRecognizer:
-              detector.gestures[VerticalDragGestureRecognizer]!,
+          TabContentVerticalDragRecognizer:
+              detector.gestures[TabContentVerticalDragRecognizer]!,
         },
         // מדמה את ה-InteractiveViewer של pdfrx (ScaleGestureRecognizer).
         child: GestureDetector(
@@ -223,6 +224,60 @@ void main() {
 
     final pageView = tester.widget<PageView>(find.byType(PageView));
     expect(pageView.controller!.page, 1);
+    expect(bloc.state.currentTabIndex, 1);
+  });
+
+  testWidgets('גלילה אלכסונית בעיקר אנכית ב-WebView אינה מעבירה טאב', (
+    tester,
+  ) async {
+    final tabs = [_tab('א'), _tab('ב'), _tab('ג')];
+    addTearDown(() {
+      for (final tab in tabs) {
+        tab.dispose();
+      }
+    });
+    final bloc = await pumpReadingScreen(tester, tabs, currentTabIndex: 1);
+    final detector = tester.widget<RawGestureDetector>(
+      find.byWidgetPredicate(
+        (widget) => widget is RawGestureDetector && widget.child is PageView,
+      ),
+    );
+    // WebView נייטיבי לא מוסיף מזהה גלילה לזירת המחוות של Flutter.
+    final overlay = Overlay.of(tester.element(find.byType(PageView)));
+    final entry = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: RawGestureDetector(
+          gestures: detector.gestures,
+          child: const ColoredBox(color: Colors.white),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    addTearDown(() {
+      entry.remove();
+      entry.dispose();
+    });
+    await tester.pump();
+    final gesture = await tester.createGesture(
+      kind: PointerDeviceKind.trackpad,
+    );
+    const center = Offset(400, 400);
+    await gesture.panZoomStart(center);
+    const pans = [Offset(5, -20), Offset(20, -60), Offset(35, -110)];
+    for (var i = 0; i < pans.length; i++) {
+      await gesture.panZoomUpdate(
+        center,
+        pan: pans[i],
+        timeStamp: Duration(milliseconds: 10 * (i + 1)),
+      );
+      await tester.pump();
+      expect(
+        tester.widget<PageView>(find.byType(PageView)).controller!.page,
+        1,
+      );
+    }
+    await gesture.panZoomEnd(timeStamp: const Duration(milliseconds: 40));
+    await tester.pumpAndSettle();
     expect(bloc.state.currentTabIndex, 1);
   });
 

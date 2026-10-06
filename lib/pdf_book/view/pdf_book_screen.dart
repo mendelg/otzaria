@@ -4358,10 +4358,19 @@ class _PdfBookScreenState extends State<PdfBookScreen>
   Widget _buildReaderMainContent() {
     return BlocListener<PdfBookBloc, PdfBookState>(
       listenWhen: (prev, curr) =>
-          curr is PdfBookError &&
-          curr.autoRetry &&
-          !(prev is PdfBookError && prev.autoRetry),
+          (prev is PdfBookError && !prev.autoRetry && curr is PdfBookLoading) ||
+          (curr is PdfBookError &&
+              curr.autoRetry &&
+              !(prev is PdfBookError && prev.autoRetry)),
       listener: (context, state) {
+        if (state is PdfBookLoading) {
+          final document = _pdfDocumentRef.resolveListenable();
+          // החלפת reference באותו מפתח אינה מאפסת כישלון שמור ב-pdfrx.
+          if (document.error != null) {
+            unawaited(document.load(forceReload: true));
+          }
+          return;
+        }
         // retry אוטומטי שקט — בדיוק כמו לחיצה על "נסה שוב"
         setState(() {
           _pdfDocumentRef = _createDocumentRef();
@@ -4468,9 +4477,6 @@ class _PdfBookScreenState extends State<PdfBookScreen>
                               text: 'נסה שוב',
                               icon: FluentIcons.arrow_clockwise_24_regular,
                               onPressed: () {
-                                setState(() {
-                                  _pdfDocumentRef = _createDocumentRef();
-                                });
                                 _bloc.add(const pdf_events.RetryLoad());
                               },
                             ),
