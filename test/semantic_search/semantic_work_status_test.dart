@@ -44,7 +44,7 @@ void main() {
     final item = upserts.single;
     expect(item.id, kSemanticDataWorkStatusId);
     expect(item.title, contains('נתוני'));
-    expect(item.message, 'מוריד את נתוני החיפוש (40%)');
+    expect(item.message, 'מוריד את נתוני החיפוש');
     expect(item.progress, 0.4);
     expect(item.kind, WorkStatusKind.running);
     item.actions.single.onPressed();

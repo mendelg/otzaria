@@ -3,8 +3,7 @@ import 'package:otzaria/core/messages/semantic_search_messages.dart';
 import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/settings/l10n/settings_l10n_exports.dart';
 
-/// התווית המתורגמת, כמו [SemanticSearchMessages.progressLabel]:
-/// "מוריד את נתוני החיפוש (12%)".
+/// התווית המתורגמת עם האחוז הכולל: "מוריד את נתוני החיפוש (12%)".
 String semanticProgressText(
   BuildContext context,
   SemanticDownloadProgress progress,
