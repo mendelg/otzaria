@@ -5,7 +5,9 @@ import 'dart:convert';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
+import 'package:otzaria/settings/engine/settings_repository.dart';
 import 'package:otzaria/theme/app_fonts.dart';
+import 'package:otzaria/tools/calendar/models/calendar_location.dart';
 import 'package:otzaria/tools/tikkun_korim/models/tikkun_models.dart';
 import 'package:otzaria/tools/tikkun_korim/repository/tikkun_contracts.dart';
 import 'package:otzaria/tools/tikkun_korim/settings/tikkun_stam_fonts.dart';
@@ -226,6 +228,7 @@ class TikkunSettingsStore {
       nusach: Settings.getValue<String>(TikkunSettingsKeys.nusach) ?? d.nusach,
       nusachLand:
           Settings.getValue<String>(TikkunSettingsKeys.nusachLand) ??
+          _calendarLand() ??
           d.nusachLand,
       decalogueTaam: TikkunDecalogueTaam.byId(
         Settings.getValue<String>(TikkunSettingsKeys.decalogueTaam),
@@ -266,14 +269,26 @@ class TikkunSettingsStore {
       s.startupMode,
     );
     await Settings.setValue<String>(TikkunSettingsKeys.nusach, s.nusach);
-    await Settings.setValue<String>(
-      TikkunSettingsKeys.nusachLand,
-      s.nusachLand,
-    );
+    // כל עוד המנהג תואם ללוח אינו נשמר, כדי שימשיך לעקוב אחרי העיר שבלוח.
+    if (Settings.getValue<String>(TikkunSettingsKeys.nusachLand) != null ||
+        s.nusachLand !=
+            (_calendarLand() ?? const TikkunSettings().nusachLand)) {
+      await Settings.setValue<String>(
+        TikkunSettingsKeys.nusachLand,
+        s.nusachLand,
+      );
+    }
     await Settings.setValue<String>(
       TikkunSettingsKeys.decalogueTaam,
       s.decalogueTaam.id,
     );
+  }
+
+  /// מנהג הקריאות לפי העיר שנבחרה בלוח השנה, אם נבחרה.
+  static String? _calendarLand() {
+    final city = Settings.getValue<String>(SettingsRepository.keySelectedCity);
+    if (city == null) return null;
+    return isCityInIsrael(city) ? 'israel' : 'diaspora';
   }
 
   TikkunNavState loadNavState() {
