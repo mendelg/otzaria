@@ -1120,6 +1120,7 @@ class _FakeIndexingRepository extends IndexingRepository {
   @override
   Future<IndexingRunResult> reconcileIndexWithLibrary(
     Library library, {
+    List<Book>? onlyBooks,
     void Function(int processed, int total)? onScanProgress,
     void Function()? onActualIndexingStarted,
     required void Function(int processed, int total) onProgress,

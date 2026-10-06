@@ -1017,6 +1017,37 @@ void main() {
       },
     );
 
+    test('onlyBooks מגביל את הסריקה ואינו נוגע בספרים אחרים ששונו', () async {
+      final engine = _RecordingSearchEngine();
+      final provider = _RecordingTantivyDataProvider(engine);
+      final scanned = book(1, 'שבת');
+      final skipped = book(2, 'עירובין');
+      final library = _buildLibrary(bavliBooks: const []);
+      library.books.addAll([scanned, skipped]);
+      engine.fingerprints = {
+        IndexingRepository.buildIndexedBookFilePath(scanned): BigInt.from(1),
+        IndexingRepository.buildIndexedBookFilePath(skipped): BigInt.from(2),
+      };
+
+      final repository = _ReindexProbeRepository(provider);
+      final loaded = <String>[];
+      final result = await repository.reconcileIndexWithLibrary(
+        library,
+        onlyBooks: [scanned],
+        onProgress: (_, _) {},
+        loadText: (b) async {
+          loaded.add(b.title);
+          return 'טקסט';
+        },
+        fingerprintOf: (_, _) async => BigInt.from(99),
+      );
+
+      expect(result.completed, isTrue);
+      expect(loaded, ['שבת']);
+      expect(repository.indexedBooks!.map((b) => b.title), ['שבת']);
+      expect(engine.removedFilePaths.toSet(), {'id:1'});
+    });
+
     test('כשהכל תואם — מסתיים בהצלחה בלי לגעת באינדקס', () async {
       final engine = _RecordingSearchEngine();
       final provider = _RecordingTantivyDataProvider(engine);
