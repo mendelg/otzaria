@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi' as ffi;
 import 'dart:io';
 
 // ignore: depend_on_referenced_packages
@@ -8,9 +9,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/core/ui_snack.dart';
+import 'package:otzaria/empty_library/bloc/empty_library_bloc.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package_extractor.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package_importer.dart';
+import 'package:otzaria/utils/file/disk_free_space.dart';
+import 'package:otzaria/utils/file/zstd_patch_decoder.dart';
 import 'package:otzaria/settings/dialogs/library_setup_dialog.dart';
 import 'package:otzaria/widgets/widgets_exports.dart';
 import 'package:path/path.dart' as p;
+
+import '../../empty_library/library_package_test_support.dart';
 // ignore: depend_on_referenced_packages
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -448,6 +457,121 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(_actionOnPressed(tester, 'אישור'), isNotNull);
+    });
+  });
+
+  group('קובצי מסייע ההורדה', () {
+    late Directory temp;
+    late Directory downloads;
+    const library = 'otzaria-0.9.98-library.tar.zst';
+    const index = 'otzaria-0.9.98-library-index.tar.zst';
+
+    setUp(() async {
+      temp = await Directory.systemTemp.createTemp('otzaria_pkg_dialog_');
+      downloads = await Directory(p.join(temp.path, 'downloads')).create();
+      FilePickerPlatform.instance = _FolderFilePickerPlatform(downloads.path);
+    });
+
+    tearDown(() async {
+      debugCreateLibrarySetupBloc = null;
+      await temp.delete(recursive: true);
+    });
+
+    Future<void> pickDownloads(WidgetTester tester) async {
+      await _openSetup(tester, defaultTargetPath: p.join(temp.path, 'lib'));
+      await _select(tester, 'בחירת תיקייה מהמחשב');
+      await tester.ensureVisible(find.text('בחר תיקייה'));
+      await tester.runAsync(() async {
+        await tester.tap(find.text('בחר תיקייה'));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('חלקי ספרייה ואינדקס מזוהים, ואישור פעיל', (tester) async {
+      writeSplitAsset(downloads, library, Uint8List(300), partSize: 100);
+      writeSplitAsset(downloads, index, Uint8List(100), partSize: 100);
+      await pickDownloads(tester);
+      expect(
+        find.text(
+          'נמצאה ספרייה מקבצים שהורדו (גרסה 0.9.98), כולל אינדקס חיפוש מוכן',
+        ),
+        findsOneWidget,
+      );
+      expect(_actionOnPressed(tester, 'אישור'), isNotNull);
+    });
+
+    testWidgets('חלק חסר: שם הקובץ מוצג ואישור מושבת', (tester) async {
+      final names = writeSplitAsset(
+        downloads,
+        library,
+        Uint8List(300),
+        partSize: 100,
+      );
+      File(p.join(downloads.path, names[1])).deleteSync();
+      await pickDownloads(tester);
+      expect(
+        find.text(
+          'חסר הקובץ ${names[1]} — יש להכין את התיקייה מחדש במסייע ההורדה',
+        ),
+        findsOneWidget,
+      );
+      expect(_actionOnPressed(tester, 'אישור'), isNull);
+    });
+
+    testWidgets('בזמן הפריסה יש כפתור ביטול, והוא עוצר את הייבוא', (
+      tester,
+    ) async {
+      writeSplitAsset(downloads, library, Uint8List(300), partSize: 100);
+      final started = Completer<void>();
+      Future<void> waitForCancel(
+        PackageExtractionJob job, {
+        required PackageExtractionProgress onProgress,
+        required ZstdCancelFlag cancel,
+      }) async {
+        onProgress(LibraryPackageKind.library, 10, 300);
+        started.complete();
+        final cell = ffi.Pointer<ffi.Uint8>.fromAddress(cancel.address);
+        while (cell.value == 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        throw const LibraryImportCancelled();
+      }
+
+      debugCreateLibrarySetupBloc = () => EmptyLibraryBloc(
+        downloadSpaceChecker: (_) async => null,
+        packageImporter: LibraryPackageImporter(
+          runner: waitForCancel,
+          diskSpace: (_) async => DiskSpaceInfo.unknown,
+        ),
+      );
+      // ה-bloc נוצר בתוך FakeAsync, וה-IO שלו אמיתי: מתחלפים בין השניים.
+      Future<void> pumpUntil(bool Function() done) async {
+        for (var i = 0; i < 200 && !done(); i++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 10)),
+          );
+          await tester.pump(const Duration(milliseconds: 10));
+        }
+      }
+
+      await pickDownloads(tester);
+      await tester.tap(find.text('אישור'));
+      await pumpUntil(
+        () => find.textContaining('מאמת ופורס').evaluate().isNotEmpty,
+      );
+      expect(started.isCompleted, isTrue);
+      expect(find.textContaining('מאמת ופורס את הספרייה'), findsOneWidget);
+
+      await tester.tap(find.text('ביטול'));
+      await pumpUntil(
+        () => find.textContaining('הייבוא בוטל').evaluate().isNotEmpty,
+      );
+      expect(find.textContaining('הייבוא בוטל'), findsOneWidget);
+      expect(
+        Directory(p.join(temp.path, 'lib', 'books.import')).existsSync(),
+        isFalse,
+      );
     });
   });
 }

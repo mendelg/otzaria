@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:otzaria/utils/text/byte_size_text.dart';
 import 'package:otzaria/utils/file/file_picker_dialog_options.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:otzaria/core/http_client_registry.dart';
 import 'package:otzaria/data/constants/database_constants.dart';
@@ -14,6 +15,9 @@ import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_event.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_state.dart';
 import 'package:otzaria/empty_library/services/android_storage_service.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package_extractor.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package_importer.dart';
 import 'package:otzaria/library_update/services/library_access_gate.dart';
 import 'package:otzaria/library_update/services/companion_assets_service.dart';
 import 'package:otzaria/search/magic_dictionary_downloader.dart';
@@ -25,6 +29,7 @@ import 'package:otzaria/utils/file/download_space.dart';
 import 'package:otzaria/utils/file/tar_zst_extractor.dart';
 import 'package:otzaria/utils/move_directory.dart';
 import 'package:otzaria/utils/file/split_archive_joiner.dart';
+import 'package:otzaria/utils/file/zstd_patch_decoder.dart';
 import 'package:otzaria/utils/file/zstd_stream_extractor.dart';
 import 'package:path/path.dart' as path;
 import 'package:http/http.dart' as http;
@@ -55,8 +60,10 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     this.downloadConnectTimeout = _defaultDownloadConnectTimeout,
     this.downloadSpaceChecker,
     LibraryAccessGate? accessGate,
+    LibraryPackageImporter? packageImporter,
   }) : _httpClient = httpClient ?? http.Client(),
        _accessGate = accessGate ?? LibraryAccessGate.instance,
+       _packageImporter = packageImporter ?? LibraryPackageImporter(),
        _extractCompressedDatabase = extractCompressedDatabase ?? _extractZst,
        _extractTarArchive = extractTarArchive ?? _extractTarZst,
        _extractZipArchive = extractZipArchive ?? extractArchiveFileToDisk,
@@ -69,6 +76,10 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     on<DownloadLibraryRequested>(_onDownloadLibraryRequested);
     on<ImportLibraryFolderRequested>(_onImportLibraryFolderRequested);
     on<ImportLibraryArchiveRequested>(_onImportLibraryArchiveRequested);
+    on<ImportLibraryPackageRequested>(_onImportLibraryPackageRequested);
+    on<CancelLibraryImportRequested>(
+      (_, _) => _activeImportCancel?.cancel(),
+    );
     on<UpdateLibraryRequested>(_onUpdateLibraryRequested);
     on<PickDbFileRequested>(_onPickDbFileRequested);
     on<CheckDiskSpaceRequested>(_onCheckDiskSpaceRequested);
@@ -83,6 +94,10 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
 
   /// חלון משני מחזיק את המסד פתוח, והזזתו לגיבוי נכשלת ב-Windows.
   final LibraryAccessGate _accessGate;
+  final LibraryPackageImporter _packageImporter;
+
+  /// דגל הביטול של פריסת חבילה שרצה כעת.
+  ZstdCancelFlag? _activeImportCancel;
   final Future<void> Function(
     String archivePath,
     String outputPath,
@@ -151,26 +166,65 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
   Future<void> _onImportLibraryFolderRequested(
     ImportLibraryFolderRequested event,
     Emitter<EmptyLibraryState> emit,
-  ) async {
-    final backupPath = event.backupExistingPath;
+  ) => _replaceLibrarySafely(
+    emit,
+    backupPath: event.backupExistingPath,
+    body: () =>
+        _importLibraryFolder(event.sourceFolder, event.targetPath, emit),
+    // Scoped Storage באנדרואיד: התיקייה נראית אך אינה ניתנת לקריאה (#1219).
+    onError: (e) => _error(
+      errorMessage: e is PathAccessException
+          ? 'אין לתוכנה הרשאת קריאה לקובץ המקור ${e.path}. '
+                'באנדרואיד יש לבחור את קובץ ${DatabaseConstants.databaseFileName} '
+                'דרך "בחר קובץ ספרייה".'
+          : 'שגיאה בייבוא הספרייה: $e',
+      selectedPath: event.sourceFolder,
+    ),
+  );
+
+  /// מייבא את הספרייה מארכיון ZIP או ZST, ומשחזר את ה-DB הישן אם הפעולה
+  /// אינה מסתיימת בבחירת ספרייה תקינה.
+  Future<void> _onImportLibraryArchiveRequested(
+    ImportLibraryArchiveRequested event,
+    Emitter<EmptyLibraryState> emit,
+  ) => _replaceLibrarySafely(
+    emit,
+    backupPath: event.backupExistingPath,
+    body: () =>
+        _importLibraryArchive(event.archivePath, event.targetPath, emit),
+    onError: (e) => _error(
+      errorMessage: 'שגיאה בייבוא הארכיון: $e',
+      selectedPath: event.archivePath,
+    ),
+  );
+
+  /// מריץ ייבוא שמחליף את הספרייה. עם [backupPath] (עדכון במקום) המסד מושעה
+  /// בכל החלונות, ה-DB הישן מגובה, ומשוחזר אם [body] לא הסתיים בבחירת ספרייה.
+  Future<void> _replaceLibrarySafely(
+    Emitter<EmptyLibraryState> emit, {
+    required String? backupPath,
+    required Future<void> Function() body,
+    required EmptyLibraryState Function(Object error) onError,
+    Future<void> Function()? afterReplacement,
+  }) async {
     String? backupDir;
-    final closesWorker = backupPath != null;
     var writeSessionStarted = false;
     LibrarySuspension? suspension;
     try {
-      if (closesWorker) {
+      if (backupPath != null) {
         suspension = await _accessGate.suspendAll();
         await SqliteDataProvider.instance.closeForExternalWrite();
         writeSessionStarted = true;
         await _accessGate.verifyReleased(_dbPathIn(backupPath));
-      }
-      if (backupPath != null) {
         backupDir = await _backupDatabaseFiles(backupPath);
       }
-      await _importLibraryFolder(event.sourceFolder, event.targetPath, emit);
+      await body();
       if (backupDir != null) {
         if (state is EmptyLibraryDirectorySelected) {
-          await _discardBackupDir(backupDir);
+          await _cleanupCommittedImport(
+            'גיבוי המסד',
+            () => _discardBackupDir(backupDir!),
+          );
         } else {
           await _restoreDatabaseFiles(backupDir, backupPath!);
         }
@@ -180,19 +234,14 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
       if (backupDir != null) {
         await _restoreDatabaseFiles(backupDir, backupPath!);
       }
-      // Scoped Storage באנדרואיד: התיקייה נראית אך אינה ניתנת לקריאה (#1219).
-      final message = e is PathAccessException
-          ? 'אין לתוכנה הרשאת קריאה לקובץ המקור ${e.path}. '
-                'באנדרואיד יש לבחור את קובץ ${DatabaseConstants.databaseFileName} '
-                'דרך "בחר קובץ ספרייה".'
-          : 'שגיאה בייבוא הספרייה: $e';
-      emit(_error(errorMessage: message, selectedPath: event.sourceFolder));
+      emit(onError(e));
     } finally {
       if (writeSessionStarted) {
         await SqliteDataProvider.instance.reopenAfterExternalWrite(
           reopenDatabase: false,
         );
       }
+      await afterReplacement?.call();
       if (suspension != null) {
         await _accessGate.resumeAll(
           suspension,
@@ -202,59 +251,177 @@ class EmptyLibraryBloc extends Bloc<EmptyLibraryEvent, EmptyLibraryState> {
     }
   }
 
-  /// מייבא את הספרייה מארכיון ZIP או ZST, ומשחזר את ה-DB הישן אם הפעולה
-  /// אינה מסתיימת בבחירת ספרייה תקינה.
-  Future<void> _onImportLibraryArchiveRequested(
-    ImportLibraryArchiveRequested event,
+  /// מייבא את קובצי הספרייה (ואופציונלית האינדקס) שמסייע ההורדה הכין.
+  Future<void> _onImportLibraryPackageRequested(
+    ImportLibraryPackageRequested event,
     Emitter<EmptyLibraryState> emit,
   ) async {
-    final backupPath = event.backupExistingPath;
-    String? backupDir;
-    final closesWorker = backupPath != null;
-    var writeSessionStarted = false;
-    LibrarySuspension? suspension;
-    try {
-      if (closesWorker) {
-        suspension = await _accessGate.suspendAll();
-        await SqliteDataProvider.instance.closeForExternalWrite();
-        writeSessionStarted = true;
-        await _accessGate.verifyReleased(_dbPathIn(backupPath));
-      }
-      if (backupPath != null) {
-        backupDir = await _backupDatabaseFiles(backupPath);
-      }
-      await _importLibraryArchive(event.archivePath, event.targetPath, emit);
-      if (backupDir != null) {
-        if (state is EmptyLibraryDirectorySelected) {
-          await _discardBackupDir(backupDir);
-        } else {
-          await _restoreDatabaseFiles(backupDir, backupPath!);
+    var indexReleased = false;
+    await _replaceLibrarySafely(
+      emit,
+      backupPath: event.backupExistingPath,
+      body: () => _importLibraryPackage(
+        event.packages,
+        event.targetPath,
+        emit,
+        onIndexReleased: () => indexReleased = true,
+      ),
+      afterReplacement: () async {
+        // פתיחה מחדש חייבת לראות גם את המסד שהוחזר בכשל, לפני חידוש החלונות.
+        if (indexReleased) {
+          await _packageImporter.reopenIndex().catchError(
+            (Object e) => debugPrint('[EmptyLibrary] פתיחת האינדקס נכשלה: $e'),
+          );
         }
-      }
-      if (state is EmptyLibraryDirectorySelected) await clearFilePickerCache();
-    } catch (e) {
-      if (backupDir != null) {
-        await _restoreDatabaseFiles(backupDir, backupPath!);
-      }
-      emit(
-        _error(
-          errorMessage: 'שגיאה בייבוא הארכיון: $e',
-          selectedPath: event.archivePath,
+      },
+      onError: (e) => _error(
+        errorMessage: packageImportErrorMessage(e),
+        selectedPath: event.packages.folder.displayName,
+      ),
+    );
+  }
+
+  /// פריסה ל-staging (ניתנת לביטול), בדיקת ה-DB, החלפת האינדקס והעברת
+  /// הספרים ליעד. כשל לפני ההעברה אינו נוגע ביעד.
+  Future<void> _importLibraryPackage(
+    LibraryPackageSet packages,
+    String target,
+    Emitter<EmptyLibraryState> emit, {
+    required VoidCallback onIndexReleased,
+  }) async {
+    void report(String message, double progress, {bool cancellable = true}) =>
+        emit(
+          EmptyLibraryExtracting(
+            selectedPath: target,
+            progress: progress,
+            message: message,
+            cancellable: cancellable,
+          ),
+        );
+
+    report('בודק מקום פנוי...', 0, cancellable: false);
+    final indexTarget = packages.index == null
+        ? null
+        : await LibraryPackageImporter.indexTargetFor(target);
+    await _packageImporter.checkSpace(packages, target, indexTarget);
+
+    final cancel = ZstdCancelFlag();
+    _activeImportCancel = cancel;
+    final StagedLibraryPackage staged;
+    try {
+      staged = await _packageImporter.stage(
+        packages: packages,
+        booksTarget: target,
+        indexTarget: indexTarget,
+        cancel: cancel,
+        onProgress: (kind, done, total) => report(
+          '${kind == LibraryPackageKind.searchIndex ? 'מאמת ופורס את אינדקס החיפוש' : 'מאמת ופורס את הספרייה'}\n'
+          '${formatMegabytesProgressHebrew(done, total)}',
+          total > 0 ? (done / total).clamp(0.0, 1.0) : 0,
         ),
       );
     } finally {
-      if (writeSessionStarted) {
-        await SqliteDataProvider.instance.reopenAfterExternalWrite(
-          reopenDatabase: false,
-        );
-      }
-      if (suspension != null) {
-        await _accessGate.resumeAll(
-          suspension,
-          dbReplaced: state is EmptyLibraryDirectorySelected,
-        );
+      _activeImportCancel = null;
+      cancel.dispose();
+    }
+
+    final hasIndex = indexTarget != null && staged.indexDir != null;
+    final previousSettings = {
+      for (final key in [
+        SettingsRepository.keyIndexPath,
+        SettingsRepository.keyLibraryPath,
+        SettingsRepository.keyLibraryFolderName,
+        SettingsRepository.keyDbEffectivePath,
+      ])
+        key: Settings.getValue<String>(key),
+    };
+    Future<void> rollback() async {
+      if (hasIndex) await _packageImporter.rollbackIndex(indexTarget);
+      for (final entry in previousSettings.entries) {
+        if (Settings.getValue<String>(entry.key) != entry.value) {
+          await Settings.setValue<String?>(entry.key, entry.value);
+        }
       }
     }
+
+    try {
+      report('מעביר את הספרייה למקומה...', 1, cancellable: false);
+      final stagedDb = _dbPathIn(staged.booksDir);
+      if (!await File(stagedDb).exists()) {
+        throw FormatException(
+          'בספרייה שהורדה חסר ${DatabaseConstants.databaseFileName}',
+        );
+      }
+      await _checkDbSchemaOffThread(stagedDb);
+      if (hasIndex) {
+        onIndexReleased();
+        await _packageImporter.installIndex(staged, indexTarget);
+      }
+      try {
+        await promoteStagedImport(staged.booksDir, target);
+        if (hasIndex) {
+          await Settings.setValue<String>(
+            SettingsRepository.keyIndexPath,
+            indexTarget,
+          );
+        }
+        await _handleDirectorySelection(target, emit);
+      } catch (_) {
+        await rollback();
+        rethrow;
+      }
+      if (state is EmptyLibraryDirectorySelected) {
+        if (hasIndex) {
+          await _cleanupCommittedImport(
+            'גיבוי האינדקס',
+            () => _packageImporter.commitIndex(indexTarget),
+          );
+        }
+      } else {
+        await rollback();
+      }
+    } finally {
+      if (state is EmptyLibraryDirectorySelected) {
+        await _cleanupCommittedImport(
+          'תיקיית הפריסה הזמנית',
+          () => _packageImporter.discard(staged),
+        );
+      } else {
+        await _packageImporter.discard(staged);
+      }
+    }
+  }
+
+  // אחרי אישור הספרייה ניקוי אינו יכול להחזיר עסקה שגיבוייה כבר נמחקו.
+  static Future<void> _cleanupCommittedImport(
+    String name,
+    Future<void> Function() cleanup,
+  ) async {
+    try {
+      await cleanup();
+    } catch (e) {
+      debugPrint('[EmptyLibrary] ניקוי $name נכשל: $e');
+    }
+  }
+
+  static Future<void> _checkDbSchemaOffThread(String dbPath) =>
+      Isolate.run(() => requireReadableDbSchema(dbPath));
+
+  /// הודעה למשתמש על כשל בייבוא קובצי המסייע.
+  @visibleForTesting
+  static String packageImportErrorMessage(Object error) {
+    const prepareAgain = 'יש להכין את התיקייה מחדש במסייע ההורדה.';
+    return switch (error) {
+      LibraryImportCancelled() => 'הייבוא בוטל. הספרייה לא שונתה.',
+      InsufficientSpaceException() => '$error',
+      FileSystemException(osError: OSError(errorCode: 28 || 112)) =>
+        'אין מספיק מקום פנוי לפריסת הספרייה. יש לפנות מקום ולנסות שוב.',
+      FormatException(:final message) =>
+        'ייבוא הספרייה נכשל: $message\n$prepareAgain',
+      PlatformException(:final message) =>
+        'קריאת הקבצים מהתיקייה שנבחרה נכשלה: $message',
+      _ => 'שגיאה בייבוא הספרייה: $error',
+    };
   }
 
   Future<void> _importLibraryArchive(
