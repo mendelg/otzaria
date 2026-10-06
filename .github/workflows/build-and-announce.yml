@@ -466,6 +466,8 @@ jobs:
       - name: Build Inno Setup installer
         shell: pwsh
         run: |
+          # העיצוב של שכבת התצוגה (installer/assistant_art.pin.json). כאן כישלון קטלני: המתקין אינו נבנה בלעדיו.
+          & ./tool/release/fetch_assistant_art.ps1
           Write-Host "Building FULL installer with library and VC++ Redistributable..."
           & "$env:ISCC" installer\otzaria_full.iss
           if ($LASTEXITCODE -ne 0) {
@@ -810,6 +812,7 @@ jobs:
           .\installer\download_full_installer_assets.ps1
           if ($LASTEXITCODE -ne 0) { throw "FULL installer assets download failed" }
           Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile "installer\MicrosoftEdgeWebview2Setup.exe"
+          & ./tool/release/fetch_assistant_art.ps1
           & "$env:ISCC" /DAppArch=arm64 installer\otzaria_full.iss
           if ($LASTEXITCODE -ne 0) { throw "ARM64 FULL installer build failed" }
           Remove-Item -Path "installer\library_db" -Recurse -Force
@@ -2530,6 +2533,8 @@ jobs:
       - name: Build regular installer
         shell: pwsh
         run: |
+          # העיצוב של שכבת התצוגה (installer/assistant_art.pin.json). כאן כישלון קטלני: המתקין אינו נבנה בלעדיו.
+          & ./tool/release/fetch_assistant_art.ps1
           & "$env:ISCC" installer\otzaria.iss
           if ($LASTEXITCODE -ne 0) {
             throw 'Regular installer build failed'
@@ -2539,6 +2544,8 @@ jobs:
         if: needs.build_windows_arm64.result == 'success'
         shell: pwsh
         run: |
+          # העיצוב של שכבת התצוגה (installer/assistant_art.pin.json). כאן כישלון קטלני: המתקין אינו נבנה בלעדיו.
+          & ./tool/release/fetch_assistant_art.ps1
           & "$env:ISCC" /DAppArch=arm64 installer\otzaria.iss
           if ($LASTEXITCODE -ne 0) {
             throw 'ARM64 installer build failed'
