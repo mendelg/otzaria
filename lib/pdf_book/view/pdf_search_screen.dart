@@ -376,7 +376,9 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
       distance: widget.initialSearchDistance,
       matchPolicy: widget.initialMatchPolicy,
     );
-    if (searchableInBookQuery(widget.searchController.text) == null) {
+    // מסכת PDF מצורפת אינה מאונדקסת, וברירת מחדל שדורשת מנוע הייתה חוסמת בה.
+    if (!_isBundledTalmudPdf &&
+        searchableInBookQuery(widget.searchController.text) == null) {
       _settings = InBookSearchSettings.savedDefaults();
     }
     // התצורה הממתינה כבר משוקפת בערכי האתחול; אין להחילה שוב.
