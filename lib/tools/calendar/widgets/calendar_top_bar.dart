@@ -548,7 +548,7 @@ class _CalendarTopBarState extends State<CalendarTopBar>
 
     return Padding(
       padding: const EdgeInsetsDirectional.only(end: 4),
-      child: Tooltip(
+      child: ContainedTooltip(
         message: tooltip,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
