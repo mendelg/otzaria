@@ -354,6 +354,7 @@ Otzaria.on('plugin.suspended', stop);   // עצירת timers / polling / WebSock
 |--------|-------|----------|-------|
 | `reader.openBook` | `reader.open` | `{ bookId, index?, searchQuery? }` | `boolean` |
 | `reader.openBookAtRef` | `reader.open` | `{ bookId, ref, index?, highlight? }` | `boolean` |
+| `reader.printRange` | `reader.open` | `{ bookUid \| id \| bookId, startIndex, endIndex? }` | `{ printed }` |
 | `reader.getCurrentState` | `reader.open` | — | `ReaderState` |
 
 ### navigation.*

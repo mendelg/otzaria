@@ -41,6 +41,7 @@
 | `library.openBookFile` | קלט | קלט | קלט | קלט |
 | `reader.openBook` | קלט | קלט | קלט | קלט |
 | `reader.openBookAtRef` | קלט | קלט | קלט | קלט |
+| `reader.printRange` | קלט | קלט | קלט | קלט |
 
 \* ב-`library.resolveRef` השדות `id`/`type`/`bookUid` חסרים כשההתאמה היא ספר
 אישי או PDF ממערכת הקבצים — ראה את האזהרה בתיאור המתודה.
@@ -168,6 +169,7 @@ if (response.success) {
 | `search.getOptions` | 0.9.97 |
 | `reader.openBook` | 0.9.89 |
 | `reader.openBookAtRef` | 0.9.89 |
+| `reader.printRange` | 0.9.99 |
 | `reader.openSearchTab` | 0.9.89 |
 | `reader.getCurrentState` | 0.9.89 |
 | `reader.getCurrentRef` | 0.9.89 |
@@ -1769,6 +1771,42 @@ await Otzaria.call('reader.openBookAtRef', {
 - אם ההתייחסות כוללת טווח (`'לג:ה-ז'`) — הניווט הוא לתחילת הטווח.
 - `highlight` חל גם על התאמה ברמת כותרת; אם ההתייחסות לא נמצאה כלל — אין הדגשה,
   והטקסט מועבר לתיבת החיפוש כגיבוי (התנהגות קיימת).
+
+### `reader.printRange`
+**הרשאה:** `reader.open` · **מגרסה:** 0.9.99
+
+פותח את מסך ההדפסה של אוצריא — אותו מסך שכפתור ההדפסה בקורא פותח — על טווח
+שורות בספר טקסט, כשהטווח כבר מסומן. המשתמש בוחר בו גופן, עימוד, ניקוד,
+מפרשים ויעד (מדפסת, PDF או Word) כמו בהדפסה רגילה מהקורא, ויכול גם לשנות את
+הטווח. התוסף אינו מקבל את הטקסט.
+
+קלט: זהות ספר (`bookUid` מומלץ, או `id` / `bookId` + `type`), `startIndex`
+(שורת ההתחלה, 0-based) ו-`endIndex` (אופציונלי, **בלעדי**). אלה אותם
+אינדקסים ש-`library.getBookToc` מחזיר, כך שטווח של פרק הוא מה-`index` של
+כותרת הפרק עד ה-`index` של הכותרת הבאה. כשהטווח מתחיל ומסתיים בדיוק בגבולות
+כותרות, המסך מציג אותו כבחירת כותרות ("מפרק א עד פרק ט"); אחרת — כטווח שורות.
+בלי `endIndex` המסך נפתח על הכותרת שסביב `startIndex`, כמו בהדפסה מהקורא.
+
+```javascript
+// לחיצה של המשתמש בלבד — כמו ui.print
+button.onclick = async () => {
+  const toc = (await Otzaria.call('library.getBookToc', { bookId: 'תהילים' })).data;
+  const from = toc.find((e) => e.text === 'פרק א').index;
+  const to = toc.find((e) => e.text === 'פרק י').index;   // בלעדי: פרקים א–ט
+  const res = await Otzaria.call('reader.printRange', {
+    bookId: 'תהילים', startIndex: from, endIndex: to
+  });
+  // res.data = { printed: true } — הודפס/יוצא; { printed: false } — בוטל
+};
+```
+
+הערות:
+- **דורש מחוות משתמש.** כמו `ui.print`, הקריאה תקפה רק מתוך handler של לחיצה,
+  ואם כבר פתוח דיאלוג מערכת של המופע מוחזר `error.forbidden`.
+- נתמך רק בספרי טקסט; ספר PDF מחזיר `error.unsupported`, ספר שלא נמצא —
+  `error.not_found`.
+- `endIndex` שאינו גדול מ-`startIndex`, או אינדקס שלילי/לא שלם, מחזירים
+  `error.invalid_params`.
 
 ### `reader.getCurrentState`
 **הרשאה:** `reader.open`

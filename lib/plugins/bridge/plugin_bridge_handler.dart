@@ -366,6 +366,7 @@ class PluginBridgeHandler {
     'search.getOptions': 'search.fulltext.read',
     'reader.openBook': 'reader.open',
     'reader.openBookAtRef': 'reader.open',
+    'reader.printRange': 'reader.open',
     'reader.openSearchTab': 'reader.open',
     'reader.getCurrentState': 'reader.open',
     'reader.getCurrentRef': 'reader.open',

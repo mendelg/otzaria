@@ -77,6 +77,11 @@ class PrintingScreen extends StatefulWidget {
   /// והטעמים ואת טיפול שם הוי"ה, במקום [removeNikud]/[removeTaamim] וההגדרות.
   final TextDisplayProfile? displayProfile;
   final int startLine;
+
+  /// סוף טווח ההדפסה ההתחלתי (בלעדי). כשמסופק — הטווח [startLine]..[endLine]
+  /// מסומן מראש (למשל מ-`reader.printRange` של תוסף), במקום הכותרת שסביב
+  /// השורה הנראית.
+  final int? endLine;
   final List<TocEntry> tableOfContents;
   final int? initialPage;
   final bool isBookView;
@@ -97,6 +102,7 @@ class PrintingScreen extends StatefulWidget {
     this.links = const [],
     this.activeCommentators = const [],
     this.startLine = 0,
+    this.endLine,
     this.removeNikud = false,
     this.removeTaamim = false,
     this.displayProfile,
@@ -280,7 +286,15 @@ class _PrintingScreenState extends State<PrintingScreen> {
 
     // ברירת המחדל היא הכותרת האחרונה שלפני השורה הנראית (ועד סוף אותה כותרת);
     // בלי כותרות — טווח שורות מסביב לשורה הראשונה הנראית.
-    if (_flatHeaders.isNotEmpty) {
+    if (widget.endLine != null) {
+      // טווח מפורש: עוגני שורות עד שידוע אורך הספר, ואז כותרות כשהן תואמות
+      // בדיוק (_resolveRequestedRange).
+      _startAnchor = _RangeAnchor(_AnchorKind.line, widget.startLine);
+      _endAnchor = _RangeAnchor(
+        _AnchorKind.line,
+        max(widget.startLine, widget.endLine! - 1),
+      );
+    } else if (_flatHeaders.isNotEmpty) {
       final lastHeader = findLastHeaderIndexAtOrBefore(
         _flatHeaders,
         widget.startLine,
@@ -308,7 +322,34 @@ class _PrintingScreenState extends State<PrintingScreen> {
     }
   }
 
+  /// ממיר את הטווח המפורש ([PrintingScreen.endLine]) לעוגני כותרות כשהוא
+  /// מתחיל ומסתיים בדיוק בגבולות כותרות — כך שבחירת הטווח במסך נראית כמו
+  /// בחירה ידנית. אחרת נשארים עוגני השורות.
+  bool _requestedRangeResolved = false;
+
+  Future<void> _resolveRequestedRange() async {
+    final endLine = widget.endLine;
+    if (endLine == null || _requestedRangeResolved || _flatHeaders.isEmpty) {
+      return;
+    }
+    _requestedRangeResolved = true;
+    final totalLines = await _totalLineCount();
+    final match = matchHeaderRange(
+      _flatHeaders,
+      widget.startLine,
+      endLine,
+      totalLines,
+    );
+    if (match.start != null) {
+      _startAnchor = _RangeAnchor(_AnchorKind.header, match.start!);
+    }
+    if (match.end != null) {
+      _endAnchor = _RangeAnchor(_AnchorKind.header, match.end!);
+    }
+  }
+
   Future<void> _initPreviewRange() async {
+    await _resolveRequestedRange();
     await _applyCurrentRange();
     if (mounted) {
       setState(() {});
@@ -399,7 +440,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
         _flatAltHeaders = altEntries;
         _anchorEntries = null; // נבנה מחדש עם כותרות המשנה
         // בלי ניווט רגיל — ברירת המחדל היא כותרות המשנה.
-        if (_flatHeaders.isEmpty) {
+        if (_flatHeaders.isEmpty && widget.endLine == null) {
           _startAnchor = _RangeAnchor(_AnchorKind.altHeader, lastAlt);
           _endAnchor = _RangeAnchor(_AnchorKind.altHeader, lastAlt);
           _updateRangeFromAnchors();

@@ -107,6 +107,7 @@ import 'package:otzaria/plugins/services/plugin_page_launcher.dart';
 import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:otzaria/plugins/services/plugin_print_service.dart';
+import 'package:otzaria/printing/view/printing_screen.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/models/plugin_network_allowlist.dart';
 import 'package:otzaria/plugins/services/plugin_network_access_resolver.dart';
@@ -524,6 +525,16 @@ class PluginBridgeDependencies {
   })?
   printPluginPage;
 
+  /// פותח את מסך ההדפסה של אוצריא על טווח שורות בספר (`reader.printRange`)
+  /// ומחזיר אם המשתמש הדפיס או ייצא. אופציונלי — ברירת המחדל מציגה את
+  /// [PrintingScreen] כדיאלוג; קיים להזרקה בבדיקות.
+  final Future<bool> Function(
+    TextBook book, {
+    required int startLine,
+    int? endLine,
+  })?
+  printBookRange;
+
   /// מייצר PDF מהדף של מופע התוסף (`ui.exportPdf`). אופציונלי — ברירת המחדל
   /// היא [PluginPrintService] מעל ה-WebView הרשום; קיים להזרקה בבדיקות.
   final Future<Uint8List> Function(
@@ -576,6 +587,7 @@ class PluginBridgeDependencies {
     this.onBackgroundInstanceDone,
     this.dispatchEventToPlugin,
     this.printPluginPage,
+    this.printBookRange,
     this.capturePluginPagePdf,
     this.hasUserActivation,
     this.customFoldersBloc,
@@ -2560,6 +2572,55 @@ class PluginBridgeAdapter {
           );
           return true;
         }
+      case 'printRange':
+        // spec: printRange({ id?, bookUid?, bookId?, type?, startIndex, endIndex? })
+        // פותח את מסך ההדפסה של אוצריא (כמו כפתור ההדפסה בקורא) על טווח
+        // שורות, מסומן מראש. התוסף אינו מקבל את הטקסט — ההדפסה נעשית בדיאלוג,
+        // ולכן כמו ui.print היא מותרת רק מתוך לחיצה של המשתמש.
+        {
+          final startIndex = _nonNegativeIntArg(args['startIndex']);
+          if (startIndex == null) {
+            throw Exception(
+              'error.invalid_params: startIndex must be a non-negative integer',
+            );
+          }
+          final rawEnd = args['endIndex'];
+          final endIndex = rawEnd == null ? null : _nonNegativeIntArg(rawEnd);
+          if (rawEnd != null && (endIndex == null || endIndex <= startIndex)) {
+            throw Exception(
+              'error.invalid_params: endIndex must be an integer greater than '
+              'startIndex',
+            );
+          }
+          if (PluginBookIdentity.parseId(args['id']) == null &&
+              (args['bookId'] ?? args['title']) == null &&
+              (args['bookUid'] as String?)?.trim().isNotEmpty != true) {
+            throw Exception(
+              'error.invalid_params: id, bookUid or bookId required',
+            );
+          }
+          return await _runUserGatedDialog(() async {
+            final book = _findPluginBook(
+              await DataRepository.instance.library,
+              args,
+            );
+            if (book == null) {
+              throw Exception('error.not_found: book not found');
+            }
+            if (book is! TextBook) {
+              throw Exception(
+                'error.unsupported: printRange supports text books only',
+              );
+            }
+            final show = _dependencies.printBookRange ?? _defaultPrintBookRange;
+            final printed = await show(
+              book,
+              startLine: startIndex,
+              endLine: endIndex,
+            );
+            return {'printed': printed};
+          });
+        }
       case 'getCurrentState':
         final tabsState = _dependencies.tabsBloc.state;
         final tabs = tabsState.tabs;
@@ -3722,6 +3783,38 @@ class PluginBridgeAdapter {
         );
     // WKWebView אינו מממש את navigator.userActivation; שם אין מה לאכוף.
     return result != 'inactive';
+  }
+
+  /// מסך ההדפסה של הקורא, כדיאלוג מעל החלון הראשי (`reader.printRange`).
+  Future<bool> _defaultPrintBookRange(
+    TextBook book, {
+    required int startLine,
+    int? endLine,
+  }) async {
+    final toc = await book.tableOfContents;
+    final context = navigatorKey.currentContext;
+    if (context == null || !context.mounted) {
+      throw Exception('error.unavailable: No window to show the print screen');
+    }
+    final printed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PrintingScreen(
+        data: _loadBookRawText(book),
+        bookId: book.title,
+        book: book,
+        startLine: startLine,
+        endLine: endLine,
+        tableOfContents: toc,
+      ),
+    );
+    return printed ?? false;
+  }
+
+  /// מספר שלם אי-שלילי מפרמטר JSON (גם 3.0), או null.
+  static int? _nonNegativeIntArg(Object? value) {
+    if (value is! num || value < 0 || value != value.truncate()) return null;
+    return value.toInt();
   }
 
   Future<bool> _defaultPrintPage(

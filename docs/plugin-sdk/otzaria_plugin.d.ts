@@ -1940,6 +1940,7 @@ export type OtzariaMethod =
   | 'search.getOptions'
   | 'reader.openBook'
   | 'reader.openBookAtRef'
+  | 'reader.printRange'
   | 'reader.registerInBookSearchProvider'
   | 'reader.respondInBookSearch'
   | 'reader.openSearchTab'

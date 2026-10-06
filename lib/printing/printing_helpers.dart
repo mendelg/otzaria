@@ -157,3 +157,33 @@ int headerSectionEndLine(List<TocEntry> headers, int index, int totalLines) {
   }
   return totalLines;
 }
+
+/// התאמת טווח שורות שנמסר מבחוץ (למשל מתוסף) לכותרות, כדי שמסך ההדפסה יציג
+/// אותו כ"מכותרת X עד כותרת Y" ולא כמספרי שורות.
+///
+/// `start` היא הכותרת הרדודה ביותר שמתחילה בדיוק ב-[startLine]; `end` היא
+/// הכותרת הרדודה ביותר בטווח שהסעיף שלה (ראו [headerSectionEndLine]) מסתיים
+/// בדיוק ב-[endLine] (בלעדי). כל אחת `null` כשאין התאמה מדויקת.
+({int? start, int? end}) matchHeaderRange(
+  List<TocEntry> headers,
+  int startLine,
+  int endLine,
+  int totalLines,
+) {
+  int? start;
+  int? end;
+  for (var i = 0; i < headers.length; i++) {
+    final header = headers[i];
+    if (header.index == startLine &&
+        (start == null || header.level < headers[start].level)) {
+      start = i;
+    }
+    if (header.index >= startLine &&
+        header.index < endLine &&
+        headerSectionEndLine(headers, i, totalLines) == endLine &&
+        (end == null || header.level < headers[end].level)) {
+      end = i;
+    }
+  }
+  return (start: start, end: end);
+}
