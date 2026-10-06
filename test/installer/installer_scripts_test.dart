@@ -1896,8 +1896,10 @@ void main() {
       expect(yesNo, contains('MsgBox(Text, Typ, Flags) = IDYES'));
       expect(
         yesNo.replaceAll(RegExp(r'\s+'), ' '),
-        contains("CustomMessage('NoButton'), False)"),
-        reason: 'Danger=False: "כן" הוא כפתור ברירת המחדל',
+        contains("CustomMessage('NoButton'), False, True)"),
+        reason:
+            'Danger=False: "כן" הוא כפתור ברירת המחדל; NoCancel: כמו MsgBox של '
+            'כן/לא, Esc אינו בוחר ב"לא" ואינו מדלג על החילוץ',
       );
 
       final next = _routine(script, 'function NextButtonClick(');
@@ -3172,13 +3174,18 @@ void main() {
 
     test('$_assistant: בשאלה הרסנית Enter ו-Esc בוחרים בפעולה הבטוחה', () {
       final script = _script(_assistant);
-      final ask = _routine(script, 'function UiAsk(');
+      final ask = _routine(script, 'function UiAskDialog(');
 
       // כמו AppDialog.warning: הבטוחה מלאה וממוקדת, ההרסנית כפתור טקסט אדום.
       expect(ask, contains('UiDlgOk.Default := False;'));
       expect(ask, contains('UiDlgNo.Default := False;'));
-      expect(ask, contains('UiDlgNo.Cancel := True;'));
+      expect(ask, contains('UiDlgNo.Cancel := not NoCancel;'));
       expect(ask, contains('UiDlg.ActiveControl := UiButtons[UiBtnDlgNo].Img'));
+      // במסייע Esc נשאר "לא": UiAsk לעולם אינו מבקש NoCancel.
+      expect(
+        _routine(script, 'function UiAsk('),
+        contains('UiAskDialog(Title, Text, Yes, No, Danger, False)'),
+      );
       final flat = script.replaceAll(RegExp(r'\s+'), ' ');
       for (final pair in const [
         ('ExitYes', 'ExitNo'),
@@ -4003,6 +4010,11 @@ void main() {
           if (routine.isEmpty) continue;
           expect(helpers, contains(routine), reason: 'MsgBox בתוך $routine');
         }
+        // הענף שאחרי "if WizardSilent then" הוא ה-MsgBox עצמו, ולא הדו-שיח המעוצב.
+        final silentBranch = RegExp(
+          r'if WizardSilent(?: or [^\n]*)? then\n\s*(?:Result := )?'
+          r'(?:Suppressible)?MsgBox\(',
+        );
         for (final signature in [
           'procedure InstTell(',
           'function InstAskYesNo(',
@@ -4010,16 +4022,15 @@ void main() {
           'procedure InstReportFailure(',
         ]) {
           final body = _routine(script, signature);
-          final guard = body.indexOf('WizardSilent');
-          expect(guard, greaterThan(0), reason: signature);
-          expect(guard, lessThan(body.indexOf('MsgBox(')), reason: signature);
+          expect(body, matches(silentBranch), reason: signature);
+          expect(body, isNot(contains('not WizardSilent')), reason: signature);
         }
       });
 
       test('$name: כל דו-שיח מעוצב שמור מאחורי not WizardSilent', () {
         final code = installerCode(name);
         for (final m in RegExp(
-          r'\bUi(?:Ask|Tell|AskExit)\(',
+          r'\bUi(?:Ask|AskDialog|Tell|AskExit)\(',
         ).allMatches(code)) {
           final routineStart = code.lastIndexOf(
             RegExp(r'^(?:procedure|function) ', multiLine: true),
@@ -4136,6 +4147,338 @@ void main() {
         contains('if UiCompact then'),
       );
       expect(coreText, contains('UiCompactHeight = 260;'));
+    });
+
+    test('חלון /SILENT: העיצוב נשלף לפני ההתקנה, בתבנית מעוגנת', () {
+      final coreText = _read(core);
+      final compact = _routine(coreText, 'procedure UiInitializeCompact(');
+      // בפעימה הראשונה השליפה הייתה עלולה ליפול בתוך חילוץ של Inno (reentrancy).
+      expect(
+        compact.indexOf('UiExtractArt()'),
+        greaterThan(compact.indexOf('UiInitializeWizard(')),
+      );
+      expect(
+        compact.indexOf('UiBuildCompact()'),
+        greaterThan(compact.indexOf('UiExtractArt()')),
+        reason: 'בלי הלוח החלון מוצג לרגע עם הפקדים של Inno',
+      );
+      final extract = _routine(coreText, 'procedure UiExtractArt(');
+      expect(extract, contains('if UiArtExtracted then'));
+      expect(
+        extract,
+        contains(
+          r"ExtractTemporaryFiles('{tmp}\*_' + IntToStr(UiScale) + '.png')",
+        ),
+      );
+      expect(
+        RegExp(r'ExtractTemporaryFiles\(').allMatches(coreText).length,
+        1,
+        reason: 'שליפה אחת, דרך UiExtractArt',
+      );
+      expect(
+        _routine(coreText, 'procedure UiFirstTick('),
+        contains('UiExtractArt()'),
+      );
+      expect(
+        _routine(coreText, 'function UiLoadArt('),
+        contains('and not UiCompact then'),
+        reason: 'במצומצם אין שליפה עצלה באמצע ההתקנה',
+      );
+    });
+
+    test('Inno Setup נעוץ ל-6.7.1 ב-CI, ו-7 נעצר בקומפילציה', () {
+      final art = _read('otzaria_ui_art.iss');
+      expect(art, contains('#if VER < EncodeVer(6, 7, 1)'));
+      expect(
+        art.substring(art.indexOf('#if VER >= EncodeVer(7, 0, 0)')),
+        matches(RegExp(r'^#if VER >= EncodeVer\(7, 0, 0\)\n\s*#error ')),
+      );
+      expect(
+        File('installer/install_inno_setup.ps1').readAsStringSync(),
+        contains('choco upgrade innosetup --version 6.7.1 --allow-downgrade'),
+      );
+      final workflow = File(
+        '.github/workflows/build-and-announce.yml',
+      ).readAsStringSync();
+      final installs = RegExp(
+        r'^.*(?:choco (?:install|upgrade) innosetup|winget install[^\n]*InnoSetup).*$',
+        multiLine: true,
+      ).allMatches(workflow).toList();
+      expect(installs, isNotEmpty);
+      for (final m in installs) {
+        expect(m[0], contains('--version 6.7.1'), reason: m[0]);
+      }
+      expect(workflow, isNot(contains(r'\Inno Setup*\ISCC.exe')));
+    });
+
+    for (final name in _scripts) {
+      test('$name: הכרטיסים הם הקלט היחיד של "איך להתקין"', () {
+        final script = _script(name);
+        final create = _routine(script, 'procedure CreateInstallModeChoice(');
+        for (final radio in const [
+          'CurrentUserModeRadio',
+          'AllUsersModeRadio',
+          'PortableModeRadio',
+        ]) {
+          // רדיו גלוי (גם מחוץ לחלון) מקבל פוקוס מ-Tab, וחץ מסמן אחר.
+          expect(create, contains('$radio.Visible := False;'), reason: radio);
+        }
+        expect(create, isNot(contains('Left :=')));
+        // PortableMode נקבע רק ב-ApplyInstallModeChoice (ובשקט ב-InitializeSetup).
+        final code = installerCode(name);
+        final assigns = RegExp(r'\bPortableMode := ').allMatches(code).toList();
+        expect(assigns, isNotEmpty);
+        for (final m in assigns) {
+          expect(
+            enclosingRoutine(code, m.start),
+            anyOf('ApplyInstallModeChoice', 'InitializeSetup'),
+          );
+        }
+        // כל שגרה שמשנה רדיו מעבירה את הבחירה ל-ApplyInstallModeChoice.
+        final routines = <String>{
+          for (final m in RegExp(r'ModeRadio\.Checked := ').allMatches(code))
+            enclosingRoutine(code, m.start),
+        }..remove('CreateInstallModeChoice');
+        expect(routines, isNotEmpty);
+        for (final routine in routines) {
+          final header = RegExp(
+            '^(?:procedure|function) $routine\\b',
+            multiLine: true,
+          ).firstMatch(code)![0]!;
+          expect(
+            _routine(code, header),
+            contains('ApplyInstallModeChoice()'),
+            reason: routine,
+          );
+        }
+      });
+
+      test('$name: "התיקייה קיימת" — בדו-שיח המעוצב, ולא ב-MsgBox של Inno', () {
+        final script = _script(name);
+        expect(script, contains('DirExistsWarning=no'));
+        final next = _routine(script, 'function NextButtonClick(');
+        final silent = next.indexOf('if WizardSilent then');
+        final ask = next.indexOf('DirExistsDifferentFromPrevious()');
+        expect(silent, greaterThan(0));
+        expect(ask, greaterThan(silent));
+        final condition = next.substring(ask, next.indexOf('then', ask));
+        expect(condition, contains('not ModeChangeNeedsRelaunch()'));
+        expect(
+          condition,
+          contains('InstAskYesNo(SetupMessage(msgDirExistsTitle)'),
+        );
+        expect(
+          ask,
+          lessThan(next.indexOf('IsProtectedInstallDir(')),
+          reason: 'כמו auto של Inno: לפני הבדיקות של המתקין עצמו',
+        );
+        final compare = _routine(
+          script,
+          'function DirExistsDifferentFromPrevious(',
+        );
+        expect(compare, contains('WizardForm.PrevAppDir'));
+        expect(compare, contains('CompareText(RemoveBackslash('));
+      });
+
+      test('$name: שדרוג שומר את שפת ההתקנה הקודמת', () {
+        // UsePreviousLanguage=yes (ברירת המחדל): בלעדיו עדכון שקט מחליף שפה.
+        expect(
+          _script(name),
+          isNot(matches(RegExp(r'^UsePreviousLanguage=', multiLine: true))),
+        );
+      });
+    }
+
+    test('סיום: "פתח" ו"סגור" דרך רשומת [Run], ובכישלון אין הפעלה ואין אתחול', () {
+      for (final name in _scripts) {
+        final run = _section(_script(name), 'Run');
+        expect(
+          run,
+          contains(
+            r'Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchApp}"; '
+            'Flags: nowait postinstall skipifsilent runasoriginaluser\n',
+          ),
+          reason: name,
+        );
+      }
+      final script = _script(_regular);
+      final finish = _routine(script, 'procedure UiFinish(');
+      expect(finish, contains('WizardForm.RunList.Checked[I] := Launch;'));
+      expect(finish, contains('UiClickReal(WizardForm.NextButton)'));
+      final click = _routine(script, 'procedure UiButtonClick(');
+      expect(click, contains('UiBtnOpenApp: UiFinish(True);'));
+      expect(click, contains('UiBtnDone: UiFinish(False);'));
+      final build = _routine(script, 'procedure UiAdapterBuildFinish(');
+      expect(
+        build,
+        contains(
+          'CanRun := (WizardForm.RunList.Items.Count > 0) and not Restart and '
+          'not InstFailed;',
+        ),
+      );
+      // Enter מפעיל את "סיום" האמיתי: בכישלון הוא לא יריץ את התוכנה ולא יאתחל.
+      final failed = build.substring(build.indexOf('if InstFailed then'));
+      expect(failed, contains('WizardForm.RunList.Checked[I] := False;'));
+      expect(failed, contains('WizardForm.NoRadio.Checked := True;'));
+      expect(
+        build.indexOf('WizardForm.NoRadio.Checked := True;'),
+        lessThan(build.indexOf('UiSetButton(UiBtnDone')),
+      );
+    });
+
+    test('כישלון: צעד הבא, והבטחה על הספרייה רק לפני ההחלפה', () {
+      final script = _script(_full);
+      final build = _routine(script, 'procedure UiAdapterBuildFinish(');
+      expect(build, contains("CustomMessage('FailRetry')"));
+      expect(build, contains('if not LibrarySwapStarted then'));
+      expect(build, contains("CustomMessage('FailLibraryKept')"));
+      // הדגל מורם מיד אחרי שהספרייה הקודמת הוזזה לגיבוי.
+      for (final signature in ['procedure ExtractEmbeddedLibraryArchives(']) {
+        final body = _routine(script, signature);
+        final backup = body.indexOf('if not BooksBackedUp then');
+        final flag = body.indexOf('LibrarySwapStarted := True;');
+        expect(backup, greaterThan(0), reason: signature);
+        expect(flag, greaterThan(backup), reason: signature);
+        expect(
+          body.substring(backup, flag),
+          contains("CustomMessage('BooksSwapFailed')"),
+          reason: 'החלפה שלא התחילה משאירה את הספרייה שלמה',
+        );
+        expect(
+          flag,
+          lessThan(body.indexOf("CustomMessage('BooksMoveFailed')")),
+          reason: signature,
+        );
+      }
+      // קוד היציאה בפרטים הטכניים, לא בגוף ההודעה.
+      final flat = script.replaceAll(RegExp(r'\s+'), ' ');
+      for (final key in const [
+        'DbExtractFailed',
+        'PdfExtractFailed',
+        'PdfOpenFailed',
+      ]) {
+        for (final lang in const ['english', 'hebrew']) {
+          expect(_text(script, lang, key), isNot(contains('%1')), reason: key);
+        }
+        expect(
+          flat,
+          contains(
+            "InstReportFailure(CustomMessage('$key') + Hint, "
+            "Msg1('ExitCode', IntToStr(ResultCode)) + #13#10 + ErrOutput, True);",
+          ),
+          reason: key,
+        );
+      }
+    });
+
+    test('רגע לפני ההתקנה: "אוצריא פתוחה" רק כש-Restart Manager מצא משהו', () {
+      final script = _script(_regular);
+      final messages = _messages(script, 'Messages');
+      for (final lang in const ['english', 'hebrew']) {
+        expect(
+          messages[lang]!['PreparingDesc'],
+          isNot(anyOf(contains('Otzaria'), contains('אוצריא'))),
+          reason: 'הכותרת מוצגת עוד לפני השאילתה',
+        );
+      }
+      // עד ש-Restart Manager ממלא אותה, ברשימה המוסתרת נשאר שם הפקד ("PreparingMemo").
+      final hint = _routine(script, 'function UiAdapterPageHint(');
+      expect(
+        hint.replaceAll(RegExp(r'\s+'), ' '),
+        contains(
+          'if WizardForm.PreparingMemo.Visible then '
+          'WizardForm.PageDescriptionLabel.Caption := '
+          "CustomMessage('PrepareAppsOpen');",
+        ),
+      );
+      final preparing = _routine(script, 'procedure UiBuildPreparing(');
+      expect(
+        preparing.indexOf('if WizardForm.PreparingMemo.Visible then'),
+        lessThan(preparing.indexOf('Trim(WizardForm.PreparingMemo.Text)')),
+      );
+      expect(preparing, contains("UiAddRow('app',"));
+      expect(preparing, contains("UiInstCard(UiCardCloseApps, 'update',"));
+      expect(
+        "'warning'".allMatches(preparing).length,
+        1,
+        reason: 'סמל האזהרה רק ל"אל תסגור"',
+      );
+    });
+
+    test('ניסוח: מקום פנוי, תיקייה קיימת, יציאה וכותרות באנגלית', () {
+      final script = _script(_full);
+      final messages = _messages(script, 'Messages');
+      final he = messages['hebrew']!;
+      final en = messages['english']!;
+      // LRM לפני המספר: בלעדיו "MB 313.9" מוצג בסדר הפוך במשפט העברי.
+      expect(he['DiskSpaceMBLabel'], contains('‎[mb] MB'));
+      expect(he['DiskSpaceGBLabel'], contains('‎[gb] GB'));
+      for (final lang in [he, en]) {
+        expect(lang['DirExists'], contains('%1'));
+        expect(lang['DirExistsTitle'], isNotNull);
+        expect(lang['ExitSetupTitle'], isNotNull);
+        expect(lang['ExitSetupMessage'], isNotNull);
+        expect(lang['DiskSpaceMBLabel'], contains('[mb]'));
+        expect(lang['DiskSpaceGBLabel'], contains('[gb]'));
+      }
+      expect(he['DirExistsTitle'], 'התיקייה כבר קיימת');
+      expect(en['StatusExtractFiles'], 'Copying files...');
+      expect(_text(script, 'hebrew', 'BooksExists'), isNot(contains('תוכנה')));
+      // כמו במסייע: כותרות באנגלית ב-Sentence case.
+      for (final title in [
+        en['WizardSelectDir']!,
+        en['WizardSelectTasks']!,
+        en['WizardReady']!,
+        en['WizardPreparing']!,
+        _text(script, 'english', 'BooksTitle'),
+      ]) {
+        expect(
+          title.split(' ').skip(1).where((w) => w.startsWith(RegExp('[A-Z]'))),
+          isEmpty,
+          reason: title,
+        );
+      }
+    });
+
+    test('שדרוג באשף מדבר על "עדכון", ואיפוס ההגדרות מסומן כהרסני', () {
+      final script = _script(_regular);
+      final init = _routine(script, 'procedure UiInstallerInitializeWizard(');
+      // אחרי ההתקנה הרישום כבר מראה את הגרסה החדשה, ולכן ההחלטה נשמרת בהתחלה.
+      expect(
+        init,
+        contains(
+          "InstIsUpdate := (GetPreviousDisplayVersion() <> '') and "
+          'not PortableMode;',
+        ),
+      );
+      expect(init, contains("CustomMessage('UpdateButton')"));
+      final build = _routine(script, 'procedure UiAdapterBuildFinish(');
+      expect(build, contains('InstIsUpdate and not PortableMode then'));
+      expect(build, contains("CustomMessage('FinishUpdated')"));
+      expect(build, isNot(contains('GetPreviousDisplayVersion')));
+      expect(
+        _routine(script, 'function UiInstCard('),
+        contains('Card.Danger := Kind = UiCardReset;'),
+      );
+      final layout = _routine(_read(core), 'function UiLayoutCard(');
+      expect(
+        layout.replaceAll(RegExp(r'\s+'), ' '),
+        contains(
+          'if Card.Danger then UiText(C, Card.Desc, X, Y + Px(3), TextW, '
+          'DescH, 13, False, UiErrorColor,',
+        ),
+      );
+    });
+
+    test('קו ההפרדה של הכותרת התחתונה מוצג רק מעל כפתורים', () {
+      final coreText = _read(core);
+      final sync = _routine(coreText, 'procedure UiSyncFooter(');
+      expect(sync, contains('(UiButtons[I].Img.Parent = UiFooter)'));
+      expect(sync, contains('UiFooterLine.Visible := Line;'));
+      expect(
+        _routine(coreText, 'procedure UiInitializeWizard('),
+        contains('UiFooterLine := UiPanel(UiFooter, UiDividerColor);'),
+      );
     });
   });
 

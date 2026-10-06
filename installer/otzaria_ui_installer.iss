@@ -11,17 +11,24 @@ english.ButtonNext=&Continue
 english.ButtonBack=&Back
 english.ButtonInstall=&Install
 english.ButtonFinish=&Finish
-english.WizardSelectDir=How to Install
+english.WizardSelectDir=How to install
 english.SelectDirDesc=Choose who Otzaria is for and where it goes.
-english.WizardSelectTasks=Additional Options
+english.WizardSelectTasks=Additional options
 english.SelectTasksDesc=Choose what else to add.
-english.WizardReady=Ready to Install
+english.WizardReady=Ready to install
 english.ReadyLabel1=Here's how Otzaria will be installed.
 english.ReadyLabel2a=Click "Install" to start, or "Back" to change something.
 english.ReadyLabel2b=Click "Install" to start.
-english.WizardPreparing=Almost Ready
-english.PreparingDesc=Otzaria is open right now and needs to close to finish the installation.
+english.WizardPreparing=Almost ready
+english.PreparingDesc=Preparing the installation...
 english.WizardInstalling=Installing Otzaria
+english.StatusExtractFiles=Copying files...
+english.DiskSpaceGBLabel=Needs at least [gb] GB of free space.
+english.DiskSpaceMBLabel=Needs at least [mb] MB of free space.
+english.DirExistsTitle=This folder already exists
+english.DirExists=This folder already exists:%n%1%n%nInstall into it anyway?
+english.ExitSetupTitle=Exit setup
+english.ExitSetupMessage=Setup isn't finished. You can run the setup file again at any time.%n%nExit now?
 english.FinishedHeadingLabel=Otzaria is installed
 english.FinishedLabel=Setup has finished installing Otzaria.
 english.FinishedLabelNoIcons=Setup has finished installing Otzaria.
@@ -50,8 +57,15 @@ hebrew.ReadyLabel1=כך תותקן אוצריא.
 hebrew.ReadyLabel2a=לחץ "התקן" כדי להתחיל, או "חזרה" כדי לשנות משהו.
 hebrew.ReadyLabel2b=לחץ "התקן" כדי להתחיל.
 hebrew.WizardPreparing=רגע לפני ההתקנה
-hebrew.PreparingDesc=אוצריא פתוחה כרגע, וצריך לסגור אותה כדי להשלים את ההתקנה.
+hebrew.PreparingDesc=מכין את ההתקנה...
 hebrew.WizardInstalling=מתקין את אוצריא
+; LRM לפני המספר: בלעדיו "313.9 MB" מוצג בסדר הפוך בתוך המשפט העברי.
+hebrew.DiskSpaceGBLabel=נדרשים לפחות ‎[gb] GB פנויים בדיסק.
+hebrew.DiskSpaceMBLabel=נדרשים לפחות ‎[mb] MB פנויים בדיסק.
+hebrew.DirExistsTitle=התיקייה כבר קיימת
+hebrew.DirExists=התיקייה הזאת כבר קיימת:%n%1%n%nלהתקין אליה בכל זאת?
+hebrew.ExitSetupTitle=יציאה מההתקנה
+hebrew.ExitSetupMessage=ההתקנה עוד לא הסתיימה. אפשר להפעיל את קובץ ההתקנה שוב בכל זמן.%n%nלצאת עכשיו?
 hebrew.FinishedHeadingLabel=אוצריא הותקנה
 hebrew.FinishedLabel=ההתקנה הסתיימה בהצלחה.
 hebrew.FinishedLabelNoIcons=ההתקנה הסתיימה בהצלחה.
@@ -71,6 +85,10 @@ hebrew.InstallingLabel=זה ייקח רק כמה רגעים.
 [CustomMessages]
 ; הטקסטים של המתקינים, כולל ההודעות של הלוגיקה. בעברית — הנוסח שהיה כתוב בקוד, מילה במילה.
 english.InstallButton=Install
+english.UpdateButton=Update
+english.FinishUpdated=Otzaria is updated
+english.PrepareAppsOpen=Otzaria is open right now and needs to close to finish the installation.
+english.FailRetry=You can run setup again.
 english.YesButton=Yes
 english.NoButton=No
 english.ChangeButton=Change
@@ -125,6 +143,10 @@ english.UninstallDeleteRest=• Databases, search index, settings,%n   bookmarks
 english.UninstallConfirmDelete=Note: the data can't be recovered after it is deleted.%n%nAre you sure you want to delete all the books and data?
 
 hebrew.InstallButton=התקנה
+hebrew.UpdateButton=עדכון
+hebrew.FinishUpdated=אוצריא עודכנה
+hebrew.PrepareAppsOpen=אוצריא פתוחה כרגע, וצריך לסגור אותה כדי להשלים את ההתקנה.
+hebrew.FailRetry=אפשר להריץ את ההתקנה שוב.
 hebrew.YesButton=כן
 hebrew.NoButton=לא
 hebrew.ChangeButton=שינוי
@@ -132,10 +154,10 @@ hebrew.ModeMeTitle=רק בשבילי (מומלץ)
 hebrew.ModeMeShort=רק בשבילי
 hebrew.ModeMeDesc=מותקנת בפרופיל שלך, בלי הרשאות מנהל.
 hebrew.ModeAllTitle=לכל המשתמשים במחשב
-hebrew.ModeAllDesc=זמינה לכל חשבונות המשתמש. דורש הרשאות מנהל.
+hebrew.ModeAllDesc=זמינה לכל חשבונות המשתמש. דורשת הרשאות מנהל.
 hebrew.ModePortableTitle=גרסה ניידת
 hebrew.FolderCaption=תיקיית ההתקנה
-hebrew.RelaunchElevated=אחרי אישור הרשאות המנהל ההתקנה תמשיך בחלון חדש, ושם תבחר את התיקייה.
+hebrew.RelaunchElevated=אחרי אישור הרשאות המנהל, ההתקנה תמשיך בחלון חדש ושם תבחר את התיקייה.
 hebrew.RelaunchCurrentUser=ההתקנה תמשיך בחלון חדש, ושם תבחר את התיקייה.
 hebrew.CalendarIconTask=צור קיצור דרך ישירות ללוח שנה
 hebrew.LaunchApp=הפעל את אוצריא
@@ -144,7 +166,7 @@ hebrew.TaskDesktopDesc=פותח את אוצריא בלחיצה כפולה.
 hebrew.TaskCalendarTitle=קיצור דרך ללוח השנה
 hebrew.TaskCalendarDesc=פותח ישירות את לוח השנה של אוצריא.
 hebrew.TaskResetTitle=איפוס הגדרות משתמש
-hebrew.TaskResetSide=נדרש רק בשדרוג מגרסה ישנה מ-0.9.80 או לפתרון תקלות.
+hebrew.TaskResetSide=נדרש רק בשדרוג מגרסה שקודמת ל-0.9.80, או לפתרון תקלות.
 hebrew.RowVersion=גרסה
 hebrew.RowUpgradeFrom=מעדכן מגרסה
 hebrew.RowMode=סוג ההתקנה
@@ -185,7 +207,7 @@ english.WebView2Desc=Needed only for plugins; everything else works without it.
 english.WebView2Installed=Already installed (version %1).
 english.RowBooks=Books folder
 english.RowComponents=System components
-english.BooksTitle=Where to Keep the Books
+english.BooksTitle=Where to keep the books
 english.BooksDesc=The library's books, and any you add later, are kept here.
 english.BooksHint=Otzaria's settings will point to this folder automatically.
 english.BooksBrowse=Choose a books folder:
@@ -205,9 +227,11 @@ english.StatusLexical=Extracting the dictionary for approximate search...
 english.StatusSwap=Replacing the previous library...
 english.DbArchiveMissing=The library file %1 is missing from the temporary setup files.%nA disk cleanup tool may have deleted it, or there isn't enough free space. Free up some space and install again.
 english.ArchiveMissing=The archive %1 is missing from the temporary setup files.%nA disk cleanup tool may have deleted it, or there isn't enough free space. Free up some space and install again.
-english.DbExtractFailed=Extracting the database failed. Exit code: %1
-english.PdfExtractFailed=Extracting the PDF archive failed. Exit code: %1
-english.PdfOpenFailed=Opening the PDF archive failed. Exit code: %1
+english.DbExtractFailed=Extracting the library database failed.
+english.PdfExtractFailed=Extracting the Babylonian Talmud books failed.
+english.PdfOpenFailed=Opening the Babylonian Talmud books archive failed.
+english.ExitCode=Exit code: %1
+english.FailLibraryKept=A library that was already on this computer wasn't changed.
 english.SeforimMissing=Extracting the library didn't finish — the seforim.db database is missing.
 english.BooksSwapFailed=The existing books folder can't be replaced. Make sure Otzaria is closed.
 english.BooksMoveFailed=Moving the library to the chosen location failed.
@@ -226,7 +250,7 @@ hebrew.BooksTitle=היכן לשמור את הספרים
 hebrew.BooksDesc=כאן יישמרו ספרי הספרייה וכל ספר שתוסיף בעתיד.
 hebrew.BooksHint=הנתיב יוגדר אוטומטית בהגדרות התוכנה.
 hebrew.BooksBrowse=בחר תיקיית ספרים:
-hebrew.BooksExists=שים לב: תיקייה קיימת כבר בנתיב זה.%nהתקנה זו תמחק את תוכנה ותחליף בספרים החדשים שבחבילה.
+hebrew.BooksExists=שים לב: בנתיב הזה כבר יש תיקייה.%nההתקנה תמחק את התוכן שלה ותחליף אותו בספרים שבחבילה.
 hebrew.BooksRequiredTitle=חסרה תיקיית ספרים
 hebrew.BooksRequired=יש לבחור נתיב לתיקיית הספרים.
 hebrew.InstallingWebView2=מתקין Microsoft WebView2 Runtime...
@@ -242,9 +266,11 @@ hebrew.StatusLexical=מחלץ מילון לחיפוש המקורב...
 hebrew.StatusSwap=מחליף את הספרייה הקודמת...
 hebrew.DbArchiveMissing=קובץ הספרייה %1 חסר בקבצי ההתקנה הזמניים.%nייתכן שתוכנת ניקוי דיסק מחקה אותו או שאין מספיק מקום פנוי. פנה מקום ונסה להתקין שוב.
 hebrew.ArchiveMissing=ארכיון %1 חסר בקבצי ההתקנה הזמניים.%nייתכן שתוכנת ניקוי דיסק מחקה אותו או שאין מספיק מקום פנוי. פנה מקום ונסה להתקין שוב.
-hebrew.DbExtractFailed=חילוץ מסד הנתונים נכשל. קוד יציאה: %1
-hebrew.PdfExtractFailed=חילוץ ארכיון ה-PDF נכשל. קוד יציאה: %1
-hebrew.PdfOpenFailed=פתיחת ארכיון ה-PDF נכשלה. קוד יציאה: %1
+hebrew.DbExtractFailed=חילוץ מסד הנתונים של הספרייה נכשל.
+hebrew.PdfExtractFailed=חילוץ ספרי התלמוד הבבלי נכשל.
+hebrew.PdfOpenFailed=פתיחת ארכיון ספרי התלמוד הבבלי נכשלה.
+hebrew.ExitCode=קוד יציאה: %1
+hebrew.FailLibraryKept=ספרייה שכבר הייתה במחשב לא שונתה.
 hebrew.SeforimMissing=חילוץ הספרייה לא הושלם — מסד הנתונים seforim.db חסר.
 hebrew.BooksSwapFailed=לא ניתן להחליף את תיקיית הספרים הקיימת. ודא שאוצריא סגורה.
 hebrew.BooksMoveFailed=העברת הספרייה למיקום שנבחר נכשלה.
@@ -289,6 +315,8 @@ var
   { כישלון אחרי העתקת הקבצים: Inno ממשיך לעמוד הסיום, וכאן הוא מוצג כמצב כישלון. }
   InstFailed: Boolean;
   InstFailText, InstFailTech: String;
+  { הייתה התקנה קודמת כשהאשף נפתח; אחרי ההתקנה הרישום כבר מראה את הגרסה החדשה. }
+  InstIsUpdate: Boolean;
   UiFailBody, UiFailLink: TNewStaticText;
   UiFailTech: TRichEditViewer;
 
@@ -326,13 +354,14 @@ begin
   Result := LtrUnit(MinimizePathName(Path, UiMeasure.Canvas.Font, Px(336 - 48)));
 end;
 
-{ שאלת כן/לא; True ל"כן". }
+{ שאלת כן/לא; True ל"כן". כמו ב-MsgBox של כן/לא, Esc וסגירה אינם בוחרים ב"לא". }
 function InstAskYesNo(const Title, Text: String; Typ: TMsgBoxType; Flags: Integer): Boolean;
 begin
   if WizardSilent then
     Result := MsgBox(Text, Typ, Flags) = IDYES
   else
-    Result := UiAsk(Title, Text, CustomMessage('YesButton'), CustomMessage('NoButton'), False);
+    Result := UiAskDialog(Title, Text, CustomMessage('YesButton'), CustomMessage('NoButton'),
+      False, True);
 end;
 
 procedure InstTellSuppressible(const Title, Text: String);
@@ -461,6 +490,7 @@ begin
   Card.Desc := Desc;
   Card.Side := Side;
   Card.Check := Check;
+  Card.Danger := Kind = UiCardReset;
   Result := UiAddCard(Card, Y);
 end;
 
@@ -498,7 +528,10 @@ begin
   Y := UiBuildFolderField(WizardForm.DirEdit, WizardForm.DirBrowseButton, FieldTop);
   BtnW := UiButtons[UiBtnBrowse].Img.Width;
   { בצד שמול הכפתור, צמוד אליו. }
-  UiDiskLabel := UiLabel(UiContent, 12, False, UiFaintColor, taRightJustify);
+  if UiRtl then
+    UiDiskLabel := UiLabel(UiContent, 12, False, UiFaintColor, taRightJustify)
+  else
+    UiDiskLabel := UiLabel(UiContent, 12, False, UiFaintColor, taLeftJustify);
   UiPlaceLabel(UiDiskLabel, WizardForm.DiskSpaceLabel.Caption,
     UiX(0, Px(UiContentW) - BtnW - Px(12), Px(UiContentW)), 0,
     Px(UiContentW) - BtnW - Px(12));
@@ -618,17 +651,20 @@ var
   Y: Integer;
   Apps: String;
 begin
-  Apps := Trim(WizardForm.PreparingMemo.Text);
+  { עד ש-Restart Manager ממלא אותה, ברשימה נשאר שם הפקד ("PreparingMemo"), והיא מוסתרת. }
+  Apps := '';
+  if WizardForm.PreparingMemo.Visible then
+    Apps := Trim(WizardForm.PreparingMemo.Text);
   StringChangeEx(Apps, #13#10, ', ', True);
   Y := 0;
   if Apps <> '' then
   begin
-    UiAddRow('warning', CustomMessage('PrepareApps'), Apps, False);
+    UiAddRow('app', CustomMessage('PrepareApps'), Apps, False);
     Y := UiPlaceSummary(0) + Px(UiCardGap);
   end;
   if WizardForm.PreparingYesRadio.Visible then
   begin
-    Y := UiInstCard(UiCardCloseApps, 'launch', CustomMessage('PrepareCloseTitle'),
+    Y := UiInstCard(UiCardCloseApps, 'update', CustomMessage('PrepareCloseTitle'),
       CustomMessage('PrepareCloseDesc'), '', False, Y);
     Y := UiInstCard(UiCardKeepApps, 'warning', CustomMessage('PrepareKeepTitle'),
       CustomMessage('PrepareKeepDesc'), '', False, Y);
@@ -704,8 +740,9 @@ end;
 procedure UiAdapterBuildFinish();
 var
   Page: TNewNotebookPage;
-  Y, Bottom: Integer;
+  Y, Bottom, I: Integer;
   CanRun, Restart: Boolean;
+  Body: String;
 begin
   Page := WizardForm.FinishedPage;
   Restart := WizardForm.YesRadio.Visible;
@@ -716,6 +753,14 @@ begin
   WizardForm.RunList.Left := -Px(4000);
   WizardForm.YesRadio.Left := -Px(4000);
   WizardForm.NoRadio.Left := -Px(4000);
+  { בכישלון Enter ("סיום" האמיתי) לא יפעיל את התוכנה ולא יאתחל את המחשב בלי לשאול. }
+  if InstFailed then
+  begin
+    for I := 0 to WizardForm.RunList.Items.Count - 1 do
+      WizardForm.RunList.Checked[I] := False;
+    if Restart then
+      WizardForm.NoRadio.Checked := True;
+  end;
 
   if not Assigned(UiFinBadge) then
   begin
@@ -734,6 +779,9 @@ begin
   end;
   if InstFailed then
     Y := UiPlaceLabel(UiFinTitle, CustomMessage('FailTitle'), Px(UiMargin),
+      UiFinBadge.Top + UiFinBadge.Height + Px(16), Px(UiContentW))
+  else if InstIsUpdate and not PortableMode then
+    Y := UiPlaceLabel(UiFinTitle, CustomMessage('FinishUpdated'), Px(UiMargin),
       UiFinBadge.Top + UiFinBadge.Height + Px(16), Px(UiContentW))
   else
     Y := UiPlaceLabel(UiFinTitle, WizardForm.FinishedHeadingLabel.Caption, Px(UiMargin),
@@ -764,8 +812,15 @@ begin
   if InstFailed then
   begin
     UiPlaceHost(Page, Y + Px(8), Bottom - Px(12));
+    { מה עכשיו: אפשר לנסות שוב, ובמלא — הספרייה הקודמת שלמה כל עוד ההחלפה לא התחילה. }
+    Body := InstFailText + #13#10#13#10 + CustomMessage('FailRetry');
+#ifdef InstallerFull
+    if not LibrarySwapStarted then
+      Body := InstFailText + #13#10#13#10 + CustomMessage('FailLibraryKept') + ' ' +
+        CustomMessage('FailRetry');
+#endif
     UiFailBody := UiLabel(UiContent, 14, False, UiSecondaryColor, taCenter);
-    Y := UiPlaceLabel(UiFailBody, InstFailText, 0, 0, Px(UiContentW));
+    Y := UiPlaceLabel(UiFailBody, Body, 0, 0, Px(UiContentW));
     if InstFailTech <> '' then
     begin
       UiFailLink := UiLabel(UiContent, 13, True, UiPrimaryColor, taCenter);
@@ -852,6 +907,9 @@ begin
     WizardForm.PreparingMemo.Left := -Px(4000);
     WizardForm.PreparingYesRadio.Left := -Px(4000);
     WizardForm.PreparingNoRadio.Left := -Px(4000);
+    { הכותרת מוצגת כבר בזמן ש-Restart Manager בודק: "אוצריא פתוחה" רק כשהוא מצא משהו. }
+    if WizardForm.PreparingMemo.Visible then
+      WizardForm.PageDescriptionLabel.Caption := CustomMessage('PrepareAppsOpen');
   end;
 #ifdef InstallerFull
   if PageID = BooksPage.ID then
@@ -955,11 +1013,12 @@ procedure UiInstallerInitializeWizard();
 var
   Title: String;
 begin
+  InstIsUpdate := (GetPreviousDisplayVersion() <> '') and not PortableMode;
   if WizardSilent then
   begin
     if CmdLineParamExists('/VERYSILENT') then
       exit;
-    if GetPreviousDisplayVersion() <> '' then
+    if InstIsUpdate then
       Title := Msg1('CompactUpdating', LtrUnit('{#MyAppVersion}'))
     else
       Title := Msg1('CompactInstalling', LtrUnit('{#MyAppVersion}'));
@@ -970,5 +1029,8 @@ begin
 #ifdef InstallerFull
   BooksPathBrowseBtn.Caption := CustomMessage('ChangeButton');
 #endif
-  UiInitializeWizard('title_inst_', 'title_inst_en_', CustomMessage('InstallButton'));
+  if InstIsUpdate then
+    UiInitializeWizard('title_inst_', 'title_inst_en_', CustomMessage('UpdateButton'))
+  else
+    UiInitializeWizard('title_inst_', 'title_inst_en_', CustomMessage('InstallButton'));
 end;

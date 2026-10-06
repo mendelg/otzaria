@@ -133,7 +133,7 @@ Name: "resetsettings"; Description: "{cm:ResetSettingsTask}"; Flags: unchecked
 
 [CustomMessages]
 english.ResetSettingsTask=Reset user settings — warning: deletes personal notes, bookmarks, history and plugin data! (The books and backups folders are kept. Needed only when upgrading from a version older than 0.9.80, or to fix problems)
-hebrew.ResetSettingsTask=איפוס הגדרות משתמש — אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים! (תיקיות הספרים והגיבויים נשמרות. נדרש רק בשדרוג מגרסה ישנה מ-0.9.80 או לפתרון תקלות)
+hebrew.ResetSettingsTask=איפוס הגדרות משתמש — אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים! (תיקיות הספרים והגיבויים נשמרות. נדרש רק בשדרוג מגרסה שקודמת ל-0.9.80, או לפתרון תקלות)
 
 [Icons]
 ; שמות הקיצורים אינם מתורגמים: שדרוג בממשק אנגלי חייב לדרוס את אותם קבצים, לא ליצור כפולים.
@@ -261,19 +261,20 @@ end;
 
 #include "otzaria_ui_installer.iss"
 
-// שלושת סוגי ההתקנה, מודל הנתונים של הכרטיסים: מחוץ לחלון, בעמוד wpSelectDir.
+// שלושת סוגי ההתקנה, מודל הנתונים של הכרטיסים, בעמוד wpSelectDir. מוסתרים ולא רק מחוץ
+// לחלון: רדיו גלוי מקבל פוקוס מ-Tab, וחץ היה מסמן אחר בלי לעבור ב-ApplyInstallModeChoice.
 procedure CreateInstallModeChoice();
 begin
   CurrentUserModeRadio := TNewRadioButton.Create(WizardForm);
   CurrentUserModeRadio.Parent := WizardForm.SelectDirPage;
-  CurrentUserModeRadio.Left := -ScaleX(4000);
+  CurrentUserModeRadio.Visible := False;
   CurrentUserModeRadio.Checked := True;
   AllUsersModeRadio := TNewRadioButton.Create(WizardForm);
   AllUsersModeRadio.Parent := WizardForm.SelectDirPage;
-  AllUsersModeRadio.Left := -ScaleX(4000);
+  AllUsersModeRadio.Visible := False;
   PortableModeRadio := TNewRadioButton.Create(WizardForm);
   PortableModeRadio.Parent := WizardForm.SelectDirPage;
-  PortableModeRadio.Left := -ScaleX(4000);
+  PortableModeRadio.Visible := False;
 end;
 
 // בחירה בכרטיס: המצב הנייד נקבע מיד, ותיקיית היעד מתחלפת לברירת המחדל של המצב
@@ -1069,7 +1070,7 @@ begin
   end;
 
   // התקנה חדשה או שדרוג מגרסה ישנה — אשף מלא. הבחירה בין משתמש-נוכחי /
-  // כל-המשתמשים / ניידת נעשית בעמוד "סוג ההתקנה" (כשהתהליך מורם העמוד
+  // כל-המשתמשים / ניידת נעשית בעמוד "איך להתקין" (כשהתהליך מורם העמוד
   // מסומן מראש על כל-המשתמשים והשיגור-מחדש משם עובר ללא UAC).
   if (not IsAdmin) and RequiresAdmin then
   begin

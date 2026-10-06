@@ -140,6 +140,8 @@ type
     Img: TBitmapImage;
     Title, Desc, Side, Icon: String;
     Check: Boolean;
+    { פעולה הרסנית: התיאור בצבע השגיאה. }
+    Danger: Boolean;
     Top, Height: Integer;
     Hover, Sel, Focused: Boolean;
     Drawn: String;
@@ -166,6 +168,7 @@ var
   UiCompact: Boolean;
   UiCompactTitle: String;
   UiCompactPanel: TPanel;
+  UiArtExtracted: Boolean;
   { עברית: הפריסה כפי שהיא כתובה. אנגלית: כל מיקום אופקי משוקף ב-UiX. }
   UiRtl: Boolean;
   UiTitleArt: String;
@@ -182,7 +185,7 @@ var
   UiArtNames: TStringList;
   UiMeasure: TBitmap;
 
-  UiTitleBar, UiFooter, UiHost, UiContent, UiThumb: TPanel;
+  UiTitleBar, UiFooter, UiFooterLine, UiHost, UiContent, UiThumb: TPanel;
   UiTitleLabel: TNewStaticText;
   UiButtons: array of TUiButton;
   UiStepImg: TBitmapImage;
@@ -197,6 +200,7 @@ var
 
   UiFolderField: TBitmapImage;
   UiFolderFocused: Integer;
+  UiFolderText: String;
   UiFolderEdit: TEdit;
   UiFolderBrowse: TNewButton;
   UiRows: array of TUiRow;
@@ -218,6 +222,7 @@ var
 
   UiDlg, UiShade: TSetupForm;
   UiDlgOk, UiDlgNo: TNewButton;
+  UiDlgChosen: Boolean;
   UiFrame: array of TPanel;
   UiClosing: Boolean;
 
@@ -374,13 +379,13 @@ begin
   Result := (V * UiScale + 50) div 100;
 end;
 
-{ X של פריט ברוחב W בתוך Total, כפי שהוא ממוקם בעברית; באנגלית — מהצד השני. }
 { תחתית כפתורי הכותרת התחתונה: גם ערימת הכפתורים בעמודי התוצאה והפתיחה נגמרת כאן. }
 function UiActionsBottom(): Integer;
 begin
   Result := UiFooterTop + (UiHeight - UiFooterTop + {#AA_BTN_PRIMARY_H}) div 2;
 end;
 
+{ X של פריט ברוחב W בתוך Total, כפי שהוא ממוקם בעברית; באנגלית — מהצד השני. }
 function UiX(X, W, Total: Integer): Integer;
 begin
   if UiRtl then
@@ -483,8 +488,9 @@ begin
   try
     try
       FileName := Name + '_' + IntToStr(Scale) + '.png';
-      { הספר והכותרת אינם נשלפים בפעימה הראשונה, אלא כל תמונה כשמגיע תורה. }
-      if not FileExists(ExpandConstant('{tmp}\') + FileName) then
+      { הספר והכותרת אינם נשלפים בפעימה הראשונה, אלא כל תמונה כשמגיע תורה. בחלון המצומצם
+        ההתקנה כבר רצה, ושליפה מאוחרת הייתה נכנסת לתוך חילוץ של Inno. }
+      if not FileExists(ExpandConstant('{tmp}\') + FileName) and not UiCompact then
         ExtractTemporaryFile(FileName);
       Png.LoadFromFile(ExpandConstant('{tmp}\') + FileName);
       Result.Assign(Png);
@@ -996,8 +1002,12 @@ begin
   Y := Y + TitleH;
   if DescH > 0 then
   begin
-    UiText(C, Card.Desc, X, Y + Px(3), TextW, DescH, 13, False, UiSecondaryColor,
-      UiTextFlags(Card.Desc));
+    if Card.Danger then
+      UiText(C, Card.Desc, X, Y + Px(3), TextW, DescH, 13, False, UiErrorColor,
+        UiTextFlags(Card.Desc))
+    else
+      UiText(C, Card.Desc, X, Y + Px(3), TextW, DescH, 13, False, UiSecondaryColor,
+        UiTextFlags(Card.Desc));
     Y := Y + Px(3) + DescH;
   end;
   if SideH > 0 then
@@ -1231,6 +1241,13 @@ begin
   if not Assigned(UiFolderField) then
     exit;
   Focused := Ord(WizardForm.ActiveControl = UiFolderEdit);
+  { נתיב שהוחלף מבחוץ (עיון, בחירת כרטיס) מוצג מסופו, החלק שנבחר; בהקלדה לא נוגעים. }
+  if UiFolderEdit.Text <> UiFolderText then
+  begin
+    UiFolderText := UiFolderEdit.Text;
+    if Focused = 0 then
+      UiFolderEdit.SelStart := Length(UiFolderText);
+  end;
   if Focused = UiFolderFocused then
     exit;
   UiFolderFocused := Focused;
@@ -1269,8 +1286,10 @@ begin
   Edit.SetBounds(UiHost.Left + UiContent.Left + Px(14),
     UiHost.Top + Y + (FieldH - EditH) div 2, Px(UiContentW - 28), EditH);
   Edit.BringToFront;
-  Edit.SelStart := 0;
+  { סוף הנתיב הוא החלק שנבחר; תחילתו מוסתרת כשהוא ארוך. }
+  Edit.SelStart := Length(Edit.Text);
   Edit.SelLength := 0;
+  UiFolderText := Edit.Text;
 
   Y := Y + FieldH + Px(12);
   UiMakeButton(UiBtnBrowse, UiContent, 'btn_tonal', 0, Y);
@@ -1495,6 +1514,7 @@ var
   Fraction: Extended;
   Known: Boolean;
   FileName: String;
+  H: Integer;
 begin
   Bar := WizardForm.ProgressGauge;
   Fraction := 0;
@@ -1504,7 +1524,16 @@ begin
     Fraction := Bar.Position;
     Fraction := Fraction / Bar.Max;
   end;
-  UiSetCaption(UiProgCaption, WizardForm.StatusLabel.Caption);
+  { סטטוס ארוך (בעיקר באנגלית) נשבר לשורה שנייה, ושורת הקובץ יורדת איתו. }
+  if UiProgCaption.Caption <> WizardForm.StatusLabel.Caption then
+  begin
+    UiPlaceLabel(UiProgCaption, WizardForm.StatusLabel.Caption, UiProgCaption.Left,
+      UiProgCaption.Top, UiProgCaption.Width);
+    H := UiProgCaption.Height;
+    if not UiProgCaption.Visible or (H < Px(20)) then
+      H := Px(20);
+    UiProgBytes.Top := UiProgCaption.Top + H + Px(2);
+  end;
   FileName := WizardForm.FilenameLabel.Caption;
   if FileName <> '' then
     FileName := LtrUnit(MinimizePathName(FileName, UiProgBytes.Font, UiProgBytes.Width));
@@ -1948,6 +1977,7 @@ begin
     UiProgBar := UiImage(UiCompactPanel);
     UiProgBar.SetBounds(Px(UiMargin), Px(142), Px(UiContentW), Px(8));
     UiProgCaption := UiCompactLabel(13, False, UiSecondaryColor, 162, 20);
+    UiProgCaption.WordWrap := True;
     UiProgBytes := UiCompactLabel(12, False, UiFaintColor, 184, 18);
   end;
   UiProgSource := UiSrcInstalling;
@@ -2199,6 +2229,8 @@ end;
 procedure UiSyncFooter();
 var
   Next, Back: TNewButton;
+  I: Integer;
+  Line: Boolean;
 begin
   if UiCompact then
     exit;
@@ -2209,6 +2241,14 @@ begin
   UiSetButton(UiBtnBack, Back.Visible and (UiPage <> wpWelcome), Back.Enabled,
     UiStrip(Back.Caption));
   UiAdapterSyncFooter();
+  { קו ההפרדה רק מעל כפתורים: בלעדיהם הוא מפריד בין העמוד לשטח ריק. }
+  Line := False;
+  for I := 0 to GetArrayLength(UiButtons) - 1 do
+    if Assigned(UiButtons[I].Img) and UiButtons[I].Shown and
+       (UiButtons[I].Img.Parent = UiFooter) then
+      Line := True;
+  if UiFooterLine.Visible <> Line then
+    UiFooterLine.Visible := Line;
 end;
 
 { Inno מעביר את המוקד לפקדים האמיתיים שמחוץ לחלון; הוא עובר לכפתור המצויר שלהם. }
@@ -2305,13 +2345,23 @@ begin
     UiX(W - Px(UiMargin) - UiArt('btn_ghost_n').Width, UiArt('btn_ghost_n').Width, W), Y);
 end;
 
-procedure UiFirstTick();
+{ כל תמונות קנה המידה שנבחר בשליפה אחת. התבנית מעוגנת לתיקייה הזמנית, שבה יושבות רשומות
+  dontcopy: בלעדיה גם קובץ של התוכנה בשם *_150.png היה נשלף, ואיתו כל מה שלפניו ב-solid stream. }
+procedure UiExtractArt();
 begin
+  if UiArtExtracted then
+    exit;
+  UiArtExtracted := True;
   try
-    ExtractTemporaryFiles('*_' + IntToStr(UiScale) + '.png');
+    ExtractTemporaryFiles('{tmp}\*_' + IntToStr(UiScale) + '.png');
   except
     Log('Otzaria UI: cannot extract art: ' + GetExceptionMessage);
   end;
+end;
+
+procedure UiFirstTick();
+begin
+  UiExtractArt();
   UiBuildChrome();
   UiHook := UiSetWindowsHookEx(7, CreateCallback(@UiMouseHookProc), 0,
     UiGetCurrentThreadId());
@@ -2481,10 +2531,21 @@ begin
   UiButtons[I].Shown := False;
 end;
 
+procedure UiDialogChosen(Sender: TObject);
+begin
+  UiDlgChosen := True;
+end;
+
+procedure UiDialogCloseQuery(Sender: TObject; var CanClose: Boolean);
+begin
+  CanClose := UiDlgChosen;
+end;
+
 { חלון דו-שיח מעוצב במקום MsgBox. מחזיר True ל-Yes; Esc וסגירה — False. Danger: Yes
   הרסני — כפתור טקסט אדום, ו-No הבטוח הוא המלא וברירת המחדל של Enter, כמו בתוכנה.
+  NoCancel: כמו MsgBox של כן/לא — Esc וסגירה אינם עונים, רק אחד הכפתורים.
   לפני שהאשף מוצג (InitializeSetup) הוא ממורכז במסך, בלי שכבת הצל. }
-function UiAsk(const Title, Text, Yes, No: String; Danger: Boolean): Boolean;
+function UiAskDialog(const Title, Text, Yes, No: String; Danger, NoCancel: Boolean): Boolean;
 var
   W, H, Pad, TitleH, TextH, BtnH, Y: Integer;
   L: TNewStaticText;
@@ -2526,7 +2587,7 @@ begin
     L := UiLabel(UiDlg, 14, False, UiSecondaryColor, taLeftJustify);
     UiPlaceLabel(L, Text, Pad, Pad + TitleH + Px(10), W - 2 * Pad);
 
-    { כפתורים אמיתיים מחוץ לחלון: Enter ו-Esc, ו-ModalResult שסוגר את החלון. }
+    { כפתורים אמיתיים מחוץ לחלון: Esc ו-ModalResult שסוגר את החלון; Enter עובר ב-UiKeyDown. }
     UiDlgOk := TNewButton.Create(UiDlg);
     UiDlgOk.Parent := UiDlg;
     UiDlgOk.ModalResult := mrOk;
@@ -2537,9 +2598,16 @@ begin
     UiDlgNo.Parent := UiDlg;
     UiDlgNo.ModalResult := mrCancel;
     UiDlgNo.TabStop := False;
-    UiDlgNo.Cancel := True;
+    UiDlgNo.Cancel := not NoCancel;
     UiDlgNo.Default := False;
     UiDlgNo.SetBounds(-Px(4000), 0, Px(80), Px(24));
+    UiDlgChosen := False;
+    if NoCancel then
+    begin
+      UiDlgOk.OnClick := @UiDialogChosen;
+      UiDlgNo.OnClick := @UiDialogChosen;
+      UiDlg.OnCloseQuery := @UiDialogCloseQuery;
+    end;
 
     Y := H - Pad - BtnH;
     if Danger then
@@ -2599,6 +2667,11 @@ begin
     UiDlg.Free;
     UiDlg := nil;
   end;
+end;
+
+function UiAsk(const Title, Text, Yes, No: String; Danger: Boolean): Boolean;
+begin
+  Result := UiAskDialog(Title, Text, Yes, No, Danger, False);
 end;
 
 procedure UiTell(const Title, Text: String);
@@ -2758,7 +2831,8 @@ begin
 
   UiFooter := UiPanel(WizardForm, UiPageColor);
   UiFooter.SetBounds(0, Px(UiFooterTop), Px(UiWidth), Px(UiHeight - UiFooterTop));
-  UiPanel(UiFooter, UiDividerColor).SetBounds(0, 0, Px(UiWidth), 1);
+  UiFooterLine := UiPanel(UiFooter, UiDividerColor);
+  UiFooterLine.SetBounds(0, 0, Px(UiWidth), 1);
   UiFooter.Visible := False;
 
   UiHost := UiPanel(WizardForm.InnerPage, UiPageColor);
@@ -2784,6 +2858,10 @@ begin
   UiCompactTitle := Title;
   UiHeroDone := True;
   UiInitializeWizard('', '', '');
+  { /SILENT מתקין מיד: השליפה כאן, לפני כל העתקה, ולא בפעימה שעלולה ליפול בתוך חילוץ. הלוח
+    נבנה כבר עכשיו, כדי שהחלון לא יוצג לרגע עם הפקדים של Inno. }
+  UiExtractArt();
+  UiBuildCompact();
 end;
 
 procedure UiCurPageChanged(CurPageID: Integer);

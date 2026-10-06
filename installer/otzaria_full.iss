@@ -176,6 +176,8 @@ var
   PortableInstallDirDefault: String;
   // המשתמש בחר לדלג על חילוץ הספרייה בהתקנה ניידת — קיימת ספרייה במחשב.
   PortableSkipLibrary: Boolean;
+  // הספרייה הקודמת כבר הוזזה לגיבוי: מכאן כישלון כבר אינו מבטיח שהיא נשארה כפי שהייתה.
+  LibrarySwapStarted: Boolean;
 
   // אם המשתמש בחר במהלך ההסרה למחוק גם את כל הנתונים והספרים, לא רק את
   // קבצי האפליקציה. ברירת המחדל False — נשמר כדי לא לאבד נתונים בעדכון
@@ -769,7 +771,7 @@ begin
   ExistingPath := FindExistingLibraryPath();
   if ExistingPath = '' then
     exit;
-  // "כן" (Enter) נשאר חילוץ: דילוג רק בבחירה מפורשת ב"לא".
+  // "כן" (Enter) נשאר חילוץ: דילוג רק בבחירה מפורשת ב"לא" (Esc אינו עונה).
   PortableSkipLibrary := not InstAskYesNo(CustomMessage('PortableLibraryTitle'),
     Msg1('PortableLibraryFound', UiDialogPath(ExistingPath)), mbConfirmation, MB_YESNO);
 end;
@@ -875,7 +877,7 @@ begin
         FmtMessage(CustomMessage('LegacyMoveLater'), [UiDialogPath(OldPath), UiDialogPath(DataPath)]), mbInformation);
   end;
 
-  // הבחירה בין משתמש-נוכחי / כל-המשתמשים / ניידת נעשית בעמוד "סוג ההתקנה"
+  // הבחירה בין משתמש-נוכחי / כל-המשתמשים / ניידת נעשית בעמוד "איך להתקין"
   // (כשהתהליך מורם העמוד מסומן מראש על כל-המשתמשים והשיגור-מחדש משם עובר
   // ללא UAC).
   if (not IsAdmin) and RequiresAdmin then
@@ -896,19 +898,20 @@ end;
 
 // ─── "איך להתקין" ו-WebView2 ────────────────────────────────────────────────
 
-// שלושת סוגי ההתקנה, מודל הנתונים של הכרטיסים: מחוץ לחלון, בעמוד wpSelectDir.
+// שלושת סוגי ההתקנה, מודל הנתונים של הכרטיסים, בעמוד wpSelectDir. מוסתרים ולא רק מחוץ
+// לחלון: רדיו גלוי מקבל פוקוס מ-Tab, וחץ היה מסמן אחר בלי לעבור ב-ApplyInstallModeChoice.
 procedure CreateInstallModeChoice();
 begin
   CurrentUserModeRadio := TNewRadioButton.Create(WizardForm);
   CurrentUserModeRadio.Parent := WizardForm.SelectDirPage;
-  CurrentUserModeRadio.Left := -ScaleX(4000);
+  CurrentUserModeRadio.Visible := False;
   CurrentUserModeRadio.Checked := True;
   AllUsersModeRadio := TNewRadioButton.Create(WizardForm);
   AllUsersModeRadio.Parent := WizardForm.SelectDirPage;
-  AllUsersModeRadio.Left := -ScaleX(4000);
+  AllUsersModeRadio.Visible := False;
   PortableModeRadio := TNewRadioButton.Create(WizardForm);
   PortableModeRadio.Parent := WizardForm.SelectDirPage;
-  PortableModeRadio.Left := -ScaleX(4000);
+  PortableModeRadio.Visible := False;
 end;
 
 // בחירה בכרטיס: המצב הנייד נקבע מיד, ותיקיית היעד מתחלפת לברירת המחדל של המצב
@@ -1247,7 +1250,8 @@ begin
     Log('zstd database extraction failed (' + IntToStr(ResultCode) + '): ' + ErrOutput);
     Hint := FriendlyErrorHint(ErrOutput);
     if Hint <> '' then Hint := #13#10#13#10 + Hint;
-    InstReportFailure(Msg1('DbExtractFailed', IntToStr(ResultCode)) + Hint, ErrOutput, True);
+    InstReportFailure(CustomMessage('DbExtractFailed') + Hint,
+      Msg1('ExitCode', IntToStr(ResultCode)) + #13#10 + ErrOutput, True);
     Abort;
   end;
 
@@ -1286,7 +1290,8 @@ begin
     Log('zstd PDF archive extraction failed (' + IntToStr(ResultCode) + '): ' + ErrOutput);
     Hint := FriendlyErrorHint(ErrOutput);
     if Hint <> '' then Hint := #13#10#13#10 + Hint;
-    InstReportFailure(Msg1('PdfExtractFailed', IntToStr(ResultCode)) + Hint, ErrOutput, True);
+    InstReportFailure(CustomMessage('PdfExtractFailed') + Hint,
+      Msg1('ExitCode', IntToStr(ResultCode)) + #13#10 + ErrOutput, True);
     Abort;
   end;
 
@@ -1297,7 +1302,8 @@ begin
     Log('7za PDF archive extraction failed (' + IntToStr(ResultCode) + '): ' + ErrOutput);
     Hint := FriendlyErrorHint(ErrOutput);
     if Hint <> '' then Hint := #13#10#13#10 + Hint;
-    InstReportFailure(Msg1('PdfOpenFailed', IntToStr(ResultCode)) + Hint, ErrOutput, True);
+    InstReportFailure(CustomMessage('PdfOpenFailed') + Hint,
+      Msg1('ExitCode', IntToStr(ResultCode)) + #13#10 + ErrOutput, True);
     Abort;
   end;
 
@@ -1378,6 +1384,7 @@ begin
     InstReportFailure(CustomMessage('BooksSwapFailed'), '', False);
     Abort;
   end;
+  LibrarySwapStarted := True;
   if not RenameFile(StagingBooks, SelectedBooksPath) then
   begin
     if DirExists(BooksBackup) then
@@ -1804,7 +1811,7 @@ Name: "resetsettings"; Description: "{cm:ResetSettingsTask}"; Flags: unchecked
 
 [CustomMessages]
 english.ResetSettingsTask=Reset user settings — warning: deletes personal notes, bookmarks, history and plugin data! (The backups folder is kept and the library is installed again. Needed only when upgrading from a version older than 0.9.80, or to fix problems)
-hebrew.ResetSettingsTask=איפוס הגדרות משתמש — אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים! (תיקיית הגיבויים נשמרת והספרייה מותקנת מחדש. נדרש רק בשדרוג מגרסה ישנה מ-0.9.80 או לפתרון תקלות)
+hebrew.ResetSettingsTask=איפוס הגדרות משתמש — אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים! (תיקיית הגיבויים נשמרת והספרייה מותקנת מחדש. נדרש רק בשדרוג מגרסה שקודמת ל-0.9.80, או לפתרון תקלות)
 
 [Files]
 ; Copy DLL files without compression to prevent corruption
