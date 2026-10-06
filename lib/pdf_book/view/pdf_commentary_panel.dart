@@ -9,6 +9,7 @@ import 'package:otzaria/book_common/selection/selected_text_restore.dart';
 import 'package:otzaria/book_common/utils/commentary_search_results.dart';
 import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
 import 'package:otzaria/theme/app_fonts.dart';
+import 'package:otzaria/theme/app_theme_data.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
@@ -1220,51 +1221,66 @@ class PdfCommentaryPanelState extends State<PdfCommentaryPanel>
 
   Widget _buildButtonsRow() {
     const double gap = 16;
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // 1. בחירת מפרשים
-        CommentatorsFilterButton(
-          isActive: false,
-          onPressed: () {
-            setState(() {
-              _showFilterTab = true;
-            });
-          },
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-          iconSize: 20,
-        ),
-        // 2. הרחב/כווץ הכל — רק כשיש מפרשים פעילים (לוגיקה מקורית)
-        if (widget.tab.activeCommentators.isNotEmpty) ...[
-          const SizedBox(width: gap),
-          IconButton(
-            icon: Icon(
-              _allExpanded
-                  ? FluentIcons.arrow_collapse_all_24_regular
-                  : FluentIcons.arrow_expand_all_24_regular,
+    // גובה 36 כשדה החיפוש המצומצם, כדי שפתיחת החיפוש לא תזיז את הרשימה.
+    return IconButtonTheme(
+      data: IconButtonThemeData(
+        style: (Theme.of(context).iconButtonTheme.style ?? const ButtonStyle())
+            .copyWith(
+              visualDensity:
+                  Theme.of(context).extension<AppMenuMetrics>()?.compactMenus ==
+                      true
+                  ? const VisualDensity(vertical: -1)
+                  : null,
             ),
-            tooltip: _allExpanded ? 'כווץ את כל המפרשים' : 'הרחב את כל המפרשים',
-            onPressed: toggleAllExpanded,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 1. בחירת מפרשים
+          CommentatorsFilterButton(
+            isActive: false,
+            onPressed: () {
+              setState(() {
+                _showFilterTab = true;
+              });
+            },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            iconSize: 20,
+          ),
+          // 2. הרחב/כווץ הכל — רק כשיש מפרשים פעילים (לוגיקה מקורית)
+          if (widget.tab.activeCommentators.isNotEmpty) ...[
+            const SizedBox(width: gap),
+            IconButton(
+              icon: Icon(
+                _allExpanded
+                    ? FluentIcons.arrow_collapse_all_24_regular
+                    : FluentIcons.arrow_expand_all_24_regular,
+              ),
+              tooltip: _allExpanded
+                  ? 'כווץ את כל המפרשים'
+                  : 'הרחב את כל המפרשים',
+              onPressed: toggleAllExpanded,
+            ),
+          ],
+          const SizedBox(width: gap),
+          // 3. פתיחה בכרטיסייה חדשה
+          IconButton(
+            icon: const Icon(FluentIcons.open_24_regular),
+            tooltip: 'פתח כרטסיית מפרשים',
+            onPressed: () => context.read<TabsBloc>().add(
+              AddTab(PdfCommentatorsTab.of(widget.tab), insertAdjacent: true),
+            ),
+          ),
+          const SizedBox(width: gap),
+          // 4. הפעלת שדה החיפוש
+          IconButton(
+            icon: const Icon(FluentIcons.search_24_regular),
+            tooltip: 'חיפוש',
+            onPressed: _openInlineSearch,
           ),
         ],
-        const SizedBox(width: gap),
-        // 3. פתיחה בכרטיסייה חדשה
-        IconButton(
-          icon: const Icon(FluentIcons.open_24_regular),
-          tooltip: 'פתח כרטסיית מפרשים',
-          onPressed: () => context.read<TabsBloc>().add(
-            AddTab(PdfCommentatorsTab.of(widget.tab), insertAdjacent: true),
-          ),
-        ),
-        const SizedBox(width: gap),
-        // 4. הפעלת שדה החיפוש
-        IconButton(
-          icon: const Icon(FluentIcons.search_24_regular),
-          tooltip: 'חיפוש',
-          onPressed: _openInlineSearch,
-        ),
-      ],
+      ),
     );
   }
 
