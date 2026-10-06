@@ -69,7 +69,7 @@ final class AssistantModel: ObservableObject {
         return manifest.components.filter { componentIsOffered(manifest, $0, target) }
     }
 
-    var customChoices: [ManifestComponent] {
+    var customChoices: [CustomChoice] {
         guard let manifest = manifest else { return [] }
         return AssistantCore.customChoices(manifest, target)
     }
@@ -77,6 +77,42 @@ final class AssistantModel: ObservableObject {
     func customChoiceSize(_ component: ManifestComponent) -> Int64 {
         guard let manifest = manifest else { return component.downloadSize }
         return AssistantCore.customChoiceSize(manifest, component, target)
+    }
+
+    /// הבחירה ההתחלתית: הנעולים, הנדרשים, ובקבוצת הרדיו — המתקין ולא החבילה המלאה.
+    private func defaultCustomChecked() -> Set<String> {
+        let choices = customChoices
+        var checked = Set(choices.filter { $0.locked || ($0.group.isEmpty && $0.component.required) }
+            .map { $0.component.id })
+        let radio = choices.filter { !$0.group.isEmpty }
+        if let pick = radio.first(where: { $0.component.type == "application" }) ?? radio.first {
+            checked.insert(pick.component.id)
+        }
+        return checked
+    }
+
+    /// רדיו מבטל את חברי קבוצתו; סימון גורר את התלויות (אינדקס←ספרייה), וביטול
+    /// מבטל את מי שתלוי בשורה.
+    func setCustom(_ id: String, _ checked: Bool) {
+        let choices = customChoices
+        guard let choice = choices.first(where: { $0.component.id == id }), !choice.locked else { return }
+        if checked {
+            if !choice.group.isEmpty {
+                for other in choices where other.group == choice.group {
+                    customChecked.remove(other.component.id)
+                }
+            }
+            customChecked.insert(id)
+            for dependency in choice.component.dependsOn
+            where choices.contains(where: { $0.component.id == dependency && $0.group.isEmpty }) {
+                customChecked.insert(dependency)
+            }
+        } else if choice.group.isEmpty {
+            customChecked.remove(id)
+            for other in choices where other.component.dependsOn.contains(id) {
+                customChecked.remove(other.component.id)
+            }
+        }
     }
 
     var canGoBack: Bool {
@@ -130,15 +166,16 @@ final class AssistantModel: ObservableObject {
         case .presets:
             if presetId == customPresetId {
                 if customChecked.isEmpty {
-                    customChecked = Set(offeredComponents.filter { $0.required }.map { $0.id })
+                    customChecked = defaultCustomChecked()
                 }
                 go(.custom)
             } else {
                 go(.folder)
             }
         case .custom:
-            let valid = Set(offeredComponents.map { $0.id })
-            customChecked.formIntersection(valid)
+            let choices = customChoices
+            customChecked.formIntersection(Set(choices.map { $0.component.id }))
+            customChecked.formUnion(choices.filter { $0.locked }.map { $0.component.id })
             if customChecked.isEmpty {
                 alert = AlertItem(title: "", message: "יש לבחור לפחות רכיב אחד להורדה.", onContinue: nil)
                 return

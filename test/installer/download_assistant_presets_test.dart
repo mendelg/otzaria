@@ -199,8 +199,36 @@ void main() {
         contains('(CompPartOf[J] = CompId[Index]) and ComponentIsOffered(J)'),
       );
       final page = _routine(_script(), 'procedure RefreshCustomPage();');
-      expect(page, contains('if not IsCustomChoice(I) then'));
+      expect(page, contains('if not IsCustomChoice(I, TakesLibrary) then'));
       expect(page, contains('HumanSize(CustomChoiceSize(I))'));
+    });
+
+    test('הבחירה האישית: אותן שורות, נעילה ורדיו כמו customChoices', () {
+      final choice = _routine(_script(), 'function IsCustomChoice(');
+      expect(choice, contains("(CompType[Index] <> 'application-portable')"));
+      expect(
+        choice,
+        contains(
+          "not (TakesLibrary and (CompType[Index] = 'application-bundle'))",
+        ),
+      );
+      expect(
+        _routine(_script(), 'function InstallerTakesLibrary('),
+        contains("(CompType[Idx] = 'application')"),
+      );
+      expect(
+        _routine(_script(), 'function CustomInstallersAreRadio('),
+        contains('Result := N > 1;'),
+      );
+      final page = _routine(_script(), 'procedure RefreshCustomPage();');
+      expect(page, contains('IsCustomChoice(I, TakesLibrary)'));
+      expect(page, contains('CheckListBox.AddRadioButton('));
+      expect(page, contains('Locked, not Locked, False, False, nil)'));
+      expect(
+        _routine(_script(), 'procedure CustomChoiceClicked('),
+        contains('MembersContain(CompDependsOn[CustomIndex[Row]]'),
+      );
+      expect(kApplicationChoiceGroup, 'application');
     });
 
     test('בחירה אישית נסגרת כמו ההצעות', () {
@@ -269,14 +297,14 @@ void main() {
       expect(arm64['basic'], contains('otzaria-windows-arm64'));
     });
 
-    test('בלי מתקין מלא ל-ARM64 — אין "מלאה", ולא מתקין x64', () {
+    test('בלי מתקין מלא ל-ARM64 — "מלאה" היא המתקין הרגיל עם הספרייה', () {
       final arm64 = _presets(
         kKnownComponents
             .where((s) => s.id != 'otzaria-windows-full-arm64')
             .toList(),
         _windowsTargets[1],
       );
-      expect(arm64.keys, ['basic']);
+      expect(arm64['full'], ['otzaria-windows-arm64', 'library-full']);
       expect(arm64['basic'], ['otzaria-windows-arm64']);
     });
 

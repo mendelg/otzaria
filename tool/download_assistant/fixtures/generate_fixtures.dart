@@ -27,7 +27,6 @@ const Map<String, int> _singleFiles = {
   'otzaria-0.10.3-windows_arm64.exe': 38,
   'otzaria-windows.zip': 45,
   'otzaria-windows_arm64.zip': 44,
-  'otzaria-0.10.3-windows-full-indexed.exe': 60,
   'otzaria-0.10.3-windows_arm64-full.exe': 1990,
   'otzaria-0.10.3+143-linux.deb': 96,
   'otzaria-0.10.3+143-linux-arm64.deb': 87,
@@ -52,7 +51,8 @@ const Map<String, int> _singleFiles = {
 const Map<String, List<int>> _splitFiles = {
   'otzaria-0.10.3-windows-full.exe': [1500, 519],
   'otzaria-linux-full.tar.zst': [1500, 427],
-  'otzaria-0.10.3-library-full-indexed.tar.zst': [1500, 1500, 215],
+  'otzaria-0.10.3-library.tar.zst': [1500, 1500, 15],
+  'otzaria-0.10.3-library-index.tar.zst': [600],
 };
 
 /// מחשבי היעד שעליהם נבדק החוזה.
@@ -275,7 +275,7 @@ Map<String, Object?> buildExpectedSelections(
           ],
           'customChoices': [
             for (final choice in customChoices(manifest, target))
-              {'id': choice.id, 'downloadSize': choice.downloadSize},
+              customChoiceToJson(choice),
           ],
           'presets': [
             for (final preset in buildPresets(manifest, target))

@@ -48,35 +48,35 @@
         "otzaria-windows-portable-x64",
         "otzaria-windows-x64",
         "otzaria-windows-full",
-        "otzaria-windows-full-indexed",
-        "library-full-indexed",
+        "library-full",
+        "library-index",
         "semantic-model-windows",
         "semantic-vectors-windows"
       ],
       "customChoices": [
         {
-          "id": "otzaria-windows-portable-x64",
-          "downloadSize": 45
-        },
-        {
           "id": "otzaria-windows-x64",
-          "downloadSize": 39
+          "downloadSize": 39,
+          "locked": true,
+          "group": ""
         },
         {
-          "id": "otzaria-windows-full",
-          "downloadSize": 2019
+          "id": "library-full",
+          "downloadSize": 3015,
+          "locked": false,
+          "group": ""
         },
         {
-          "id": "otzaria-windows-full-indexed",
-          "downloadSize": 60
-        },
-        {
-          "id": "library-full-indexed",
-          "downloadSize": 3215
+          "id": "library-index",
+          "downloadSize": 600,
+          "locked": false,
+          "group": ""
         },
         {
           "id": "semantic-vectors-windows",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -97,7 +97,7 @@
             "semantic-import/vectors/otzaria-vectors-0c3f95be-v30-base.manifest.json"
           ],
           "outputNotes": [
-            "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
+            "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
         },
@@ -124,25 +124,35 @@
         "otzaria-windows-arm64",
         "otzaria-windows-portable-arm64",
         "otzaria-windows-full-arm64",
+        "library-full",
+        "library-index",
         "semantic-model-windows",
         "semantic-vectors-windows"
       ],
       "customChoices": [
         {
           "id": "otzaria-windows-arm64",
-          "downloadSize": 38
+          "downloadSize": 38,
+          "locked": true,
+          "group": ""
         },
         {
-          "id": "otzaria-windows-portable-arm64",
-          "downloadSize": 44
+          "id": "library-full",
+          "downloadSize": 3015,
+          "locked": false,
+          "group": ""
         },
         {
-          "id": "otzaria-windows-full-arm64",
-          "downloadSize": 1990
+          "id": "library-index",
+          "downloadSize": 600,
+          "locked": false,
+          "group": ""
         },
         {
           "id": "semantic-vectors-windows",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -163,7 +173,7 @@
             "semantic-import/vectors/otzaria-vectors-0c3f95be-v30-base.manifest.json"
           ],
           "outputNotes": [
-            "מתקין אוצריא המלא שבתיקייה הזאת מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה בלי המתקין המלא — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
+            "מתקין אוצריא שבתיקייה הזאת (הרגיל או המלא) מעתיק בעצמו את התיקייה semantic-import אל ליד תיקיית הספרייה. כשתפעיל את מצב \"חיפוש חכם\" (אחרי ההסכמה), הנתונים יותקנו ממנה בלי הורדה. בהתקנה מקובץ ה-ZIP הנייד — העתק אותה ידנית אל התיקייה שמכילה את תיקיית הספרייה של אוצריא."
           ],
           "outputSubfolder": "אוצריא להתקנה ל-Windows"
         },
@@ -195,15 +205,21 @@
       "customChoices": [
         {
           "id": "otzaria-macos",
-          "downloadSize": 86
+          "downloadSize": 86,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "otzaria-macos-full",
-          "downloadSize": 1853
+          "downloadSize": 1853,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "semantic-vectors-macos",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -256,15 +272,21 @@
       "customChoices": [
         {
           "id": "otzaria-linux-deb-x64",
-          "downloadSize": 96
+          "downloadSize": 96,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "otzaria-linux-full-x64",
-          "downloadSize": 1927
+          "downloadSize": 1927,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "semantic-vectors-linux",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -317,15 +339,21 @@
       "customChoices": [
         {
           "id": "otzaria-linux-rpm-x64",
-          "downloadSize": 132
+          "downloadSize": 132,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "otzaria-linux-full-x64",
-          "downloadSize": 1927
+          "downloadSize": 1927,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "semantic-vectors-linux",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -377,11 +405,15 @@
       "customChoices": [
         {
           "id": "otzaria-linux-full-x64",
-          "downloadSize": 1927
+          "downloadSize": 1927,
+          "locked": true,
+          "group": ""
         },
         {
           "id": "semantic-vectors-linux",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -423,15 +455,21 @@
       "customChoices": [
         {
           "id": "otzaria-linux-deb-arm64",
-          "downloadSize": 87
+          "downloadSize": 87,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "otzaria-linux-full-arm64",
-          "downloadSize": 1900
+          "downloadSize": 1900,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "semantic-vectors-linux",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -484,15 +522,21 @@
       "customChoices": [
         {
           "id": "otzaria-linux-rpm-arm64",
-          "downloadSize": 127
+          "downloadSize": 127,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "otzaria-linux-full-arm64",
-          "downloadSize": 1900
+          "downloadSize": 1900,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "semantic-vectors-linux",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -544,11 +588,15 @@
       "customChoices": [
         {
           "id": "otzaria-linux-full-arm64",
-          "downloadSize": 1900
+          "downloadSize": 1900,
+          "locked": true,
+          "group": ""
         },
         {
           "id": "semantic-vectors-linux",
-          "downloadSize": 1703
+          "downloadSize": 1703,
+          "locked": false,
+          "group": ""
         }
       ],
       "presets": [
@@ -588,11 +636,15 @@
       "customChoices": [
         {
           "id": "otzaria-android",
-          "downloadSize": 96
+          "downloadSize": 96,
+          "locked": false,
+          "group": "application"
         },
         {
           "id": "otzaria-android-full",
-          "downloadSize": 1925
+          "downloadSize": 1925,
+          "locked": false,
+          "group": "application"
         }
       ],
       "presets": [

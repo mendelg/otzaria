@@ -53,11 +53,22 @@ GPtrArray *otz_package_format_choices(const OtzManifest *manifest,
 /* os_release is the content of /etc/os-release, or NULL off Linux. */
 char *otz_default_package_format(const char *os_release, GPtrArray *choices);
 
-/* The rows of the custom list (borrowed OtzComponent*, manifest order): offered
- * and not partOf another component, which brings it through dependsOn. */
+/* A row of the custom list. locked: always checked, cannot be cleared.
+ * group: rows sharing it are one-of (radio); "" is a checkbox. */
+#define OTZ_APPLICATION_CHOICE_GROUP "application"
+typedef struct {
+  const OtzComponent *component; /* borrowed from the manifest */
+  gboolean locked;
+  const char *group;
+} OtzCustomChoice;
+
+/* OtzCustomChoice* in manifest order: never the portable form; when the
+ * regular installer unpacks a library beside it, no full bundle and the
+ * installer locked; otherwise the installer and the bundle are one-of. */
 GPtrArray *otz_custom_choices(const OtzManifest *manifest,
                               const OtzTarget *target);
-/* A row's size: the component together with its offered parts. */
+
+/* A row's size includes its offered parts. */
 gint64 otz_custom_choice_size(const OtzManifest *manifest,
                               const OtzComponent *component,
                               const OtzTarget *target);

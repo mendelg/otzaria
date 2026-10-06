@@ -87,9 +87,37 @@ public func componentIsOffered(
     return component.installedBy.isEmpty || installerFor(manifest, component, target) != nil
 }
 
-/// השורות בבחירה האישית, בסדר המניפסט: מוצעות, בלי רכיב שהוא חלק (`partOf`) של אחר.
-public func customChoices(_ manifest: ReleaseManifest, _ target: AssistantTarget) -> [ManifestComponent] {
-    manifest.components.filter { $0.partOf.isEmpty && componentIsOffered(manifest, $0, target) }
+/// קבוצת הבחירה-אחת-מתוך בבחירה האישית: הדרכים החלופיות להתקין את התוכנה.
+public let applicationChoiceGroup = "application"
+
+/// שורה בבחירה האישית. `locked` — מסומנת תמיד; `group` — שורות עם אותה קבוצה הן
+/// בחירה אחת-מתוך (רדיו), '' — תיבת סימון.
+public struct CustomChoice: Equatable {
+    public let component: ManifestComponent
+    public let locked: Bool
+    public let group: String
+}
+
+private func isInstallerType(_ component: ManifestComponent) -> Bool {
+    component.type == "application" || component.type == "application-bundle"
+}
+
+/// השורות בבחירה האישית, בסדר המניפסט. גרסה ניידת אינה מוצגת; כשהמתקין הרגיל
+/// פורס ספרייה שלצדו אין חבילה מלאה והמתקין נעול, ואחרת שניהם בחירה אחת-מתוך.
+public func customChoices(_ manifest: ReleaseManifest, _ target: AssistantTarget) -> [CustomChoice] {
+    let offered = manifest.components.filter {
+        componentIsOffered(manifest, $0, target) && $0.type != "application-portable"
+    }
+    let takesLibrary = offered.contains { installerFor(manifest, $0, target)?.type == "application" }
+    let rows = offered.filter { $0.partOf.isEmpty && !(takesLibrary && $0.type == "application-bundle") }
+    let radio = rows.filter(isInstallerType).count > 1
+    return rows.map { component in
+        let installer = isInstallerType(component)
+        return CustomChoice(
+            component: component,
+            locked: installer && !radio,
+            group: installer && radio ? applicationChoiceGroup : "")
+    }
 }
 
 /// גודל השורה: הרכיב יחד עם החלקים המוצעים שלו.

@@ -53,7 +53,7 @@ void main() {
       '-NoLogo',
       '-NoProfile',
       '-File',
-      'installer/read_indexed_library_manifest.ps1',
+      'installer/read_split_manifest.ps1',
       '-ManifestPath',
       manifestFile.path,
       '-OutputPath',
@@ -75,7 +75,7 @@ void main() {
       p.join(temp.path, 'embedded-manifest'),
     )..createSync();
     final embeddedManifest = File(
-      p.join(embeddedManifestDirectory.path, 'indexed_library.manifest.json'),
+      p.join(embeddedManifestDirectory.path, 'library.manifest.json'),
     );
     manifestFile.copySync(embeddedManifest.path);
     final powerShellOutput = p.join(temp.path, 'reassembled-pwsh.tar.zst');
@@ -125,19 +125,21 @@ void main() {
     expect(workflow, isNot(contains('build-release-index')));
     expect(workflow, contains('tool/release/fetch_prebuilt_library_index.sh'));
     expect(workflow, contains('otzaria-index-inputs'));
-    expect(workflow, contains('otzaria-library-full-indexed'));
+    expect(workflow, contains('otzaria-library-parts'));
+    expect(workflow, isNot(contains('library-full-indexed')));
     expect(workflow, contains('1992294400'));
     expect(workflow, contains('split_release_asset.sh'));
     expect(workflow, contains('compression-level: 0'));
-    expect(workflow, contains('/DIndexedSplitFull=1'));
-    expect(workflow, contains('otzaria-windows-installer-full-indexed'));
-    expect(workflow, contains('התקנה לא־מקוונת בווינדוס'));
-    expect(workflow, contains('indexed_library.manifest.json'));
+    // המתקין הרגיל מטמיע את המניפסט; אין יותר מתקין מאונדקס נפרד.
+    expect(workflow, isNot(contains('IndexedSplitFull')));
+    expect(workflow, isNot(contains('windows-full-indexed')));
+    expect(workflow, contains(r'installer\library.manifest.json'));
+    expect(workflow, contains(r'installer\library_index.manifest.json'));
     expect(
       workflow,
       contains(
         'cp -al "\$GITHUB_WORKSPACE/\$BUNDLE_ROOT/אוצריא" '
-        '"\$INDEXED_LIBRARY_ROOT/books"',
+        '"\$LIBRARY_ROOT/books"',
       ),
     );
   });
@@ -220,17 +222,18 @@ packages:
       p.join(temp.path, 'engine', 'rust', 'src', 'api', 'search_engine.rs'),
     )..createSync(recursive: true);
     Directory(p.join(temp.path, '.dart_tool')).createSync();
-    File(p.join(temp.path, '.dart_tool', 'package_config.json'))
-        .writeAsStringSync(
-          jsonEncode({
-            'packages': [
-              {
-                'name': 'otzaria_search_engine',
-                'rootUri': 'file://${p.join(temp.path, 'engine')}',
-              },
-            ],
-          }),
-        );
+    File(
+      p.join(temp.path, '.dart_tool', 'package_config.json'),
+    ).writeAsStringSync(
+      jsonEncode({
+        'packages': [
+          {
+            'name': 'otzaria_search_engine',
+            'rootUri': 'file://${p.join(temp.path, 'engine')}',
+          },
+        ],
+      }),
+    );
     final rebuildTagFile = File(p.join(temp.path, 'rebuild-tag'));
 
     Future<ProcessResult> fetch({
@@ -244,34 +247,39 @@ packages:
         'const INDEX_FORMAT: &str = "otzaria-search-index";\n'
         'pub(crate) const INDEX_SCHEMA_VERSION: u32 = $requiredSchema;\n',
       );
-      File(p.join(dist.path, 'otzaria-library-index.provenance.json'))
-          .writeAsStringSync(
-            jsonEncode({
-              'schemaVersion': 1,
-              'libraryReleaseTag': 'v28-20260910220310',
-              'seforimDbZstSha256': databaseSha256,
-              'indexArchive': 'otzaria-library-index.tar.zst',
-              'indexArchiveSha256': await sha256Of(archive),
-              'catalogueBooks': 7,
-              'talmudBavliSha256': await sha256Of(talmud.path),
-              'talmudVolumesDigest': volumesDigest ?? talmudVolumesDigest,
-              'talmudVolumes': 3,
-              'includesPdfBooks': false,
-              'searchEngineVersion': engineVersion,
-            }),
-          );
-      return Process.run('bash', [
-        'tool/release/fetch_prebuilt_library_index.sh',
-        indexDirectory,
-        database.path,
-        talmud.path,
-        lock.path,
-      ], environment: {
-        'PREBUILT_LIBRARY_INDEX_BASE_URL': 'file://${dist.path}',
-        'PREBUILT_INDEX_REBUILD_TAG_FILE': rebuildTagFile.path,
-        // כמו קונטיינר debian:bookworm-slim של ה-job, שאין בו locale.
-        'LC_ALL': 'C',
-      });
+      File(
+        p.join(dist.path, 'otzaria-library-index.provenance.json'),
+      ).writeAsStringSync(
+        jsonEncode({
+          'schemaVersion': 1,
+          'libraryReleaseTag': 'v28-20260910220310',
+          'seforimDbZstSha256': databaseSha256,
+          'indexArchive': 'otzaria-library-index.tar.zst',
+          'indexArchiveSha256': await sha256Of(archive),
+          'catalogueBooks': 7,
+          'talmudBavliSha256': await sha256Of(talmud.path),
+          'talmudVolumesDigest': volumesDigest ?? talmudVolumesDigest,
+          'talmudVolumes': 3,
+          'includesPdfBooks': false,
+          'searchEngineVersion': engineVersion,
+        }),
+      );
+      return Process.run(
+        'bash',
+        [
+          'tool/release/fetch_prebuilt_library_index.sh',
+          indexDirectory,
+          database.path,
+          talmud.path,
+          lock.path,
+        ],
+        environment: {
+          'PREBUILT_LIBRARY_INDEX_BASE_URL': 'file://${dist.path}',
+          'PREBUILT_INDEX_REBUILD_TAG_FILE': rebuildTagFile.path,
+          // כמו קונטיינר debian:bookworm-slim של ה-job, שאין בו locale.
+          'LC_ALL': 'C',
+        },
+      );
     }
 
     final installed = p.join(temp.path, 'installed', 'index');
@@ -301,7 +309,8 @@ packages:
     expect(
       otherEngineSameSchema.exitCode,
       0,
-      reason: '${otherEngineSameSchema.stdout}\n${otherEngineSameSchema.stderr}',
+      reason:
+          '${otherEngineSameSchema.stdout}\n${otherEngineSameSchema.stderr}',
     );
 
     // סכמה אחרת: האפליקציה הייתה דוחה את האינדקס ובונה אותו מחדש אצל המשתמש.

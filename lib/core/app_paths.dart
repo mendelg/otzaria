@@ -42,6 +42,10 @@ class AppPaths {
   /// שם הקובץ שבו נרשם נתיב הספרייה הפעיל עבור ה-uninstaller.
   static const String libraryPathRecordFileName = 'library_path.txt';
 
+  /// תיקיית ה-DB האפקטיבית עבור המתקין, כולל folderName.
+  static const String libraryDatabasePathRecordFileName =
+      'library_database_path.txt';
+
   /// שם תיקיית ארכיוני התוספים שהמתקין מניח ליד ה-executable — ובמק
   /// ב-`Contents/Resources`.
   static const String bundledPluginsFolderName = 'bundled_plugins';
@@ -438,14 +442,32 @@ class AppPaths {
     try {
       final path = await getLibraryPath();
       if (path.isEmpty) return;
-      // BOM: בלעדיו LoadStringsFromFile של Inno קורא את הקובץ כ-ANSI ושובר
-      // נתיב בעברית.
-      await File(
-        p.join(await getDataRootPath(), libraryPathRecordFileName),
-      ).writeAsString('\ufeff$path');
+      final databaseDirectory = DatabaseConstants.getDatabaseDirectoryPath();
+      final dataRoot = await getDataRootPath();
+      await writeLibraryPathRecords(
+        dataRoot: dataRoot,
+        libraryPath: path,
+        databaseDirectory: databaseDirectory,
+      );
     } catch (e) {
       debugPrint('Failed to record library path for uninstaller: $e');
     }
+  }
+
+  /// כתיבת רשומות המתקין מופרדת מזיהוי Windows כדי לבדוק תאימות נתיבים.
+  @visibleForTesting
+  static Future<void> writeLibraryPathRecords({
+    required String dataRoot,
+    required String libraryPath,
+    required String databaseDirectory,
+  }) async {
+    // BOM מאפשר ל-LoadStringsFromFile של Inno לקרוא נתיבים בעברית.
+    await File(
+      p.join(dataRoot, libraryPathRecordFileName),
+    ).writeAsString('\ufeff$libraryPath');
+    await File(
+      p.join(dataRoot, libraryDatabasePathRecordFileName),
+    ).writeAsString('\ufeff$databaseDirectory');
   }
 
   /// Gets the main library path from settings, or gracefully falls back to default paths.

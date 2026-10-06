@@ -38,7 +38,7 @@
         "type": {
           "type": "string",
           "minLength": 1,
-          "description": "טקסט חופשי בכוונה (application / library / search-index / dependency / semantic-model / semantic-vectors ...). סוג לא מוכר אינו שגיאה."
+          "description": "טקסט חופשי בכוונה (application / library / library-index / dependency / semantic-model / semantic-vectors ...). סוג לא מוכר אינו שגיאה."
         },
         "required": { "type": "boolean" },
         "origin": {
@@ -66,7 +66,7 @@
           "type": "array",
           "minItems": 1,
           "items": { "type": "string" },
-          "description": "מזהי הרכיבים שמתקינים את הרכיב הזה (מתקין שקורא אותו מהתיקייה שלצדו). המסייע מציע אותו רק ליעד שבו אחד מהם מוצע, ומוריד אותו יחד איתו. רכיב מסוג library חייב לשאת אותו; מתקין שמופיע כאן אינו נושא installedBy בעצמו."
+          "description": "מזהי הרכיבים שמתקינים את הרכיב הזה (מתקין שקורא אותו מהתיקייה שלצדו). המסייע מציע אותו רק ליעד שבו אחד מהם מוצע, ומוריד אותו יחד איתו. רכיב מסוג library או library-index חייב לשאת אותו; מתקין שמופיע כאן אינו נושא installedBy בעצמו."
         },
         "partOf": {
           "type": "string",
@@ -95,7 +95,7 @@
           "items": { "$ref": "#/$defs/asset" }
         }
       },
-      "if": { "properties": { "type": { "const": "library" } } },
+      "if": { "properties": { "type": { "enum": ["library", "library-index"] } } },
       "then": { "required": ["installedBy"] }
     },
     "asset": {

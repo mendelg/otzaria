@@ -185,26 +185,34 @@ struct AssistantView: View {
     private var customPage: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ליד כל רכיב מופיע גודל ההורדה שלו.").foregroundColor(.secondary)
-            ForEach(model.customChoices, id: \.id) { component in
-                Toggle(isOn: Binding(
-                    get: { model.customChecked.contains(component.id) },
-                    set: { checked in
-                        if checked {
-                            model.customChecked.insert(component.id)
-                        } else {
-                            model.customChecked.remove(component.id)
+            // המתקין והחבילה המלאה — רדיו; מתקין בלי חלופה — נעול.
+            ForEach(model.customChoices, id: \.component.id) { choice in
+                let component = choice.component
+                let title = "\(component.name) — \(humanSize(model.customChoiceSize(component)))"
+                    + (choice.locked || (component.required && choice.group.isEmpty) ? " (נדרש)" : "")
+                if choice.group.isEmpty {
+                    Toggle(isOn: Binding(
+                        get: { choice.locked || model.customChecked.contains(component.id) },
+                        set: { model.setCustom(component.id, $0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\u{200F}" + title)
+                            if !component.description.isEmpty {
+                                Text("\u{200F}" + component.description).font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                     }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(component.name) — \(humanSize(model.customChoiceSize(component)))\(component.required ? " (נדרש)" : "")")
-                        if !component.description.isEmpty {
-                            Text(component.description).font(.caption).foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
+                    .toggleStyle(.checkbox)
+                    .disabled(choice.locked)
+                } else {
+                    ChoiceRow(
+                        title: title,
+                        subtitle: component.description.isEmpty ? nil : component.description,
+                        selected: model.customChecked.contains(component.id)
+                    ) { model.setCustom(component.id, true) }
                 }
-                .toggleStyle(.checkbox)
             }
         }
     }
@@ -232,9 +240,9 @@ struct AssistantView: View {
 
     private var buttons: some View {
         HStack(spacing: 10) {
-            Spacer()
             switch model.page {
             case .loadFailed:
+                Spacer()
                 Button("פתח את עמוד ההורדות") {
                     model.openDownloadsPage()
                     model.cancel()
@@ -242,21 +250,26 @@ struct AssistantView: View {
                 Button("סגור") { model.cancel() }
                     .keyboardShortcut(.cancelAction)
             case .failed:
+                Spacer()
                 Button("סגור") { model.cancel() }
                     .keyboardShortcut(.defaultAction)
             case .finished:
+                Spacer()
                 Button("סיום") { model.finish() }
                     .keyboardShortcut(.defaultAction)
             case .working, .loading:
+                Spacer()
                 Button(model.page == .working ? "עצור" : "ביטול") { model.cancel() }
                     .keyboardShortcut(.cancelAction)
             default:
+                // סדר האשף של macOS: ביטול בקצה המוביל, והבא בקצה הנגרר — בעברית משמאל.
+                Button("ביטול") { model.cancel() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
                 Button("הקודם") { model.back() }
                     .disabled(!model.canGoBack)
                 Button(model.page == .folder ? "התחל" : "הבא") { model.next() }
                     .keyboardShortcut(.defaultAction)
-                Button("ביטול") { model.cancel() }
-                    .keyboardShortcut(.cancelAction)
             }
         }
     }
@@ -274,10 +287,11 @@ struct ChoiceRow: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
                     .foregroundColor(selected ? .accentColor : .secondary)
+                // RLM מקבע פסקה מימין לשמאל גם כשהכותרת פותחת באנגלית ("Ubuntu, Debian…").
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text("\u{200F}" + title)
                     if let subtitle = subtitle {
-                        Text(subtitle).font(.caption).foregroundColor(.secondary)
+                        Text("\u{200F}" + subtitle).font(.caption).foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

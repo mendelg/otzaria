@@ -65,6 +65,7 @@ class ComponentSpec {
     this.origin = 'built',
     this.installedSize,
     this.compatibilityFromLibraryIndexProvenance = false,
+    this.outputNote,
   });
 
   final String id;
@@ -90,6 +91,9 @@ class ComponentSpec {
   final String origin;
   final int? installedSize;
   final bool compatibilityFromLibraryIndexProvenance;
+
+  /// משפט שעמוד הסיום של המסייע מוסיף כשהרכיב הוכן.
+  final String? outputNote;
 }
 
 /// טבלת הרכיבים הידועים. הוספת רכיב = הוספת שורה כאן בלבד.
@@ -177,18 +181,6 @@ const List<ComponentSpec> kKnownComponents = [
         split: true,
       ),
     ],
-  ),
-  ComponentSpec(
-    id: 'otzaria-windows-full-indexed',
-    name: 'אוצריא ל-Windows עם ספרייה מאונדקסת',
-    description:
-        'מתקין קטן שמוריד בעת ההתקנה את הספרייה המלאה עם אינדקס החיפוש הבנוי מראש.',
-    type: 'application-bundle',
-    required: false,
-    platform: 'windows',
-    architecture: 'x64',
-    installOrder: 20,
-    assets: [AssetSpec(pattern: r'^otzaria-.+-windows-full-indexed\.exe$')],
   ),
   ComponentSpec(
     id: 'otzaria-linux-deb-x64',
@@ -361,26 +353,61 @@ const List<ComponentSpec> kKnownComponents = [
       AssetSpec(pattern: r'^otzaria-android-full-part\d+\.zip$', volumes: true),
     ],
   ),
+  // המתקינים הרגילים של Windows פורסים את החלקים שלצדם (installer/otzaria.iss).
   ComponentSpec(
-    id: 'library-full-indexed',
-    name: 'ספרייה מלאה עם אינדקס חיפוש',
+    id: 'library-full',
+    name: 'ספרייה מלאה',
     description:
-        'מסד הספרים המלא יחד עם אינדקס החיפוש הבנוי מראש, לצירוף למחשב מנותק.',
+        'כל ספריית הספרים, למחשב שאין בו אינטרנט. המתקין פורס אותה בעצמו, '
+        'ואת אינדקס החיפוש התוכנה בונה אחרי ההתקנה.',
     type: 'library',
     required: false,
     platform: 'any',
     installOrder: 30,
-    // רק המתקין המאונדקס קורא את החלקים לצדו; ל-ARM64 אין צרכן.
-    installedBy: ['otzaria-windows-full-indexed'],
+    installedBy: ['otzaria-windows-x64', 'otzaria-windows-arm64'],
     compatibilityFromLibraryIndexProvenance: true,
+    outputNote:
+        'מתקין אוצריא שבתיקייה פורס את הספרייה מהחלקים שלצדו בזמן ההתקנה, '
+        'בלי אינטרנט.',
     assets: [
       AssetSpec(
-        pattern: r'^otzaria-.+-library-full-indexed\.tar\.zst\.manifest\.json$',
+        pattern: r'^otzaria-.+-library\.tar\.zst\.manifest\.json$',
+        split: true,
+      ),
+    ],
+  ),
+  // סוג משלו, ולא library: "מלאה" אוספת ספריות, והאינדקס אינו חלק ממנה.
+  ComponentSpec(
+    id: 'library-index',
+    name: 'אינדקס חיפוש מוכן (למחשבים חלשים)',
+    description:
+        'בדרך כלל אין בו צורך: התוכנה בונה את אינדקס החיפוש בעצמה אחרי '
+        'ההתקנה. מומלץ רק למחשב חלש, שבו בניית האינדקס איטית מאוד. מגיע '
+        'יחד עם הספרייה המלאה.',
+    type: kLibraryIndexType,
+    required: false,
+    platform: 'any',
+    installOrder: 31,
+    dependsOn: ['library-full'],
+    installedBy: ['otzaria-windows-x64', 'otzaria-windows-arm64'],
+    compatibilityFromLibraryIndexProvenance: true,
+    outputNote:
+        'אינדקס החיפוש המוכן נפרס יחד עם הספרייה, ולכן התוכנה אינה בונה אותו '
+        'אחרי ההתקנה.',
+    assets: [
+      AssetSpec(
+        pattern: r'^otzaria-.+-library-index\.tar\.zst\.manifest\.json$',
         split: true,
       ),
     ],
   ),
 ];
+
+/// סוג רכיב האינדקס הבנוי מראש.
+const String kLibraryIndexType = 'library-index';
+
+/// סוגים שאינם מותקנים בעצמם, ולכן חייבים לשאת `installedBy`.
+const Set<String> kInstalledByRequiredTypes = {'library', kLibraryIndexType};
 
 /// בונה את מניפסט ה-release מתוך [directory] — תיקיית קבצי ה-release של CI.
 ///
@@ -479,13 +506,18 @@ Map<String, Object?> buildReleaseManifest({
       if (spec.installedSize != null) 'installedSize': spec.installedSize,
       if (spec.compatibilityFromLibraryIndexProvenance && provenance != null)
         'compatibility': provenance,
+      if (spec.outputNote != null) 'outputNote': spec.outputNote,
       'assets': assets,
     });
   }
 
-  // רכיב שאף מתקין שלו לא נבנה אינו שמיש — מושמט כמו רכיב שנכסיו חסרים.
+  // רכיב שאף מתקין שלו, או אחת מתלויותיו, לא נבנו אינו שמיש — מושמט כמו רכיב
+  // שנכסיו חסרים. אינדקס בלי ספרייה, למשל.
   final built = {for (final c in components) c['id']};
   components.removeWhere((component) {
+    if (!(component['dependsOn'] as List<String>).every(built.contains)) {
+      return true;
+    }
     final installers = component['installedBy'] as List<String>?;
     if (installers == null) return false;
     final present = installers.where(built.contains).toList();
@@ -806,7 +838,8 @@ List<String> validateReleaseManifest(Object? manifest) {
         'component $label: installedBy must be a non-empty list of ids',
       );
     }
-    if (component['type'] == 'library' && installedBy is! List) {
+    if (kInstalledByRequiredTypes.contains(component['type']) &&
+        installedBy is! List) {
       errors.add(
         'component $label: a library must name the components that install '
         'it (installedBy)',

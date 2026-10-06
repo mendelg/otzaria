@@ -105,15 +105,47 @@ gboolean otz_component_is_offered(const OtzManifest *manifest,
          otz_installer_for(manifest, component, target) != NULL;
 }
 
+static gboolean is_installer_type(const char *type) {
+  return strcmp(type, "application") == 0 ||
+         strcmp(type, "application-bundle") == 0;
+}
+
 GPtrArray *otz_custom_choices(const OtzManifest *manifest,
                               const OtzTarget *target) {
-  GPtrArray *choices = g_ptr_array_new();
+  gboolean takes_library = FALSE;
   for (guint i = 0; i < manifest->components->len; i++) {
-    OtzComponent *component = g_ptr_array_index(manifest->components, i);
-    if (*component->part_of == '\0' &&
-        otz_component_is_offered(manifest, component, target))
-      g_ptr_array_add(choices, component);
+    const OtzComponent *component = g_ptr_array_index(manifest->components, i);
+    if (!otz_component_is_offered(manifest, component, target)) continue;
+    const OtzComponent *installer =
+        otz_installer_for(manifest, component, target);
+    if (installer != NULL && strcmp(installer->type, "application") == 0)
+      takes_library = TRUE;
   }
+  GPtrArray *rows = g_ptr_array_new();
+  guint installers = 0;
+  for (guint i = 0; i < manifest->components->len; i++) {
+    const OtzComponent *component = g_ptr_array_index(manifest->components, i);
+    if (!otz_component_is_offered(manifest, component, target) ||
+        strcmp(component->type, "application-portable") == 0 ||
+        *component->part_of != '\0' ||
+        (takes_library &&
+         strcmp(component->type, "application-bundle") == 0))
+      continue;
+    g_ptr_array_add(rows, (gpointer)component);
+    if (is_installer_type(component->type)) installers++;
+  }
+  GPtrArray *choices = g_ptr_array_new_with_free_func(g_free);
+  for (guint i = 0; i < rows->len; i++) {
+    const OtzComponent *component = g_ptr_array_index(rows, i);
+    OtzCustomChoice *choice = g_new0(OtzCustomChoice, 1);
+    gboolean installer = is_installer_type(component->type);
+    choice->component = component;
+    choice->locked = installer && installers <= 1;
+    choice->group =
+        installer && installers > 1 ? OTZ_APPLICATION_CHOICE_GROUP : "";
+    g_ptr_array_add(choices, choice);
+  }
+  g_ptr_array_unref(rows);
   return choices;
 }
 
