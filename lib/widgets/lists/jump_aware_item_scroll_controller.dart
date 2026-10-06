@@ -5,6 +5,8 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 /// [ItemScrollController] שמודיע למאזינים לפני כל קפיצה לאינדקס.
 class JumpAwareItemScrollController extends ItemScrollController {
   final _beforeJumpListeners = ObserverList<VoidCallback>();
+  int _navigationGeneration = 0;
+  int get navigationGeneration => _navigationGeneration;
   Future<void> Function(int index, {int? sourceLineIndex})? externalScroll;
 
   bool get isNativeAttached => externalScroll == null && super.isAttached;
@@ -23,6 +25,9 @@ class JumpAwareItemScrollController extends ItemScrollController {
       listener();
     }
   }
+
+  /// מודיע על ניווט בלי להפעיל ניקוי בחירה ששייך רק לקפיצה.
+  void beginNavigation() => _navigationGeneration++;
 
   @override
   void jumpTo({required int index, double alignment = 0}) {

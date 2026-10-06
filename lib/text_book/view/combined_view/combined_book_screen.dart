@@ -294,14 +294,10 @@ bool shouldRestoreScrollOnContinuousModeChange({
   return previousMode != null && previousMode != currentMode;
 }
 
-/// העוגן לעיגון מחדש אחרי שינוי במספור הסגמנטים: הפריט העליון הנראה שתחילתו
-/// נשמרה גם ברשימה החדשה, ומספרו החדש. `null` כשאין מה לתקן — הפריט נשאר
-/// באותו מספר, או שאף פריט נראה אינו ניתן לזיהוי ברשימה החדשה.
-///
-/// פריט שגובהו מעל התצוגה (פסקה ארוכה שגוללו לתוכה) מעוגן ביישור שלילי —
-/// הרשימה תומכת בכך, וקיבוע ל-0 היה מקפיץ לתחילת הפסקה.
+/// שומר גובה של פריט שלא השתנה, או נקודת מקור בתוך פסקה שהתארכה.
 @visibleForTesting
-({int index, double alignment})? reflowAnchor({
+({int index, double alignment, double fraction, double estimatedExtent})?
+reflowAnchor({
   required Iterable<ItemPosition> positions,
   required List<ReadingSegment> previous,
   required List<ReadingSegment> current,
@@ -311,20 +307,41 @@ bool shouldRestoreScrollOnContinuousModeChange({
           .where((p) => p.itemTrailingEdge > 0 && p.itemLeadingEdge < 1)
           .toList()
         ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
-  ({int index, double alignment})? fallback;
+  ({int index, double alignment, double fraction, double estimatedExtent})?
+  fallback;
   for (final position in visible) {
     if (position.index < 0 || position.index >= previous.length) continue;
-    final line = previous[position.index].startLineIndex;
-    final nextIndex = segmentIndexForLine(current, line);
+    final old = previous[position.index];
+    if (!old.isLoaded) continue;
+    final nextIndex = segmentIndexForLine(current, old.startLineIndex);
     if (nextIndex >= current.length) continue;
-    final candidate = (index: nextIndex, alignment: position.itemLeadingEdge);
-    // עדיפות לפריט שתחילתו לא זזה: פסקה שהתמזגה עם שורות שנטענו מעליה
-    // התארכה כלפי מעלה, ועיגון עליה היה מזיז את הטקסט בגובה התוספת.
-    if (current[nextIndex].startLineIndex == line) {
-      if (nextIndex == position.index) return null;
-      return candidate;
+    final next = current[nextIndex];
+    if (next.startLineIndex == old.startLineIndex &&
+        next.endLineIndex == old.endLineIndex) {
+      if (nextIndex == position.index && fallback == null) return null;
+      return (
+        index: nextIndex,
+        alignment: position.itemLeadingEdge,
+        fraction: 0,
+        estimatedExtent: 0,
+      );
     }
-    fallback ??= nextIndex == position.index ? null : candidate;
+    final extent = position.itemTrailingEdge - position.itemLeadingEdge;
+    if (!next.isLoaded || !extent.isFinite || extent <= 0) continue;
+    final point = (-position.itemLeadingEdge / extent).clamp(0.0, 1.0);
+    final start = lineFractionWithinSegment(next, old.startLineIndex);
+    final end = lineFractionWithinSegment(
+      next,
+      old.endLineIndex,
+      intraLineFraction: 1,
+    );
+    if (end <= start) continue;
+    fallback ??= (
+      index: nextIndex,
+      alignment: position.itemLeadingEdge.clamp(0.0, 1.0),
+      fraction: start + point * (end - start),
+      estimatedExtent: extent / (end - start),
+    );
   }
   return fallback;
 }
@@ -810,7 +827,10 @@ class _CombinedViewState extends State<CombinedView> {
     setState(() {});
   }
 
+  int _scrollGeneration = 0;
+
   void _clearSelectionBeforeJump() {
+    _scrollGeneration++;
     if (_savedSelectedText.value == null) return;
     _selectionAreaKey.currentState?.selectableRegion.clearSelection();
   }
@@ -964,7 +984,6 @@ class _CombinedViewState extends State<CombinedView> {
         });
       }
       _restorePositionOnContinuousModeChange(state);
-      _keepPlaceAcrossSegmentReflow(state);
     });
 
     // מוודא שהפוקוס מגיע לאזור הקריאה מיד אחרי פתיחת ספר
@@ -1275,37 +1294,91 @@ class _CombinedViewState extends State<CombinedView> {
     });
   }
 
-  /// במצב רציף הספר נטען בחלקים: כשחלק מוקדם נטען ברקע, הפסקאות שלו נכנסות
-  /// לפני המקום הנוכחי ומספרי הסגמנטים זזים. הרשימה מעוגנת לפי מספר פריט,
-  /// ולכן בלי תיקון היא ממשיכה להציג את אותו מספר — פסקה אחרת לגמרי — וספר
-  /// שנפתח מתוצאת חיפוש "קופץ" למקום אחר (issue #1973). כאן הפריט העליון
-  /// הנראה מתורגם לשורת מקור ומעוגן מחדש באותו גובה אחרי הבנייה מחדש.
+  // המדידות שייכות לפריסה הקודמת; כמה emits לפני frame נבנים יחד.
   void _keepPlaceAcrossSegmentReflow(TextBookLoaded state) {
     final previous = _reflowBasis;
     final current = state.readingSegments;
-    _reflowBasis = (
-      segments: current,
-      continuous: state.continuousReadingMode,
-    );
-    if (previous == null || identical(previous.segments, current)) return;
-    // החלפת מצב רציף/רגיל בונה רשימה חדשה במפתח אחר ומשוחזרת בנפרד.
-    if (previous.continuous != state.continuousReadingMode) return;
-    if (!state.continuousReadingMode ||
-        !widget.tab.scrollController.isAttached) {
+    final basis = (segments: current, continuous: state.continuousReadingMode);
+    if (previous != null &&
+        identical(previous.segments, current) &&
+        previous.continuous == basis.continuous) {
       return;
     }
-    final anchor = reflowAnchor(
-      positions: widget.tab.positionsListener.itemPositions.value,
-      previous: previous.segments,
-      current: current,
-    );
-    if (anchor == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !widget.tab.scrollController.isAttached) return;
+    final anchor =
+        previous != null &&
+            previous.continuous == basis.continuous &&
+            basis.continuous &&
+            widget.tab.scrollController.isNativeAttached
+        ? reflowAnchor(
+            positions: widget.tab.positionsListener.itemPositions.value,
+            previous: previous.segments,
+            current: current,
+          )
+        : null;
+    var generation = _scrollGeneration;
+    final navigationGeneration =
+        widget.tab.scrollController.navigationGeneration;
+    bool isCurrent() {
+      final latest = _textBookBloc.state;
+      return mounted &&
+          generation == _scrollGeneration &&
+          navigationGeneration ==
+              widget.tab.scrollController.navigationGeneration &&
+          widget.tab.scrollController.isNativeAttached &&
+          latest is TextBookLoaded &&
+          latest.continuousReadingMode == basis.continuous &&
+          identical(latest.readingSegments, current);
+    }
+
+    // הרשימה מפרסמת מדידות ב-postFrame; משתמשים בהן אחרי כל ה-callbacks.
+    void afterLayout(VoidCallback action) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => scheduleMicrotask(action),
+      );
+    }
+
+    afterLayout(() {
+      if (!mounted) return;
+      _reflowBasis = basis;
+      if (anchor == null || !isCurrent()) return;
+      ItemPosition? measured() {
+        for (final position
+            in widget.tab.positionsListener.itemPositions.value) {
+          if (position.index == anchor.index) return position;
+        }
+        return null;
+      }
+
+      final position = measured();
+      final extent = position == null
+          ? anchor.estimatedExtent
+          : position.itemTrailingEdge - position.itemLeadingEdge;
+      final alignment = anchor.alignment - anchor.fraction * extent;
       widget.tab.scrollController.jumpTo(
         index: anchor.index,
-        alignment: anchor.alignment,
+        alignment: alignment,
       );
+      if (anchor.fraction == 0 || position != null) return;
+      generation = _scrollGeneration;
+      // יעד שלא נבנה מעוגן תחילה לפי גובהו המשוער, ואז לפי מדידתו.
+      afterLayout(() {
+        if (!isCurrent()) return;
+        final position = measured();
+        if (position == null ||
+            (position.itemLeadingEdge - alignment).abs() >
+                kAnchorLandingEpsilon) {
+          return;
+        }
+        final corrected =
+            anchor.alignment -
+            anchor.fraction *
+                (position.itemTrailingEdge - position.itemLeadingEdge);
+        if ((corrected - alignment).abs() <= kAnchorLandingEpsilon) return;
+        widget.tab.scrollController.jumpTo(
+          index: anchor.index,
+          alignment: corrected,
+        );
+      });
     });
   }
 
@@ -1968,6 +2041,7 @@ class _CombinedViewState extends State<CombinedView> {
         if (state is! TextBookLoaded) {
           return const Center(child: CircularProgressIndicator());
         }
+        _keepPlaceAcrossSegmentReflow(state);
         return LayoutBuilder(
           builder: (context, constraints) {
             // שומר את גובה הבלוק בפועל לשימוש בחישובי הגלילה
@@ -1982,7 +2056,10 @@ class _CombinedViewState extends State<CombinedView> {
               onCopy: _copyFormattedText,
               child: RtlSelectionShortcuts(
                 child: Listener(
+                  onPointerSignal: (_) => _scrollGeneration++,
+                  onPointerPanZoomStart: (_) => _scrollGeneration++,
                   onPointerDown: (event) {
+                    _scrollGeneration++;
                     if (event.buttons == kPrimaryMouseButton) {
                       _isSelectionPointerDown = true;
                     }

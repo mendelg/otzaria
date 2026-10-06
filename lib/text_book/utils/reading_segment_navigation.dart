@@ -73,10 +73,8 @@ ItemPosition? _findPosition(ItemPositionsListener listener, int segmentIndex) {
 /// הנחיתה נמדדת ומתוקנת גם ליעד ללא דיוק תוך-שורתי (ניווט מכותרות/TOC):
 /// רה-פריסה תוך כדי האנימציה (טעינה הדרגתית) מסיטה את היעד, ובלי תיקון נשארים במקום.
 ///
-/// [latestSegments] מחזיר את רשימת הסגמנטים העדכנית: במצב רציף טעינת רקע
-/// מחליפה את הרשימה תוך כדי הגלילה ומספר הסגמנט של היעד זז, ולכן היעד נפתר
-/// מחדש בכל צעד מדידה (issue #1973). בלעדיו משתמשים ב-[segments] לאורך כל
-/// הגלילה.
+/// [latestSegments] פותר מחדש את היעד כשטעינת רקע מחליפה את הסגמנטים;
+/// בלעדיו משתמשים ב-[segments] לאורך כל הגלילה.
 Future<void> scrollToSourceLine({
   required ItemScrollController scrollController,
   required ScrollOffsetController? scrollOffsetController,
@@ -94,6 +92,9 @@ Future<void> scrollToSourceLine({
     return;
   }
 
+  if (scrollController is JumpAwareItemScrollController) {
+    scrollController.beginNavigation();
+  }
   var segmentIndex = -1;
   var fraction = 0.0;
   var safeLineIndex = lineIndex;
