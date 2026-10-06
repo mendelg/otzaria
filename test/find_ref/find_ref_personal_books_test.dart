@@ -401,6 +401,37 @@ void main() {
       }
     }
 
+    test('ספר מתיקייה אישית: הכותרת נפתחת בשורה שלה (#1902)', () async {
+      // ספר שתוכנו בקובץ: אין שורות במסד, והמיקום נשמר ב-tocEntry.lineIndex.
+      execute('ALTER TABLE tocEntry ADD COLUMN lineIndex INTEGER');
+      execute(
+        'INSERT INTO book (id, categoryId, sourceId, title, orderIndex) '
+        'VALUES (60, ?, 1, ?, 3)',
+        [SeforimFixtureIds.torahCategoryId, 'קונטרס חיצוני'],
+      );
+      execute("INSERT INTO tocText (id, text) VALUES (960, 'פרק ג')");
+      execute(
+        'INSERT INTO tocEntry (id, bookId, parentId, textId, level, lineId, '
+        'lineIndex) VALUES (960, 60, NULL, 960, 1, NULL, 42)',
+      );
+      final repo = _repo(
+        books: const [],
+        openUserBooksRepository: () async => SeforimRepository(userDb),
+      );
+
+      final results = await repo.findRefs(
+        'קונטרס חיצוני פרק ג',
+        includePersonalBooks: true,
+      );
+
+      expect(
+        results
+            .where((r) => r.source == BookSource.user && r.bookId == 60)
+            .map((r) => (r.reference, r.segment)),
+        contains(('קונטרס חיצוני פרק ג', 42)),
+      );
+    });
+
     test('ספר שנוסף למסד אחרי החיפוש הראשון נמצא', () async {
       final repo = _repo(
         books: const [],
