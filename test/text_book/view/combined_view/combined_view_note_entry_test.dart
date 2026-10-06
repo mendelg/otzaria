@@ -21,6 +21,9 @@ import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/data/repository/text_book_repository.dart';
 import 'package:otzaria/text_book/view/combined_view/combined_book_screen.dart';
+import 'package:otzaria/text_book/view/error_report_dialog.dart';
+import 'package:otzaria/text_book/view/selection/selected_text_copy.dart';
+import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/text_book/utils/reading_segments.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -142,8 +145,145 @@ void main() {
       expect(note.selectedText, selectedText);
       expect(note.bookId, 'ספר בדיקה');
     });
+
+    // #1859: ציון המפרש מוזרק לתצוגה ולכן נבחר עם הטקסט, אך אינו בשורת המקור.
+    testWidgets('selection across a commentary marker: $continuous', (
+      tester,
+    ) async {
+      final fixture = await _pumpView(
+        tester,
+        continuous: continuous,
+        selectedIndex: 0,
+        data: const ['פסקה ראשונה', 'אמר רבי יוחנן הלכה', 'פסקה שלישית'],
+        linksByLine: {
+          2: [_anchorLink],
+        },
+      );
+      expect(_textBox(tester, '(ב)'), isNotNull);
+      await _selectText(tester, 'רבי', 'יוחנן');
+      expect(fixture.selectedLine, 1);
+      expect(fixture.selectedText?.trim(), 'רבי יוחנן');
+      final note = await _openNote(
+        tester,
+        fixture,
+        _textBox(tester, 'יוחנן').center,
+      );
+      expect(note.lineNumber, 2);
+      expect(note.selectedText, 'רבי יוחנן');
+      expect(note.selectionColumn, 4);
+    });
+
+    testWidgets('selection after a commentary marker: $continuous', (
+      tester,
+    ) async {
+      final fixture = await _pumpView(
+        tester,
+        continuous: continuous,
+        selectedIndex: 0,
+        data: const ['פסקה ראשונה', 'אמר רבי יוחנן הלכה', 'פסקה שלישית'],
+        linksByLine: {
+          2: [_anchorLink],
+        },
+      );
+      await _selectText(tester, 'יוחנן', 'הלכה');
+      expect(fixture.selectedLine, 1);
+      final note = await _openNote(
+        tester,
+        fixture,
+        _textBox(tester, 'יוחנן').center,
+      );
+      expect(note.selectedText, 'יוחנן הלכה');
+      expect(note.selectionColumn, 8);
+    });
+
+    testWidgets('Ctrl+C follows the copy channel: $continuous', (
+      tester,
+    ) async {
+      final copied = <String>[];
+      debugSelectedTextCopyHandler = (content) => copied.add(content.plainText);
+      addTearDown(() => debugSelectedTextCopyHandler = null);
+      await _pumpView(
+        tester,
+        continuous: continuous,
+        selectedIndex: 0,
+        data: const ['פסקה ראשונה', 'אמר רבי יוחנן הֲלָכָה', 'פסקה שלישית'],
+        linksByLine: {
+          2: [_anchorLink],
+        },
+        displayPolicy: _hiddenInCopy,
+      );
+      await _selectText(tester, 'רבי', 'הֲלָכָה');
+      await _pressCtrlC(tester);
+      expect(copied, ['רבי יוחנן הלכה']);
+    });
+
+    testWidgets('error report gets the source selection: $continuous', (
+      tester,
+    ) async {
+      await _pumpView(
+        tester,
+        continuous: continuous,
+        selectedIndex: 0,
+        book: TextBook(title: 'ספר בדיקה', id: 7),
+        data: const ['פסקה ראשונה', 'אמר רבי יוחנן הלכה', 'פסקה שלישית'],
+        linksByLine: {
+          2: [_anchorLink],
+        },
+      );
+      await _selectText(tester, 'רבי', 'יוחנן');
+      await tester.tapAt(
+        _textBox(tester, 'יוחנן').center,
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.tap(find.text('דווח על טעות בספר'));
+      for (var i = 0; i < 40; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+        if (find.byType(TabbedReportDialog).evaluate().isNotEmpty) break;
+      }
+      final dialog = tester.widget<TabbedReportDialog>(
+        find.byType(TabbedReportDialog),
+      );
+      expect(dialog.selectedText, 'רבי יוחנן');
+    });
   }
 }
+
+final _hiddenInCopy = TextDisplayPolicy.empty.merged(
+  TextDisplayBookClass.general,
+  const TextDisplaySlot(
+    target: TextTarget.body,
+    view: TextView.regular,
+    channel: TextChannel.copy,
+  ),
+  const TextDisplayPatch(
+    anchorMarkers: MarkVisibility.hide,
+    nikud: MarkVisibility.hide,
+  ),
+);
+
+Future<void> _pressCtrlC(WidgetTester tester) async {
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+  await tester.pump();
+}
+
+final _anchorLink = Link(
+  heRef: 'מפרש בדיקה א, ב',
+  index1: 2,
+  path2: 'מפרש בדיקה',
+  index2: 1,
+  connectionType: 'commentary',
+  anchorStart: 7,
+  anchorLabel: 'ב',
+);
 
 class _Fixture {
   final _PersonalNotesBloc notesBloc;
@@ -159,6 +299,8 @@ Future<_Fixture> _pumpView(
   int? selectedIndex,
   List<String> data = _lines,
   TextBook? book,
+  Map<int, List<Link>>? linksByLine,
+  TextDisplayPolicy? displayPolicy,
 }) async {
   book ??= TextBook(title: 'ספר בדיקה');
   final bloc = _TextBookBloc(
@@ -168,6 +310,8 @@ Future<_Fixture> _pumpView(
       selectedIndex: selectedIndex,
       continuous: continuous,
       data: data,
+      linksByLine: linksByLine,
+      displayPolicy: displayPolicy,
     ),
   );
   final settingsBloc = _SettingsBloc(SettingsState.initial());
@@ -276,6 +420,8 @@ TextBookLoaded _loadedState({
   int? selectedIndex,
   required bool continuous,
   required List<String> data,
+  Map<int, List<Link>>? linksByLine,
+  TextDisplayPolicy? displayPolicy,
 }) {
   return TextBookLoaded(
     book: book,
@@ -292,9 +438,13 @@ TextBookLoaded _loadedState({
     availableCommentators: availableCommentators,
     links: const [],
     visibleLinks: const [],
-    linksByLine: {
-      1: [for (final title in availableCommentators) _commentaryLink(title)],
-    },
+    linksByLine:
+        linksByLine ??
+        {
+          1: [
+            for (final title in availableCommentators) _commentaryLink(title),
+          ],
+        },
     tableOfContents: const [],
     removeNikud: false,
     visibleIndices: List.generate(data.length, (index) => index),
@@ -306,6 +456,7 @@ TextBookLoaded _loadedState({
     searchText: '',
     scrollController: ItemScrollController(),
     positionsListener: ItemPositionsListener.create(),
+    displayPolicy: displayPolicy,
   );
 }
 

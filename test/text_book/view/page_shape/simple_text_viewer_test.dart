@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
@@ -31,7 +32,9 @@ import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/text_book/view/page_shape/simple_text_viewer.dart';
 import 'package:otzaria/text_book/utils/reader_build_policy.dart';
+import 'package:otzaria/text_book/view/selection/selected_text_copy.dart';
 import 'package:otzaria/text_book/view/selection/selection_sync_controller.dart';
+import 'package:otzaria/text_display/text_display_exports.dart';
 import 'package:otzaria/text_book/view/tabbed_commentary_panel.dart';
 import 'package:otzaria/widgets/misc/app_context_menu.dart';
 import 'package:otzaria/widgets/misc/link_context_menu_entry.dart';
@@ -2152,6 +2155,138 @@ void main() {
           '${textBookBloc.selectionEvents}',
     );
   });
+
+  // #1859: ציון המפרש מוזרק לתצוגה ולכן נבחר עם הטקסט, אך אינו בשורת המקור.
+  testWidgets('בחירה שחוצה ציון מפרש מאותרת בשורת המקור', (tester) async {
+    final bloc = await _pumpMarkedViewer(tester);
+    await _dragSelect(tester, 'רבי', 'יוחנן');
+    final last = bloc.noteEvents.last;
+    expect(last.text, 'רבי יוחנן');
+    expect(last.sectionIndex, 0);
+    expect(last.start, 4);
+    expect(last.end, 4 + 'רבי יוחנן'.length);
+  });
+
+  testWidgets('בחירה אחרי ציון מפרש מקבלת את עמודת המקור', (tester) async {
+    final bloc = await _pumpMarkedViewer(tester);
+    await _dragSelect(tester, 'יוחנן', 'הלכה');
+    final last = bloc.noteEvents.last;
+    expect(last.text, 'יוחנן הלכה');
+    expect(last.start, 8);
+  });
+
+  testWidgets('Ctrl+C בצורת הדף לפי ערוץ ההעתקה', (tester) async {
+    final copied = <String>[];
+    debugSelectedTextCopyHandler = (content) => copied.add(content.plainText);
+    addTearDown(() => debugSelectedTextCopyHandler = null);
+    await _pumpMarkedViewer(
+      tester,
+      line: 'אמר רבי יוחנן הֲלָכָה',
+      displayPolicy: TextDisplayPolicy.empty.merged(
+        TextDisplayBookClass.general,
+        const TextDisplaySlot(
+          target: TextTarget.body,
+          view: TextView.regular,
+          channel: TextChannel.copy,
+        ),
+        const TextDisplayPatch(
+          anchorMarkers: MarkVisibility.hide,
+          nikud: MarkVisibility.hide,
+        ),
+      ),
+    );
+    await _dragSelect(tester, 'רבי', 'הֲלָכָה');
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
+    expect(copied, ['רבי יוחנן הלכה']);
+  });
+}
+
+Future<_SelectionEmittingTextBookBloc> _pumpMarkedViewer(
+  WidgetTester tester, {
+  String line = 'אמר רבי יוחנן הלכה',
+  TextDisplayPolicy? displayPolicy,
+}) async {
+  final lines = [line];
+  final anchorLink = Link(
+    heRef: 'מפרש בדיקה א, ב',
+    index1: 1,
+    path2: 'מפרש בדיקה',
+    index2: 1,
+    connectionType: 'commentary',
+    anchorStart: 7,
+    anchorLabel: 'ב',
+  );
+  final textBookBloc = _SelectionEmittingTextBookBloc(
+    _loadedState().copyWith(
+      content: lines,
+      clearSelectedIndex: true,
+      displayPolicy: displayPolicy,
+      linksByLine: {
+        1: [anchorLink],
+      },
+    ),
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      home: MultiBlocProvider(
+        providers: [
+          BlocProvider<TextBookBloc>.value(value: textBookBloc),
+          BlocProvider<PersonalNotesBloc>.value(
+            value: _TestPersonalNotesBloc(const PersonalNotesState.initial()),
+          ),
+          BlocProvider<SettingsBloc>.value(
+            value: _TestSettingsBloc(SettingsState.initial()),
+          ),
+        ],
+        child: Scaffold(
+          body: SimpleTextViewer(
+            content: lines,
+            fontSize: 18,
+            openBookCallback: (_) {},
+            isMainText: true,
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return textBookBloc;
+}
+
+Rect _wordBox(WidgetTester tester, String text) {
+  final paragraph = tester.allRenderObjects
+      .whereType<RenderParagraph>()
+      .firstWhere((p) => p.text.toPlainText().contains(text));
+  final offset = paragraph.text.toPlainText().indexOf(text);
+  final rect = paragraph
+      .getBoxesForSelection(
+        TextSelection(baseOffset: offset, extentOffset: offset + text.length),
+      )
+      .first
+      .toRect();
+  return Rect.fromPoints(
+    paragraph.localToGlobal(rect.topLeft),
+    paragraph.localToGlobal(rect.bottomRight),
+  );
+}
+
+Future<void> _dragSelect(WidgetTester tester, String from, String to) async {
+  expect(_wordBox(tester, '(ב)'), isNotNull);
+  final first = _wordBox(tester, from);
+  final last = _wordBox(tester, to);
+  final gesture = await tester.startGesture(
+    Offset(first.right - 1, first.center.dy),
+    kind: PointerDeviceKind.mouse,
+  );
+  await tester.pump();
+  await gesture.moveTo(Offset(last.left + 1, last.center.dy));
+  await tester.pump();
+  await gesture.up();
+  await tester.pumpAndSettle();
 }
 
 /// BLoC שמתנהג כמו הייצור: כל [UpdateSelectedTextForNote] פולט
@@ -2162,6 +2297,7 @@ class _SelectionEmittingTextBookBloc extends Bloc<TextBookEvent, TextBookState>
     on<TextBookEvent>((event, emit) {
       if (event is! UpdateSelectedTextForNote) return;
       selectionEvents.add(event.text);
+      noteEvents.add(event);
       final current = state;
       if (current is! TextBookLoaded) return;
       emit(
@@ -2177,6 +2313,7 @@ class _SelectionEmittingTextBookBloc extends Bloc<TextBookEvent, TextBookState>
   }
 
   final List<String?> selectionEvents = [];
+  final List<UpdateSelectedTextForNote> noteEvents = [];
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
