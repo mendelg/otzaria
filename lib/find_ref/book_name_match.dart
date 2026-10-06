@@ -1,7 +1,7 @@
 /// צורת ההשוואה של שמות ספרים וכינויים באיתור מקורות, מעל [normalizeForFindRefMatch].
 ///
-/// חלה על שני צדי ההשוואה (השאילתה מול כותרת או כינוי) ורק בהחלטה אם יש התאמה;
-/// התוצאה נושאת את הצורה הרגילה, כי בחיפוש הכותרות הפנימיות "דיינים" אינו "דינים".
+/// חלה רק בהחלטה אם יש התאמה; התוצאה נושאת את הצורה הרגילה, כי בחיפוש הכותרות
+/// הפנימיות "דיינים" אינו "דינים". כינויים מושווים ב-[bookNameSpellingForm] בלבד.
 library;
 
 /// ראשי-תיבות שה"א הידיעה באה לפניהם ("הרמב"ם"), כפי שהכריע מחקר השמות של הספרייה.
@@ -25,22 +25,26 @@ const Set<String> sagesTakingDefiniteArticle = {
   'שס', 'תנך', 'נך', 'קבה',
 };
 
-/// טוקן אחד בצורת ההשוואה: וו/יי כפולות כיחידה (כתיב מלא וחסר — מקוואות/מקואות),
-/// ובלי ה"א הידיעה שלפני ראשי-תיבות מ-[sagesTakingDefiniteArticle].
+/// וו/יי כפולות כיחידה — כתיב מלא וחסר (מקוואות/מקואות).
+String bookNameSpellingForm(String text) =>
+    text.contains('וו') || text.contains('יי')
+    ? text.replaceAll('וו', 'ו').replaceAll('יי', 'י')
+    : text;
+
+/// טוקן אחד בצורת ההשוואה: [bookNameSpellingForm], ובלי ה"א הידיעה שלפני
+/// ראשי-תיבות מ-[sagesTakingDefiniteArticle].
 String bookNameMatchToken(String token) {
-  var t = token;
-  if (t.contains('וו') || t.contains('יי')) {
-    t = t.replaceAll('וו', 'ו').replaceAll('יי', 'י');
-  }
+  final t = bookNameSpellingForm(token);
   if (t.length > 2 &&
       t.codeUnitAt(0) == 0x05D4 &&
       sagesTakingDefiniteArticle.contains(t.substring(1))) {
-    t = t.substring(1);
+    return t.substring(1);
   }
   return t;
 }
 
-/// [text] כבר מנורמל ומופרד ברווחים יחידים.
+/// [text] כבר מנורמל ומופרד ברווחים יחידים. לשאילתות ולכותרות — לא לכינויים: כינוי
+/// שגוי "הרמב"ם הלכות X" על מפרש היה נעשה זהה ל"רמב"ם הלכות X" של משנה תורה.
 String bookNameMatchForm(String text) {
   if (!text.contains('וו') && !text.contains('יי') && !text.contains('ה')) {
     return text;

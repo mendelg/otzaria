@@ -1017,7 +1017,7 @@ class BookTitleIndex {
   /// [titleMatchTokens] של [_matchTitles], בעצלתיים — רק מעטים מגיעים למסלול שצריך אותם.
   final Map<int, Set<String>> _matchTitleTokens = <int, Set<String>>{};
 
-  /// כינויי הספר ב-[bookNameMatchForm], לפי אותו סדר. נבנים מחדש כשהקאש נטען מחדש.
+  /// כינויי הספר ב-[bookNameSpellingForm], לפי אותו סדר. נבנים מחדש כשהקאש נטען מחדש.
   final Map<int, (List<String>, List<String>)> _matchAcronyms =
       <int, (List<String>, List<String>)>{};
 
@@ -1090,13 +1090,18 @@ class BookTitleIndex {
           : scans.putIfAbsent(q, () {
               final words = q.split(' ');
               final mq = bookNameMatchForm(q);
+              final aq = [
+                bookNameSpellingForm(q),
+                if (mq != bookNameSpellingForm(q)) mq,
+              ];
               return _QueryScan(
                 q,
                 mq,
+                aq,
                 words,
-                // מסננת הביגרמים חוסכת את המעבר על כינויי כל הספרים. היא בנויה
-                // על הצורה הרגילה, ושמיטת ה"א יוצרת ביגרם שאין בה — ואז סורקים הכל.
-                mq == q ? _acronymCandidates(q) : null,
+                // מסננת הביגרמים חוסכת את המעבר על כינויי כל הספרים — כינוי שמתאים
+                // לצורה של השאילתה מכיל כל ביגרם שלה, כי הכינויים אינם משמיטים ה"א.
+                [for (final form in aq) _acronymCandidates(form)],
                 // בלעדיה כל שאילתה הייתה מריצה מרחק-עריכה על כל ספר.
                 _fuzzyCandidateBooks(words),
               );
@@ -1119,7 +1124,12 @@ class BookTitleIndex {
     final parentOf = List<int>.filled(active.length, -1);
     for (var i = 0; i < active.length; i++) {
       for (var j = 0; j < i; j++) {
-        if (active[i].mq.contains(active[j].mq)) parentOf[i] = j;
+        if (active[i].mq.contains(active[j].mq) &&
+            active[i].acronymQueries.first.contains(
+              active[j].acronymQueries.first,
+            )) {
+          parentOf[i] = j;
+        }
       }
     }
     final masks = List<int>.filled(active.length, 0);
@@ -1192,28 +1202,35 @@ class BookTitleIndex {
       // ענף הכינויים לא נבדק — אין מידע שמותר לפסול בו.
       mask = _mayMatchAll;
     } else if (parentMask & _acronymMay != 0 &&
-        (scan.acronymCandidates?.contains(book.id) ?? true)) {
+        scan.mayHaveAcronymMatch(book.id)) {
       // התאמת ראשי תיבות — המונחים כבר מנורמלים בעת טעינת הקאש.
       final normalizedAcronyms = _acronymsOf(book.id);
       if (normalizedAcronyms != null) {
         final matchAcronyms = _matchAcronymsFor(book.id, normalizedAcronyms);
         // עצל: רק התאמת-תחילית של ראשי-תיבות צריכה את טוקני הכותרת.
         Set<String>? titleTokens;
+        final queries = scan.acronymQueries;
+        aliases:
         for (var i = 0; i < normalizedAcronyms.length; i++) {
           final a = normalizedAcronyms[i];
           final ma = matchAcronyms[i];
-          if (ma == q) {
-            matchRank = 3;
-            matchedTerm = a;
-            break;
+          String? aq;
+          for (final form in queries) {
+            if (ma == form) {
+              matchRank = 3;
+              matchedTerm = a;
+              break aliases;
+            }
+            if (aq == null && ma.startsWith(form)) aq = form;
           }
-          if (ma.startsWith(q)) {
+          if (aq != null) {
             titleTokens ??= _matchTitleTokens[book.id] ??= titleMatchTokensOf(
               _splitTitleTokens(mt),
             );
+            // הכותרת בצורת ההשוואה, ולכן גם הזנב — ה"א שבכינוי אינה מבדילה כאן.
             final tailIsTitle = ReferenceBooksCache._acronymTailIsTitleWords(
-              ma,
-              q,
+              bookNameMatchForm(ma),
+              bookNameMatchForm(aq),
               titleTokens,
             );
             // דירוג טוב יותר גובר על קודמיו — אחרת מונח "contains" (5) שנסרק
@@ -1225,7 +1242,9 @@ class BookTitleIndex {
               matchedTerm = a;
               tailIsTitleWords = tailIsTitle;
             }
-          } else if (ma.contains(q) && matchRank == null) {
+          } else if (matchRank == null &&
+              (ma.contains(queries[0]) ||
+                  (queries.length > 1 && ma.contains(queries[1])))) {
             matchRank = 5;
             matchedTerm = a;
           }
@@ -1266,7 +1285,7 @@ class BookTitleIndex {
   List<String> _matchAcronymsFor(int bookId, List<String> acronyms) {
     final cached = _matchAcronyms[bookId];
     if (cached != null && identical(cached.$1, acronyms)) return cached.$2;
-    final forms = acronyms.map(bookNameMatchForm).toList(growable: false);
+    final forms = acronyms.map(bookNameSpellingForm).toList(growable: false);
     _matchAcronyms[bookId] = (acronyms, forms);
     return forms;
   }
@@ -1485,6 +1504,7 @@ class _QueryScan {
   _QueryScan(
     this.q,
     this.mq,
+    this.acronymQueries,
     this.words,
     this.acronymCandidates,
     this.fuzzyCandidates,
@@ -1492,11 +1512,23 @@ class _QueryScan {
 
   final String q;
 
-  /// [q] ב-[bookNameMatchForm].
+  /// [q] ב-[bookNameMatchForm] — מול כותרות.
   final String mq;
+
+  /// צורות [q] מול כינויים: [bookNameSpellingForm], ו-[mq] כשהיא שונה ממנה.
+  final List<String> acronymQueries;
   final List<String> words;
-  final AcronymCandidateBooks? acronymCandidates;
+
+  /// לכל צורה ב-[acronymQueries]; `null` = אין צמצום.
+  final List<AcronymCandidateBooks?> acronymCandidates;
   final Set<int> fuzzyCandidates;
+
+  bool mayHaveAcronymMatch(int bookId) {
+    for (final c in acronymCandidates) {
+      if (c == null || c.contains(bookId)) return true;
+    }
+    return false;
+  }
 
   List<ReferenceBookHit> _starts = <ReferenceBookHit>[];
   List<ReferenceBookHit> _contains = <ReferenceBookHit>[];

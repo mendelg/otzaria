@@ -66,6 +66,35 @@ void main() {
       expect(hits.single.matchRank, 3);
     });
 
+    test('כינוי שגוי עם ה"א על מפרש אינו נעשה זהה לכינוי בלעדיה', () {
+      // במסדים שכבר הופצו יש למגיד משנה כינויים "הרמב"ם הלכות X" — ה"א נשמטת
+      // רק מהשאילתה ומהכותרת, ולכן "רמב"ם הלכות גירושין" מזהה רק את משנה תורה.
+      seedLibrary(const [
+        (
+          id: 1,
+          title: 'משנה תורה, הלכות גירושין',
+          acronyms: ['רמב"ם הלכות גירושין'],
+        ),
+        (
+          id: 2,
+          title: 'מגיד משנה על משנה תורה, הלכות גירושין',
+          acronyms: ['הרמב"ם הלכות גירושין'],
+        ),
+      ]);
+      final hits = ReferenceBooksCache.instance.search('רמב"ם הלכות גירושין');
+      expect(
+        {for (final h in hits) h.bookId: h.matchRank},
+        {1: 3, 2: 5},
+      );
+      // ועם ה"א בשאילתה — שני הכינויים מתאימים במלואם, כמו שנכתבו
+      expect(
+        ReferenceBooksCache.instance
+            .search('הרמב"ם הלכות גירושין')
+            .map((h) => h.matchRank),
+        everyElement(3),
+      );
+    });
+
     test('כותרת עם ה"א נמצאת גם בלעדיה, ולהיפך', () {
       seedLibrary(const [
         (id: 1, title: 'השגות הראב"ד על בבא קמא', acronyms: []),
