@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/core/messages/semantic_search_messages.dart';
 import 'package:otzaria/semantic_search/models/semantic_availability.dart';
 import 'package:otzaria/semantic_search/models/semantic_failure.dart';
 import 'package:otzaria/semantic_search/semantic_work_status.dart';
@@ -48,6 +49,29 @@ void main() {
     expect(item.kind, WorkStatusKind.running);
     item.actions.single.onPressed();
     expect(cancels, 1);
+  });
+
+  test('האחוז מוצג רק בכותרת הכרטיס ולא שוב בתיאור (issue #1967)', () {
+    const progress = SemanticDownloadProgress(
+      item: SemanticDownloadItem.vectors,
+      receivedBytes: 516,
+      totalBytes: 1000,
+      step: 2,
+      stepCount: 3,
+    );
+    reporter.update(
+      const SemanticAvailability(
+        phase: SemanticAvailabilityPhase.downloading,
+        consentGranted: true,
+        progress: progress,
+      ),
+    );
+
+    // הכותרת מציגה 51% מתוך progress; אחוז מעוגל בתיאור הציג 52%.
+    expect(upserts.single.message, 'מוריד את נתוני החיפוש');
+    expect(upserts.single.progress, 0.516);
+    // ההגדרות וחלון החיפוש מציגים אחוז בטקסט — באותו עיגול כמו הכותרת.
+    expect(SemanticSearchMessages.progressPercent(progress), '51');
   });
 
   test('בהתקנה: בלי אחוז ובלי ערך התקדמות', () {
