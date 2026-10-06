@@ -21,7 +21,7 @@ const _scripts = [_regular, _full];
 /// בסוף הקובץ מאמתת את האינוריאנטות שכן חלות.
 const _assistant = 'download_assistant.iss';
 
-/// `#include "x"` מילולי, כמו שכבת התצוגה של המסייע.
+/// `#include "x"` מילולי, כמו שכבת התצוגה ובדיקת הרשת של התוספים.
 final _includeLine = RegExp(
   r'^[ \t]*#include[ \t]+"([^"]+)"[ \t]*$',
   multiLine: true,
@@ -30,13 +30,14 @@ final _includeLine = RegExp(
 String _read(String name) =>
     File('installer/$name').readAsStringSync().replaceAll('\r\n', '\n');
 
-/// המסייע נקרא כמו ש-ISPP רואה אותו: הקובץ הראשי עם שכבת התצוגה שהוא כולל,
-/// כדי שכל אינוריאנטה תחול גם עליה.
-String _script(String name) {
-  final text = _read(name);
-  if (name != _assistant) return text;
-  return text.replaceAllMapped(_includeLine, (m) => _read(m[1]!));
-}
+/// כל סקריפט נקרא כמו ש-ISPP רואה אותו: עם מה שהוא כולל, גם בתוך קובץ כלול,
+/// כדי שכל אינוריאנטה תחול על הקוד בכל קובץ שבו הוא יושב.
+String _script(String name) => _expandIncludes(_read(name));
+
+String _expandIncludes(String text) => text.replaceAllMapped(
+  _includeLine,
+  (m) => _expandIncludes(_read(m[1]!)),
+);
 
 /// גופי כל מקטעי `[Name]` בסקריפט, ולא רק הראשון.
 List<String> _sections(String script, String name) {
@@ -65,13 +66,26 @@ String _section(String script, String name) {
 }
 
 /// גוף שגרת Pascal מהחתימה ועד ה-`end;` שבתחילת שורה (שגרות ראשיות בלבד —
-/// `end;` מקונן תמיד מוזח בקבצים האלה).
+/// `end;` מקונן תמיד מוזח בקבצים האלה). הצהרת `forward` (חוזה המתאם שבליבה
+/// של שכבת התצוגה) אינה גוף, ולכן מדלגים עליה עד המימוש.
 String _routine(String script, String signature) {
-  final start = script.indexOf(signature);
+  var start = script.indexOf(signature);
+  while (start >= 0 && _isForward(script, start)) {
+    start = script.indexOf(signature, start + signature.length);
+  }
   expect(start, greaterThanOrEqualTo(0), reason: 'לא נמצאה השגרה $signature');
   final end = script.indexOf('\nend;', start);
   expect(end, greaterThan(start), reason: 'לא נמצא סוף השגרה $signature');
   return script.substring(start, end);
+}
+
+bool _isForward(String script, int start) {
+  final open = script.indexOf('(', start);
+  var header = script.indexOf(';', start);
+  if (open >= 0 && open < header) {
+    header = script.indexOf(';', script.indexOf(')', open));
+  }
+  return header >= 0 && script.startsWith(RegExp(r'\s*forward;'), header + 1);
 }
 
 /// מכווץ רצפי רווחים כדי שהשוואות לא יישברו על עיצוב מחדש.
@@ -2353,10 +2367,15 @@ void main() {
         expect(
           init.substring(titleEn, init.indexOf('#endif', titleEn)),
           allOf(
-            contains("UiTitleArt := 'title_en_'"),
-            contains("UiTitleArt := 'title_'"),
+            contains('UiTitleArt := TitleArtEn'),
+            contains('UiTitleArt := TitleArt;'),
             contains('if UiRtl then'),
           ),
+        );
+        expect(
+          script,
+          contains("UiInitializeWizard('title_', 'title_en_', "),
+          reason: 'המסייע מציג את כותרת המסייע שבעיצוב',
         );
         final load = _routine(script, 'function UiLoadArt(');
         final extract = load.indexOf('ExtractTemporaryFile(FileName);');
@@ -2862,7 +2881,7 @@ void main() {
       // Inno כותב לתווית ההורדה גם את שם הקובץ; התצוגה קוראת את השורה שלנו.
       expect(progress, contains('DownloadStatus := Status;'));
       expect(
-        _routine(script, 'procedure UiUpdateProgress()'),
+        _routine(script, 'function UiAdapterProgress('),
         contains('Bytes := DownloadStatus;'),
       );
       expect(
@@ -2993,7 +3012,7 @@ void main() {
       );
       expect(actions, contains('This := IsThisComputerMode();'));
       expect(
-        _routine(script, 'procedure UiBuildFinish()'),
+        _routine(script, 'procedure UiAdapterBuildFinish()'),
         contains('UiPlaceFinishActions(Page)'),
       );
       // ב"סוג מחשב אחר" נשארת תיבת "הצג" של עמוד הסיום.
@@ -3147,7 +3166,10 @@ void main() {
       const row =
           "UiAddRow('preset_update', CustomMessage('RowVersion'), OtzariaVersionLabel(), False);";
       expect(_routine(script, 'procedure UiBuildReady()'), contains(row));
-      expect(_routine(script, 'procedure UiBuildFinish()'), contains(row));
+      expect(
+        _routine(script, 'procedure UiAdapterBuildFinish()'),
+        contains(row),
+      );
       expect(
         _routine(script, 'procedure UiAddRow('),
         contains("if Value = '' then"),
@@ -3620,8 +3642,15 @@ void main() {
         ),
       );
       expect(
-        _routine(script, 'procedure UiInitializeWizard('),
+        _routine(script, 'procedure UiPrepare('),
         contains('UiRtl := not EnglishUi();'),
+      );
+      // הכיוון נקבע לפני שהכותרת של הפתיחה נבחרת לפיו.
+      final init = _routine(script, 'procedure UiInitializeWizard(');
+      expect(init.indexOf('UiPrepare();'), greaterThanOrEqualTo(0));
+      expect(
+        init.indexOf('UiPrepare();'),
+        lessThan(init.indexOf('#ifdef AA_TITLE_EN')),
       );
       // שורת הכותרת: הכותרת בצד שבו הקריאה מתחילה, הכפתורים בצד השני.
       final chrome = _routine(script, 'procedure UiBuildChrome(');
@@ -3719,6 +3748,62 @@ void main() {
           r"'${{ github.ref }}' '${{ github.run_number }}'",
         ),
       );
+    });
+  });
+
+  group('שכבת התצוגה המשותפת — ליבה בלי מוצר', () {
+    const core = 'otzaria_ui_core.iss';
+
+    test('$core: אינה מכירה עמוד או מצב של מוצר', () {
+      final script = _read(core);
+      for (final name in const [
+        'ModePage',
+        'OtherPage',
+        'PresetPage',
+        'CustomPage',
+        'FolderPage',
+        'ConnectPage',
+        'DownloadPage',
+        'WorkPage',
+        'StopRequested',
+        'RevealCheck',
+        'IsThisComputerMode',
+        'DownloadStatus',
+        "'title_",
+      ]) {
+        expect(script, isNot(contains(name)), reason: name);
+      }
+      expect(
+        script,
+        isNot(contains('#include')),
+        reason: 'העיצוב נכלל לפני הליבה, ב-otzaria_ui_art.iss',
+      );
+    });
+
+    test('$core: כל טקסט שלה מוצג בה עצמה, בשתי השפות', () {
+      final script = _read(core);
+      final byLang = _messages(script, 'CustomMessages');
+      expect(byLang.keys.toSet(), {'english', 'hebrew'});
+      expect(
+        byLang['english']!.keys.toSet(),
+        byLang['hebrew']!.keys.toSet(),
+      );
+      for (final key in byLang['english']!.keys) {
+        expect(script, contains("CustomMessage('$key')"), reason: key);
+      }
+    });
+
+    test('המסייע מממש את כל חוזה המתאם שהליבה מצהירה', () {
+      final core = _read('otzaria_ui_core.iss');
+      final forwards = RegExp(
+        r'^(procedure|function) (\w+)\(',
+        multiLine: true,
+      ).allMatches(core).where((m) => _isForward(core, m.start)).toList();
+      expect(forwards.length, greaterThan(5));
+      final script = _script(_assistant);
+      for (final m in forwards) {
+        _routine(script, '${m[1]} ${m[2]}(');
+      }
     });
   });
 

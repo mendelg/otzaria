@@ -932,11 +932,32 @@ GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל 
 שהוא מוריד ואינו מתקין (כל ערך עד 60 תווים — Inno קוטע את השאר), ו-`VersionInfoProductTextVersion` מחלק ה-‎X.Y.Z‎
 של התג המוטבע (כשיש כזה).
 
-### התצוגה — `installer/download_assistant_ui.iss`
+### התצוגה — שלושה קבצים
 
-החלון מצויר כולו בשכבה נפרדת, שנכללת מתוך `[Code]` של הסקריפט הראשי לפני
-`InitializeWizard`. הלוגיקה אינה יודעת עליה דבר מלבד שלוש קריאות:
-`UiInitializeWizard` בסוף `InitializeWizard`, `UiCurPageChanged` בסוף
+החלון מצויר כולו בשכבה נפרדת, שמשותפת למסייע ולמתקינים של אוצריא:
+
+| קובץ | תוכן |
+|---|---|
+| `installer/otzaria_ui_art.iss` | דרישת Inno 6.7.1, ה-`.isi` של העיצוב ובדיקות הגרסה שלו, ו-`[Files]` של התמונות (`dontcopy`). נכלל לפני כל `[Files]` אחר: עם `SolidCompression` הפתיחה הייתה ממתינה לפריסת מה שקודם לתמונות |
+| `installer/otzaria_ui_core.iss` | הליבה, בלי אף עמוד או מצב של מוצר: יסודות, ציור, כפתורים, כרטיסי בחירה (`UiAddCard`/`UiEndCards`), גלילה, שדה תיקייה (`UiBuildFolderField`), שורות סיכום (`UiAddRow`/`UiPlaceSummary`), התקדמות (`UiBuildProgress`, `UiBuildInstalling`), נקודות שלבים וכותרת, הפתיחה המונפשת, שורת הכותרת, דו-שיח (`UiAsk`/`UiTell`/`UiAskExit`), עכבר, שעון, שיקוף (`UiX`), ו-`EnglishUi`/`LtrUnit`/`Msg1`. ב-`[CustomMessages]` שלה רק טקסטים שהיא עצמה מציגה |
+| `installer/download_assistant_ui.iss` | המתאם של המסייע: הכרטיסים מעמודי האפשרויות, הסיכום, ההורדה וההכנה, עמוד הסיום ועמוד השגיאה, והטקסטים שלהם |
+
+`download_assistant.iss` כולל את העיצוב ואת הליבה לפני `[Code]` שלו (הליבה מגדירה
+את `EnglishUi`, ולכן קודמת לכל הקוד), ואת המתאם מתוך `[Code]` לפני
+`InitializeWizard`, אחרי העמודים שהוא קורא. **חוזה המתאם** מוצהר ב-`forward` בראש
+`[Code]` של הליבה, וכל מוצר מממש את כולו: `UiButtonClick` (מעביר ל-`UiCoreButtonClick`
+את "הבא", "חזרה", העיון והמזעור), `UiAdapterStepOf`, `UiAdapterLeavePage`,
+`UiAdapterPageHint`, `UiAdapterBuildPage`, `UiAdapterBuildFinish`, `UiAdapterProgress`,
+`UiAdapterSyncFooter`, `UiAdapterPollMouse`, `UiAdapterCardSelected`, `UiAdapterCardClick`,
+ושלושה של המקלדת: `UiAdapterCardFocused` (הכרטיס שהפקד האמיתי שבמוקד עומד עליו),
+`UiAdapterFocusTarget` (לאיזה כפתור מצויר עובר המוקד של פקד אמיתי) ו-`UiAdapterEnterGoesNext`.
+מספרי הכפתורים והמקורות של המתאם מתחילים ב-`UiBtnFirstAdapter` וב-`UiSrcFirstAdapter`.
+`UiInitializeWizard(TitleArt, TitleArtEn, StartCaption)` מקבל את קידומת הכותרת של
+הפתיחה בעיצוב ואת הכפתור שמתחתיה. `UiAsk` עובד גם לפני האשף (ב-`InitializeSetup`):
+ממורכז במסך, בלי שכבת הצל.
+
+הלוגיקה אינה יודעת על השכבה דבר מלבד שלוש קריאות:
+`UiAssistantInitializeWizard` בסוף `InitializeWizard`, `UiCurPageChanged` בסוף
 `CurPageChanged` ו-`UiDeinitializeSetup` בתחילת `DeinitializeSetup`. עמודי Inno
 (`ModePage`, `PresetPage`, `FolderPage`, `DownloadPage`...) נשארים מודל הנתונים:
 כרטיס שנלחץ כותב ל-`SelectedValueIndex` או ל-`Values[i]`, והכרטיסים מסתנכרנים
@@ -976,9 +997,16 @@ GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל 
   `DrawTextW`, עם `DT_RTLREADING` לטקסט עברי. אין תווית מעל תמונה, ולכן אין אי-התאמה של צבע
   רקע. שורת נתיב או שם קובץ נקראת משמאל לימין גם כשהיא מיושרת לימין, ונתיב ארוך
   מקוצר באמצע (`MinimizePathName`) כך שהכונן והתיקייה האחרונה נשארים גלויים.
-* **הכפתורים האמיתיים** נשארים פעילים מחוץ לחלון (Enter ו-Esc עובדים), והלחיצה
+* **הכפתורים האמיתיים** נשארים פעילים מחוץ לחלון, והלחיצה
   נשלחת אליהם ב-`PostMessage(WM_COMMAND)` — "הבא" מריץ את כל ההורדה, וקריאה
   ישירה הייתה מקננת אותה בתוך אירוע הלחיצה.
+* **מקלדת.** כל כפתור מצויר הוא `TBitmapButton` עם כיתוב (גם המזעור והסגירה), ולכן
+  הוא יעד Tab עם מסגרת מוקד ושם לקורא מסך; הכפתורים האמיתיים אינם יעדי Tab ואינם
+  Default. `UiKeyDown` (KeyPreview של החלון ושל הדו-שיח) שולח Enter לכפתור המצויר שבמוקד,
+  ובלעדיו ל"הבא"; Esc נשאר של "ביטול" האמיתי. `UiFocusAction` מעביר בכל פעימה את
+  המוקד שהאשף נותן לפקד אמיתי אל הכפתור המצויר שלו. רשימות הבחירה נשארות במוקד
+  מחוץ לחלון: חצים ו-Space עובדים עליהן, והכרטיס שהן עומדות עליו מקבל מסגרת מוקד
+  ונגלל לתצוגה. קנה המידה נבחר כך שהחלון נכנס לכל המסכים המחוברים, ברוחב ובגובה.
 * **אתחול.** לפני ההצגה נקבעים רק הגיאומטריה והצבעים. התמונות נשלפות בפעימה
   הראשונה של הטיימר, כשהחלון כבר מוצג בצבע הרקע בלבד, ב-`ExtractTemporaryFiles`
   אחת לקנה המידה שנבחר; הספר והכותרת (רק ב-250%) נשלפים כל תמונה כשמגיע תורה
@@ -999,7 +1027,7 @@ GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל 
 ו-Release בתגית `download-assistant-art-v<גרסה>` עם
 `download-assistant-art-<גרסה>.zip`. כאן מעדכנים את שלושת השדות ב-`assistant_art.pin.json`
 ומריצים את הסקריפט ואת הבדיקות (הכתובת נבדקת מול הגרסה). דרישה חדשה מהעיצוב נאכפת
-ב-`#error` שבראש `download_assistant_ui.iss`.
+ב-`#error`: כללית ב-`otzaria_ui_art.iss`, ושל המסייע בלבד בראש `download_assistant_ui.iss`.
 
 בעיצוב יש גם `assistant_art.isi` עם קני המידה,
 הגדלים, הזמנים והצבעים (`AA_*`, צבעים כ-`0xBBGGRR` — ISPP אינו מקבל `$`).
@@ -1032,8 +1060,8 @@ GiB — ולכן הוא המקרה הראשון שיתפצל, והוא נופל 
 
 `test/installer/installer_scripts_test.dart`, קבוצה "מסייע ההורדה — אינו
 מתקין". הסקריפט **אינו** נכלל ב-`_scripts`: האינוריאנטות של המתקינים (מסמנים,
-רישום, הסרה, שיגור-מחדש) אינן חלות עליו. הוא נקרא יחד עם שכבת התצוגה שהוא כולל
-(`#include` מילולי מורחב), כך שכל אינוריאנטה חלה גם עליה. הקבוצה הייעודית מאמתת
+רישום, הסרה, שיגור-מחדש) אינן חלות עליו. כל סקריפט נקרא יחד עם מה שהוא כולל
+(`#include` מילולי, מורחב ברקורסיה), כך שכל אינוריאנטה חלה גם על הליבה ועל המתאם. הקבוצה הייעודית מאמתת
 שהוא אינו מתקין דבר (כל רשומת `[Files]` נושאת `dontcopy`, ומקורה תחת
 `assistant_art\`), שאין בו שם נכס קשיח, שכל כתובת היא `github.com` בארגון Otzaria,
 שלהורדה תמיד מועבר hash, שקובץ זמני מקבל שם סופי רק אחרי אימות ושהחותם נכתב
