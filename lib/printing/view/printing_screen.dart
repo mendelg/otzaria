@@ -32,6 +32,7 @@ import 'package:otzaria/printing/word_export_service.dart';
 import 'package:otzaria/utils/file/save_file_with_extension.dart';
 import 'package:otzaria/utils/text/text_manipulation.dart';
 import 'package:otzaria/widgets/controls/action_buttons.dart';
+import 'package:otzaria/widgets/lists/filter_chips_widget.dart';
 import 'package:otzaria/widgets/misc/app_menu_exports.dart';
 import 'package:otzaria/widgets/feedback/scrollable_positioned_list_scrollbar.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -70,6 +71,9 @@ class PrintingScreen extends StatefulWidget {
   final TextBook? book;
   final List<Link> links;
   final List<String> activeCommentators;
+
+  /// כשמסופק, מאפשר בחירת מפרשים במסך בלי לשנות את בחירת הקורא.
+  final List<String>? availableCommentators;
   final bool removeNikud;
   final bool removeTaamim;
 
@@ -77,6 +81,11 @@ class PrintingScreen extends StatefulWidget {
   /// והטעמים ואת טיפול שם הוי"ה, במקום [removeNikud]/[removeTaamim] וההגדרות.
   final TextDisplayProfile? displayProfile;
   final int startLine;
+
+  /// סוף טווח ההדפסה ההתחלתי (בלעדי). כשמסופק — הטווח [startLine]..[endLine]
+  /// מסומן מראש (למשל מ-`reader.printRange` של תוסף), במקום הכותרת שסביב
+  /// השורה הנראית.
+  final int? endLine;
   final List<TocEntry> tableOfContents;
   final int? initialPage;
   final bool isBookView;
@@ -96,7 +105,9 @@ class PrintingScreen extends StatefulWidget {
     this.book,
     this.links = const [],
     this.activeCommentators = const [],
+    this.availableCommentators,
     this.startLine = 0,
+    this.endLine,
     this.removeNikud = false,
     this.removeTaamim = false,
     this.displayProfile,
@@ -178,6 +189,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
       labelForPdfPage(_pageLabels, pageNumber);
 
   bool _includeCommentaries = false;
+  late List<String> _selectedCommentators;
   bool _includePersonalNotes = false;
 
   final Map<String, String> _commentaryContentCache = {};
@@ -212,7 +224,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
         documentTitle: widget.documentTitle ?? widget.bookId,
         commentariesIncluded:
             widget.prebuiltBlocks != null || _includeCommentaries,
-        commentators: widget.activeCommentators,
+        commentators: _selectedCommentators,
       );
 
   /// מחזיר את היעד ל-PDF כשייצוא Word חדל להיות זמין (למשל בהכללת מפרש מוגבל).
@@ -230,6 +242,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedCommentators = List.of(widget.activeCommentators);
     _dataFuture = widget.data;
     startLine = widget.startLine;
     endLine = startLine;
@@ -280,7 +293,15 @@ class _PrintingScreenState extends State<PrintingScreen> {
 
     // ברירת המחדל היא הכותרת האחרונה שלפני השורה הנראית (ועד סוף אותה כותרת);
     // בלי כותרות — טווח שורות מסביב לשורה הראשונה הנראית.
-    if (_flatHeaders.isNotEmpty) {
+    if (widget.endLine != null) {
+      // טווח מפורש: עוגני שורות עד שידוע אורך הספר, ואז כותרות כשהן תואמות
+      // בדיוק (_resolveRequestedRange).
+      _startAnchor = _RangeAnchor(_AnchorKind.line, widget.startLine);
+      _endAnchor = _RangeAnchor(
+        _AnchorKind.line,
+        max(widget.startLine, widget.endLine! - 1),
+      );
+    } else if (_flatHeaders.isNotEmpty) {
       final lastHeader = findLastHeaderIndexAtOrBefore(
         _flatHeaders,
         widget.startLine,
@@ -299,6 +320,9 @@ class _PrintingScreenState extends State<PrintingScreen> {
   @override
   void didUpdateWidget(covariant PrintingScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeCommentators != widget.activeCommentators) {
+      _selectedCommentators = List.of(widget.activeCommentators);
+    }
     if (oldWidget.data != widget.data) {
       _dataFuture = widget.data;
       _cachedBasePdf = null;
@@ -308,7 +332,34 @@ class _PrintingScreenState extends State<PrintingScreen> {
     }
   }
 
+  /// ממיר את הטווח המפורש ([PrintingScreen.endLine]) לעוגני כותרות כשהוא
+  /// מתחיל ומסתיים בדיוק בגבולות כותרות — כך שבחירת הטווח במסך נראית כמו
+  /// בחירה ידנית. אחרת נשארים עוגני השורות.
+  bool _requestedRangeResolved = false;
+
+  Future<void> _resolveRequestedRange() async {
+    final endLine = widget.endLine;
+    if (endLine == null || _requestedRangeResolved || _flatHeaders.isEmpty) {
+      return;
+    }
+    _requestedRangeResolved = true;
+    final totalLines = await _totalLineCount();
+    final match = matchHeaderRange(
+      _flatHeaders,
+      widget.startLine,
+      endLine,
+      totalLines,
+    );
+    if (match.start != null) {
+      _startAnchor = _RangeAnchor(_AnchorKind.header, match.start!);
+    }
+    if (match.end != null) {
+      _endAnchor = _RangeAnchor(_AnchorKind.header, match.end!);
+    }
+  }
+
   Future<void> _initPreviewRange() async {
+    await _resolveRequestedRange();
     await _applyCurrentRange();
     if (mounted) {
       setState(() {});
@@ -399,7 +450,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
         _flatAltHeaders = altEntries;
         _anchorEntries = null; // נבנה מחדש עם כותרות המשנה
         // בלי ניווט רגיל — ברירת המחדל היא כותרות המשנה.
-        if (_flatHeaders.isEmpty) {
+        if (_flatHeaders.isEmpty && widget.endLine == null) {
           _startAnchor = _RangeAnchor(_AnchorKind.altHeader, lastAlt);
           _endAnchor = _RangeAnchor(_AnchorKind.altHeader, lastAlt);
           _updateRangeFromAnchors();
@@ -719,6 +770,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
       startLine,
       endLine,
       _includeCommentaries,
+      (List.of(_selectedCommentators)..sort()).join("\u0000"),
       _includePersonalNotes,
     ].join('|');
   }
@@ -1143,7 +1195,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
       book,
       startIndex: selectedStart,
       endIndex: selectedEnd,
-      targetBookTitles: widget.activeCommentators,
+      targetBookTitles: _selectedCommentators,
       fallback: widget.links,
     );
   }
@@ -1188,7 +1240,7 @@ class _PrintingScreenState extends State<PrintingScreen> {
         final linksForLine = await getLinksforIndexs(
           indexes: [i],
           links: rangeLinks,
-          commentatorsToShow: widget.activeCommentators,
+          commentatorsToShow: _selectedCommentators,
         );
 
         if (linksForLine.isNotEmpty) {
@@ -1493,9 +1545,13 @@ class _PrintingScreenState extends State<PrintingScreen> {
   }) async {
     // המפתח כולל את דגלי הניקוד/טעמים/שמות-קודש: אחרת החלפת "הדפסה עם ניקוד"
     // הייתה מחזירה תוכן מפרש מוטרנספרם קודם (באג: הניקוד לא התעדכן).
-    final key =
-        '$_removeNikud|$_removeTaamim|$shouldReplaceHolyNames'
-        '::${link.path2}::${link.index2}::${link.heRef}::$keepHtml';
+    final key = printCommentaryContentCacheKey(
+      link,
+      removeNikud: _removeNikud,
+      removeTaamim: _removeTaamim,
+      replaceHolyNames: shouldReplaceHolyNames,
+      keepHtml: keepHtml,
+    );
     final cached = _commentaryContentCache[key];
     if (cached != null) return cached;
 
@@ -1913,6 +1969,25 @@ class _PrintingScreenState extends State<PrintingScreen> {
                                                 });
                                               },
                                             ),
+                                            if (_includeCommentaries &&
+                                                widget
+                                                        .availableCommentators
+                                                        ?.isNotEmpty ==
+                                                    true)
+                                              FilterChipsWidget<String>(
+                                                items: widget
+                                                    .availableCommentators!,
+                                                selectedItems:
+                                                    _selectedCommentators,
+                                                labelBuilder: (name) => name,
+                                                onSelectionChanged:
+                                                    (selected) => setState(() {
+                                                      _selectedCommentators =
+                                                          List.of(selected);
+                                                      _syncDestinationWithWordSupport();
+                                                      _refreshPreview();
+                                                    }),
+                                              ),
                                             PrintingSwitchRow(
                                               label: 'כלול הערות אישיות',
                                               value: _includePersonalNotes,

@@ -151,6 +151,7 @@ class PluginBridgeHandler {
       // דיאלוג ההדפסה של המערכת ממתין לבחירת מדפסת ללא הגבלת זמן.
       method == 'ui.print' ||
       method == 'ui.exportPdf' ||
+      method == 'reader.printRange' ||
       method == 'feedback.report';
 
   Future<dynamic> _handleRpc(
@@ -366,6 +367,7 @@ class PluginBridgeHandler {
     'search.getOptions': 'search.fulltext.read',
     'reader.openBook': 'reader.open',
     'reader.openBookAtRef': 'reader.open',
+    'reader.printRange': 'reader.open',
     'reader.openSearchTab': 'reader.open',
     'reader.getCurrentState': 'reader.open',
     'reader.getCurrentRef': 'reader.open',

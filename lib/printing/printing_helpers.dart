@@ -1,4 +1,5 @@
 import 'package:otzaria/models/books.dart';
+import 'package:otzaria/models/links.dart';
 import 'package:otzaria/pdf_book/utils/pdf_spread_layout.dart';
 import 'package:otzaria/settings/services/per_book_settings_service.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -157,3 +158,44 @@ int headerSectionEndLine(List<TocEntry> headers, int index, int totalLines) {
   }
   return totalLines;
 }
+
+/// התאמת טווח שורות שנמסר מבחוץ (למשל מתוסף) לכותרות, כדי שמסך ההדפסה יציג
+/// אותו כ"מכותרת X עד כותרת Y" ולא כמספרי שורות.
+///
+/// `start` היא הכותרת הרדודה ביותר שמתחילה בדיוק ב-[startLine]; `end` היא
+/// הכותרת הרדודה ביותר בטווח שהסעיף שלה (ראו [headerSectionEndLine]) מסתיים
+/// בדיוק ב-[endLine] (בלעדי). כל אחת `null` כשאין התאמה מדויקת.
+({int? start, int? end}) matchHeaderRange(
+  List<TocEntry> headers,
+  int startLine,
+  int endLine,
+  int totalLines,
+) {
+  int? start;
+  int? end;
+  for (var i = 0; i < headers.length; i++) {
+    final header = headers[i];
+    if (header.index == startLine &&
+        (start == null || header.level < headers[start].level)) {
+      start = i;
+    }
+    if (header.index >= startLine &&
+        header.index < endLine &&
+        headerSectionEndLine(headers, i, totalLines) == endLine &&
+        (end == null || header.level < headers[end].level)) {
+      end = i;
+    }
+  }
+  return (start: start, end: end);
+}
+
+/// זהות התוכן והטרנספורמציות במטמון המפרשים להדפסה.
+String printCommentaryContentCacheKey(
+  Link link, {
+  required bool removeNikud,
+  required bool removeTaamim,
+  required bool replaceHolyNames,
+  required bool keepHtml,
+}) =>
+    '$removeNikud|$removeTaamim|$replaceHolyNames'
+    '::${link.contentIdentityKey}::${link.heRef}::$keepHtml';

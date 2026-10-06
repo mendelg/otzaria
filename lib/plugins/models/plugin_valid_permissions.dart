@@ -112,6 +112,7 @@ const Map<String, String> apiCallToPermissionHint = {
   'reader.getHighlightCapabilities': 'reader.open',
   'reader.closeTab': 'reader.open',
   'reader.activateTab': 'reader.open',
+  'reader.printRange': 'reader.open',
 
   // workspace.*
   'workspace.list': pluginWorkspaceReadPermission,

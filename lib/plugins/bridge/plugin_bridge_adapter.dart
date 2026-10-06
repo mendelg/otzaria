@@ -107,6 +107,7 @@ import 'package:otzaria/plugins/services/plugin_page_launcher.dart';
 import 'package:otzaria/plugins/services/plugin_new_tab_page_registry.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:otzaria/plugins/services/plugin_print_service.dart';
+import 'package:otzaria/printing/view/printing_screen.dart';
 import 'package:otzaria/plugins/services/plugin_runtime_dispatcher.dart';
 import 'package:otzaria/plugins/models/plugin_network_allowlist.dart';
 import 'package:otzaria/plugins/services/plugin_network_access_resolver.dart';
@@ -524,6 +525,18 @@ class PluginBridgeDependencies {
   })?
   printPluginPage;
 
+  /// פותח את מסך ההדפסה של אוצריא על טווח שורות בספר (`reader.printRange`)
+  /// ומחזיר אם המשתמש הדפיס או ייצא. אופציונלי — ברירת המחדל מציגה את
+  /// [PrintingScreen] כדיאלוג; קיים להזרקה בבדיקות.
+  final Future<bool> Function(
+    TextBook book, {
+    required int startLine,
+    int? endLine,
+    required List<String> activeCommentators,
+    required List<String> availableCommentators,
+  })?
+  printBookRange;
+
   /// מייצר PDF מהדף של מופע התוסף (`ui.exportPdf`). אופציונלי — ברירת המחדל
   /// היא [PluginPrintService] מעל ה-WebView הרשום; קיים להזרקה בבדיקות.
   final Future<Uint8List> Function(
@@ -576,6 +589,7 @@ class PluginBridgeDependencies {
     this.onBackgroundInstanceDone,
     this.dispatchEventToPlugin,
     this.printPluginPage,
+    this.printBookRange,
     this.capturePluginPagePdf,
     this.hasUserActivation,
     this.customFoldersBloc,
@@ -705,9 +719,8 @@ class PluginBridgeAdapter {
   PluginNetworkFetchService get _fetchService =>
       _networkFetchService ??= PluginNetworkFetchService();
 
-  // bookId → טקסט מלא של הספר (מטמון LRU קצר, per adapter instance) עבור
-  // getBookContent. ראה _loadBookRawText.
-  final Map<PluginBookIdentityKey, String> _bookContentCache = {};
+  // LRU קצר לכל תוסף; bookUid מפריד ספרים זהים ממסדים מצורפים שונים.
+  final Map<String, String> _bookContentCache = {};
   static const int _bookContentCacheMaxEntries = 4;
   static int _bookContentRevision = 0;
   int _seenBookContentRevision = 0;
@@ -781,38 +794,27 @@ class PluginBridgeAdapter {
     _booksByIndexedPath = const {};
   }
 
-  /// טוען את הטקסט המלא של ספר עבור `getBookContent`, עם מטמון LRU קצר
-  /// (per adapter instance).
-  ///
-  /// `getBookContent` מחזירה מקטע באמצעות `substring`, והתוסף טוען ספר מלא
-  /// ב-chunks של 5000 תווים — כך שטעינה אחת מחייבת עשרות קריאות RPC רצופות.
-  /// בלי מטמון כל קריאה טוענת מחדש את כל הספר מה-DB (O(n²)), בזבוז שמתחדד
-  /// כשתוסף מבצע polling/prefetch אגרסיבי. המטמון מצמצם זאת ל-O(n) לספר
-  /// ומנטרל את עלות ה-IO החוזרת.
-  ///
-  /// המטמון מוגבל ל-[_bookContentCacheMaxEntries] ספרים ומתאפס עם dispose של
-  /// ה-adapter (טעינה/השבתה מחדש של התוסף). לכן ייתכן חלון קצר של תוכן
-  /// לא-מעודכן אם המשתמש עורך ספר בזמן שתוסף קורא אותו — מקרה קצה נדיר
-  /// בנתיב קריאה-בלבד.
+  /// LRU מונע טעינה חוזרת של ספר בקריאות מקוטעות; UID שומר על הפרדת המקורות.
   Future<String> _loadBookRawText(Book book) async {
     if (_seenBookContentRevision != _bookContentRevision) {
       _bookContentCache.clear();
       _seenBookContentRevision = _bookContentRevision;
     }
-    final key = PluginBookIdentity.keyOf(book);
+    final key = PluginBookIdentity.uidOf(book);
     final cached = _bookContentCache.remove(key);
     if (cached != null) {
       _bookContentCache[key] = cached; // רענון מיקום ב-LRU
       return cached;
     }
-    // איתור ה-TextBook מהקטלוג כדי לקבל categoryId/fileType נכונים מה-metadata.
-    // בלי זה, השכבה התחתונה מקבעת fileType='txt' ונכשלת לגבי ספרים בפורמט אחר
-    // אצל משתמשים שאין להם קבצי טקסט נפרדים בדיסק (רק seforim.db).
+    // ה-TextBook מהקטלוג שומר categoryId/fileType נכונים גם בספרים השמורים רק ב-DB.
     final String rawText;
     if (book is TextBook) {
-      rawText = await TextBookRepository(
-        fileSystem: FileSystemData.instance,
-      ).getBookContent(book);
+      rawText =
+          await (_dependencies.textBookRepository ??
+                  TextBookRepository(
+                    fileSystem: FileSystemData.instance,
+                  ))
+              .getBookContent(book);
     } else {
       rawText = await DataRepository.instance.getBookText(book.title);
     }
@@ -2560,6 +2562,95 @@ class PluginBridgeAdapter {
           );
           return true;
         }
+      case 'printRange':
+        // spec: printRange({ id?, bookUid?, bookId?, type?, startIndex, endIndex?, commentators? })
+        // התוסף אינו מקבל טקסט; המסך נפתח רק מתוך מחוות משתמש.
+        {
+          final startIndex = _nonNegativeIntArg(args['startIndex']);
+          if (startIndex == null) {
+            throw Exception(
+              'error.invalid_params: startIndex must be a non-negative integer',
+            );
+          }
+          final rawEnd = args['endIndex'];
+          final endIndex = rawEnd == null ? null : _nonNegativeIntArg(rawEnd);
+          if (rawEnd != null && (endIndex == null || endIndex <= startIndex)) {
+            throw Exception(
+              'error.invalid_params: endIndex must be an integer greater than '
+              'startIndex',
+            );
+          }
+          if (PluginBookIdentity.parseId(args['id']) == null &&
+              (args['bookId'] ?? args['title']) == null &&
+              (args['bookUid'] as String?)?.trim().isNotEmpty != true) {
+            throw Exception(
+              'error.invalid_params: id, bookUid or bookId required',
+            );
+          }
+          final rawCommentators = args['commentators'];
+          if (args.containsKey('commentators') &&
+              (rawCommentators is! List ||
+                  rawCommentators.length > 256 ||
+                  rawCommentators.any(
+                    (name) => name is! String || name.trim().isEmpty,
+                  ))) {
+            throw Exception(
+              'error.invalid_params: commentators must be an array of non-empty names',
+            );
+          }
+          final requestedCommentators = rawCommentators == null
+              ? null
+              : (rawCommentators as List)
+                    .cast<String>()
+                    .map((name) => name.trim())
+                    .toSet()
+                    .toList();
+          return await _runUserGatedDialog(() async {
+            final book = _findPluginBook(
+              await DataRepository.instance.library,
+              args,
+            );
+            if (book == null) {
+              throw Exception('error.not_found: book not found');
+            }
+            if (book is! TextBook) {
+              throw Exception(
+                'error.unsupported: printRange supports text books only',
+              );
+            }
+            final available =
+                await (_dependencies.textBookRepository ??
+                        TextBookRepository(fileSystem: FileSystemData.instance))
+                    .getAvailableCommentators(book);
+            final pane = _dependencies.tabsBloc.state.readingPane;
+            final state =
+                pane is TextBookTab &&
+                    PluginBookIdentity.uidOf(pane.book) ==
+                        PluginBookIdentity.uidOf(book)
+                ? pane.bloc.state
+                : null;
+            final active =
+                requestedCommentators ??
+                (state is TextBookLoaded
+                    ? state.activeCommentators
+                          .where(available.contains)
+                          .toList()
+                    : available);
+            if (requestedCommentators != null &&
+                active.any((name) => !available.contains(name))) {
+              throw Exception('error.not_found: unknown commentators');
+            }
+            final show = _dependencies.printBookRange ?? _defaultPrintBookRange;
+            final printed = await show(
+              book,
+              startLine: startIndex,
+              endLine: endIndex,
+              activeCommentators: active,
+              availableCommentators: available,
+            );
+            return {'printed': printed};
+          });
+        }
       case 'getCurrentState':
         final tabsState = _dependencies.tabsBloc.state;
         final tabs = tabsState.tabs;
@@ -3722,6 +3813,42 @@ class PluginBridgeAdapter {
         );
     // WKWebView אינו מממש את navigator.userActivation; שם אין מה לאכוף.
     return result != 'inactive';
+  }
+
+  /// מסך ההדפסה של הקורא, כדיאלוג מעל החלון הראשי (`reader.printRange`).
+  Future<bool> _defaultPrintBookRange(
+    TextBook book, {
+    required int startLine,
+    int? endLine,
+    required List<String> activeCommentators,
+    required List<String> availableCommentators,
+  }) async {
+    final toc = await book.tableOfContents;
+    final context = navigatorKey.currentContext;
+    if (context == null || !context.mounted) {
+      throw Exception('error.unavailable: No window to show the print screen');
+    }
+    final printed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PrintingScreen(
+        data: _loadBookRawText(book),
+        bookId: book.title,
+        book: book,
+        startLine: startLine,
+        endLine: endLine,
+        tableOfContents: toc,
+        activeCommentators: activeCommentators,
+        availableCommentators: availableCommentators,
+      ),
+    );
+    return printed ?? false;
+  }
+
+  /// מספר שלם אי-שלילי מפרמטר JSON (גם 3.0), או null.
+  static int? _nonNegativeIntArg(Object? value) {
+    if (value is! num || value < 0 || value != value.truncate()) return null;
+    return value.toInt();
   }
 
   Future<bool> _defaultPrintPage(

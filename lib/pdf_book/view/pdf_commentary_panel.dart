@@ -127,7 +127,8 @@ List<Link> pdfScopedCommentaryLinks({
 /// הנוכחי מחריב את ה-State של כל פריט בכל דפדוף וגורם לטעינת התוכן מחדש.
 @visibleForTesting
 String pdfCommentaryItemKey(Link link) =>
-    '${link.index1}_${link.path2}_${link.index2}';
+    '${link.index1}_${link.path2}_${link.index2}'
+    '${link.targetSource.isOfficial ? '' : '|${link.targetSource.wireKey}'}';
 
 /// מפתח ה-PageStorage של רשימת המפרשים. תלוי בבחירת המפרשים בלבד: הכללת
 /// העמוד או מצב הכיווץ יוצרת רשימה חדשה ומאבדת את מיקום הגלילה.

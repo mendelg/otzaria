@@ -157,6 +157,9 @@ class Link {
     this.baseProvenance = 0,
   });
 
+  /// זהות תוכן היעד, כולל המסד והטווח, לשיתוף בין מטמוני תצוגה וייצוא.
+  String get contentIdentityKey => _contentKey;
+
   static final LinkedHashMap<String, Future<String>> _contentCache =
       LinkedHashMap<String, Future<String>>();
   static final Map<String, String> _loadedContent = {};
