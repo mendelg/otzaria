@@ -294,6 +294,41 @@ bool shouldRestoreScrollOnContinuousModeChange({
   return previousMode != null && previousMode != currentMode;
 }
 
+/// העוגן לעיגון מחדש אחרי שינוי במספור הסגמנטים: הפריט העליון הנראה שתחילתו
+/// נשמרה גם ברשימה החדשה, ומספרו החדש. `null` כשאין מה לתקן — הפריט נשאר
+/// באותו מספר, או שאף פריט נראה אינו ניתן לזיהוי ברשימה החדשה.
+///
+/// פריט שגובהו מעל התצוגה (פסקה ארוכה שגוללו לתוכה) מעוגן ביישור שלילי —
+/// הרשימה תומכת בכך, וקיבוע ל-0 היה מקפיץ לתחילת הפסקה.
+@visibleForTesting
+({int index, double alignment})? reflowAnchor({
+  required Iterable<ItemPosition> positions,
+  required List<ReadingSegment> previous,
+  required List<ReadingSegment> current,
+}) {
+  final visible =
+      positions
+          .where((p) => p.itemTrailingEdge > 0 && p.itemLeadingEdge < 1)
+          .toList()
+        ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+  ({int index, double alignment})? fallback;
+  for (final position in visible) {
+    if (position.index < 0 || position.index >= previous.length) continue;
+    final line = previous[position.index].startLineIndex;
+    final nextIndex = segmentIndexForLine(current, line);
+    if (nextIndex >= current.length) continue;
+    final candidate = (index: nextIndex, alignment: position.itemLeadingEdge);
+    // עדיפות לפריט שתחילתו לא זזה: פסקה שהתמזגה עם שורות שנטענו מעליה
+    // התארכה כלפי מעלה, ועיגון עליה היה מזיז את הטקסט בגובה התוספת.
+    if (current[nextIndex].startLineIndex == line) {
+      if (nextIndex == position.index) return null;
+      return candidate;
+    }
+    fallback ??= nextIndex == position.index ? null : candidate;
+  }
+  return fallback;
+}
+
 @visibleForTesting
 bool shouldHandleCommentaryScrollTarget({
   required int cardIndex,
@@ -740,6 +775,10 @@ class _CombinedViewState extends State<CombinedView> {
   // מצב הרצף האחרון שנצפה — לזיהוי החלפת מצב שמחייבת שחזור מיקום.
   bool? _lastContinuousReadingMode;
 
+  // רשימת הסגמנטים והמצב שהרשימה נבנתה מהם לאחרונה — לזיהוי שינוי במספור
+  // הפסקאות שמחייב עיגון מחדש (issue #1973).
+  ({List<ReadingSegment> segments, bool continuous})? _reflowBasis;
+
   // באנר קרדיט מקור המוצג מעל השורה הראשונה (נטען פעם אחת לכל ספר), אם קיים.
   BookSourceBannerKind? _sourceBannerKind;
 
@@ -831,6 +870,13 @@ class _CombinedViewState extends State<CombinedView> {
     }
     // שמירת ה-BLoC מראש
     _textBookBloc = context.read<TextBookBloc>();
+    final initialBlocState = _textBookBloc.state;
+    if (initialBlocState is TextBookLoaded) {
+      _reflowBasis = (
+        segments: initialBlocState.readingSegments,
+        continuous: initialBlocState.continuousReadingMode,
+      );
+    }
 
     _siblingController = SiblingCommentariesController(
       loadSiblings: (sourceLink) {
@@ -918,6 +964,7 @@ class _CombinedViewState extends State<CombinedView> {
         });
       }
       _restorePositionOnContinuousModeChange(state);
+      _keepPlaceAcrossSegmentReflow(state);
     });
 
     // מוודא שהפוקוס מגיע לאזור הקריאה מיד אחרי פתיחת ספר
@@ -1225,6 +1272,40 @@ class _CombinedViewState extends State<CombinedView> {
           _scrollToSourceLine(state, lineIndex, duration: Duration.zero),
         );
       }
+    });
+  }
+
+  /// במצב רציף הספר נטען בחלקים: כשחלק מוקדם נטען ברקע, הפסקאות שלו נכנסות
+  /// לפני המקום הנוכחי ומספרי הסגמנטים זזים. הרשימה מעוגנת לפי מספר פריט,
+  /// ולכן בלי תיקון היא ממשיכה להציג את אותו מספר — פסקה אחרת לגמרי — וספר
+  /// שנפתח מתוצאת חיפוש "קופץ" למקום אחר (issue #1973). כאן הפריט העליון
+  /// הנראה מתורגם לשורת מקור ומעוגן מחדש באותו גובה אחרי הבנייה מחדש.
+  void _keepPlaceAcrossSegmentReflow(TextBookLoaded state) {
+    final previous = _reflowBasis;
+    final current = state.readingSegments;
+    _reflowBasis = (
+      segments: current,
+      continuous: state.continuousReadingMode,
+    );
+    if (previous == null || identical(previous.segments, current)) return;
+    // החלפת מצב רציף/רגיל בונה רשימה חדשה במפתח אחר ומשוחזרת בנפרד.
+    if (previous.continuous != state.continuousReadingMode) return;
+    if (!state.continuousReadingMode ||
+        !widget.tab.scrollController.isAttached) {
+      return;
+    }
+    final anchor = reflowAnchor(
+      positions: widget.tab.positionsListener.itemPositions.value,
+      previous: previous.segments,
+      current: current,
+    );
+    if (anchor == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.tab.scrollController.isAttached) return;
+      widget.tab.scrollController.jumpTo(
+        index: anchor.index,
+        alignment: anchor.alignment,
+      );
     });
   }
 
