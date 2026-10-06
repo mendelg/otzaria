@@ -226,13 +226,13 @@ jobs:
           if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
             if (Get-Command winget -ErrorAction SilentlyContinue) {
               Write-Host "Installing Inno Setup via winget..."
-              winget install -e --id JRSoftware.InnoSetup --silent --accept-package-agreements --accept-source-agreements
+              winget install -e --id JRSoftware.InnoSetup --version 6.7.1 --silent --accept-package-agreements --accept-source-agreements
             } else {
               Write-Host "winget not found, installing via Chocolatey..."
-              choco install innosetup -y --no-progress
+              choco upgrade innosetup --version 6.7.1 --allow-downgrade -y --no-progress
             }
           }
-          $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -Recurse -ErrorAction SilentlyContinue |
+          $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -Recurse -ErrorAction SilentlyContinue |
                    Select-Object -First 1 -ExpandProperty FullName)
           if (-not $iscc) { throw "ISCC.exe not found after installation" }
           "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -641,14 +641,14 @@ jobs:
           if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
             if (Get-Command winget -ErrorAction SilentlyContinue) {
               Write-Host "Installing Inno Setup via winget..."
-              winget install -e --id JRSoftware.InnoSetup --silent --accept-package-agreements --accept-source-agreements
+              winget install -e --id JRSoftware.InnoSetup --version 6.7.1 --silent --accept-package-agreements --accept-source-agreements
             } else {
               Write-Host "winget not found, installing via Chocolatey..."
-              choco install innosetup -y --no-progress
+              choco upgrade innosetup --version 6.7.1 --allow-downgrade -y --no-progress
             }
           }
           # הסקריפט של הפרויקט מתקין לעיתים per-user — מחפשים גם שם.
-          $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup*\ISCC.exe" -Recurse -ErrorAction SilentlyContinue |
+          $iscc = (Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" -Recurse -ErrorAction SilentlyContinue |
                    Select-Object -First 1 -ExpandProperty FullName)
           if (-not $iscc) { throw "ISCC.exe not found after installation" }
           "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append
@@ -2485,7 +2485,7 @@ jobs:
         shell: pwsh
         run: |
           .\installer\install_inno_setup.ps1
-          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup*\ISCC.exe" -Recurse |
+          $iscc = Get-ChildItem "C:\Program Files*\Inno Setup 6\ISCC.exe" -Recurse |
             Select-Object -First 1 -ExpandProperty FullName
           if (-not $iscc) { throw 'ISCC.exe not found after installation' }
           "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Append

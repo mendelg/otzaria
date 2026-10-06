@@ -5,6 +5,10 @@
 #if VER < EncodeVer(6, 7, 1)
   #error "שכבת התצוגה של אוצריא דורשת Inno Setup 6.7.1 ומעלה (Requires Inno Setup 6.7.1 or newer)"
 #endif
+; השכבה נשענת על פרטים של WizardForm ו-Pascal Script; גרסה ראשית חדשה נבדקת לפני שמתירים אותה.
+#if VER >= EncodeVer(7, 0, 0)
+  #error "שכבת התצוגה של אוצריא לא נבדקה ב-Inno Setup 7 (Not verified with Inno Setup 7; use 6.7.x)"
+#endif
 #define AssistantArtIsi AddBackslash(SourcePath) + "assistant_art\assistant_art.isi"
 #if !FileExists(AssistantArtIsi)
   #error "חסר העיצוב ב-installer\assistant_art. יש למשוך אותו לפני הבנייה (Art missing: fetch installer\assistant_art before compiling)"
