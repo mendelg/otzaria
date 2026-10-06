@@ -216,7 +216,8 @@ class _TocViewerState extends State<TocViewer>
         changed = true;
       }
     }
-    if (changed) _expandedRevision++;
+    // שורות הענפים שנפתחו צריכות להיבנות לפני שהגלילה מחפשת אותן.
+    if (changed) setState(() => _expandedRevision++);
   }
 
   List<TocEntry> _findPath(List<TocEntry> entries, int targetIndex) {
@@ -253,23 +254,21 @@ class _TocViewerState extends State<TocViewer>
     _ensureParentsOpen(state.tableOfContents, activeIndex);
 
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _isManuallyScrolling) return;
-        // ההחלטה וירטואלי/רקורסיבי נלקחת כאן ולא בזמן התזמון: שני frames
-        // עברו, וניקוי חיפוש בינתיים מחליף מסלול ומנתק את בקר הגלילה.
-        final display = _displayDataFor(state.tableOfContents);
-        final bool useFlat = display.totalCount > _kTocFlattenThreshold;
-        if (_scrollEntryIntoView(
-          activeIndex,
-          display: display,
-          useFlat: useFlat,
-        )) {
-          _lastScrolledTocIndex = activeIndex;
-        }
-      });
+      if (!mounted || _isManuallyScrolling) return;
+      // ההחלטה וירטואלי/רקורסיבי נלקחת כאן ולא בזמן התזמון: ניקוי חיפוש
+      // בינתיים מחליף מסלול ומנתק את בקר הגלילה.
+      final display = _displayDataFor(state.tableOfContents);
+      final bool useFlat = display.totalCount > _kTocFlattenThreshold;
+      if (_scrollEntryIntoView(
+        activeIndex,
+        display: display,
+        useFlat: useFlat,
+      )) {
+        _lastScrolledTocIndex = activeIndex;
+      }
     });
+    // addPostFrameCallback אינו מבקש frame; בלעדיו הגלילה ממתינה עד שמשהו אחר יצייר.
+    SchedulerBinding.instance.ensureVisualUpdate();
   }
 
   /// גולל את הערך אל תוך אזור התצוגה אם אינו גלוי במלואו.
