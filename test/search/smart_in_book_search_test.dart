@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/sqlite/sqlite_auto_extension.dart';
 import 'package:otzaria/search/in_book_search_settings.dart';
 import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/search_engine_gateway.dart';
@@ -116,6 +117,10 @@ Future<void> main() async {
     ];
 
     setUpAll(() async {
+      final sqliteEntry = sqliteHostEntryAddress();
+      if (sqliteEntry != BigInt.zero) {
+        registerSqliteAutoExtension(sqliteEntry.toInt());
+      }
       temporary = await Directory.systemTemp.createTemp('smart-in-book-');
       final databasePath = '${temporary.path}/lexical.db';
       final dictionary = sqlite3.open(databasePath);
