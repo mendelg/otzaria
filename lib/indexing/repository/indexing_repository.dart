@@ -2250,6 +2250,7 @@ class IndexingRepository {
   /// ע"י זיהוי mtime/גודל בסריקת הקבצים. ספר שאינו באינדקס מדולג — מסלול
   /// הספרים החדשים (StartIndexing/IndexSpecificBooks) מטפל בו.
   ///
+  /// [onlyBooks] מגביל את הסריקה לספרים אלה בלבד.
   /// [onScanProgress] מדווח על שלב הסריקה (קריאת ה-DB והשוואה);
   /// [onProgress] מדווח על שלב האינדוקס-מחדש של הספרים שנמצאו שונים.
   /// מחזיר תוצאה מפורטת; ריצה ללא שינויים נחשבת השלמה נקייה.
@@ -2257,6 +2258,7 @@ class IndexingRepository {
   /// [loadText] ו-[fingerprintOf] ניתנים להזרקה בטסטים בלבד.
   Future<IndexingRunResult> reconcileIndexWithLibrary(
     Library library, {
+    List<Book>? onlyBooks,
     void Function(int processed, int total)? onScanProgress,
     void Function()? onActualIndexingStarted,
     required void Function(int processed, int total) onProgress,
@@ -2307,11 +2309,13 @@ class IndexingRepository {
 
     final hidden = hiddenStore.load();
     final categoryHiddenBooks = hidden.booksHiddenByCategory(library);
+    final onlyKeys = onlyBooks?.map(catalogueOrderKey).toSet();
     final candidates = library
         .getIndexableBooks()
         .where(
           (b) =>
               (b is TextBook || b is ConvertibleDocumentBook) &&
+              (onlyKeys == null || onlyKeys.contains(catalogueOrderKey(b))) &&
               !hidden.excludesFromIndex(
                 b,
                 categoryHiddenBooks: categoryHiddenBooks,

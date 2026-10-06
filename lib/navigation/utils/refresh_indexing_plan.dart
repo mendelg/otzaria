@@ -74,8 +74,21 @@ List<IndexingEvent> buildRefreshIndexingPlan({
       events.add(ReindexChangedBooks(changedPdfBooks, library));
     }
   } else if (changedBooks.isNotEmpty) {
+    // קובץ מסד מצורף מדווח כשינוי של כל ספריו; ההשוואה לפי טביעת אצבע
+    // מאנדקסת מחדש רק את אלה שתוכנם באמת השתנה.
+    final attachedTextBooks = changedBooks
+        .where((b) => b.source.isAttached && b is! PdfBook)
+        .toList();
+    final otherBooks = changedBooks
+        .where((b) => !attachedTextBooks.contains(b))
+        .toList();
+    if (attachedTextBooks.isNotEmpty) {
+      events.add(ReconcileIndex(library, books: attachedTextBooks));
+    }
     // StartIndexing מדלג על ספרים קיימים — לשונים נדרש מסלול משלהם.
-    events.add(ReindexChangedBooks(changedBooks, library));
+    if (otherBooks.isNotEmpty) {
+      events.add(ReindexChangedBooks(otherBooks, library));
+    }
   }
   return events;
 }
