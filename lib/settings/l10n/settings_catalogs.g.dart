@@ -343,7 +343,7 @@ const Map<String, Map<String, String>> kSettingsCatalogs = {
     'החיפוש המתקדם יהיה זמין לאחר טעינת הספרייה. הוא מיועד למציאת רעיון או מילה כשאינך יודע היכן הם מופיעים.': 'The advanced search becomes available once the library is loaded. It is for finding an idea or a word when you do not know where it appears.',
     'החיפוש יתאפשר כשבניית האינדקס תסתיים. ניתן להמשיך לעיין בספרים בינתיים.': 'Search will be available once the index is built. You can keep reading in the meantime.',
     'החיפוש לא הורץ מחדש': 'The search was not run again',
-    'החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימים.': 'The search is more accurate when you narrow it to specific books or categories.',
+    'החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימות.': 'The search is more accurate when you narrow it to specific books or categories.',
     'החיפוש נכשל': 'The search failed',
     'החלונית לא תוצג אוטומטית עם פתיחת הספר': 'The panel will not open automatically with a sefer',
     'החלונית נפתחת נעוצה עם הספר, ואפשר לבטל את הנעיצה או לסגור אותה': 'The panel opens pinned with a sefer, and you can unpin or close it',

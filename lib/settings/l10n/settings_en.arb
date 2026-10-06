@@ -1221,7 +1221,7 @@
   "תארו במילים שלכם את העניין שאתם מחפשים": "Describe in your own words the topic you are looking for",
   "שלב גם התאמה מילולית": "Also include word matches",
   "איחוד טקסטים זהים": "Merge identical texts",
-  "החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימים.": "The search is more accurate when you narrow it to specific books or categories.",
+  "החיפוש מדויק יותר כשמצמצמים אותו לספרים או לקטגוריות מסוימות.": "The search is more accurate when you narrow it to specific books or categories.",
   "מוצגות כעת {count} תוצאות": "Showing {count} results",
   "הנתונים ש{name} משתמש בהם, כ-1.8GB בכונן. אחרי ההורדה הם מתעדכנים ברקע עם עדכוני הספרייה.": "The data that {name} uses, about 1.8GB on disk. After the download it updates in the background with library updates.",
   "רכיב החיפוש": "Search component",
