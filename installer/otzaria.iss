@@ -897,8 +897,31 @@ begin
   Result := True;
 end;
 
-// בלי החלק הראשון של הספרייה לצד המתקין זו התקנה רגילה: בדיקת קובץ אחת, בלי PowerShell.
+// חלקי ספרייה או אינדקס של גרסה אחרת: שמם כולל את הגרסה, ולכן אינם נפרסים.
+function OtherVersionPartsName(const SourceDir: String): String;
+var
+  FindRec: TFindRec;
+begin
+  Result := '';
+  if FindFirst(AddBackslash(SourceDir) + 'otzaria-*-library*.tar.zst.part-000', FindRec) then
+  try
+    repeat
+      if (CompareText(FindRec.Name, '{#LibraryArchiveName}.part-000') <> 0) and
+        (CompareText(FindRec.Name, 'otzaria-{#MyAppVersion}-library-index.tar.zst.part-000') <> 0) then
+      begin
+        Result := FindRec.Name;
+        exit;
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+// בלי החלק הראשון של הספרייה לצד המתקין זו התקנה רגילה: בלי PowerShell.
 function PrepareLibraryParts(): Boolean;
+var
+  OtherParts: String;
 var
   SourceDir: String;
   ProgressPage: TOutputProgressWizardPage;
@@ -914,6 +937,17 @@ begin
     if FileExists(AddBackslash(SourceDir) + '{#IndexArchiveName}.part-000') then
       Log('Search index parts without library parts are ignored');
 #endif
+    OtherParts := OtherVersionPartsName(SourceDir);
+    if OtherParts <> '' then
+    begin
+      Log('Library parts of another version next to the installer: ' + OtherParts);
+      // בהתקנה שקטה עוצרים: מי שהכין ספרייה לא מצפה להתקנה בלעדיה.
+      Result := SuppressibleMsgBox('לצד המתקין יש קובצי ספרייה של גרסה אחרת של אוצריא, ' +
+        'ולכן הם לא יותקנו:' + #13#10 + OtherParts + #13#10#13#10 +
+        'כדי להתקין גם את הספרייה, הכינו את התיקייה מחדש במסייע ההורדה.' + #13#10#13#10 +
+        'להמשיך ולהתקין את התוכנה בלבד?',
+        mbConfirmation, MB_YESNO, IDNO) = IDYES;
+    end;
     exit;
   end;
 

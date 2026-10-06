@@ -608,6 +608,21 @@ void main() {
       );
     });
 
+    test('$_regular: חלקי ספרייה של גרסה אחרת אינם מותקנים בשקט', () {
+      final script = _script(_regular);
+      final finder = _routine(script, 'function OtherVersionPartsName(');
+      expect(
+        finder,
+        contains("'otzaria-*-library*.tar.zst.part-000'"),
+        reason: 'גם חלקי אינדקס של גרסה אחרת',
+      );
+      expect(finder, contains("'{#LibraryArchiveName}.part-000'"));
+      final prepare = _routine(script, 'function PrepareLibraryParts(');
+      expect(prepare, contains('OtherVersionPartsName(SourceDir)'));
+      // בהתקנה שקטה ברירת המחדל היא לעצור, לא להתקין בלי הספרייה.
+      expect(prepare, contains('MB_YESNO, IDNO) = IDYES'));
+    });
+
     test('$_regular: הפריסה מחליפה ספרייה ואינדקס רק אחרי חילוץ מלא', () {
       final script = _script(_regular);
       final extract = _routine(script, 'procedure ExtractLibraryArchives(');
