@@ -871,7 +871,7 @@ List<_HighlightMatch> _findHighlightMatches(
   bool isSearchResultLine = false,
   bool isFuzzy = false,
 }) {
-  if (!matchPolicy.isStandard) {
+  if (!matchPolicy.hasStandardWordMatching) {
     if (!isSearchResultLine) return const [];
     return _findPerWordHighlightMatches(
       data,
@@ -1146,7 +1146,9 @@ String highLight(
     isSearchResultLine: isSearchResultLine,
     isFuzzy: isFuzzy,
   );
-  if (currentIndex == -1 && !yellowBackground && matchPolicy.isStandard) {
+  if (currentIndex == -1 &&
+      !yellowBackground &&
+      matchPolicy.hasStandardWordMatching) {
     final crossing = [
       if (nextLine != null)
         ..._crossLineMatches(

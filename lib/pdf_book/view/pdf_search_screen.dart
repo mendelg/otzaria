@@ -312,7 +312,10 @@ class PdfBookSearchViewState extends State<PdfBookSearchView> {
 
   bool _wholeWord = InBookSearchPreferences.loadWholeWord();
 
-  bool get _isSimpleSearch => _settings.isSimpleSearch;
+  bool get _isSimpleSearch =>
+      _settings.isSimpleSearch ||
+      (_isBundledTalmudPdf &&
+          _matchPolicy.querySemantics == SearchQuerySemantics.smart);
 
   /// מסכת PDF מצורפת אינה מאונדקסת בכוונה, ולכן מסלול המנוע ריק בה תמיד.
   bool get _isBundledTalmudPdf =>

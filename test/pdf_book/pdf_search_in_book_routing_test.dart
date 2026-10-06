@@ -196,6 +196,25 @@ Future<void> main() async {
     await tester.pump(const Duration(milliseconds: 800));
   });
 
+  testWidgets('תוצאה מחיפוש חכם במסכת מצורפת מחפשת בשכבת הטקסט', (
+    tester,
+  ) async {
+    final repository = await pumpPdfSearch(
+      tester,
+      query: 'מאימתי',
+      searchMode: SearchMode.fuzzy,
+      searchDistance: 0,
+      matchPolicy: SearchMatchPolicy.smart,
+      externalLibraryId: 'talmud-pdf:ברכות',
+    );
+    expect(repository.requests, isEmpty);
+    expect(
+      find.text(PdfMessages.advancedSearchUnavailableInTalmudPdf),
+      findsNothing,
+    );
+    await tester.pump(const Duration(milliseconds: 800));
+  }, skip: !engineReady);
+
   testWidgets('שאילתה בלי תוספות אינה פונה למנוע', (tester) async {
     final repository = await pumpPdfSearch(
       tester,

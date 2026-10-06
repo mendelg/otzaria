@@ -21,6 +21,7 @@ import 'package:otzaria/search/view/search_results_layout.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_results_bloc.dart';
+import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
 import 'package:otzaria/semantic_search/models/semantic_mode_gate.dart';
 import 'package:otzaria/semantic_search/repository/semantic_platform_support.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
@@ -42,7 +43,7 @@ import 'package:otzaria/widgets/feedback/otzaria_empty_state.dart';
 import 'package:otzaria/widgets/layout/adaptive_side_pane.dart';
 import 'package:otzaria_icons/otzaria_icons.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show MergedSibling;
+    show MergedSibling, SemanticLexicalMode;
 
 /// האם לבנות מחדש את מסגרת המסך (סרגל, מסננים, תצוגה מקדימה). סימון קטע
 /// והצבעה משנים רק כרטיסים, והרשימה הפנימית מאזינה ל-bloc בעצמה.
@@ -200,11 +201,17 @@ class _SemanticSearchResultsScreenState
     widget.tab.previewTarget.value = null;
   }
 
+  /// החיפוש בספר רץ באותו מצב שבו הצד המילולי מצא את התוצאה — מילים בכל
+  /// סדר ובצורותיהן; חיפוש מדויק היה מחפש רצף ליטרלי ולא מוצא.
   InBookSearchParameters get _inBookParameters =>
       InBookSearchRouting.resolveForReadingTab(
-        searchMode: SearchMode.exact,
-        distance: 0,
+        searchMode: switch (kSmartSearchLexicalMode) {
+          SemanticLexicalMode.exact => SearchMode.exact,
+          SemanticLexicalMode.fuzzy => SearchMode.fuzzy,
+        },
+        distance: kSmartSearchFuzzyMaxDistance,
         searchOptions: const {},
+        matchPolicy: SearchMatchPolicy.smart,
       );
 
   /// מילים להדגשה בספר; תוצאה לפי עניין בלבד נפתחת בלי הדגשת מילים.

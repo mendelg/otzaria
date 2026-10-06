@@ -11,6 +11,7 @@ import 'package:otzaria/library/bloc/library_bloc.dart';
 import 'package:otzaria/library/bloc/library_event.dart';
 import 'package:otzaria/library/bloc/library_state.dart';
 import 'package:otzaria/library/models/library.dart';
+import 'package:otzaria/library/view/book_preview_panel.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/navigation/bloc/navigation_bloc.dart';
 import 'package:otzaria/navigation/bloc/navigation_event.dart';
@@ -18,9 +19,11 @@ import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/search_feedback/search_feedback_api.dart';
 import 'package:otzaria/search_feedback/semantic_search_strings.dart';
 import 'package:otzaria/semantic_search/bloc/semantic_results_bloc.dart';
+import 'package:otzaria/semantic_search/models/semantic_engine_models.dart';
 import 'package:otzaria/semantic_search/models/semantic_result_item.dart';
 import 'package:otzaria/semantic_search/view/widgets/semantic_result_card.dart';
 import 'package:otzaria/semantic_search/services/semantic_dwell_binding.dart';
+import 'package:otzaria/search/models/search_configuration.dart';
 import 'package:otzaria/search/view/full_text_settings_widgets.dart';
 import 'package:otzaria/search/view/search_results_layout.dart';
 import 'package:otzaria/semantic_search/view/semantic_search_results_screen.dart';
@@ -35,7 +38,7 @@ import 'package:otzaria/tabs/models/semantic_search_tab.dart';
 import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/theme/app_surfaces.dart';
 import 'package:otzaria_search_engine/otzaria_search_engine.dart'
-    show SemanticResultSource;
+    show SemanticResultSource, MergedSibling;
 
 import '../test_helpers/memory_cache_provider.dart';
 import 'semantic_ui_test_support.dart';
@@ -90,6 +93,7 @@ void main() {
   >
   pumpScreen(
     WidgetTester tester, {
+    String query = 'כבוד אב',
     bool runOnFirstShow = true,
     bool preview = false,
     FakeResultsSource? injectedSource,
@@ -106,7 +110,7 @@ void main() {
     final source = injectedSource ?? FakeResultsSource(items: items);
     final tab = SemanticSearchTab(
       runOnFirstShow: runOnFirstShow,
-      options: const SemanticQueryOptions(query: 'כבוד אב'),
+      options: SemanticQueryOptions(query: query),
       createResultsBloc: (_) => buildResultsBloc(
         source: source,
         recorder: recorder,
@@ -376,6 +380,76 @@ void main() {
       SearchFeedbackOpenVia.click,
       SearchFeedbackOpenVia.click,
     ]);
+    SemanticDwellBinding.resetForTesting();
+  });
+
+  testWidgets('פתיחה: תוצאה מילולית מחפשת בספר במצב שבו נמצאה (issue #1874)', (
+    tester,
+  ) async {
+    final harness = await pumpScreen(tester);
+
+    await tester.tap(find.text('ספר 3, א'));
+    await settle(tester);
+
+    final opened = harness.tabs.opened.single.tab as TextBookTab;
+    expect(opened.searchMode, SearchMode.fuzzy);
+    expect(opened.searchDistance, kSmartSearchFuzzyMaxDistance);
+    expect(opened.matchPolicy, SearchMatchPolicy.smart);
+    SemanticDwellBinding.resetForTesting();
+  });
+
+  testWidgets('פתיחה ברקע ובאחים מעבירה את כוונת הציטוט', (tester) async {
+    const query = '"ברא אלהים" ארץ';
+    final harness = await pumpScreen(tester, query: query);
+    final card = tester.widget<SemanticResultCard>(
+      find.byKey(const ValueKey('semantic-result-2')),
+    );
+    card.onOpenInBackground();
+    card.onOpenSiblingInBackground(
+      MergedSibling(
+        title: 'ספר 3',
+        reference: 'ספר 3, א',
+        id: BigInt.from(3),
+        segment: BigInt.from(3),
+        isPdf: false,
+        filePath: 'id:3',
+      ),
+    );
+    await settle(tester);
+    expect(harness.tabs.opened, hasLength(2));
+    for (final event in harness.tabs.opened) {
+      final tab = event.tab as TextBookTab;
+      expect(tab.searchText, query);
+      expect(tab.matchPolicy, SearchMatchPolicy.smart);
+      expect(event.inBackground, isTrue);
+    }
+    SemanticDwellBinding.resetForTesting();
+  });
+
+  testWidgets('התצוגה המקדימה ופתיחה ממנה שומרות כוונת ציטוט', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    const query = '"ברא אלהים" ארץ';
+    final harness = await pumpScreen(tester, query: query, preview: true);
+    tester
+        .widget<SemanticResultCard>(
+          find.byKey(const ValueKey('semantic-result-2')),
+        )
+        .onTap();
+    await settle(tester);
+    final panel = tester.widget<BookPreviewPanel>(
+      find.byType(BookPreviewPanel),
+    );
+    expect(panel.searchText, query);
+    expect(panel.matchPolicy, SearchMatchPolicy.smart);
+    panel.onOpenInReader!(0);
+    await settle(tester);
+    expect(
+      (harness.tabs.opened.single.tab as TextBookTab).matchPolicy,
+      SearchMatchPolicy.smart,
+    );
     SemanticDwellBinding.resetForTesting();
   });
 
