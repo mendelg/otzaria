@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:otzaria/utils/file/file_picker_dialog_options.dart';
 import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:path/path.dart' as p;
@@ -15,6 +16,10 @@ import 'package:otzaria/data/data_providers/tantivy_data_provider.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_bloc.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_event.dart';
 import 'package:otzaria/empty_library/bloc/empty_library_state.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package_importer.dart';
+import 'package:otzaria/empty_library/services/library_package/package_folder.dart';
+import 'package:otzaria/settings/services/custom_folders/android_folder_import_channel.dart';
 import 'package:otzaria/settings/dialogs/change_location_dialog.dart';
 import 'package:otzaria/settings/engine/settings_engine_exports.dart';
 import 'package:otzaria/settings/widgets/expandable_settings_tile.dart';
@@ -48,7 +53,8 @@ Future<bool> showLibrarySetupDialog({
     builder: settingsDialogBuilder(
       context,
       (_) => BlocProvider<EmptyLibraryBloc>(
-        create: (_) => EmptyLibraryBloc(),
+        create: (_) =>
+            debugCreateLibrarySetupBloc?.call() ?? EmptyLibraryBloc(),
         child: _LibrarySetupDialogContent(
           defaultTargetPath: defaultTargetPath,
           currentLibraryPath: currentLibraryPath,
@@ -59,6 +65,10 @@ Future<bool> showLibrarySetupDialog({
   );
   return result ?? false;
 }
+
+/// מחליף את ה-bloc של הדיאלוג בבדיקות (למשל פריסה מזויפת שממתינה לביטול).
+@visibleForTesting
+EmptyLibraryBloc Function()? debugCreateLibrarySetupBloc;
 
 enum _LibraryAction {
   moveContents,
@@ -85,11 +95,17 @@ const _kLibraryAssets = <({String label, String consequence})>[
 ];
 
 /// תוצאת סריקת תיקיית מקור: הנכסים שזוהו, והאם התוכנה מורשית לקרוא אותם.
+/// [packages] — קובצי ספרייה שמסייע ההורדה הכין, כשנמצאו.
 @visibleForTesting
 class LibraryFolderScan {
   final List<String> found;
   final bool readable;
-  const LibraryFolderScan({required this.found, required this.readable});
+  final LibraryPackageScan? packages;
+  const LibraryFolderScan({
+    required this.found,
+    required this.readable,
+    this.packages,
+  });
 }
 
 /// בדיקת קריאה בפועל של קובץ שנמצא. ב-Android Scoped Storage `exists()` מחזיר
@@ -107,6 +123,41 @@ Future<void> _probeRead(File file) async {
 /// קובץ שקיים אך אינו ניתן לקריאה מסמן את התיקייה כולה כלא-נגישה.
 @visibleForTesting
 Future<LibraryFolderScan> scanLibraryFolderAssets(String folder) async {
+  var packageScan = const LibraryPackageScan();
+  try {
+    packageScan = await scanLibraryPackages(DirectoryPackageFolder(folder));
+  } on FileSystemException {
+    // תיקייה שאי אפשר למנות (Scoped Storage) — הבדיקה הרגילה שלמטה מסבירה.
+  }
+  final packages = packageScan.packages;
+  if (packages != null) {
+    try {
+      await (debugLibraryFolderReadProbe ?? _probeRead)(
+        File(p.join(folder, packages.library.parts.first.name)),
+      );
+    } on PathAccessException {
+      return const LibraryFolderScan(found: [], readable: false);
+    }
+    return LibraryFolderScan(
+      found: _packageAssetLabels,
+      readable: true,
+      packages: packageScan,
+    );
+  }
+  final plain = await _scanPlainLibraryAssets(folder);
+  return packageScan.isEmpty
+      ? plain
+      : LibraryFolderScan(
+          found: plain.found,
+          readable: plain.readable,
+          packages: packageScan,
+        );
+}
+
+/// חבילת המסייע היא books/ שלם: המסד, הקטלוג, המילון והתלמוד.
+final _packageAssetLabels = [for (final asset in _kLibraryAssets) asset.label];
+
+Future<LibraryFolderScan> _scanPlainLibraryAssets(String folder) async {
   Future<String?> firstExisting(List<String> names) async {
     for (final name in names) {
       final file = File(p.join(folder, name));
@@ -192,6 +243,9 @@ class _LibrarySetupDialogContentState
   bool get _copyingPickedFile => _copyingFor != null;
   List<String> _detectedAssets = const [];
 
+  /// קובצי המסייע שנמצאו בתיקיית המקור (או בעיה בהם).
+  LibraryPackageScan? _sourcePackages;
+
   String? _sourceArchive;
 
   /// תיקייה שנבחרה לשימוש במקומה, והאם נמצא בה seforim.db לא-דחוס. שימוש
@@ -260,6 +314,7 @@ class _LibrarySetupDialogContentState
 
   /// בוחר תיקיית מקור לייבוא וסורק אילו נכסי ספרייה זוהו בה (דחוסים או רגילים).
   Future<void> _pickSourceFolder() async {
+    if (Platform.isAndroid) return _pickSourceFolderAndroid();
     final folder = await FilePicker.getDirectoryPath(
       windowsOptions: kModalWindowsOptions,
       linuxOptions: kModalLinuxOptions,
@@ -272,6 +327,38 @@ class _LibrarySetupDialogContentState
       _sourceFolder = folder;
       _detectedAssets = scan.found;
       _sourceFolderUnreadable = !scan.readable;
+      _sourcePackages = scan.packages;
+    });
+  }
+
+  /// באנדרואיד ל-dart:io אין גישה לתיקייה שנבחרה, ולכן קובצי המסייע נקראים
+  /// דרך SAF. תיקייה בלעדיהם נסרקת כמו קודם, לפי הנתיב שלה.
+  Future<void> _pickSourceFolderAndroid() async {
+    const channel = AndroidFolderImportChannel();
+    final picked = await channel.pickFolder();
+    if (picked == null || !mounted) return;
+    var packages = const LibraryPackageScan();
+    try {
+      packages = await scanLibraryPackages(
+        SafPackageFolder(treeUri: picked.uri, name: picked.name),
+      );
+    } on PlatformException catch (e) {
+      debugPrint('[LibrarySetup] סריקת התיקייה ב-SAF נכשלה: $e');
+    }
+    final path = picked.path;
+    final scan = packages.packages != null || path == null
+        ? LibraryFolderScan(
+            found: packages.packages == null ? const [] : _packageAssetLabels,
+            readable: true,
+            packages: packages,
+          )
+        : await scanLibraryFolderAssets(path);
+    if (!mounted) return;
+    setState(() {
+      _sourceFolder = path ?? picked.name;
+      _detectedAssets = scan.found;
+      _sourceFolderUnreadable = !scan.readable;
+      _sourcePackages = scan.packages;
     });
   }
 
@@ -341,6 +428,7 @@ class _LibrarySetupDialogContentState
       _sourceFolder = p.dirname(file.path!);
       _detectedAssets = [_kSeforimAssetLabel];
       _sourceFolderUnreadable = false;
+      _sourcePackages = null;
     });
   }
 
@@ -395,6 +483,7 @@ class _LibrarySetupDialogContentState
         return _targetRoot != null && state.downloadDisabledReason == null;
       case _LibraryAction.chooseFile:
         if (_targetRoot == null) return false;
+        if (_sourcePackages?.packages != null) return true;
         if (_sourceFolder == null || _detectedAssets.isEmpty) return false;
         // חובה שקובץ הספרייה יהיה קיים לאחר הייבוא (מהתיקייה או מספרייה קיימת).
         return _presentAfterImport(_kSeforimAssetLabel);
@@ -435,10 +524,18 @@ class _LibrarySetupDialogContentState
       return _copyingPickedFileText();
     }
     if (_sourceFolder == null) {
+      // מ-Android 11 בורר התיקיות חוסם את שורש Download ואת שורש האחסון.
+      if (Platform.isAndroid) {
+        return context.settingsText(
+          'בחר תיקייה שקיימים בה קובצי הספרייה — גם קבצים שהוכנו במסייע ההורדה. את התיקייה Download עצמה Android אינו מאפשר לבחור: העתיקו את הקבצים לתיקייה בתוכה',
+        );
+      }
       return context.settingsText(
-        'בחר תיקייה שקיימים בה קובצי הספרייה והמערכת',
+        'בחר תיקייה שקיימים בה קובצי הספרייה — גם קבצים שהוכנו במסייע ההורדה',
       );
     }
+    final packageText = _packageSubtitle();
+    if (packageText != null) return packageText;
     if (_sourceFolderUnreadable) {
       return context.settingsText(
         'לתוכנה אין הרשאת קריאה לתיקייה שנבחרה — יש לבחור את קובץ {file} דרך "בחר קובץ ספרייה"',
@@ -467,6 +564,37 @@ class _LibrarySetupDialogContentState
       'יישארו חסרים: {items}',
       args: {'items': missing.map((a) => a.label).join(", ")},
     );
+  }
+
+  /// תיאור קובצי המסייע שנמצאו, או מה חסר בהם. null — אין קובצי מסייע, או
+  /// שהם פגומים אבל לצדם ספרייה רגילה שתיובא במקומם.
+  String? _packageSubtitle() {
+    final scan = _sourcePackages;
+    if (scan == null || scan.isEmpty) return null;
+    final packages = scan.packages;
+    if (packages != null) {
+      return context.settingsText(
+        packages.index == null
+            ? 'נמצאה ספרייה מקבצים שהורדו (גרסה {version})'
+            : 'נמצאה ספרייה מקבצים שהורדו (גרסה {version}), כולל אינדקס חיפוש מוכן',
+        args: {'version': packages.version},
+      );
+    }
+    if (_detectedAssets.contains(_kSeforimAssetLabel)) return null;
+    final file = scan.problemFile ?? '';
+    return switch (scan.problem!) {
+      LibraryPackageProblem.incompleteParts => context.settingsText(
+        'חסר הקובץ {file} — יש להכין את התיקייה מחדש במסייע ההורדה',
+        args: {'file': file},
+      ),
+      LibraryPackageProblem.invalidManifest => context.settingsText(
+        'הקובץ {file} פגום — יש להכין את התיקייה מחדש במסייע ההורדה',
+        args: {'file': file},
+      ),
+      LibraryPackageProblem.indexWithoutLibrary => context.settingsText(
+        'בתיקייה יש אינדקס חיפוש בלי הספרייה עצמה',
+      ),
+    };
   }
 
   String _archiveSubtitle() {
@@ -532,6 +660,19 @@ class _LibrarySetupDialogContentState
 
   void _import() {
     final root = _targetRoot;
+    final packages = _sourcePackages?.packages;
+    if (root != null && packages != null) {
+      context.read<EmptyLibraryBloc>().add(
+        ImportLibraryPackageRequested(
+          packages: packages,
+          targetPath: p.join(root, 'books'),
+          backupExistingPath: _hasLibrary && !_isRelocating
+              ? widget.currentLibraryPath
+              : null,
+        ),
+      );
+      return;
+    }
     final source = _sourceFolder;
     if (root == null || source == null) return;
     // גיבוי ה-DB הישן רק בעדכון במקום שמחליף את seforim.db (אחרת המחיקה של
@@ -578,6 +719,14 @@ class _LibrarySetupDialogContentState
     final oldBooks = widget.currentLibraryPath!;
     final oldIndex = _oldIndexPath;
     final newIndex = p.join(_targetRoot!, 'index');
+    // באנדרואיד אינדקס מוכן מותקן תמיד באחסון הפנימי — במקום של הישן.
+    final installedIndex =
+        _action == _LibraryAction.chooseFile &&
+            _sourcePackages?.packages?.index != null
+        ? await LibraryPackageImporter.indexTargetFor(
+            p.join(_targetRoot!, 'books'),
+          )
+        : null;
     try {
       await SqliteDataProvider.instance.dispose();
     } catch (_) {}
@@ -592,6 +741,7 @@ class _LibrarySetupDialogContentState
     if (oldIndex != null &&
         oldIndex.isNotEmpty &&
         !p.equals(oldIndex, newIndex) &&
+        (installedIndex == null || !p.equals(oldIndex, installedIndex)) &&
         await Directory(oldIndex).exists()) {
       try {
         await Directory(oldIndex).delete(recursive: true);
@@ -646,7 +796,15 @@ class _LibrarySetupDialogContentState
           onConfirm: canConfirm ? _confirm : null,
           handleEnterKey: canConfirm,
           actions: working
-              ? null
+              ? [
+                  if (state is EmptyLibraryExtracting && state.cancellable)
+                    ActionButton.ghost(
+                      text: context.settingsText('ביטול'),
+                      onPressed: () => context.read<EmptyLibraryBloc>().add(
+                        CancelLibraryImportRequested(),
+                      ),
+                    ),
+                ]
               : [
                   ActionButton.ghost(
                     text: context.settingsText('ביטול'),

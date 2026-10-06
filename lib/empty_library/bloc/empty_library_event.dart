@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:otzaria/empty_library/services/library_package/library_package.dart';
 
 abstract class EmptyLibraryEvent extends Equatable {
   @override
@@ -89,6 +90,26 @@ class ImportLibraryArchiveRequested extends EmptyLibraryEvent {
   @override
   List<Object?> get props => [archivePath, targetPath, backupExistingPath];
 }
+
+/// ייבוא קובצי הספרייה שמסייע ההורדה הכין (חלקי tar.zst, ואופציונלית
+/// אינדקס מוכן) אל [targetPath]. [backupExistingPath] — כמו בייבוא תיקייה.
+class ImportLibraryPackageRequested extends EmptyLibraryEvent {
+  final LibraryPackageSet packages;
+  final String targetPath;
+  final String? backupExistingPath;
+
+  ImportLibraryPackageRequested({
+    required this.packages,
+    required this.targetPath,
+    this.backupExistingPath,
+  });
+
+  @override
+  List<Object?> get props => [packages, targetPath, backupExistingPath];
+}
+
+/// עוצר פריסה של [ImportLibraryPackageRequested] לפני שהספרייה מוחלפת.
+class CancelLibraryImportRequested extends EmptyLibraryEvent {}
 
 /// בודק מקום פנוי בהתקנה וקובע אם כפתור ההורדה זמין.
 /// נשלח בעת טעינת המסך.

@@ -70,10 +70,14 @@ class EmptyLibraryExtracting extends EmptyLibraryState {
   final double progress;
   final String message;
 
+  /// הפעולה ניתנת לעצירה ([CancelLibraryImportRequested]) בשלב הזה.
+  final bool cancellable;
+
   const EmptyLibraryExtracting({
     required String selectedPath,
     required this.progress,
     required this.message,
+    this.cancellable = false,
   }) : super(selectedPath: selectedPath, isLoading: true);
 
   @override
@@ -81,6 +85,7 @@ class EmptyLibraryExtracting extends EmptyLibraryState {
     ...super.props,
     progress,
     message,
+    cancellable,
   ];
 }
 
