@@ -11,6 +11,7 @@ import 'package:otzaria/navigation/bloc/navigation_event.dart';
 import 'package:otzaria/navigation/bloc/navigation_state.dart';
 import 'package:otzaria/tabs/bloc/tabs_bloc.dart';
 import 'package:otzaria/tabs/bloc/tabs_state.dart';
+import 'package:otzaria/tabs/models/tab.dart';
 import 'package:otzaria/tabs/utils/confirm_close_tabs.dart';
 import 'package:otzaria/tools/calendar/helpers/calendar_date_helpers.dart';
 import 'package:otzaria/core/ui_snack.dart';
@@ -98,6 +99,9 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
                     );
                   }
 
+                  final liveTabs = context.select(
+                    (TabsBloc bloc) => bloc.state.tabs,
+                  );
                   return LayoutBuilder(
                     builder: (context, constraints) {
                       // מספר עמודות לפי הרוחב הזמין; במסך צר יורד ל-1-2 עמודות
@@ -124,6 +128,7 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
                             return _buildWorkspaceTile(
                               context,
                               workspace,
+                              state.tabsOf(workspace, liveTabs),
                               isActive,
                             );
                           }
@@ -192,6 +197,7 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
   Widget _buildWorkspaceTile(
     BuildContext context,
     Workspace workspace,
+    List<OpenedTab> tabs,
     bool isActive,
   ) {
     return Card(
@@ -254,7 +260,7 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
                             ).colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: AppTokens.borderRadiusAll,
                     ),
-                    child: _buildWorkspacePreview(workspace),
+                    child: _buildWorkspacePreview(tabs),
                   ),
                 ),
                 Padding(
@@ -344,13 +350,12 @@ class _WorkspaceSwitcherDialogState extends State<WorkspaceSwitcherDialog> {
     UiSnack.show(NotesMessages.workspaceSnapshotSaved);
   }
 
-  Widget _buildWorkspacePreview(Workspace workspace) {
-    // Simple representation of tabs in the workspace
+  Widget _buildWorkspacePreview(List<OpenedTab> tabs) {
     return Center(
       child: Wrap(
         spacing: 4,
         runSpacing: 4,
-        children: workspace.tabs.map((tab) {
+        children: tabs.map((tab) {
           return Tooltip(
             message: tab.title,
             child: Container(

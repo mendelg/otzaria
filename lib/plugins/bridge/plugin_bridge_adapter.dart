@@ -3523,11 +3523,9 @@ class PluginBridgeAdapter {
                 'id': workspace.id,
                 'name': workspace.name,
                 'isActive': workspace.id == activeId,
-                // בשולחן הפעיל הטאבים חיים ב-TabsBloc ונשמרים אליו רק במעבר,
-                // ולכן הספירה שלו חייבת לבוא משם ולא מהעותק השמור.
-                'tabCount': workspace.id == activeId
-                    ? _dependencies.tabsBloc.state.tabs.length
-                    : workspace.tabs.length,
+                'tabCount': bloc.state
+                    .tabsOf(workspace, _dependencies.tabsBloc.state.tabs)
+                    .length,
               },
             )
             .toList();
