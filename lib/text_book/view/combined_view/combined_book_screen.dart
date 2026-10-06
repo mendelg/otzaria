@@ -217,17 +217,23 @@ class SelectionLineCache {
   final Map<int, SelectionLine> _lines = {};
   WeakReference<List<String>>? _data;
   RenderSettings? _settings;
+  Object? _markerKey;
 
-  /// [injectMarkers] מזריק לשורה את ציוני המפרשים שמוצגים בה.
+  /// [injectMarkers] מזריק ציונים; [markerKey] מזהה את נתוניהם והפרופיל,
+  /// ונשאר זהה בעדכוני גרירה שאינם משנים אותם.
   SelectionLine Function(int index) lines(
     List<String> data,
     RenderSettings settings, {
     String Function(String rawLine, int index)? injectMarkers,
+    Object? markerKey,
   }) {
-    if (!identical(_data?.target, data) || _settings != settings) {
+    if (!identical(_data?.target, data) ||
+        _settings != settings ||
+        _markerKey != markerKey) {
       clear();
       _data = WeakReference(data);
       _settings = settings;
+      _markerKey = markerKey;
     }
     SelectionLine render(int i) => renderSelectionLineWithMarkers(
       rawText: injectMarkers?.call(data[i], i) ?? data[i],
@@ -251,6 +257,7 @@ class SelectionLineCache {
     _characters = 0;
     _data = null;
     _settings = null;
+    _markerKey = null;
   }
 }
 
@@ -1519,7 +1526,13 @@ class _CombinedViewState extends State<CombinedView> {
           lineStart: _selectionLineStart,
           lineEnd: _selectionLineEnd,
           startColumn: source.column,
-          pointerColumn: _selectionPointerColumn,
+          pointerColumn: SourceSelection.resolvePointerColumn(
+            _sourceSelection,
+            selectedText,
+            _selectionPointerColumn,
+            lineStart: _selectionLineStart,
+            pointerLineIndex: _selectionPointerLineIndex,
+          ),
         ),
         settings: () => _selectionRenderSettings(
           state,
@@ -1837,6 +1850,11 @@ class _CombinedViewState extends State<CombinedView> {
     final lineAt = _selectionLineCache.lines(
       widget.data,
       renderSettings,
+      markerKey: (
+        state.linksByLine,
+        state.bodyDisplayProfile.showAnchorMarkers,
+        state.book.versionTitle,
+      ),
       injectMarkers: (rawLine, index) =>
           _injectAnchorMarkersForLine(rawLine, index, state),
     );

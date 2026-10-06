@@ -79,9 +79,9 @@ Map<String, dynamic> buildReaderSelectionPayload({
   final localRange = selectionService.locateRenderedRange(
     renderedText: renderedLine,
     selectedText: selectedText,
-    startHint: sectionIndex == paragraphIndex
-        ? (anchor.pointerColumn ?? anchor.startColumn)
-        : anchor.startColumn,
+    startHint:
+        anchor.startColumn ??
+        (sectionIndex == paragraphIndex ? anchor.pointerColumn : null),
   );
   return selectionService.buildPayload(
     bookId: book.title,

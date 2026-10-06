@@ -20,6 +20,7 @@ import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
 import 'package:otzaria/data/repository/text_book_repository.dart';
+import 'package:otzaria/data/data_providers/sqlite_data_provider.dart';
 import 'package:otzaria/text_book/view/combined_view/combined_book_screen.dart';
 import 'package:otzaria/text_book/view/error_report_dialog.dart';
 import 'package:otzaria/text_book/view/selection/selected_text_copy.dart';
@@ -40,6 +41,55 @@ const _genesisLines = [
 ];
 
 void main() {
+  testWidgets('markers loaded during drag update cached selection lines', (
+    tester,
+  ) async {
+    final fixture = await _pumpView(
+      tester,
+      continuous: false,
+      selectedIndex: 0,
+      data: const ['אמר רבי יוחנן הלכה'],
+      linksByLine: const {},
+    );
+    final first = _textBox(tester, 'רבי');
+    var last = _textBox(tester, 'יוחנן');
+    final gesture = await tester.startGesture(
+      Offset(first.right - 1, first.center.dy),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await gesture.moveTo(Offset(last.left + 1, last.center.dy));
+    await tester.pump();
+    expect(fixture.selectedText, 'רבי יוחנן');
+    final viewContext = tester.element(find.byType(CombinedView));
+    final bloc = viewContext.read<TextBookBloc>();
+    bloc.add(
+      UpdateLinks([
+        Link(
+          heRef: 'מפרש בדיקה א, ב',
+          index1: 1,
+          path2: 'מפרש בדיקה',
+          index2: 1,
+          connectionType: 'commentary',
+          anchorStart: 7,
+          anchorLabel: 'ב',
+        ),
+      ]),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(_textBox(tester, '(ב)'), isNotNull);
+    last = _textBox(tester, 'יוחנן');
+    await gesture.moveTo(Offset(last.left + 1, last.center.dy));
+    await tester.pump();
+    expect(fixture.selectedText, 'רבי יוחנן');
+    await gesture.up();
+    // מסיימים את I/O הבאנר לפני שחרור השעון המדומה של הבדיקה.
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
+    expect(SqliteDataProvider.instance.debugIsInitializing, isFalse);
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
@@ -471,7 +521,17 @@ Link _commentaryLink(String title) => Link(
 class _TextBookBloc extends Bloc<TextBookEvent, TextBookState>
     implements TextBookBloc {
   _TextBookBloc(super.initialState) {
-    on<TextBookEvent>((event, emit) {});
+    on<TextBookEvent>((event, emit) {
+      if (event is UpdateLinks && state is TextBookLoaded) {
+        final links = event.links.cast<Link>();
+        emit(
+          (state as TextBookLoaded).copyWith(
+            links: links,
+            linksByLine: {1: links},
+          ),
+        );
+      }
+    });
   }
 
   @override

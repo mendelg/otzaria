@@ -2049,7 +2049,13 @@ class _SimpleTextViewerState extends State<SimpleTextViewer> {
             lineStart: _selectionLineStart,
             lineEnd: _selectionLineEnd,
             startColumn: source.column,
-            pointerColumn: _selectionPointerColumn,
+            pointerColumn: SourceSelection.resolvePointerColumn(
+              _sourceSelection,
+              capturedText,
+              _selectionPointerColumn,
+              lineStart: _selectionLineStart,
+              pointerLineIndex: _selectionPointerLineIndex,
+            ),
           ),
           settings: () => _selectionRenderSettings(
             state: state,

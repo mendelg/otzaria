@@ -34,6 +34,35 @@ void main() {
   );
 
   group('buildReaderSelectionPayload', () {
+    for (final (startColumn, pointerColumn) in [
+      (0, 2),
+      (0, 4),
+      (0, 5),
+      (5, 4),
+      (5, 7),
+    ]) {
+      test(
+        'tracked start $startColumn wins over pointer $pointerColumn in repeated text',
+        () {
+          final payload = buildReaderSelectionPayload(
+            state: state(),
+            lines: const ['שלום שלום'],
+            paragraphIndex: 0,
+            selectedText: 'שלום',
+            anchor: (
+              lineStart: 0,
+              lineEnd: 0,
+              startColumn: startColumn,
+              pointerColumn: pointerColumn,
+            ),
+            settings: settings,
+          );
+          expect(payload['start'], startColumn);
+          expect(payload['end'], startColumn + 4);
+        },
+      );
+    }
+
     test('anchors a selection in the paragraph where it starts', () {
       final payload = buildReaderSelectionPayload(
         state: state(),

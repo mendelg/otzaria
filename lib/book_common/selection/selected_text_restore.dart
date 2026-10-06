@@ -129,6 +129,17 @@ class SourceSelection {
     }
     return (text: text, column: column - shift);
   }
+
+  /// עמודת העכבר במקור; עכבר בשורה אחרת אינו רמז לשורת תחילת הבחירה.
+  static int? resolvePointerColumn(
+    SourceSelection? selection,
+    String? shownText,
+    int? column, {
+    required int? lineStart,
+    required int? pointerLineIndex,
+  }) => lineStart != null && pointerLineIndex == lineStart
+      ? resolve(selection, shownText, column).column
+      : null;
 }
 
 /// שורות רצופות ומרונדרות לשחזור, כשהראשונה היא שורת המקור [baseIndex].

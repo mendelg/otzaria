@@ -500,6 +500,100 @@ void main() {
         'אָמַר <a class="link-anchor link-anchor-0" href="x">(ב)</a>רבי '
         '<span class="link-anchor link-anchor-0">(ג)</span>יוחנן';
 
+    test('עמודת העכבר ממופה למקור רק בשורת תחילת הבחירה', () {
+      final line = renderSelectionLineWithMarkers(
+        rawText: '<a class="link-anchor link-anchor-0">(א)</a>שלום שלום',
+        settings: const RenderSettings(),
+      );
+      const shown = '(א)שלום';
+      final selection = SourceSelection.strip(
+        shownText: shown,
+        lines: [line],
+        startColumn: 0,
+      );
+      for (final (pointer, expected) in [
+        (0, 0),
+        (2, 0),
+        (3, 0),
+        (5, 2),
+        (7, 4),
+      ]) {
+        expect(
+          SourceSelection.resolvePointerColumn(
+            selection,
+            shown,
+            pointer,
+            lineStart: 4,
+            pointerLineIndex: 4,
+          ),
+          expected,
+        );
+      }
+      expect(
+        SourceSelection.resolvePointerColumn(
+          selection,
+          shown,
+          5,
+          lineStart: 4,
+          pointerLineIndex: 5,
+        ),
+        isNull,
+      );
+      expect(
+        SourceSelection.resolvePointerColumn(
+          selection,
+          shown,
+          5,
+          lineStart: null,
+          pointerLineIndex: 4,
+        ),
+        isNull,
+      );
+      expect(
+        SourceSelection.resolvePointerColumn(
+          null,
+          'שלום',
+          2,
+          lineStart: 4,
+          pointerLineIndex: 4,
+        ),
+        2,
+      );
+    });
+
+    test('עכבר בשורת הסיום של בחירה הפוכה אינו רמז לשורת ההתחלה', () {
+      final lines = [
+        renderSelectionLineWithMarkers(
+          rawText: '<a class="link-anchor link-anchor-0">(א)</a>שלום',
+          settings: const RenderSettings(),
+        ),
+        renderSelectionLineWithMarkers(
+          rawText: '<a class="link-anchor link-anchor-0">(ב)</a>עולם',
+          settings: const RenderSettings(),
+        ),
+      ];
+      const shown = '(א)שלום\n(ב)עולם';
+      final selection = SourceSelection.strip(
+        shownText: shown,
+        lines: lines,
+        startColumn: 0,
+      );
+      expect(SourceSelection.resolve(selection, shown, 0), (
+        text: 'שלום\nעולם',
+        column: 0,
+      ));
+      expect(
+        SourceSelection.resolvePointerColumn(
+          selection,
+          shown,
+          5,
+          lineStart: 4,
+          pointerLineIndex: 5,
+        ),
+        isNull,
+      );
+    });
+
     test('השורה מרונדרת כמו בתצוגה, עם טווחי הציונים', () {
       final line = renderSelectionLineWithMarkers(
         rawText: marked,

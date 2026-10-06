@@ -35,6 +35,82 @@ void main() {
     }
   });
 
+  test('טעינת ציונים ושינוי פרופיל מבטלים את המטמון', () {
+    final data = ['שלום'];
+    final links = <int, Object>{};
+    final cache = SelectionLineCache();
+    expect(
+      cache.lines(data, settings, markerKey: (links, true, null))(0).text,
+      'שלום',
+    );
+    final loadedLinks = {1: Object()};
+    String inject(String raw, int index) =>
+        '<a class="link-anchor link-anchor-0">(א)</a>$raw';
+    expect(
+      cache
+          .lines(
+            data,
+            settings,
+            injectMarkers: inject,
+            markerKey: (loadedLinks, true, null),
+          )(0)
+          .text,
+      '(א)שלום',
+    );
+    expect(
+      cache
+          .lines(data, settings, markerKey: (loadedLinks, false, null))(0)
+          .text,
+      'שלום',
+    );
+    expect(
+      cache
+          .lines(
+            data,
+            settings,
+            injectMarkers: inject,
+            markerKey: (loadedLinks, true, null),
+          )(0)
+          .markers,
+      [(0, 3)],
+    );
+    expect(
+      cache
+          .lines(
+            data,
+            settings,
+            markerKey: (loadedLinks, true, 'מהדורה חלופית'),
+          )(0)
+          .text,
+      'שלום',
+    );
+  });
+
+  test('closure חדש ומפתח ציונים זהה שומרים את המטמון חם', () {
+    final data = ['שלום'];
+    final links = {1: Object()};
+    final cache = SelectionLineCache();
+    var renders = 0;
+    SelectionLine Function(int) render() => cache.lines(
+      data,
+      settings,
+      markerKey: (links, true, null),
+      injectMarkers: (raw, index) {
+        renders++;
+        return '<a class="link-anchor link-anchor-0">(א)</a>$raw';
+      },
+    );
+    final first = render()(0);
+    final again = render()(0);
+    expect(renders, 1);
+    expect(identical(first, again), isTrue);
+    cache.clear();
+    final afterClear = render()(0);
+    expect(afterClear.text, first.text);
+    expect(afterClear.markers, first.markers);
+    expect(renders, 2);
+  });
+
   test('התוצאה זהה לרינדור ללא מטמון', () {
     final cache = SelectionLineCache();
     String direct(int i) =>
