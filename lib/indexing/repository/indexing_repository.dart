@@ -1198,7 +1198,7 @@ class IndexingRepository {
 
     final pages = <({String reference, String text, int pageIndex})>[];
     for (int pageIndex = 0; pageIndex < pagesText.length; pageIndex++) {
-      final bookmark = await refFromPageNumber(
+      final bookmark = referenceFromPageNumber(
         pageIndex + 1,
         outline,
         book.title,
