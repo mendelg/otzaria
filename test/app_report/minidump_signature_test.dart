@@ -34,6 +34,15 @@ void main() {
       expect(signature.frames, isEmpty);
     });
 
+    test('רשימת מודולים קטועה — קוד החריגה נשמר (issue #1978)', () async {
+      final full = buildMinidump();
+      final signature = await readMinidumpSignature(
+        write(Uint8List.sublistView(full, 0, 120)),
+      );
+      expect(signature!.exceptionType, '0xc0000005');
+      expect(signature.frames, isEmpty);
+    });
+
     test('קובץ פגום, קטוע או בלי זרם חריגה — null (issue #1978)', () async {
       final full = buildMinidump();
       expect(
@@ -43,7 +52,7 @@ void main() {
         isNull,
       );
       expect(
-        await readMinidumpSignature(write(Uint8List.sublistView(full, 0, 120))),
+        await readMinidumpSignature(write(Uint8List.sublistView(full, 0, 40))),
         isNull,
       );
       final badMagic = Uint8List.fromList(full)..[0] = 0;

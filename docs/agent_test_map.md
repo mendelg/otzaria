@@ -271,6 +271,7 @@
 | דיווח על התוכנה — איסוף אבחון ולוג (מקטע שנכשל, חלון 7 ימים, ארכיטקטורה) | `test/app_report/app_report_collector_test.dart` |
 | דיווח על התוכנה — שירות השליחה (תור, 409/422/429, היסטוריה, סקריפט אופליין) | `test/app_report/app_report_service_test.dart` |
 | זיהוי יציאה לא נקייה (נעילת הפעלה, ראיות, מגבלת דיווח אוטומטי) | `test/app_report/unclean_exit_detector_test.dart` |
+| חתימת קריסה נייטיבית מ-minidump (קוד חריגה, מודול+היסט, קובץ פגום) | `test/app_report/minidump_signature_test.dart` |
 | טופס הדיווח (BLoC: איסוף, ולידציה לפי מקור, החרגת צרופות, שמירת מייל) | `test/app_report/bloc/app_report_bloc_test.dart` |
 | דיאלוג הדיווח הידני (מייל חובה, תצוגה מקדימה, הודעות סיום) | `test/app_report/view/app_report_dialog_test.dart` |
 | הצעת דיווח אחרי קריסה (בלי מייל, בחירת "תמיד"/"אל תשאל") | `test/app_report/view/crash_prompt_dialog_test.dart` |
