@@ -1024,7 +1024,8 @@ begin
 #endif
     if HasLibraryPayload and (GetLibraryBooksPath() = '') then
     begin
-      SuppressibleMsgBox('נמצאו כמה תיקיות ספרייה בנתיב המוגדר. ' +
+      SuppressibleMsgBox('לא ניתן לקבוע תיקיית ספרייה בטוחה ויחידה. ' +
+        'אין להתקין ספרייה בשורש כונן או שיתוף, או בנתיב יחסי. ' +
         'עדכנו תחילה את התוכנה בלבד מתיקייה ללא קובצי ספרייה, ' +
         'בחרו בה את הספרייה הפעילה, ואז הפעילו שוב את המתקין.',
         mbCriticalError, MB_OK, IDOK);
@@ -1440,10 +1441,17 @@ begin
   Result := RemoveBackslash(Path);
 end;
 
-// בודק שהתיקייה נראית כמו תיקיית ספרים של אוצריא — כלומר מכילה לפחות
-// אחד מהסימנים הייחודיים שמותקנים ע"י המתקין FULL. נחוץ לפני DelTree על
-// נתיב שמגיע מהמשתמש (prefs), כדי שלא נמחק תיקייה אישית רחבה שהמשתמש
-// בחר בטעות כנתיב ספרים (למשל D:\, Downloads, Documents).
+function IsSafeLibraryDirectory(const Path: String): Boolean;
+var
+  Drive: String;
+begin
+  Drive := ExtractFileDrive(Path);
+  Result := (Length(Path) >= 6) and (Drive <> '') and
+    (Pos(Lowercase(AddBackslash(Drive)), Lowercase(Path)) = 1);
+end;
+
+// סמני ספרייה נדרשים לפני DelTree כדי להגן על תיקייה אישית רחבה
+// שנבחרה בטעות כנתיב ספרים.
 function IsOtzariaBooksFolder(const Path: String): Boolean;
 begin
   Result := False;
@@ -1479,6 +1487,11 @@ begin
   Result := GetDataDir('') + '\books';
   if CustomPath = '' then
     exit;
+  if not IsSafeLibraryDirectory(CustomPath) then
+  begin
+    Result := '';
+    exit;
+  end;
   DatabasePath := Trim(UninstallReadTextFile(AddBackslash(GetDataDir('')) +
     LibraryDatabasePathRecordFileName));
   if (DatabasePath <> '') and (DatabasePath[1] = #$FEFF) then

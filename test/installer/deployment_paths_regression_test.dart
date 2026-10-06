@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 String routine(String script, String signature) {
   final start = script.indexOf(signature);
@@ -8,8 +9,72 @@ String routine(String script, String signature) {
   return script.substring(start, script.indexOf('\nend;', start) + 5);
 }
 
+// Evaluates the guard's actual expression with documented Inno path primitives.
+bool acceptsLibraryDirectory(String script, String path) {
+  final guard = routine(script, 'function IsSafeLibraryDirectory(');
+  expect(guard, contains('Drive := ExtractFileDrive(Path);'));
+  final expression = RegExp(
+    r'Result := (.*?);',
+    dotAll: true,
+  ).firstMatch(guard)!.group(1)!.replaceAll(RegExp(r'\s+'), ' ');
+  final drive = p.windows.rootPrefix(path).replaceFirst(RegExp(r'\\$'), '');
+  return expression
+      .split(' and ')
+      .map((clause) {
+        final length = RegExp(
+          r'^\(Length\(Path\) >= (\d+)\)$',
+        ).firstMatch(clause);
+        if (length != null) return path.length >= int.parse(length.group(1)!);
+        if (clause == "(Drive <> '')") return drive.isNotEmpty;
+        if (clause ==
+            '(Pos(Lowercase(AddBackslash(Drive)), Lowercase(Path)) = 1)') {
+          return path.toLowerCase().startsWith('${drive.toLowerCase()}\\');
+        }
+        throw UnsupportedError('Unrecognized Inno guard clause: $clause');
+      })
+      .every((value) => value);
+}
+
 void main() {
   final script = File('installer/otzaria.iss').readAsStringSync();
+  for (final fixture in <String, bool>{
+    r'D:': false,
+    'D:\\': false,
+    r'\\server\share': false,
+    r'\\server\share\books': true,
+    r'D:\custom-root': true,
+    r'D:\X': false,
+    r'books\nested': false,
+    r'D:books': false,
+    r'\books': false,
+  }.entries) {
+    test('library target safety: ${fixture.key}', () {
+      expect(acceptsLibraryDirectory(script, fixture.key), fixture.value);
+    });
+  }
+  test(
+    'unsafe configured roots stop before accepting a DB record or payload',
+    () {
+      final resolve = routine(
+        script,
+        'function GetLibraryBooksPath(): String;\nvar',
+      );
+      final guard = resolve.indexOf(
+        'if not IsSafeLibraryDirectory(CustomPath)',
+      );
+      expect(guard, greaterThan(0));
+      final record = resolve.indexOf('DatabasePath := Trim(');
+      expect(guard, lessThan(record));
+      expect(resolve.substring(guard, record), contains("Result := '';"));
+      expect(resolve.substring(guard, record), contains('exit;'));
+      final next = routine(script, 'function NextButtonClick(');
+      expect(
+        next,
+        contains("if HasLibraryPayload and (GetLibraryBooksPath() = '')"),
+      );
+      expect(next, contains('אין להתקין ספרייה בשורש כונן או שיתוף'));
+    },
+  );
   test('missing part000 cannot bypass library or index validation', () {
     final probe = routine(script, 'function HasSplitArchiveParts(');
     expect(probe, contains("ArchiveName + '.part-*'"));
