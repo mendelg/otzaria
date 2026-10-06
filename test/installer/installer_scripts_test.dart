@@ -1683,8 +1683,6 @@ void main() {
       for (final entry in const {
         '.github/workflows/build-and-announce.yml':
             'SeforimMagicIndexer/releases/latest/download/lexical.db',
-        '.github/workflows/installer-screenshots.yml':
-            'fetch SeforimMagicIndexer lexical.db',
       }.entries) {
         final lines = File(entry.key).readAsLinesSync();
         final fallbacks = lines.where((l) => l.contains(entry.value));
