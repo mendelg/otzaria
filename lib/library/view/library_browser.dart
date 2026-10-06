@@ -1798,7 +1798,22 @@ class _LibraryBrowserState extends State<LibraryBrowser>
     List<Category> categories, {
     required bool firstFocus,
   }) {
+    final textTheme = Theme.of(context).textTheme;
+    final textScaler = MediaQuery.textScalerOf(context);
+    double lineHeight(TextStyle style) =>
+        textScaler.scale(style.fontSize!) * (style.height ?? 1);
+    // שתי שורות כותרת, שורת נתיב, רווח 3 וריפוד אנכי 20.
+    final minItemHeight =
+        categories.any(
+          (category) => categoryParentPath(category).isNotEmpty,
+        )
+        ? (23 +
+                  2 * lineHeight(textTheme.titleMedium!) +
+                  lineHeight(textTheme.bodySmall!))
+              .ceilToDouble()
+        : 0.0;
     return MyGridView(
+      minItemHeight: minItemHeight,
       items: [
         for (final (i, category) in categories.indexed)
           _buildCategoryGridItem(
