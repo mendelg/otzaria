@@ -1281,7 +1281,7 @@ class _PdfBookScreenState extends State<PdfBookScreen>
 
     final title =
         resolvedTitle ??
-        await refFromPageNumber(
+        referenceFromPageNumber(
           range.startPage,
           outline,
           widget.tab.book.title,

@@ -880,10 +880,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     if (tab is PdfBookTab) {
       return _normalizeLocationTitle(
         tab.book.title,
-        explicitTitle ??
-            await _resolvePdfTabLocationTitle(
-              tab,
-            ),
+        explicitTitle ?? _resolvePdfTabLocationTitle(tab),
       );
     }
 
@@ -919,26 +916,18 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     }
   }
 
-  Future<String?> _resolvePdfTabLocationTitle(PdfBookTab tab) async {
+  String? _resolvePdfTabLocationTitle(PdfBookTab tab) {
     final currentTitle = tab.currentTitle.value.trim();
     if (currentTitle.isNotEmpty) {
       return currentTitle;
     }
 
-    try {
-      final ref = await refFromPageNumber(
-        tab.pageNumber,
-        tab.outline.value,
-        tab.book.title,
-      );
-      if (ref.trim().isNotEmpty) {
-        return ref;
-      }
-    } catch (_) {
-      // Fall back to page-based comparison when outline is unavailable.
-    }
-
-    return null;
+    final ref = referenceFromPageNumber(
+      tab.pageNumber,
+      tab.outline.value,
+      tab.book.title,
+    );
+    return ref.trim().isNotEmpty ? ref : null;
   }
 
   String? _normalizeLocationTitle(String bookTitle, String? title) {

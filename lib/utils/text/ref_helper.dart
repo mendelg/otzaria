@@ -375,17 +375,8 @@ String addBookTitleToRef(String ref, String bookTitle) {
   return '$bookTitle, $ref';
 }
 
-Future<String> refFromPageNumber(
-  int pageNumber,
-  List<PdfOutlineNode>? outline, [
-  String? bookTitle,
-]) async {
-  return referenceFromPageNumber(pageNumber, outline, bookTitle);
-}
-
-/// הגרסה הסינכרונית של [refFromPageNumber]: מחשבת את הכתובת ההיררכית עבור
-/// עמוד [pageNumber] מתוך ה-outline שכבר טעון לזיכרון. נחוצה לחישוב מיידי
-/// בלי `await` (תווית יעד ברחיפה מעל פס הגלילה של ה-PDF).
+/// הכתובת ההיררכית של עמוד [pageNumber] מתוך ה-outline שבזיכרון.
+/// סינכרונית וזולה — אין צורך לדחות אותה ל-debounce או ל-isolate.
 String referenceFromPageNumber(
   int pageNumber,
   List<PdfOutlineNode>? outline, [
