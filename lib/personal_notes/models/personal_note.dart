@@ -104,6 +104,7 @@ class PersonalNote extends Equatable {
 
   PersonalNote copyWith({
     int? lineNumber,
+    bool clearLineNumber = false,
     String? displayTitle,
     bool clearDisplayTitle = false,
     String? anchorText,
@@ -113,6 +114,7 @@ class PersonalNote extends Equatable {
     int? anchorEnd,
     bool clearAnchor = false,
     int? lastKnownLineNumber,
+    bool clearLastKnownLineNumber = false,
     PersonalNoteStatus? status,
     String? content,
     String? contentPlain,
@@ -123,7 +125,7 @@ class PersonalNote extends Equatable {
     return PersonalNote(
       id: id,
       bookId: bookId,
-      lineNumber: lineNumber ?? this.lineNumber,
+      lineNumber: clearLineNumber ? null : (lineNumber ?? this.lineNumber),
       displayTitle: clearDisplayTitle
           ? null
           : (displayTitle ?? this.displayTitle),
@@ -132,7 +134,9 @@ class PersonalNote extends Equatable {
       anchorSuffix: clearAnchor ? null : (anchorSuffix ?? this.anchorSuffix),
       anchorStart: clearAnchor ? null : (anchorStart ?? this.anchorStart),
       anchorEnd: clearAnchor ? null : (anchorEnd ?? this.anchorEnd),
-      lastKnownLineNumber: lastKnownLineNumber ?? this.lastKnownLineNumber,
+      lastKnownLineNumber: clearLastKnownLineNumber
+          ? null
+          : (lastKnownLineNumber ?? this.lastKnownLineNumber),
       status: status ?? this.status,
       content: content ?? this.content,
       contentPlain: contentPlain ?? this.contentPlain,
