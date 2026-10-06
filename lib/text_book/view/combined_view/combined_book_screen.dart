@@ -2383,7 +2383,18 @@ class _CombinedViewState extends State<CombinedView> {
       children: [
         // הכותרת אינה חלק מהשורה: מחוץ לרקע הבחירה ולמחוות שלה.
         if (sectionHeadings != null)
-          _buildSectionHeadings(state, sectionHeadings),
+          AppContextMenuRegion(
+            shouldPreserveSelectionOnSecondaryTap: (position) =>
+                _shouldPreserveSelectionAt(position, primaryLineIndex, context),
+            menuBuilder: (menuContext, position) => _buildContextMenuForIndex(
+              state,
+              primaryLineIndex,
+              menuContext,
+              _savedSelectedText.value,
+              position,
+            ),
+            child: _buildSectionHeadings(state, sectionHeadings),
+          ),
         // הטקסט של הספר - ללא SelectionArea נפרד, כי יש SelectionArea כללי
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
