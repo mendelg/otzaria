@@ -72,11 +72,11 @@ const String kSemanticOutputNoteEn =
     'installed from it without downloading.';
 
 const String kSemanticWindowsOutputNoteEn =
-    'The full Otzaria installer in this folder copies the '
+    'The regular or full Otzaria installer in this folder copies the '
     '$kSemanticImportFolderName folder next to the library folder by itself. '
     'When you turn on $kSemanticSearchModeNameEn (after giving consent), the '
     'data will be installed from it without downloading. If you install '
-    'without the full installer, copy the folder yourself into the folder '
+    'using a portable ZIP, copy the folder yourself into the folder '
     'that contains the Otzaria library folder.';
 
 String semanticOutputNoteEn(String platform) => platform == 'windows'

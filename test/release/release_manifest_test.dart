@@ -1049,8 +1049,12 @@ void main() {
       expect(app['nameEn'], 'Otzaria for Windows');
       expect(app['description'], startsWith('התוכנה עצמה'));
       expect(app['descriptionEn'], startsWith('Otzaria itself'));
-      final library = componentById(decoded, 'library-full-indexed');
-      expect(library['nameEn'], 'Full Library with Search Index');
+      final library = componentById(decoded, 'library-full');
+      expect(library['nameEn'], 'Full Library');
+      expect(library['outputNoteEn'], contains('extracts the library'));
+      final index = componentById(decoded, 'library-index');
+      expect(index['nameEn'], 'Prebuilt Search Index (for Slower Computers)');
+      expect(index['outputNoteEn'], contains('prebuilt search index'));
     });
 
     test('מניפסט ישן בלי השדות עדיין תקין', () {

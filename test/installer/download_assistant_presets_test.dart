@@ -399,7 +399,31 @@ void main() {
     });
   });
 
-  group('"מלאה + אינדקס חיפוש"', () {
+  group('"מלאה + אינדקס חיפוש" במניפסט ישן', () {
+    const legacyIndexed = [
+      ComponentSpec(
+        id: 'otzaria-windows-full-indexed',
+        name: 'מתקין',
+        description: 'מתקין.',
+        type: 'application-bundle',
+        required: false,
+        platform: 'windows',
+        architecture: 'x64',
+        installOrder: 1,
+        assets: [],
+      ),
+      ComponentSpec(
+        id: 'library-full-indexed',
+        name: 'ספרייה',
+        description: 'ספרייה.',
+        type: 'library',
+        required: false,
+        platform: 'any',
+        installOrder: 30,
+        installedBy: ['otzaria-windows-full-indexed'],
+        assets: [],
+      ),
+    ];
     const model = ComponentSpec(
       id: 'semantic-model-windows',
       name: 'מודל',
@@ -423,7 +447,10 @@ void main() {
     );
 
     test('ב-x64: החבילה המאונדקסת עם הספרייה שלה, מעל "מלאה"', () {
-      final x64 = _presets(kKnownComponents, _windowsTargets[0]);
+      final x64 = _presets([
+        ...kKnownComponents,
+        ...legacyIndexed,
+      ], _windowsTargets[0]);
       expect(x64.keys, ['basic', 'full-indexed', 'full']);
       expect(x64['full-indexed'], [
         'otzaria-windows-full-indexed',
@@ -435,6 +462,7 @@ void main() {
     test('נתוני החיפוש החכם בשתי ההצעות המלאות בלבד', () {
       final x64 = _presets([
         ...kKnownComponents,
+        ...legacyIndexed,
         model,
         vectors,
       ], _windowsTargets[0]);
@@ -450,7 +478,10 @@ void main() {
 
     test('בלי ספרייה מאונדקסת ליעד (ARM64) אין "מלאה + אינדקס"', () {
       expect(
-        _presets(kKnownComponents, _windowsTargets[1]).keys,
+        _presets([
+          ...kKnownComponents,
+          ...legacyIndexed,
+        ], _windowsTargets[1]).keys,
         isNot(contains('full-indexed')),
       );
     });

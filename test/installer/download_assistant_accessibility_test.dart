@@ -114,4 +114,88 @@ void main() {
     expect(scale, contains('UiFitWidth := Area.Right - Area.Left;'));
     expect(scale, contains('UiFitHeight := Area.Bottom - Area.Top;'));
   });
+  test('הכרטיסים משמרים בחירה נעולה, רדיו ותלויות של מודל dev', () {
+    final click = routine(script, 'procedure UiCardClick(');
+    expect(
+      click,
+      contains('if not UiCardsPage.CheckListBox.ItemEnabled[I] then'),
+    );
+    expect(click, contains('UiCardsPage.Values[I] := True;'));
+    expect(click, contains('UiCardsPage.CheckListBox.ItemIndex := I;'));
+    expect(click, contains('CustomChoiceClicked(UiCardsPage.CheckListBox);'));
+    expect(
+      routine(script, 'function UiCardSelected('),
+      contains('if UiCardsPage.ID = CustomPage.ID then'),
+    );
+    final cards = routine(script, 'procedure UiBuildCards(');
+    for (final field in [
+      'PresetLabel[I]',
+      'PresetDesc[I]',
+      'PresetSize[I]',
+      'CompDesc[C]',
+    ]) {
+      expect(cards, contains(field));
+    }
+    expect(
+      cards,
+      contains('Card.Check := not (IsInstallerType(CompType[C]) and Radio);'),
+    );
+    expect(
+      cards,
+      contains('Card.Img.Enabled := Page.CheckListBox.ItemEnabled[I];'),
+    );
+    expect(
+      cards,
+      contains('(CompRequired[C] and not IsInstallerType(CompType[C]))'),
+    );
+    expect(cards, isNot(contains('if CompRequired[C] then')));
+    final native = File('installer/download_assistant.iss').readAsStringSync();
+    expect(
+      native,
+      contains('CustomPage.CheckListBox.OnClickCheck := @CustomChoiceClicked;'),
+    );
+    expect(
+      routine(native, 'procedure AddPreset('),
+      contains('PresetSize[I] := PresetSize[I - 1];'),
+    );
+  });
+
+  test('ההתקדמות והסיום שומרים תיאור עברי, נתיבים וגלילה בעיצוב', () {
+    final native = File('installer/download_assistant.iss').readAsStringSync();
+    expect(
+      routine(native, 'function OnDownloadProgress('),
+      contains('DownloadStatus := Status;'),
+    );
+    final progress = routine(script, 'procedure UiUpdateProgress()');
+    expect(progress, contains('DownloadStatus'));
+    final finish = routine(script, 'procedure UiBuildFinish()');
+    expect(finish, contains('UiPlaceHost(Page, Y + Px(16), Bottom);'));
+    expect(finish, contains("ResultFile, True"));
+    expect(finish, contains("ResultFolder, True"));
+    expect(finish, contains('ResultGuide'));
+    expect(
+      routine(native, 'function PrepareOutput()'),
+      contains('JoinNote := JoinNote + JoinCommand(A) + #13#10;'),
+    );
+  });
+
+  test('מוקד native של בחירה מצויר בכרטיס ועוקב אחר הגלילה', () {
+    final poll = routine(script, 'procedure UiPollMouse()');
+    expect(poll, contains('UiCardsPage.CheckListBox.Focused'));
+    expect(poll, contains('(UiCardsPage.CheckListBox.ItemIndex = I)'));
+    expect(poll, contains('if Focused and not Card.Focused then'));
+    expect(poll, contains('UiRevealCard(Card);'));
+    expect(poll, contains('Hover := UiCards[I].Img.Enabled and'));
+    final cards = routine(script, 'procedure UiBuildCards(');
+    expect(cards, contains('if Page.CheckListBox.ItemIndex < 0 then'));
+    expect(cards, contains('if Page.CheckListBox.ItemEnabled[I] then'));
+    expect(cards, contains('Page.CheckListBox.ItemIndex := I;'));
+    final render = routine(script, 'procedure UiRenderCardTo(');
+    expect(render, contains('IntToStr(Ord(Card.Focused))'));
+    expect(render, contains('UiDrawFocusRect(Bmp.Canvas.Handle, R);'));
+    expect(render, contains('Card.Height - Px(UiCardShadow + 6)'));
+    final scroll = routine(script, 'procedure UiRevealCard(');
+    expect(scroll, contains('Card.Top + Card.Height - UiHost.Height'));
+    expect(scroll, contains('UiScrollTarget := UiScrollY;'));
+  });
 }

@@ -77,7 +77,7 @@ final class FixtureTests: XCTestCase {
         try checkTargets(manifest, targets)
     }
 
-    /// מתקין ה-FULL הגיע ל-4 GiB ואינו רץ: "מלאה" עוברת למתקין הרגיל וחלקי הספרייה המאונדקסת.
+    /// מתקין ה-FULL הגיע ל-4 GiB ואינו רץ: "מלאה" עוברת למתקין הרגיל וחלקי הספרייה.
     func testLargeFullVariant() throws {
         let large = try Self.load("release-manifest-large-full.json", "expected-selections-large-full.json")
         let targets = try XCTUnwrap(large.expected["targets"] as? [[String: Any]])
@@ -102,10 +102,20 @@ final class FixtureTests: XCTestCase {
             manifest, library, AssistantTarget(platform: "linux", architecture: "x64", packageFormat: "deb")))
     }
 
-    /// "full-indexed" רק כשחבילה מתקינה ספרייה (Windows x64); שתי ההצעות המלאות עם החיפוש החכם.
+    /// במניפסט ישן, "full-indexed" מופיעה כשחבילה מתקינה ספרייה.
     func testFullIndexedOnlyWithAnIndexedBundle() throws {
-        let presets = buildPresets(manifest, AssistantTarget(platform: "windows", architecture: "x64"))
+        let legacy = ReleaseManifest(
+            schemaVersion: manifest.schemaVersion, releaseTag: manifest.releaseTag,
+            releaseVersion: manifest.releaseVersion, components: [
+                ManifestComponent(id: "otzaria-windows-full-indexed", type: "application-bundle",
+                                  platform: "windows", architecture: "x64", downloadSize: 100),
+                ManifestComponent(id: "library-full-indexed", type: "library", platform: "any",
+                                  installedBy: ["otzaria-windows-full-indexed"], downloadSize: 100),
+            ] + manifest.components)
+        let presets = buildPresets(legacy, AssistantTarget(platform: "windows", architecture: "x64"))
         XCTAssertEqual(presets.map { $0.id }, ["basic", "full-indexed", "full"])
+        XCTAssertEqual(buildPresets(manifest, AssistantTarget(platform: "windows", architecture: "x64"))
+            .map { $0.id }, ["basic", "full"])
         XCTAssertEqual(presets.first?.id, defaultPresetId)
         let semantic = ["semantic-model-windows", "semantic-vectors-windows"]
         XCTAssertEqual(

@@ -233,7 +233,7 @@ type
     Title, Desc, Side, Icon: String;
     Check: Boolean;
     Top, Height: Integer;
-    Hover, Sel: Boolean;
+    Hover, Sel, Focused: Boolean;
     Drawn: String;
   end;
 
@@ -344,6 +344,8 @@ function UiDwmSetWindowAttribute(Wnd: Longint; Attr: LongWord; var Value: Intege
 function UiDrawText(DC: Longint; Text: String; Count: Integer; var R: TUiRect;
   Format: LongWord): Integer;
   external 'DrawTextW@user32.dll stdcall';
+function UiDrawFocusRect(DC: Longint; var R: TUiRect): BOOL;
+  external 'DrawFocusRect@user32.dll stdcall';
 function UiGetDC(Wnd: Longint): Longint;
   external 'GetDC@user32.dll stdcall';
 function UiReleaseDC(Wnd: Longint; DC: Longint): Integer;
@@ -1016,14 +1018,23 @@ procedure UiRenderCardTo(var Card: TUiCard);
 var
   Bmp: TBitmap;
   Key: String;
+  R: TUiRect;
 begin
-  Key := UiCardArt(Card) + '|' + Card.Title + '|' + Card.Desc;
+  Key := IntToStr(Ord(Card.Focused)) + UiCardArt(Card) + '|' + Card.Title + '|' + Card.Desc;
   if Key = Card.Drawn then
     exit;
   Card.Drawn := Key;
   Bmp := UiCanvas(Px(UiContentW), Card.Height, UiPageColor);
   UiDrawVSlices(Bmp.Canvas, UiCardArt(Card), 0, 0, Card.Height, UiCardColor);
   UiLayoutCard(Card, Bmp.Canvas, True);
+  if Card.Focused then
+  begin
+    R.Left := Px(6);
+    R.Top := Px(6);
+    R.Right := Bmp.Width - Px(6);
+    R.Bottom := Card.Height - Px(UiCardShadow + 6);
+    UiDrawFocusRect(Bmp.Canvas.Handle, R);
+  end;
   UiShowBitmap(Card.Img, Bmp);
 end;
 
@@ -1074,6 +1085,19 @@ begin
   UiScrollY := Y;
   UiContent.Top := -Y;
   UiPlaceThumb();
+end;
+
+procedure UiRevealCard(const Card: TUiCard);
+var
+  Y: Integer;
+begin
+  Y := UiScrollY;
+  if (Card.Top < Y) or (Card.Height > UiHost.Height) then
+    Y := Card.Top
+  else if Card.Top + Card.Height > Y + UiHost.Height then
+    Y := Card.Top + Card.Height - UiHost.Height;
+  UiScrollTo(Y);
+  UiScrollTarget := UiScrollY;
 end;
 
 procedure UiSetContentHeight(H: Integer);
@@ -1179,25 +1203,9 @@ begin
   end;
 end;
 
-{ 'כותרת — גודל' של ההצעות: הגודל עובר לצד השמאלי של הכרטיס. }
-procedure UiSplitSize(const Caption: String; var Title, Side: String);
-var
-  I: Integer;
-begin
-  Title := Caption;
-  Side := '';
-  for I := Length(Caption) - 2 downto 1 do
-    if Copy(Caption, I, 3) = ' — ' then
-    begin
-      Title := Copy(Caption, 1, I - 1);
-      Side := Copy(Caption, I + 3, Length(Caption));
-      exit;
-    end;
-end;
-
 function UiCardSelected(I: Integer): Boolean;
 begin
-  if UiCards[I].Check then
+  if UiCardsPage.ID = CustomPage.ID then
     Result := UiCardsPage.Values[I]
   else
     Result := UiCardsPage.SelectedValueIndex = I;
@@ -1212,8 +1220,17 @@ begin
   for I := 0 to GetArrayLength(UiCards) - 1 do
     if Sender = UiCards[I].Img then
     begin
-      if UiCards[I].Check then
-        UiCardsPage.Values[I] := not UiCardsPage.Values[I]
+      if not UiCardsPage.CheckListBox.ItemEnabled[I] then
+        exit;
+      if UiCardsPage.ID = CustomPage.ID then
+      begin
+        if UiCards[I].Check then
+          UiCardsPage.Values[I] := not UiCardsPage.Values[I]
+        else
+          UiCardsPage.Values[I] := True;
+        UiCardsPage.CheckListBox.ItemIndex := I;
+        CustomChoiceClicked(UiCardsPage.CheckListBox);
+      end
       else
         UiCardsPage.SelectedValueIndex := I;
     end;
@@ -1223,11 +1240,19 @@ procedure UiBuildCards(Page: TInputOptionWizardPage; PageID: Integer);
 var
   I, N, Y, C: Integer;
   Card: TUiCard;
-  Exclusive: Boolean;
+  Exclusive, Radio: Boolean;
 begin
   UiCardsPage := Page;
   Exclusive := PageID <> CustomPage.ID;
+  Radio := CustomInstallersAreRadio(InstallerTakesLibrary());
   N := Page.CheckListBox.Items.Count;
+  if Page.CheckListBox.ItemIndex < 0 then
+    for I := 0 to N - 1 do
+      if Page.CheckListBox.ItemEnabled[I] then
+      begin
+        Page.CheckListBox.ItemIndex := I;
+        break;
+      end;
   SetArrayLength(UiCards, N);
   Y := 0;
   for I := 0 to N - 1 do
@@ -1240,19 +1265,36 @@ begin
     begin
       C := CustomIndex[I];
       Card.Title := CompName[C];
-      if CompRequired[C] then
+      Card.Desc := CompDesc[C];
+      Card.Check := not (IsInstallerType(CompType[C]) and Radio);
+      if not Page.CheckListBox.ItemEnabled[I] or
+         (CompRequired[C] and not IsInstallerType(CompType[C])) then
         Card.Title := Card.Title + ' ' + CustomMessage('RequiredTag');
       Card.Side := HumanSize(CustomChoiceSize(C));
     end
-    else if (PageID = PresetPage.ID) and (I <> CustomPresetIndex) then
-      UiSplitSize(Page.CheckListBox.ItemCaption[I], Card.Title, Card.Side)
+    else if PageID = PresetPage.ID then
+    begin
+      if I <> CustomPresetIndex then
+      begin
+        Card.Title := PresetLabel[I];
+        Card.Desc := PresetDesc[I];
+        Card.Side := PresetSize[I];
+      end
+      else
+      begin
+        Card.Title := CustomMessage('PresetCustom');
+        Card.Desc := CustomMessage('PresetCustomDesc');
+      end;
+    end
     else
       Card.Title := Page.CheckListBox.ItemCaption[I];
     Card.Hover := False;
+    Card.Focused := False;
     Card.Drawn := '';
     Card.Img := UiImage(UiContent);
     Card.Img.Cursor := crHand;
     Card.Img.OnClick := @UiCardClick;
+    Card.Img.Enabled := Page.CheckListBox.ItemEnabled[I];
     Card.Height := UiLayoutCard(Card, nil, False);
     Card.Top := Y;
     Card.Img.SetBounds(0, Y, Px(UiContentW), Card.Height);
@@ -1336,12 +1378,12 @@ end;
 
 function UiSummaryWhat(): String;
 var
-  Title, Side: String;
+  Title: String;
   I: Integer;
 begin
   I := PresetPage.SelectedValueIndex;
   if (I >= 0) and (I < CustomPresetIndex) then
-    UiSplitSize(PresetLabel[I], Title, Side)
+    Title := PresetLabel[I]
   else
     Title := CustomMessage('PresetCustom');
   Result := Title + ' · ' + HumanSize(UiSelectedSize());
@@ -2949,7 +2991,7 @@ procedure UiPollMouse();
 var
   P: TUiPoint;
   Wnd, ActiveWnd: Longint;
-  Active, Down, Hover: Boolean;
+  Active, Down, Hover, Focused: Boolean;
   I: Integer;
   Card: TUiCard;
 begin
@@ -2992,10 +3034,17 @@ begin
 
   for I := 0 to GetArrayLength(UiCards) - 1 do
   begin
-    Hover := UiHitImage(UiCards[I].Img, Wnd, P) and UiPointIn(UiHost, P.X, P.Y);
-    if (Hover <> UiCards[I].Hover) or (UiCards[I].Sel <> UiCardSelected(I)) then
+    Hover := UiCards[I].Img.Enabled and UiHitImage(UiCards[I].Img, Wnd, P) and
+      UiPointIn(UiHost, P.X, P.Y);
+    Focused := Active and not Assigned(UiDlg) and UiCardsPage.CheckListBox.Focused and
+      (UiCardsPage.CheckListBox.ItemIndex = I);
+    if (Hover <> UiCards[I].Hover) or (UiCards[I].Sel <> UiCardSelected(I)) or
+       (Focused <> UiCards[I].Focused) then
     begin
       Card := UiCards[I];
+      if Focused and not Card.Focused then
+        UiRevealCard(Card);
+      Card.Focused := Focused;
       Card.Hover := Hover;
       Card.Sel := UiCardSelected(I);
       UiRenderCardTo(Card);
