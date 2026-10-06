@@ -170,8 +170,6 @@ class _SearchDialogState extends State<SearchDialog> {
   late final Map<String, bool> _pluginSearchSelections;
   late final Map<String, bool> _persistedPluginSelections;
 
-  /// המצב הסמנטי נבחר; נשמר לסשן כמו מצבי החיפוש האחרים.
-  static bool _sessionPrefersSemantic = false;
   bool _semanticSelected = false;
   bool _semanticIncludeLexical = true;
   bool _semanticGroupIdentical = true;
@@ -270,7 +268,7 @@ class _SearchDialogState extends State<SearchDialog> {
       // מצב מבוקש במפורש (קיצור חיפוש מתקדם, איתור) גובר על זיכרון הסשן.
       _semanticSelected =
           _editedSemanticTab != null ||
-          (_sessionPrefersSemantic &&
+          (SearchDefaults.initialSemanticForNewSearch() &&
               widget.initialSearchMode == null &&
               widget.existingTab == null);
     }
@@ -484,9 +482,11 @@ class _SearchDialogState extends State<SearchDialog> {
   }
 
   /// קביעת מצב החיפוש הנוכחי כמצב שבו ייפתח כל חיפוש חדש. הפריט בתפריט
-  /// נלחץ בטעות, ולכן השמירה עוברת דרך אישור.
-  Future<void> _confirmSetModeAsDefault(SearchMode mode) async {
-    final modeLabel = context.settingsText(mode.shortLabel);
+  /// נלחץ בטעות, ולכן השמירה עוברת דרך אישור. [mode] הוא null במצב החכם.
+  Future<void> _confirmSetModeAsDefault(SearchMode? mode) async {
+    final modeLabel = context.settingsText(
+      mode?.shortLabel ?? kSemanticSearchModeLabel,
+    );
     final confirmed = await showTwoActionsDialog(
       context: context,
       title: context.settingsText('קביעת מצב ברירת המחדל'),
@@ -498,14 +498,23 @@ class _SearchDialogState extends State<SearchDialog> {
       confirmText: context.settingsText('קבע כברירת מחדל'),
     );
     if (confirmed != true) return;
-    SearchDefaults.saveModeDefault(mode);
+    if (mode == null) {
+      SearchDefaults.saveSemanticDefault();
+    } else {
+      SearchDefaults.saveModeDefault(mode);
+    }
     UiSnack.show(LibraryMessages.searchModeSetAsDefault(modeLabel));
   }
 
   /// תפריט ברירות המחדל של המצב הנוכחי — פעולה נדירה, ולכן בתפריט
   /// בשורה התחתונה ולא בגוף החלונית.
-  Widget _buildDefaultsMenu(SearchState state) {
+  Widget _buildDefaultsMenu(
+    SearchState state, {
+    required bool semanticActive,
+  }) {
     final mode = state.configuration.searchMode;
+    // אפשרויות המילה והמרווח שייכים למצב הלקסיקלי, ואינם חלים על החכם.
+    final hasWordOptions = !semanticActive && mode != SearchMode.fuzzy;
     final isExact = mode == SearchMode.exact;
     final disabledOptionIds = _disabledSearchOptionIds(state);
     final defaults = isExact
@@ -560,10 +569,11 @@ class _SearchDialogState extends State<SearchDialog> {
         MenuItemButton(
           key: const ValueKey('search-dialog-default-mode'),
           leadingIcon: const Icon(FluentIcons.bookmark_24_regular),
-          onPressed: () => _confirmSetModeAsDefault(mode),
+          onPressed: () =>
+              _confirmSetModeAsDefault(semanticActive ? null : mode),
           child: Text(context.settingsText('קבע מצב זה כברירת מחדל')),
         ),
-        if (mode != SearchMode.fuzzy)
+        if (hasWordOptions)
           SubmenuButton(
             menuChildren: [
               for (final key in keys)
@@ -606,7 +616,7 @@ class _SearchDialogState extends State<SearchDialog> {
                   : context.settingsText('קביעת ברירת מחדל לחיפוש מתקדם'),
             ),
           ),
-        if (mode != SearchMode.fuzzy)
+        if (hasWordOptions)
           MenuItemButton(
             leadingIcon: const Icon(FluentIcons.arrow_reset_24_regular),
             onPressed: resetToDefaults,
@@ -1073,7 +1083,7 @@ class _SearchDialogState extends State<SearchDialog> {
     }
     _semanticSubmitted = true;
     _existingTabHandedOff = true;
-    _sessionPrefersSemantic = true;
+    SearchDefaults.rememberSessionSemantic(true);
     final options = SemanticQueryOptions(
       query: query,
       facets: semanticScopeFacets(
@@ -1110,7 +1120,7 @@ class _SearchDialogState extends State<SearchDialog> {
 
   Future<void> _declineSemanticConsent() async {
     await _semanticConsentStore.decline();
-    _sessionPrefersSemantic = false;
+    SearchDefaults.rememberSessionSemantic(false);
     if (mounted) setState(() => _semanticSelected = false);
   }
 
@@ -1420,7 +1430,7 @@ class _SearchDialogState extends State<SearchDialog> {
             key: const ValueKey('search-dialog-semantic-mode'),
             onTap: () {
               setState(() => _semanticSelected = true);
-              _sessionPrefersSemantic = true;
+              SearchDefaults.rememberSessionSemantic(true);
               _searchTab.searchFieldFocusNode.requestFocus();
             },
             borderRadius: AppTokens.borderRadiusAll,
@@ -1443,7 +1453,7 @@ class _SearchDialogState extends State<SearchDialog> {
           child: InkWell(
             onTap: () {
               _semanticSelected = false;
-              _sessionPrefersSemantic = false;
+              SearchDefaults.rememberSessionSemantic(false);
               final oldMode =
                   _searchTab.searchBloc.state.configuration.searchMode;
               _searchTab.searchBloc.add(
@@ -1830,7 +1840,13 @@ class _SearchDialogState extends State<SearchDialog> {
       child: Row(
         children: [
           BlocBuilder<SearchBloc, SearchState>(
-            builder: (context, state) => _buildDefaultsMenu(state),
+            builder: (context, state) => _withSemanticAvailability(
+              (availability) => _buildDefaultsMenu(
+                state,
+                semanticActive:
+                    _semanticSelected && _semanticVisible(availability),
+              ),
+            ),
           ),
           const Spacer(),
           ValueListenableBuilder<bool>(
