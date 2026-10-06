@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_settings_screens/flutter_settings_screens.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
 import 'package:otzaria/models/books.dart';
 import 'package:otzaria/models/links.dart';
 import 'package:otzaria/personal_notes/bloc/personal_notes_bloc.dart';
@@ -16,7 +17,6 @@ import 'package:otzaria/tabs/models/text_tab.dart';
 import 'package:otzaria/text_book/bloc/text_book_bloc.dart';
 import 'package:otzaria/text_book/bloc/text_book_event.dart';
 import 'package:otzaria/text_book/bloc/text_book_state.dart';
-import 'package:otzaria/text_book/text_book_repository.dart';
 import 'package:otzaria/text_book/view/combined_view/combined_book_screen.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 

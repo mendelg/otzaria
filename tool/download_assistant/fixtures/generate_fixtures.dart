@@ -273,6 +273,10 @@ Map<String, Object?> buildExpectedSelections(
               if (componentIsOffered(manifest, component, target))
                 component['id'],
           ],
+          'customChoices': [
+            for (final choice in customChoices(manifest, target))
+              {'id': choice.id, 'downloadSize': choice.downloadSize},
+          ],
           'presets': [
             for (final preset in buildPresets(manifest, target))
               () {

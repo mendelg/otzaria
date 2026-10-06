@@ -185,7 +185,7 @@ struct AssistantView: View {
     private var customPage: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ליד כל רכיב מופיע גודל ההורדה שלו.").foregroundColor(.secondary)
-            ForEach(model.offeredComponents, id: \.id) { component in
+            ForEach(model.customChoices, id: \.id) { component in
                 Toggle(isOn: Binding(
                     get: { model.customChecked.contains(component.id) },
                     set: { checked in
@@ -197,7 +197,7 @@ struct AssistantView: View {
                     }
                 )) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(component.name) — \(humanSize(component.downloadSize))\(component.required ? " (נדרש)" : "")")
+                        Text("\(component.name) — \(humanSize(model.customChoiceSize(component)))\(component.required ? " (נדרש)" : "")")
                         if !component.description.isEmpty {
                             Text(component.description).font(.caption).foregroundColor(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)

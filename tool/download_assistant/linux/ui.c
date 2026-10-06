@@ -373,10 +373,11 @@ static void on_custom_toggled(GtkToggleButton *button, Ui *ui) {
 static void prepare_custom(Ui *ui) {
   OtzTarget target = current_target(ui);
   clear_container(ui->custom_list);
-  for (guint i = 0; i < ui->manifest->components->len; i++) {
-    const OtzComponent *component = g_ptr_array_index(ui->manifest->components, i);
-    if (!otz_component_is_offered(ui->manifest, component, &target)) continue;
-    g_autofree char *size = otz_human_size(component->download_size);
+  g_autoptr(GPtrArray) choices = otz_custom_choices(ui->manifest, &target);
+  for (guint i = 0; i < choices->len; i++) {
+    const OtzComponent *component = g_ptr_array_index(choices, i);
+    g_autofree char *size = otz_human_size(
+        otz_custom_choice_size(ui->manifest, component, &target));
     g_autofree char *caption =
         g_strdup_printf("%s — %s%s", component->name, size,
                         component->required ? " (נדרש)" : "");

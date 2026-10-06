@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:otzaria/shortcuts/shortcut_validator.dart';
 import 'package:otzaria/book_common/view/commentators_tab_top_bar.dart';
 import 'package:otzaria/book_common/view/commentary_search_pane.dart';
 import 'package:otzaria/book_common/view/commentators_side_pane.dart';
@@ -324,6 +325,10 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
   void _openSearchPanel() {
     setState(() => _navPaneOpen = true);
     _navTabController.animateTo(_searchTabIndex);
+    // The tab listener focuses the field only when the tab changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
   }
 
   void _openCommentatorsTab() {
@@ -666,7 +671,7 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
 
     return Focus(
       autofocus: true,
-      onKeyEvent: _handlePrintShortcut,
+      onKeyEvent: _handleTabShortcuts,
       child: Scaffold(
         body: Column(
           children: [
@@ -750,12 +755,20 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
     );
   }
 
-  /// מטפל בקיצור ההדפסה המוגדר — פעיל רק בכרטיסיית המפרשים.
-  KeyEventResult _handlePrintShortcut(FocusNode node, KeyEvent event) {
+  /// Handles the print and search shortcuts while the commentators tab has
+  /// focus, as the text commentators tab does.
+  KeyEventResult _handleTabShortcuts(FocusNode node, KeyEvent event) {
     final printShortcut =
         Settings.getValue<String>('key-shortcut-print') ?? 'ctrl+p';
     if (ShortcutHelper.matchesShortcut(event, printShortcut)) {
       _panelKey.currentState?.printDisplayedCommentaries();
+      return KeyEventResult.handled;
+    }
+    final searchShortcut =
+        Settings.getValue<String>(ShortcutValidator.currentWindowSearchKey) ??
+        'ctrl+f';
+    if (ShortcutHelper.matchesShortcut(event, searchShortcut)) {
+      _openSearchPanel();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -1052,7 +1065,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
                       _selectedHeadingIdx = idx;
                       _selectedParagraphIdx = _kAllPara;
                       if (paras.isNotEmpty) _expandedHeadings.add(idx);
-                      _searchController.clear();
                       _extraLines.clear();
                     });
                   },
@@ -1110,7 +1122,6 @@ class _PdfCommentatorsTabScreenState extends State<PdfCommentatorsTabScreen>
                             setState(() {
                               _selectedHeadingIdx = idx;
                               _selectedParagraphIdx = pi;
-                              _searchController.clear();
                               _extraLines.clear();
                             });
                           },

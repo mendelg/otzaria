@@ -42,7 +42,7 @@ import 'package:otzaria/models/books.dart';
 import 'package:otzaria/data/data_providers/database_library_provider.dart';
 import 'package:otzaria/data/data_providers/file_system_data_provider.dart';
 import 'package:otzaria/printing/view/widgets/printing_widgets.dart';
-import 'package:otzaria/text_book/text_book_repository.dart';
+import 'package:otzaria/data/repository/text_book_repository.dart';
 import 'package:otzaria/text_display/text_display_exports.dart';
 
 enum _AnchorKind { header, altHeader, line }

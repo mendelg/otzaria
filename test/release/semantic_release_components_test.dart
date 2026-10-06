@@ -88,7 +88,7 @@ class _GitHub {
         'assets': [
           for (final file in [
             _model.graph,
-            _model.tokenizer,
+            _model.tokenizer.zipped!,
             _model.identity,
             _model.license,
           ])
@@ -135,6 +135,13 @@ void main() {
         (model['assets'] as List).first,
         containsPair('releaseTag', 'model-meivin-round2-int8-v1'),
       );
+      // tokenizer.json נחסם במסנני תוכן; האפליקציה פורסת את ה-zip המוכן.
+      expect((model['assets'] as List).map((a) => (a as Map)['name']), [
+        _model.graph.name,
+        'tokenizer.json.zip',
+        _model.identity.name,
+        _model.license.name,
+      ]);
 
       final vectors = components[1];
       expect(vectors['type'], kSemanticVectorsComponentType);
@@ -170,6 +177,19 @@ void main() {
       final ids = (manifest['components'] as List).map((c) => (c as Map)['id']);
       expect(ids.first, 'otzaria-windows-x64');
       expect(ids, contains('semantic-vectors-linux'));
+
+      // חלק שהשלם אינו תלוי בו לא היה מגיע לעולם — האימות דוחה אותו.
+      final vectors = (manifest['components'] as List)
+          .cast<Map<String, Object?>>()
+          .firstWhere((c) => c['id'] == 'semantic-vectors-linux');
+      vectors['dependsOn'] = const <String>[];
+      expect(
+        validateReleaseManifest(manifest),
+        contains(
+          'component semantic-model-linux: partOf must name a component '
+          'that dependsOn it',
+        ),
+      );
     });
 
     test('אין release וקטורים לתג הספרייה — הרכיבים מושמטים', () async {

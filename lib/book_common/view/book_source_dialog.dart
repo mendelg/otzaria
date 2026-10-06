@@ -65,6 +65,11 @@ const _sourceMappings = {
     logo: '',
   ),
   'ksk': (text: 'קובץ שיטות קמאי', url: '', logo: ''),
+  'beitaharonveyisrael': (
+    text: 'מכון בית אהרן וישראל',
+    url: 'https://machon.co.il/',
+    logo: '',
+  ),
   'unknown': (text: 'מקור לא ידוע', url: '', logo: ''),
 };
 
@@ -123,6 +128,16 @@ bool isWikiJewishBooksSource(String? sourceFolder) {
     '',
   );
   return normalized.contains('wikijewishbooks');
+}
+
+/// בודק האם מקור הספר הוא "מכון בית אהרן וישראל"
+/// (המקור BeitAharonVeYisraelToOtzaria ב-DB). מנורמל כמו [isTashmaSource].
+bool isBeitAharonVeYisraelSource(String? sourceFolder) {
+  final normalized = (sourceFolder ?? '').toLowerCase().replaceAll(
+    _sourceNormalizationRegex,
+    '',
+  );
+  return normalized.contains('beitaharonveyisrael');
 }
 
 /// מציג את כל פרטי הספר הזמינים, גם מחוץ לקורא הטקסט.

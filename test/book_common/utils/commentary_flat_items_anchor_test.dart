@@ -1,8 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:otzaria/models/links.dart';
-import 'package:otzaria/text_book/view/commentary_list_base.dart';
+import 'package:otzaria/book_common/utils/commentary_flat_items.dart';
+import 'package:otzaria/services/commentary_service.dart';
 
-CommentaryGroup _group(String title, int links) => CommentaryGroup(
+LinkGroup _group(String title, int links) => LinkGroup(
   bookTitle: title,
   links: List.generate(
     links,

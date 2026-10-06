@@ -35,6 +35,7 @@ typedef struct {
   gint64 download_size;
   GPtrArray *depends_on;   /* char* */
   GPtrArray *installed_by; /* char*: components that install this one */
+  char *part_of;           /* "" when absent: shown and picked as part of it */
   char *output_folder;     /* "" when absent: relative folder in the output */
   char *output_note;       /* "" when absent: said on the finish page */
   GPtrArray *assets;       /* OtzAsset* */
