@@ -302,6 +302,24 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         }
       }
 
+      if (movedBookKeys.isNotEmpty && previousLibrary != null) {
+        final previousOrder = IndexingRepository.buildCatalogueOrderResolver(
+          previousLibrary,
+        );
+        final currentOrder = IndexingRepository.buildCatalogueOrderResolver(
+          fullLibrary,
+        );
+        // מזהי השורות מקודדים מיקום קטלוגי: גם שכני הספר המוזז חייבים
+        // לעבור יחד לסדר החדש, אחרת מזהי שורות מספרים שונים יתנגשו.
+        for (final book in indexableBooks) {
+          final key = IndexingRepository.catalogueOrderKey(book);
+          if (pathsBeforeRefresh.containsKey(key) &&
+              previousOrder.orderFor(key) != currentOrder.orderFor(key)) {
+            movedBookKeys.add(key);
+          }
+        }
+      }
+
       // מיפוי מפתחות הספרים שהשתנו (שדווחו ע"י הקורא) לספרים מהקטלוג הטרי
       final changedBooksToIndex = booksToReindex(
         indexableBooks,

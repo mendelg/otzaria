@@ -1538,7 +1538,6 @@ class IndexingRepository {
   }
 
   /// מוסר הסדר הקטלוגי של הספרייה — הבסיס לחצי העליון של מזהה המסמך.
-  @visibleForTesting
   static CatalogueOrderResolver buildCatalogueOrderResolver(Library library) =>
       CatalogueOrderResolver(
         SearchCatalogueOrderHelper.buildKeyOrderMap(
