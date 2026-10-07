@@ -183,6 +183,106 @@ void main() {
       });
     }
 
+    for (final (status, field) in [
+      (422, 'attachments.minidump'),
+      (413, null),
+    ]) {
+      test('flush: $status ואז כשל זמני שומרים את הסרת ה-dump', () async {
+        final bodies = <Map<String, dynamic>>[];
+        final service = build(
+          MockClient((request) async {
+            final body =
+                jsonDecode(utf8.decode(request.bodyBytes))
+                    as Map<String, dynamic>;
+            bodies.add(body);
+            if ((body['attachments'] as Map).containsKey('minidump')) {
+              return _json(status, {'error': 'x', 'field': ?field});
+            }
+            return _json(503, {'error': 'temporary'});
+          }),
+        );
+        await service.queueReport(withDump);
+        final original = (await store.listByKind(
+          AppReportService.pendingKind,
+        )).single;
+
+        expect(await service.flushPendingReports(), 0);
+        expect(await service.flushPendingReports(), 0);
+        expect(
+          bodies.map(
+            (body) => (body['attachments'] as Map).containsKey('minidump'),
+          ),
+          [true, false, false],
+        );
+        expect(
+          bodies.map((body) => body['reportId']),
+          everyElement(withDump.reportId),
+        );
+        final pending = (await store.listByKind(
+          AppReportService.pendingKind,
+        )).single;
+        expect(pending.id, original.id);
+        expect(pending.createdAt, original.createdAt);
+        expect(pending.payload, withDump.copyWith(minidump: null).toJson());
+        expect(await service.getSentReports(), isEmpty);
+        expect(await service.getSentReportsTotal(), 0);
+      });
+    }
+
+    for (final fallbackStatus in [200, 400, 409]) {
+      test('flush: הסרת dump וניסיון המשך $fallbackStatus', () async {
+        final bodies = <Map<String, dynamic>>[];
+        final service = build(
+          MockClient((request) async {
+            final body =
+                jsonDecode(utf8.decode(request.bodyBytes))
+                    as Map<String, dynamic>;
+            bodies.add(body);
+            return (body['attachments'] as Map).containsKey('minidump')
+                ? _json(422, {'field': 'attachments.minidump'})
+                : _json(fallbackStatus, {'success': true, 'issueNumber': 7});
+          }),
+        );
+        await service.queueReport(withDump);
+
+        expect(
+          await service.flushPendingReports(),
+          fallbackStatus == 200 ? 1 : 0,
+        );
+        expect(bodies, hasLength(2));
+        expect(bodies.last, withDump.copyWith(minidump: null).toApiPayload());
+        final pending = await service.getPendingReports();
+        final sent = await service.getSentReports();
+        if (fallbackStatus == 409) {
+          expect(pending, hasLength(1));
+          expect(pending.single.reportId, isNot(withDump.reportId));
+          expect(pending.single.minidump, isNull);
+        } else {
+          expect(pending, isEmpty);
+        }
+        if (fallbackStatus == 200) {
+          expect(sent.single.reportId, withDump.reportId);
+          expect(sent.single.issueNumber, 7);
+          expect(sent.single.minidump, isNull);
+          expect(sent.single.diagnostics, isNull);
+          expect(await service.getSentReportsTotal(), 1);
+        } else {
+          expect(sent, isEmpty);
+          expect(await service.getSentReportsTotal(), 0);
+        }
+      });
+    }
+
+    test('flush: כשל זמני בלי דחיית dump שומר את כל המטען', () async {
+      final service = build(MockClient((_) async => http.Response('', 503)));
+      await service.queueReport(withDump);
+      expect(await service.flushPendingReports(), 0);
+      expect(
+        (await service.getPendingReports()).single.toJson(),
+        withDump.toJson(),
+      );
+    });
+
     test('422 על שדה אחר — דחייה רגילה, בלי ניסיון נוסף', () async {
       var calls = 0;
       final service = build(

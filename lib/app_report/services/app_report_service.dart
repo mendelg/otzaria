@@ -317,6 +317,9 @@ class AppReportService {
               await _reports.deleteIds([currentRow.id]);
               return false;
             case _AttemptKind.transient:
+              if (queued.minidump != null && report.minidump == null) {
+                await _reports.updatePayload(currentRow.id, report.toJson());
+              }
               return true;
           }
         });
