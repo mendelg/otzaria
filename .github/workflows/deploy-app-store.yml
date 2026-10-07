@@ -101,7 +101,9 @@ jobs:
 
       # מכין את Generated.xcconfig (גרסה, מספר בנייה, dart-defines); החתימה נעשית ב-fastlane
       - name: Build Flutter iOS (unsigned)
-        run: flutter build ios --release --no-codesign --dart-define=BIO_OBF_KEY=${{ secrets.BIO_OBF_KEY }}
+        run: |
+          IOS_BUILD_NAME=$(python3 tool/version/app_store_build_name.py pubspec.yaml tool/version/version.json)
+          flutter build ios --release --no-codesign --build-name="$IOS_BUILD_NAME" --dart-define=BIO_OBF_KEY=${{ secrets.BIO_OBF_KEY }}
 
       - name: Write App Store Connect API key and signing files
         run: |
