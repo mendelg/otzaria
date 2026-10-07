@@ -53,16 +53,11 @@ List<String> _sections(String script, String name) {
   ];
 }
 
-/// גוף מקטע `[Name]` עד כותרת המקטע הבא.
+/// תוכן כל מקטעי `[Name]`, לפי סדר ההכללה.
 String _section(String script, String name) {
-  final start = RegExp(
-    '^\\[$name\\]\\s*\$',
-    multiLine: true,
-  ).firstMatch(script);
-  expect(start, isNotNull, reason: 'המקטע [$name] חסר בסקריפט');
-  final rest = script.substring(start!.end);
-  final next = RegExp(r'^\[[A-Za-z]+\]\s*$', multiLine: true).firstMatch(rest);
-  return next == null ? rest : rest.substring(0, next.start);
+  final sections = _sections(script, name);
+  expect(sections, isNotEmpty, reason: 'המקטע [$name] חסר בסקריפט');
+  return sections.join('\n');
 }
 
 /// גוף שגרת Pascal מהחתימה ועד ה-`end;` שבתחילת שורה (שגרות ראשיות בלבד —
@@ -320,7 +315,12 @@ void main() {
     for (final name in _scripts) {
       test('$name: הבדיקה חוסמת את "הבא" בעמוד בחירת התיקייה', () {
         final body = _routine(_script(name), 'function NextButtonClick(');
-        final guardAt = body.indexOf('CurPageID = wpSelectDir');
+        final guardAt = body.indexOf(
+          RegExp(
+            r'if \(CurPageID = wpSelectDir\) and PortableMode and\s+'
+            r'IsProtectedInstallDir\(',
+          ),
+        );
 
         expect(
           guardAt,
@@ -4400,6 +4400,28 @@ void main() {
         }
       });
 
+      test('$name: לרדיו מחוץ לחלון יש שם נגיש מתורגם', () {
+        final script = _script(name);
+        final create = _routine(script, 'procedure CreateInstallModeChoice(');
+        const captions = {
+          'CurrentUserModeRadio': 'ModeMeTitle',
+          'AllUsersModeRadio': 'ModeAllTitle',
+          'PortableModeRadio': 'ModePortableTitle',
+        };
+        for (final entry in captions.entries) {
+          expect(
+            create,
+            contains(
+              "${entry.key}.Caption := CustomMessage('${entry.value}');",
+            ),
+          );
+          for (final lang in ['hebrew', 'english']) {
+            expect(_text(script, lang, entry.value), isNotEmpty);
+          }
+        }
+        expect(create, contains('Group.SetBounds(-ScaleX(4000),'));
+      });
+
       test('$name: "התיקייה קיימת" — בדו-שיח המעוצב, ולא ב-MsgBox של Inno', () {
         final script = _script(name);
         expect(script, contains('DirExistsWarning=no'));
@@ -4435,6 +4457,28 @@ void main() {
         );
       });
     }
+
+    test('$_full: לתיבת WebView2 יש שם נגיש בלי להציג את הפקד המקורי', () {
+      final script = _script(_full);
+      final create = _routine(script, 'procedure CreateWebView2Choice(');
+      expect(
+        create,
+        contains("WV2Check.Caption := CustomMessage('WebView2Title');"),
+      );
+      expect(create, contains('WV2Check.Left := -ScaleX(4000);'));
+      expect(create, contains('WV2Check.Checked := WebView2Missing;'));
+      expect(create, contains('WV2Check.Enabled := WebView2Missing;'));
+      expect(
+        _routine(script, 'procedure UiBuildTasksPage('),
+        contains("CustomMessage('WebView2Title')"),
+      );
+      for (final lang in ['hebrew', 'english']) {
+        expect(
+          _text(script, lang, 'WebView2Title'),
+          'Microsoft WebView2 Runtime',
+        );
+      }
+    });
 
     test('סיום: "פתח" ו"סגור" דרך רשומת [Run], ובכישלון אין הפעלה ואין אתחול', () {
       for (final name in _scripts) {

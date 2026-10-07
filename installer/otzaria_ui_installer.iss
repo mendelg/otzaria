@@ -83,7 +83,7 @@ hebrew.InstallingLabel=זה ייקח רק כמה רגעים.
 #endif
 
 [CustomMessages]
-; הטקסטים של המתקינים, כולל ההודעות של הלוגיקה. בעברית — הנוסח שהיה כתוב בקוד, מילה במילה.
+; הטקסטים של המתקינים, כולל ההודעות של הלוגיקה.
 english.InstallButton=Install
 english.UpdateButton=Update
 english.FinishUpdated=Otzaria is updated
@@ -213,6 +213,7 @@ hebrew.UninstallConfirmDelete=שים לב: לא ניתן יהיה לשחזר א�
 #ifdef InstallerFull
 english.ModePortableDesc=No installation: the program, the library and all the data in one folder.
 english.TaskResetDesc=Warning: deletes personal notes, bookmarks, history and plugin data. The backups folder is kept and the library is installed again.
+english.WebView2Title=Microsoft WebView2 Runtime
 english.WebView2Desc=Needed only for plugins; everything else works without it.
 english.WebView2Installed=Already installed (version %1).
 english.RowBooks=Books folder
@@ -247,6 +248,7 @@ english.ZstdMissing=The extraction tool zstd.exe wasn't found. Setup can't extra
 english.SevenZipMissing=The extraction tool 7za.exe wasn't found. Setup can't extract the bundled PDF files.
 hebrew.ModePortableDesc=בלי התקנה: התוכנה, הספרייה וכל הנתונים בתיקייה אחת, למשל בדיסק-און-קי.
 hebrew.TaskResetDesc=אזהרה: ימחק הערות אישיות, סימניות, היסטוריה ונתוני תוספים. תיקיית הגיבויים נשמרת והספרייה מותקנת מחדש.
+hebrew.WebView2Title=Microsoft WebView2 Runtime
 hebrew.WebView2Desc=נדרש לתוספים בלבד. בלעדיו שאר התוכנה עובדת כרגיל.
 hebrew.WebView2Installed=כבר מותקן במחשב (גרסה %1).
 hebrew.RowBooks=תיקיית הספרים
@@ -654,7 +656,7 @@ begin
   Version := GetWebView2Version;
   if Version <> '' then
     Side := Msg1('WebView2Installed', LtrUnit(Version));
-  Y := UiInstCard(UiCardWebView2, 'webview2', 'Microsoft WebView2 Runtime',
+  Y := UiInstCard(UiCardWebView2, 'webview2', CustomMessage('WebView2Title'),
     CustomMessage('WebView2Desc'), Side, True, Y);
 #endif
   if not PortableMode then

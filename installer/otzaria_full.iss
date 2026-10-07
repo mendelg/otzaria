@@ -898,8 +898,7 @@ end;
 
 // ─── "איך להתקין" ו-WebView2 ────────────────────────────────────────────────
 
-// שלושת סוגי ההתקנה, מודל הנתונים של כרטיסי wpSelectDir. מחוץ לחלון ובקבוצה משלהם, בשביל
-// המקלדת: רדיו שמקבל מוקד מסמן את עצמו, ו-UiModeRadioClick מעביר את הבחירה הלאה.
+// הרדיו מחוץ לחלון בקבוצה משלהם: חצים מסמנים, ו-OnClick מסנכרן את הכרטיסים.
 procedure CreateInstallModeChoice();
 var
   Group: TPanel;
@@ -910,15 +909,18 @@ begin
   Group.SetBounds(-ScaleX(4000), 0, ScaleX(200), ScaleY(80));
   CurrentUserModeRadio := TNewRadioButton.Create(WizardForm);
   CurrentUserModeRadio.Parent := Group;
+  CurrentUserModeRadio.Caption := CustomMessage('ModeMeTitle');
   CurrentUserModeRadio.SetBounds(0, 0, ScaleX(200), ScaleY(20));
   CurrentUserModeRadio.Checked := True;
   CurrentUserModeRadio.OnClick := @UiModeRadioClick;
   AllUsersModeRadio := TNewRadioButton.Create(WizardForm);
   AllUsersModeRadio.Parent := Group;
+  AllUsersModeRadio.Caption := CustomMessage('ModeAllTitle');
   AllUsersModeRadio.SetBounds(0, ScaleY(24), ScaleX(200), ScaleY(20));
   AllUsersModeRadio.OnClick := @UiModeRadioClick;
   PortableModeRadio := TNewRadioButton.Create(WizardForm);
   PortableModeRadio.Parent := Group;
+  PortableModeRadio.Caption := CustomMessage('ModePortableTitle');
   PortableModeRadio.SetBounds(0, ScaleY(48), ScaleX(200), ScaleY(20));
   PortableModeRadio.OnClick := @UiModeRadioClick;
 end;
@@ -949,6 +951,7 @@ begin
   WebView2Missing := WebView2NeedsInstall;
   WV2Check := TCheckBox.Create(WizardForm);
   WV2Check.Parent := WizardForm.SelectTasksPage;
+  WV2Check.Caption := CustomMessage('WebView2Title');
   WV2Check.Left := -ScaleX(4000);
   WV2Check.Checked := WebView2Missing;
   WV2Check.Enabled := WebView2Missing;
